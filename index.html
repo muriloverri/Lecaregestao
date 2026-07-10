@@ -4374,7 +4374,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v147';
+var APP_VERSION = 'v148';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -25659,6 +25659,7 @@ function _contatoPorTelefone(clienteId, telefone){
 // título "empresa · contato" (sempre mostra a empresa)
 function _tituloConversa(conv){
   if(!conv) return 'Cliente';
+  if(conv.grupo) return conv.nome||'Grupo'; // v148 : grupo usa o nome do grupo (sem cliente)
   const cli=(clients||[]).find(x=>x.id===conv.clienteId);
   const card=(crmLeads||[]).find(l=>l.clienteId===conv.clienteId);
   const empresa=(cli&&cli.nome&&String(cli.nome).trim())||(card&&card.empresa)||'Cliente';
@@ -25906,6 +25907,7 @@ function getConversasVisiveis(){
   const _vendasVeSemCarteira = _SDR_VISIVEL_VENDAS && _pertenceAlgumaEquipeVendas(currentUser.id);
   const _deleg = _equipesDelegadasParaUsuario(currentUser.id); // v98 — delegação temporária de atendimento
   return conversas.filter(c=>{
+    if(c.grupo) return true; // v148 : grupo é do número, não de equipe
     if(_usuarioPertenceEquipe(currentUser.id, c.equipeId)) return true;
     if(c.atendenteId===currentUser.id) return true;
     if(_deleg.length && _deleg.includes(c.equipeId)) return true; // delegação: atende a equipe delegada (dono não muda)
@@ -26343,6 +26345,9 @@ function renderConversasLista(){
     visiveis = visiveis.filter(c=>{ const cli=clients.find(x=>x.id===c.clienteId); const nm=_nomeConversaCli(c.clienteId)||''; return nm.toLowerCase().includes(termo) || (cli && (cli.nome||'').toLowerCase().includes(termo)); });
   }
   const ordena=(a,b)=>(b.ultimaMsgEm||0)-(a.ultimaMsgEm||0);
+  // v148 : GRUPOS ficam fora das listas/contagens normais — só aparecem no chip próprio
+  const gruposList = visiveis.filter(c=>c.grupo).sort((a,b)=>(b.ultimaMsgEm||0)-(a.ultimaMsgEm||0));
+  visiveis = visiveis.filter(c=>!c.grupo);
   const u = currentUser||{};
   const isGestor = u.perfil==='admin'||u.perfil==='diretor_comercial';
   const isCoord  = u.perfil==='coordenador_comercial';
@@ -26363,10 +26368,11 @@ function renderConversasLista(){
   else if(isCoord){ atendentes = users.filter(x=> x.coordenadorId===u.id || x.id===u.id); }
   atendentes.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   let sub = activeConvAtend||'__todos__';
-  if(!isGestor && !isCoord && sub!=='__sem__' && sub!=='__todos__' && sub!==u.id) sub='__todos__';
-  if(isCoord && sub!=='__sem__' && sub!=='__todos__' && !_teamIds().has(sub)) sub='__todos__';
+  if(!isGestor && !isCoord && sub!=='__sem__' && sub!=='__todos__' && sub!=='__grupos__' && sub!==u.id) sub='__todos__';
+  if(isCoord && sub!=='__sem__' && sub!=='__todos__' && sub!=='__grupos__' && !_teamIds().has(sub)) sub='__todos__';
   const labelTodos = isGestor?'Todos':(isCoord?'Equipe':'Minhas');
   const _cnt=(s)=>{
+    if(s==='__grupos__') return gruposList.length;
     if(s==='__sem__') return poolList.length;
     if(s==='__todos__'){
       if(isGestor) return assigned.length;
@@ -26382,11 +26388,12 @@ function renderConversasLista(){
       : `background:${at?'#378ADD':'var(--bg-secondary)'};color:${at?'#fff':'var(--text-secondary)'};border:.5px solid ${at?'#378ADD':'var(--border)'}`;
     return `<button onclick="setConvAtend('${id}')" style="flex-shrink:0;font-size:11px;padding:4px 10px;border-radius:20px;cursor:pointer;white-space:nowrap;${st}">${label} (${_cnt(id)})</button>`;
   };
-  let chips = chip('__sem__','⚠ Sem atendente',true) + chip('__todos__',labelTodos,false);
+  let chips = chip('__sem__','⚠ Sem atendente',true) + (gruposList.length?chip('__grupos__','👥 Grupos',false):'') + chip('__todos__',labelTodos,false);
   if(isGestor||isCoord){ atendentes.forEach(a=>{ chips += chip(a.id, escapeHtml((a.name||'?').split(' ')[0]), false); }); }
   html += `<div style="display:flex;gap:5px;overflow-x:auto;padding:7px 10px;border-bottom:.5px solid var(--border)">${chips}</div>`;
   let lista;
-  if(sub==='__sem__') lista = poolList;
+  if(sub==='__grupos__') lista = gruposList;
+  else if(sub==='__sem__') lista = poolList;
   else if(sub!=='__todos__') lista = assigned.filter(c=>c.atendenteId===sub);
   else if(isGestor) lista = assigned;
   else if(isCoord){ const t=_teamIds(); lista = assigned.filter(c=>t.has(c.atendenteId)); }
@@ -26399,6 +26406,15 @@ function renderConversasLista(){
   el.innerHTML = html;
 }
 function _convItemHtml(conv, semDono){
+  if(conv.grupo){ // v148 : item de GRUPO — só nome do grupo, hora e badge (sem cliente/equipe/pool)
+    const ativa=conv.id===conversaAtivaId;
+    const hora=conv.ultimaMsgEm?fmtTs(conv.ultimaMsgEm):'';
+    return '<div onclick="abrirConversa(\''+conv.id+'\')" style="padding:10px 14px;border-bottom:.5px solid var(--border);cursor:pointer;'+(ativa?'background:var(--bg-secondary);':'')+'">'
+      +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">'
+      +'<span style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">👥 '+escapeHtml(conv.nome||'Grupo')+'</span>'
+      +'<span style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+(conv.naoLidas?('<span style="background:#25D366;color:#fff;border-radius:20px;font-size:10px;font-weight:700;padding:1px 7px">'+conv.naoLidas+'</span>'):'')+'<span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(hora)+'</span></span></div>'
+      +'<div style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:3px">'+escapeHtml(conv.ultimaMsg||'')+'</div></div>';
+  }
   const cli = clients.find(x=>x.id===conv.clienteId);
   const nome = _tituloConversa(conv);
   const ativa = conv.id===conversaAtivaId;
@@ -26857,14 +26873,14 @@ function renderConversaTela(convId, containerId){
         <div class="wa-name">${escapeHtml(nome)} ${_waNumChipHtml(conv)} ${_statusBadge}</div>
         <div class="wa-presence">${tel?escapeHtml(tel)+' · ':''}${_statusLinha}</div>
       </div>
-      <button onclick="${_cardLead?`openLeadModal('${_cardLead.id}')`:`alert('Este cliente ainda não tem card no CRM.')`}" title="Abrir card no CRM" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📋 Card</button>
-      <button onclick="openClienteFichaPorId('${conv.clienteId}')" title="Ver dados do cliente" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">👤 Cliente</button>
+      ${conv.grupo?`<span style="font-size:11px;color:#54656f;padding:5px 10px">👥 Grupo — sem vínculo com cliente</span>`:`<button onclick="${_cardLead?`openLeadModal('${_cardLead.id}')`:`alert('Este cliente ainda não tem card no CRM.')`}" title="Abrir card no CRM" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📋 Card</button>`}
+      ${conv.grupo?'':`<button onclick="openClienteFichaPorId('${conv.clienteId}')" title="Ver dados do cliente" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">👤 Cliente</button>`}
       <button onclick="_convMarcarNaoLida('${conv.id}')" title="Marcar como não lida" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">✉️ Não lida</button>
-      ${currentUser?.perfil==='admin'?`<button onclick="_convImportarHistorico('${conv.id}')" title="Importar histórico exportado do WhatsApp do celular (.txt) — apenas admin" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📥 Importar</button>`:''}
-      ${_encerrada
+      ${(currentUser?.perfil==='admin' && !conv.grupo)?`<button onclick="_convImportarHistorico('${conv.id}')" title="Importar histórico exportado do WhatsApp do celular (.txt) — apenas admin" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📥 Importar</button>`:''}
+      ${conv.grupo?'':(_encerrada
         ? `<button onclick="reabrirConversa('${conv.id}')" style="font-size:11px;padding:5px 12px;background:var(--st-ok-bg);color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:var(--r-md);cursor:pointer">Reabrir</button>`
-        : `<button onclick="abrirEncerrarConversa('${conv.id}')" style="font-size:11px;padding:5px 12px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer">Encerrar</button>`}
-      ${podeAtribuir?`<button onclick="abrirAtribuirConversa('${conv.id}')" style="font-size:11px;padding:5px 12px;background:var(--st-urg-bg);color:var(--st-urg-tx);border:.5px solid var(--st-urg-bd);border-radius:var(--r-md);cursor:pointer">${_semEquipe?'Definir equipe / atendente':(_ehCoordDestaEq?'Trocar atendente':'Reatribuir')}</button>`:''}
+        : `<button onclick="abrirEncerrarConversa('${conv.id}')" style="font-size:11px;padding:5px 12px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer">Encerrar</button>`)}
+      ${(podeAtribuir && !conv.grupo)?`<button onclick="abrirAtribuirConversa('${conv.id}')" style="font-size:11px;padding:5px 12px;background:var(--st-urg-bg);color:var(--st-urg-tx);border:.5px solid var(--st-urg-bd);border-radius:var(--r-md);cursor:pointer">${_semEquipe?'Definir equipe / atendente':(_ehCoordDestaEq?'Trocar atendente':'Reatribuir')}</button>`:''}
     </div>
     <div class="conv-msgs-field wa-chat">${msgs}</div>
     <div class="wa-inputbar">
@@ -27268,6 +27284,7 @@ function _equipeDoUsuario(userId){
 // v98 — só responde quem é ADMIN ou o DONO (atendente) da conversa
 function _podeResponderConv(conv){
   if(!currentUser) return false;
+  if(conv && conv.grupo){ return _waModoDois() ? _waAtendAutorizadoNum(currentUser.id, conv) : true; } // v148
   // v143 : modo DOIS NUMEROS (regra do dono): conversa COM atendente = so ELE responde; os demais
   // (INCLUSIVE admin/diretora) veem com cadeado e precisam Assumir/Reatribuir para digitar.
   if(_waModoDois() && conv && conv.atendenteId){ return conv.atendenteId===currentUser.id; }

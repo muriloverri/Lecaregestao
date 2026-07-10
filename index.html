@@ -1292,7 +1292,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <button class="btn-primary" id="ins-novo-btn" onclick="openInsumoModal('insumo')">+ Cadastrar insumo</button>
           </div>
           <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Insumo (ativo)</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
+            <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Insumo (ativo)</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Média ponderada do histórico de compras">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço da compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
             <tbody id="ins-tbody"></tbody>
           </table></div>
           <div id="ins-vazio" style="display:none;color:var(--text-secondary);font-size:13px;padding:24px;text-align:center">Nenhum insumo cadastrado. Clique em "Cadastrar insumo".</div>
@@ -1304,7 +1304,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <button class="btn-primary" id="emb-novo-btn" onclick="openInsumoModal('embalagem')">+ Cadastrar embalagem</button>
           </div>
           <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Embalagem</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
+            <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Embalagem</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Média ponderada do histórico de compras">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço da compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
             <tbody id="emb-tbody"></tbody>
           </table></div>
           <div id="emb-vazio" style="display:none;color:var(--text-secondary);font-size:13px;padding:24px;text-align:center">Nenhuma embalagem cadastrada. Clique em "Cadastrar embalagem".</div>
@@ -1319,6 +1319,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="form-group"><label>Unidade *</label><select id="ins-unidade"><option value="UN">UN (unidade)</option><option value="g">g (grama)</option><option value="mg">mg</option><option value="kg">kg</option><option value="ml">ml</option><option value="L">L (litro)</option></select></div>
           </div>
           <div class="form-group" style="margin-bottom:12px"><label id="ins-nome-label">Nome do insumo *</label><input type="text" id="ins-nome" placeholder="ex: Ácido Hialurônico"></div>
+          <div class="form-group" style="margin-bottom:12px"><label>Categoria</label><select id="ins-categoria"></select></div>
           <div class="modal-footer"><button onclick="closeInsumoModal()">Cancelar</button><button class="btn-primary" onclick="saveInsumo()">Salvar</button></div>
         </div>
       </div>
@@ -3620,7 +3621,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <div id="cli-sit-override-info" style="font-size:11px;color:var(--text-tertiary)"></div>
       </div>
     </div>
-    <div class="modal-footer"><button onclick="closeClientModal()">Cancelar</button><button class="btn-primary" onclick="saveClient()">Salvar</button></div>
+    <div class="modal-footer" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><button onclick="_vincAbrirPicker()" title="Fundir este cadastro em outro: o selecionado é o principal (dados dele prevalecem); telefones/contatos se somam; pedidos, conversas e cards migram; este cadastro deixa de existir" style="color:var(--text-info)">🔗 Vincular a um cadastro</button><div style="display:flex;gap:10px"><button onclick="closeClientModal()">Cancelar</button><button class="btn-primary" onclick="saveClient()">Salvar</button></div></div>
   </div>
 </div>
 
@@ -4376,7 +4377,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v149';
+var APP_VERSION = 'v150';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6873,7 +6874,7 @@ function saveClient(){
 
   // ── Anti-duplicidade v94: telefone → CPF/CNPJ → nome (sugestão), com fusão segura ──
   if(!_dupCheckBypass){
-    const _cands=_dupCliCandidatos({nome:nome,doc:doc,tel1:tel1,tel2:document.getElementById('c-tel2')?.value.trim()||''}, editingClientId);
+    const _cands=_dupCliCandidatos({nome:nome,doc:doc,tel1:tel1,tel2:document.getElementById('c-tel2')?.value.trim()||'',contatos:_cliContatos}, editingClientId); // v150 — inclui os contatos da empresa na checagem
     if(_cands.length){ _abrirAlertaDup(_cands, {nome:nome,doc:doc,tel1:tel1}); return; }
   }
   _dupCheckBypass=false;
@@ -6983,10 +6984,14 @@ function saveClient(){
 // ═══════════ v94 — Anti-duplicidade de cliente (telefone → CPF/CNPJ → nome) + fusão segura ═══════════
 let _dupCheckBypass=false;
 function _dupNorm(s){ return (s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\b(ltda|me|epp|eireli|sa)\b/g,'').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
-function _dupFoneKeys(c){ const ks=new Set(); [c.tel1,c.tel2,c.finTel].forEach(t=>{ const d=(t||'').replace(/\D/g,''); if(d.length>=8) ks.add(d.slice(-8)); }); return ks; }
+function _dupFoneKeys(c){ const ks=new Set(); [c.tel1,c.tel2,c.finTel].forEach(t=>{ const d=(t||'').replace(/\D/g,''); if(d.length>=8) ks.add(d.slice(-8)); });
+  // v150 — os CONTATOS DA EMPRESA também contam (caso Joice 10/07: telefone de contato adicional em 2 cadastros não gerava alerta nem inconsistência)
+  (Array.isArray(c.contatos)?c.contatos:[]).forEach(ct=>{ const d=String((ct&&(ct.telefone||ct.whats))||'').replace(/\D/g,''); if(d.length>=8) ks.add(d.slice(-8)); });
+  return ks; }
 function _dupCliCandidatos(novo, excludeId){
   const docN=(novo.doc||'').replace(/\D/g,'');
   const foneN=new Set(); [novo.tel1,novo.tel2].forEach(t=>{const d=(t||'').replace(/\D/g,''); if(d.length>=8) foneN.add(d.slice(-8));});
+  (Array.isArray(novo.contatos)?novo.contatos:[]).forEach(ct=>{ const d=String((ct&&(ct.telefone||ct.whats))||'').replace(/\D/g,''); if(d.length>=8) foneN.add(d.slice(-8)); }); // v150 — contatos do cadastro sendo salvo também
   const nomeN=_dupNorm(novo.nome);
   // v144 : telefone de INTERMEDIARIA nao gera sugestao de duplicado (atendidos usam o telefone dela)
   const fonesInterm=new Set();
@@ -7143,6 +7148,55 @@ function _vincularPFaoPJ(aId, bId){
   _fundirClientes(pj.id, pf.id); // move pedidos/conversas/contas/cards; PJ prevalece nos campos vazios; remove o PF
   saveData(); try{ renderInconsistencias(); }catch(_){}
   alert(`✓ "${pf.nome}" vinculada ao PJ "${pj.nome}".\nFicou um cadastro só, com todos os pedidos somados.`);
+}
+
+// v150 — "🔗 Vincular a um cadastro" (pedido do dono): fusão dirigida a partir da ficha.
+// Direção: o cadastro SELECIONADO no picker é o PRINCIPAL (keep) — dados dele prevalecem, campos vazios
+// são completados com os do atual, telefones/contatos se SOMAM, pedidos/conversas/contas/cards migram,
+// e o cadastro ATUAL (aberto na ficha) deixa de existir. Reusa _fundirClientes + _unirContatos (invariantes v106/v147).
+function _vincAbrirPicker(){
+  if(!editingClientId){ alert('Salve o cadastro primeiro — o vínculo funde este cadastro em outro já existente.'); return; }
+  let ov=document.getElementById('vinc-picker-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='vinc-picker-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','0'); ov.style.zIndex='4300'; document.body.appendChild(ov); }
+  const cur=(clients||[]).find(c=>c.id===editingClientId);
+  ov.innerHTML=`<div class="modal" style="width:520px;max-height:82vh;display:flex;flex-direction:column">
+    <h2 style="margin-bottom:4px">🔗 Vincular a um cadastro</h2>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">O cadastro <b>"${escapeHtml((cur&&cur.nome)||'')}"</b> será fundido no cadastro que você selecionar abaixo (o selecionado é o <b>principal</b>: os dados dele prevalecem; telefones e contatos se somam; pedidos, conversas e cards migram).</p>
+    <input type="text" id="vinc-busca" placeholder="Buscar por nome ou CPF/CNPJ..." oninput="_vincRenderLista()" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
+    <div id="vinc-lista" style="overflow-y:auto;flex:1;min-height:160px;border:.5px solid var(--border);border-radius:8px"></div>
+    <div class="modal-footer"><button onclick="document.getElementById('vinc-picker-overlay').classList.remove('open')">Cancelar</button></div>
+  </div>`;
+  ov.classList.add('open'); _vincRenderLista();
+  setTimeout(()=>document.getElementById('vinc-busca')?.focus(),0);
+}
+function _vincRenderLista(){
+  const el=document.getElementById('vinc-lista'); if(!el) return;
+  const q=(document.getElementById('vinc-busca')?.value||'').toLowerCase().trim();
+  const qd=q.replace(/\D/g,'');
+  let lst=(clients||[]).filter(c=>c && c.id!==editingClientId);
+  if(q) lst=lst.filter(c=>(c.nome||'').toLowerCase().includes(q) || (qd.length>=3 && String(c.doc||'').replace(/\D/g,'').includes(qd)));
+  lst.sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  lst=lst.slice(0,12);
+  if(!lst.length){ el.innerHTML='<div style="padding:14px;color:var(--text-tertiary);font-size:12px">Nenhum cadastro encontrado.</div>'; return; }
+  el.innerHTML=lst.map(c=>`<div style="padding:9px 11px;border-bottom:.5px solid var(--border);display:flex;justify-content:space-between;gap:8px;align-items:center">
+    <div style="min-width:0"><div style="font-weight:600;font-size:13px">${escapeHtml(c.nome||'(sem nome)')}</div>
+    <div style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(c.doc||'sem CPF/CNPJ')} · ${escapeHtml(c.tel1||c.tel2||'sem telefone')}${c.cadastroIncompleto?' · <span style="color:var(--st-mid-tx)">incompleto</span>':''}</div></div>
+    <button class="btn-primary" style="font-size:11px;padding:4px 10px;white-space:nowrap;flex-shrink:0" onclick="_vincEmOutro('${c.id}')">Vincular a este</button>
+  </div>`).join('');
+}
+function _vincEmOutro(targetId){
+  const cur=(clients||[]).find(c=>c.id===editingClientId);
+  const alvo=(clients||[]).find(c=>c.id===targetId);
+  if(!cur||!alvo||cur.id===alvo.id) return;
+  if(!confirm(`Fundir "${cur.nome||''}" no cadastro principal "${alvo.nome||''}"?\n\n• "${alvo.nome||''}" é o PRINCIPAL: os dados preenchidos dele prevalecem.\n• Campos vazios do principal são completados com os deste cadastro.\n• Telefones e contatos se SOMAM (nada se perde).\n• Pedidos, conversas, contas e cards deste cadastro migram para o principal.\n• O cadastro "${cur.nome||''}" deixa de existir.\n\nNÃO tem desfazer automático.`)) return;
+  alvo.contatos=_unirContatos(alvo, cur); // telefones/contatos dos DOIS, dedup por telefone
+  _fundirClientes(alvo.id, cur.id);       // principal prevalece; vazios completados; tudo migra; cur removido
+  document.getElementById('vinc-picker-overlay')?.classList.remove('open');
+  closeClientModal();
+  try{ if(typeof _sincronizarCardComCarteira==='function') _sincronizarCardComCarteira(alvo.id); }catch(_e){}
+  try{ renderClients(); }catch(_e){}
+  _saveAndConfirm().then(function(r){ if(r && r.ok===false) alert('⚠ O vínculo foi salvo neste navegador, mas o servidor ainda não confirmou. O sistema segue tentando — acompanhe a faixa no topo.'); });
+  alert('✓ Vinculado: "'+(cur.nome||'')+'" agora faz parte de "'+(alvo.nome||'')+'".');
 }
 
 // ═══════════════ v101 — VÍNCULO DE CLIENTES (grupoClienteId) + RESOLUÇÃO DE DUPLICADOS ═══════════════
@@ -9617,23 +9671,58 @@ function _proximoCodigoInsumo(tipo){
   (insumos||[]).forEach(function(x){ if((x.codigo||'').indexOf(pref)===0){ var m=(x.codigo||'').match(/(\d+)\s*$/); if(m){ var n=parseInt(m[1],10); if(n>max) max=n; } } });
   return pref+String(max+1).padStart(4,'0');
 }
+// v150 — HISTÓRICO DE COMPRAS por item do catálogo (pedido do dono): deriva AUTOMATICAMENTE das listas de
+// compra (cotação escolhida = fornecedor + preço; it.compra = compra efetivada). Nada é digitado à mão.
+function _histComprasItem(itemId, codigo){
+  var out=[];
+  (listasCompra||[]).forEach(function(l){
+    (l.itens||[]).forEach(function(it){
+      if(it.naoComprado) return;
+      var bate=(itemId && String(it.itemId||'')===String(itemId)) || (codigo && it.codigo && String(it.codigo)===String(codigo));
+      if(!bate) return;
+      var c=_cotItemEscolhida(it); if(!c || !(parseFloat(c.preco)>0)) return;
+      out.push({ em:(it.compra&&it.compra.em)||l.criadoEm||0, fornecedor:c.fornecedorNome||'—', preco:parseFloat(c.preco)||0,
+                 qtd:parseFloat(it.qtdTotal)||0, comprado:!!(it.compra&&it.compra.comprado) });
+    });
+  });
+  out.sort(function(a,b){ return (b.em||0)-(a.em||0); });
+  return out;
+}
+function _custosItem(itemId, codigo){
+  var h=_histComprasItem(itemId, codigo);
+  if(!h.length) return null;
+  var sq=0, sv=0, min=Infinity;
+  h.forEach(function(x){ var q=x.qtd>0?x.qtd:1; sq+=q; sv+=x.preco*q; if(x.preco<min) min=x.preco; });
+  return { medio:(sq>0?sv/sq:h[0].preco), ultimo:h[0].preco, minimo:min, n:h.length };
+}
+function _histItemToggle(btn){
+  var id=btn.getAttribute('data-hid'); var r=document.getElementById(id);
+  if(r) r.style.display=(r.style.display==='none'?'':'none');
+}
 function renderCatSimples(tipo){
   var tb=document.getElementById(tipo==='insumo'?'ins-tbody':'emb-tbody'); if(!tb) return;
   var pode=_canEditInsumos();
   var nb=document.getElementById(tipo==='insumo'?'ins-novo-btn':'emb-novo-btn'); if(nb) nb.style.display=pode?'':'none';
   var busca=(document.getElementById(tipo==='insumo'?'ins-busca':'emb-busca')?.value||'').toLowerCase().trim();
   var lista=(insumos||[]).filter(function(x){ return x.tipo===tipo; });
-  if(busca) lista=lista.filter(function(x){ return ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(busca)>=0; });
+  if(busca) lista=lista.filter(function(x){ return ((x.nome||'')+' '+(x.codigo||'')+' '+(x.categoria||'')).toLowerCase().indexOf(busca)>=0; }); // v150 — busca também por categoria
   lista.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
   var vazio=document.getElementById(tipo==='insumo'?'ins-vazio':'emb-vazio'); if(vazio) vazio.style.display=lista.length?'none':'block';
   tb.innerHTML=lista.map(function(x){
     var acoes = pode
       ? '<button onclick="openInsumoModal(\''+tipo+'\',\''+x.id+'\')" style="font-size:11px;padding:3px 9px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit">Editar</button> <button onclick="deleteInsumo(\''+x.id+'\')" style="font-size:11px;padding:3px 9px;border:.5px solid var(--st-bad-bd);border-radius:var(--r-md);background:var(--st-bad-bg);color:var(--st-bad-tx);cursor:pointer;font-family:inherit">Excluir</button>'
       : '—';
+    // v150 — custos derivados do histórico de compras (médio ponderado, última, menor)
+    var cst=_custosItem(x.id, x.codigo);
+    var _tit=cst?' title="'+cst.n+' compra(s) no histórico"':'';
     return '<tr style="border-bottom:.5px solid var(--border);'+(x.ativo===false?'opacity:.5;':'')+'">'+
       '<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.codigo||'—')+'</td>'+
       '<td style="padding:7px 10px">'+escapeHtml(x.nome||'—')+'</td>'+
       '<td style="padding:7px 10px">'+escapeHtml(x.unidade||'UN')+'</td>'+
+      '<td style="padding:7px 10px;font-size:12px">'+((x.categoria&&x.categoria!=='sem categoria')?'<span style="padding:2px 8px;border-radius:12px;background:var(--bg-info);color:var(--text-info);font-size:11px">'+escapeHtml(x.categoria)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+      '<td style="padding:7px 10px;text-align:right;white-space:nowrap"'+_tit+'>'+(cst?fmtMoney(cst.medio):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+      '<td style="padding:7px 10px;text-align:right;white-space:nowrap"'+_tit+'>'+(cst?fmtMoney(cst.ultimo):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+      '<td style="padding:7px 10px;text-align:right;white-space:nowrap;color:var(--st-ok-tx)"'+_tit+'>'+(cst?fmtMoney(cst.minimo):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
       '<td style="padding:7px 10px;text-align:center;white-space:nowrap">'+acoes+'</td></tr>';
   }).join('');
 }
@@ -9648,20 +9737,33 @@ function openInsumoModal(tipo, id){
   document.getElementById('ins-codigo').value=x?(x.codigo||''):'';
   document.getElementById('ins-nome').value=x?(x.nome||''):'';
   document.getElementById('ins-unidade').value=x?(x.unidade||'UN'):'UN';
+  // v150 — categorias por tipo (pedido do dono)
+  var _catSel=document.getElementById('ins-categoria');
+  if(_catSel){
+    var _cats=CAT_INSUMO_CATEGORIAS[tipo]||[];
+    _catSel.innerHTML=_cats.map(function(c){ return '<option value="'+c+'">'+(c||'sem categoria')+'</option>'; }).join('');
+    _catSel.value=(x&&x.categoria&&_cats.indexOf(x.categoria)>=0)?x.categoria:_cats[0];
+  }
   document.getElementById('insumo-modal').classList.add('open');
 }
+// v150 — categorias do catálogo de insumos/embalagens (definidas pelo dono 10/07)
+var CAT_INSUMO_CATEGORIAS={
+  embalagem:['sem categoria','embalagem completa','componente de embalagem'],
+  insumo:['sem categoria','liquido dermato','liquido oral','liquido ambos','solido dermato','solido oral','solido ambos','excipiente','base']
+};
 function closeInsumoModal(){ document.getElementById('insumo-modal').classList.remove('open'); }
 function saveInsumo(){
   var nome=document.getElementById('ins-nome').value.trim();
   if(!nome){ alert('Informe o nome.'); return; }
   var unidade=document.getElementById('ins-unidade').value||'UN';
   var codigo=document.getElementById('ins-codigo').value.trim();
+  var categoria=document.getElementById('ins-categoria')?.value||'sem categoria';
   if(_insEditId){
     var x=(insumos||[]).find(function(p){ return p.id===_insEditId; });
-    if(x){ x.nome=nome; x.unidade=unidade; if(codigo) x.codigo=codigo; }
+    if(x){ x.nome=nome; x.unidade=unidade; x.categoria=categoria; if(codigo) x.codigo=codigo; }
   } else {
     if(!codigo) codigo=_proximoCodigoInsumo(_insTipo);
-    insumos.push({ id:(_insTipo==='insumo'?'ins':'emb')+Date.now(), codigo:codigo, nome:nome, tipo:_insTipo, unidade:unidade, ativo:true, criadoEm:Date.now() });
+    insumos.push({ id:(_insTipo==='insumo'?'ins':'emb')+Date.now(), codigo:codigo, nome:nome, tipo:_insTipo, unidade:unidade, categoria:categoria, ativo:true, criadoEm:Date.now() });
   }
   closeInsumoModal(); renderCatSimples(_insTipo); saveData();
 }
@@ -9891,14 +9993,24 @@ function renderListaCompra(){
           '<td style="'+_tdNc+';font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' pedido(s)</td>'+
           '<td style="'+_tdNc+'" colspan="2"><span style="font-size:11px;color:var(--st-bad-tx);font-weight:600">✕ Não comprado</span>'+(it.naoCompradoMotivo?' <span style="font-size:11px;color:var(--text-tertiary)">· '+escapeHtml(it.naoCompradoMotivo)+'</span>':'')+' <span style="font-size:10px;color:var(--text-tertiary)">→ voltou p/ próxima lista</span></td></tr>';
       }
+      // v150 — histórico de fornecedores/preços do item (deriva das compras anteriores) — botão 📈 expande
+      var _hist=_histComprasItem(it.itemId, it.codigo);
+      var _cstIt=_hist.length?_custosItem(it.itemId, it.codigo):null;
+      var _hid='hist_'+l.id+'_'+ix;
+      var _histBtn=_hist.length?'<button onclick="_histItemToggle(this)" data-hid="'+_hid+'" title="Histórico de compras deste item ('+_hist.length+')" style="font-size:11px;padding:3px 8px">📈 '+_hist.length+'</button> ':'';
+      var _histRow=_hist.length?('<tr id="'+_hid+'" style="display:none"><td colspan="6" style="padding:6px 12px;background:var(--bg-secondary);border-bottom:.5px solid var(--border)">'+
+        '<div style="font-size:11px;margin-bottom:3px"><b>📈 Histórico de compras</b>'+(_cstIt?' <span style="color:var(--text-secondary)">— médio '+fmtMoney(_cstIt.medio)+' · última '+fmtMoney(_cstIt.ultimo)+' · <span style="color:var(--st-ok-tx)">menor '+fmtMoney(_cstIt.minimo)+'</span></span>':'')+'</div>'+
+        _hist.slice(0,8).map(function(hh){ return '<div style="font-size:11px;padding:2px 0;border-top:.5px dashed var(--border);color:var(--text-secondary)">'+(hh.em?fmtDate(new Date(hh.em).toISOString().slice(0,10)):'—')+' · <b>'+escapeHtml(hh.fornecedor)+'</b> · '+fmtMoney(hh.preco)+(hh.qtd?' · '+hh.qtd.toLocaleString('pt-BR')+' un':'')+(hh.comprado?' · ✓ comprada':' · cotada')+'</div>'; }).join('')+
+        (_hist.length>8?'<div style="font-size:10px;color:var(--text-tertiary);padding-top:2px">+ '+(_hist.length-8)+' compra(s) mais antiga(s)</div>':'')+
+        '</td></tr>'):'';
       return '<tr><td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(it.codigo||'—')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(it.nome||'')+'</td>'+
         '<td style="'+td+';text-align:right">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
         '<td style="'+td+';font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' pedido(s)</td>'+
         '<td style="'+td+'">'+cotTxt+'</td>'+
-        '<td style="'+td+';text-align:right;white-space:nowrap"><button onclick="openCotacaoModal(\''+l.id+'\','+ix+')" style="font-size:11px;padding:3px 9px">Cotar</button> '+
+        '<td style="'+td+';text-align:right;white-space:nowrap">'+_histBtn+'<button onclick="openCotacaoModal(\''+l.id+'\','+ix+')" style="font-size:11px;padding:3px 9px">Cotar</button> '+
           ((it.compra&&it.compra.comprado)?'<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(it.compra.recebido?' · recebido':'')+'</span>':'<button class="btn-primary" onclick="openComprarModal(\''+l.id+'\','+ix+')" style="font-size:11px;padding:3px 9px">Comprar</button> <button onclick="naoComprarItem(\''+l.id+'\','+ix+')" title="Não comprar este item — as quantidades voltam para a próxima lista" style="font-size:11px;padding:3px 9px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">✕ Não comprar</button>')+
-        '</td></tr>';
+        '</td></tr>'+_histRow;
     }).join('');
     return '<div class="panel" style="padding:0;margin-bottom:14px">'+head+
       '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
@@ -26290,7 +26402,21 @@ function renderConversas(){
   // v140 : modo dois numeros: garante um numero ativo valido para o usuario
   if(_waModoDois()){ const meus=_waNumsDoUsuario(); if(!_convNumAtivo||!meus.includes(_convNumAtivo)) _convNumAtivo=meus[0]||_waNumPadrao(); }
   renderConversasLista();
-  if(conversaAtivaId){ renderConversaTela(conversaAtivaId); }
+  if(conversaAtivaId){
+    // v150 : usuário DIGITANDO na conversa aberta → NÃO reconstrói a tela (o rebuild do textarea engolia/
+    // embaralhava teclas a cada evento realtime de QUALQUER tabela via refreshAll → _refreshActivePage).
+    // Atualiza só as mensagens (caminho parcial já existente); o campo fica intocado. Sem foco → completo.
+    // EXCEÇÃO: se a conversa deixou de ser respondível (transferida/encerrada), o render completo SEMPRE
+    // acontece — fecha o campo na hora mesmo com a pessoa digitando (senão o cadeado do pool não apareceria).
+    const _taAtv=document.querySelector('#conv-tela .conv-input-field');
+    const _cvAtv=(conversas||[]).find(c=>c.id===conversaAtivaId);
+    const _aindaMinha=_cvAtv && _cvAtv.status!=='encerrada' && (typeof _podeResponderConv!=='function' || _podeResponderConv(_cvAtv));
+    if(_taAtv && document.activeElement===_taAtv && _convTelaUltimoId===conversaAtivaId && _aindaMinha){
+      try{ renderConversaMsgs(conversaAtivaId); }catch(_e){}
+    } else {
+      renderConversaTela(conversaAtivaId);
+    }
+  }
   _updateConvBadge();
   // v87 — botão de importar histórico do WhatsApp só para admin/diretor
   const _bb=document.getElementById('btn-wa-backfill');
@@ -26773,14 +26899,25 @@ function _waScrollToMsg(mid){
   if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.classList.add('wa-flash'); setTimeout(()=>el.classList.remove('wa-flash'),1200); }
 }
 // v111 — monta SÓ o HTML das mensagens (reusado no render completo E no refresh do realtime, que atualiza a lista sem tocar no campo de digitar)
+// v150 : JANELA DE RENDER — conversa gigante (Ana Cecilia: 3.200 msgs) redesenhava TUDO a cada evento e
+// travava a digitação só nela. Renderiza as últimas N (150 padrão); "Ver anteriores" expande +300 por clique.
+var _convJanelaMsgs={};
+function _convVerMais(convId){
+  _convJanelaMsgs[convId]=(_convJanelaMsgs[convId]||150)+300;
+  try{ renderConversaMsgs(convId); }catch(_e){ try{ renderConversaTela(convId); }catch(_e2){} }
+}
 function _convMsgsHtml(conv){
   const _now=Date.now();
   const nome=_tituloConversa(conv);
-  const _msgs=(conv.mensagens||[]);
+  const _msgsAll=(conv.mensagens||[]);
+  const _jan=_convJanelaMsgs[conv.id]||150;
+  const _msgs=_msgsAll.length>_jan?_msgsAll.slice(-_jan):_msgsAll;
+  const _ocultas=_msgsAll.length-_msgs.length;
+  const _verMaisHtml=_ocultas>0?`<div style="text-align:center;margin:4px 0 10px"><button onclick="_convVerMais('${conv.id}')" style="font-size:11.5px;padding:5px 14px;border-radius:20px;border:.5px solid #d1d7db;background:#fff;color:#54656f;cursor:pointer;box-shadow:0 1px .5px rgba(11,20,26,.1)">⬆ Ver mensagens anteriores (${_ocultas})</button></div>`:'';
   // v111 — dedup de EXIBIÇÃO da duplicata: esconde a OTIMISTA (de=atendente, status 'fila', SEM id de provedor) quando já existe a CONFIRMAÇÃO (mesmo texto, ~30s). NÃO altera o dado; mensagem distinta/recebida/falha nunca é tocada (sem risco de sumiço).
   const _pidD=m=>m&&(m.provedorMsgId||m.zapiMessageId||m.providerMsgId);
   const _confmD=_msgs.filter(m=>m&&m.de==='atendente'&&_pidD(m));
-  return _msgs.map(m=>{
+  return _verMaisHtml + _msgs.map(m=>{
     if(m&&m.de==='atendente'&&m.status==='fila'&&!_pidD(m)&&_confmD.some(c=>String(c.texto||'')===String(m.texto||'')&&Math.abs((c.em||0)-(m.em||0))<30000)) return '';
     // v112 — esconde mensagem SEM conteúdo (ex.: evento de reação ❤️ virou "mensagem vazia"). A reação já aparece na bolha alvo. Mensagem apagada/sistema/mídia não é tocada.
     if(m && m.de!=='sistema' && !m.apagada && !(m.texto&&String(m.texto).trim()) && !m.anexo) return '';

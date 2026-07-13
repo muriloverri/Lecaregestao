@@ -3769,6 +3769,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         </div>
         <div class="modal-section">
           <div class="modal-section-title">📅 Próxima ação</div>
+          <div id="lead-proximas-agenda"></div><!-- v151 : as 2 próximas ações agendadas do cliente (controle rápido do comercial) -->
           <div class="form-row">
             <div class="form-group">
               <label>Data de retorno</label>
@@ -4377,7 +4378,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v150';
+var APP_VERSION = 'v151';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -4500,8 +4501,35 @@ var _tabId = 'tab_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice
 var _sessionTimer = null;
 var _kicked = false;
 var _sessoesTimer = null;
+// v151 : VIGIA DE AUTENTICAÇÃO (caso Emilayne 13/07) — o login do Supabase pode morrer no meio do
+// expediente (refresh token derrubado por outro aparelho/navegador). A aba seguia "aparentando normal"
+// (leitura passa na RLS permissiva), mas envio de mensagem e presença falhavam EM SILÊNCIO por horas.
+// A cada batida do heartbeat conferimos se a sessão continua viva e do MESMO usuário; se morreu/trocou,
+// faixa vermelha fixa + bloqueio de envio até recarregar. Sessão saudável = fluxo idêntico ao de antes.
+var _authUidLogin = null;    // uid do Supabase Auth capturado na 1ª batida após o login
+window._authExpirada = false;
+function _authExpirou(motivo){
+  if(window._authExpirada) return; window._authExpirada = true;
+  try{ console.warn('⚠ Sessão de login '+motivo+' — envio bloqueado até recarregar.'); }catch(_e){}
+  try{
+    if(!document.getElementById('_auth-banner')){
+      var b=document.createElement('div'); b.id='_auth-banner';
+      b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#B00020;color:#fff;font-size:14px;font-weight:600;text-align:center;padding:10px 16px;box-shadow:0 2px 10px rgba(0,0,0,.35);font-family:inherit';
+      b.innerHTML='⚠ Sua sessão expirou — as mensagens NÃO estão sendo enviadas. '
+        +'<button onclick="location.reload()" style="margin-left:10px;background:#fff;color:#B00020;border:none;border-radius:6px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Recarregar e entrar de novo</button>';
+      document.body.appendChild(b);
+    }
+  }catch(_e){}
+}
 async function _sessionHeartbeat(){
   if(!_sb || !_sbReady || !currentUser || _kicked || _versionBlocked) return; // v114 — versão antiga não conta como "online" (e está atualizando sozinha)
+  if(window._authExpirada) return; // v151 : sessão morta — para de martelar o servidor; recuperação só via reload
+  try{
+    const _as = await _sb.auth.getSession();
+    const _uid = (_as && _as.data && _as.data.session && _as.data.session.user) ? _as.data.session.user.id : null;
+    if(!_uid || (_authUidLogin && _uid !== _authUidLogin)){ _authExpirou(!_uid ? 'expirada' : 'trocada de usuário'); return; }
+    if(!_authUidLogin) _authUidLogin = _uid;
+  }catch(_e){ /* indisponibilidade momentânea de rede não é sessão morta — não alarma */ }
   try{
     await _sb.from('sessions').upsert({ tab_id:_tabId, user_id:currentUser.id, user_name:currentUser.name, version:APP_VERSION, last_seen:new Date().toISOString(), updated_at:new Date().toISOString() }, { onConflict:'tab_id' });
     const r = await _sb.from('sessions').select('kicked').eq('tab_id',_tabId).limit(1);
@@ -4511,6 +4539,8 @@ async function _sessionHeartbeat(){
 function _startSession(){
   if(!currentUser) return;
   _kicked = false;
+  _authUidLogin = null; window._authExpirada = false; // v151 : login novo zera o vigia (a 1ª batida recaptura o dono)
+  try{ var _ab=document.getElementById('_auth-banner'); if(_ab&&_ab.parentNode) _ab.parentNode.removeChild(_ab); }catch(_e){}
   _sessionHeartbeat();
   if(_sessionTimer) clearInterval(_sessionTimer);
   _sessionTimer = setInterval(_sessionHeartbeat, 20000);
@@ -5169,6 +5199,20 @@ function _rebuildCreditosFromOrders(){
       (creditosCliente[o.clienteId]=creditosCliente[o.clienteId]||[]).push({id:'mc'+o.id,orderId:o.id,pedidoNum:o.num,tipo:'credito',valor:parseFloat(o.valor)||0,data:o.d1});
     } else if(t==='venda_filho'){
       if(!aprovado) return; // débito do filho só após o Caixa
+      if(o.caixaReprovado===true||o.caixaReprovado==='true') return; // v151 : reprovado também marca caixaFinalizado — não pode abater crédito
+      // v151 : PAR DIVIDIDO (anest+linha) com as duas partes aprovadas → UM débito único no extrato,
+      // como se fosse um pedido só (decisão do dono 13/07): nº base, valor total, orderId+orderId2.
+      // A parte de id maior é pulada; a de id menor lança pelo par. Uma parte só aprovada = débito normal dela.
+      const _sg=o.splitGrupo?String(o.splitGrupo):'';
+      if(_sg){
+        const _sib=(orders||[]).find(x=>x&&String(x.id)!==String(o.id)&&String(x.splitGrupo||'')===_sg);
+        if(_sib && _sib.tipo==='venda_filho' && (_sib.caixaFinalizado===true||_sib.caixaFinalizado==='true') && !(_sib.caixaReprovado===true||_sib.caixaReprovado==='true')){
+          if(Number(o.id)>Number(_sib.id)) return;
+          const _tot=(parseFloat(o.valor)||0)+(parseFloat(o.freteCob)||0)+(parseFloat(_sib.valor)||0)+(parseFloat(_sib.freteCob)||0);
+          (creditosCliente[o.clienteId]=creditosCliente[o.clienteId]||[]).push({id:'md'+o.id,orderId:o.id,orderId2:_sib.id,pedidoNum:String(o.num||'').replace(/[al]$/i,''),tipo:'debito',valor:_tot,data:o.d1});
+          return;
+        }
+      }
       (creditosCliente[o.clienteId]=creditosCliente[o.clienteId]||[]).push({id:'md'+o.id,orderId:o.id,pedidoNum:o.num,tipo:'debito',valor:(parseFloat(o.valor)||0)+(parseFloat(o.freteCob)||0),data:o.d1});
     }
   });
@@ -6146,7 +6190,7 @@ function _ratearBlocos(blocos, ratio){
 async function saveOrder(){
   // Check if order is locked (approved in caixa) — block editing core data only
 
-  const linha=document.getElementById('f-linha-anes').checked?'anestesico':'personalizada';
+  let linha=document.getElementById('f-linha-anes').checked?'anestesico':'personalizada'; // v151 : let — a exceção clorexidina pode forçar 'anestesico'
   const num=document.getElementById('f-num').value.trim();
   const d1=document.getElementById('f-d1').value;
   const cliente=document.getElementById('f-cliente').value.trim();
@@ -6189,6 +6233,18 @@ async function saveOrder(){
       if(!confirm(msg))return;
     }
   }
+  // v151 : DIVISÃO anestésico+linha vale TAMBÉM p/ venda filho e especiais (decisão do dono 13/07, caso 40215 — antes só venda; venda mãe nunca divide, não tem itens).
+  // EXCEÇÃO CLOREXIDINA: itens mistos onde TODO item de linha é clorexidina → NÃO divide; o pedido inteiro vai como ANESTESICO (prazo e setores de anestésico).
+  // Detecção ANTES do cálculo da previsão, para a exceção herdar o prazo certo. Cada parte dividida calcula a própria previsão pela sua linha (padrão v129).
+  let _splitGroups=null;
+  if(!editingOrderId && !isMae && _iaItensPendentes && _iaItensPendentes.length){
+    const _an=_iaItensPendentes.filter(r=>r._categoria==='anestesico');
+    const _li=_iaItensPendentes.filter(r=>r._categoria!=='anestesico');
+    if(_an.length && _li.length){
+      if(_li.every(r=>/CLOREXIDINA/i.test(String(r.nome||'')))) linha='anestesico';
+      else _splitGroups={an:_an, li:_li};
+    }
+  }
   let previsao,customDeadlines=null;
   if(isMae){const p=new Date(d1+'T12:00:00');p.setDate(p.getDate()+1);previsao=p.toISOString().split('T')[0];}
   else if(urgente){previsao=prevManual;customDeadlines=calcUrgentDeadlines(d1,prevManual,linha);}
@@ -6221,13 +6277,7 @@ async function saveOrder(){
       if(!confirm('⚠ O valor das formas de pagamento ('+fmtMoney(_somaPg)+') não confere com o total do pedido ('+fmtMoney(_totPed)+' = valor líquido + frete cobrado).\n\nSalvar mesmo assim? O financeiro revisa no Caixa.')) return;
     }
   }
-  // Split anestésico + linha em 2 pedidos (mesmo nº) — só ordem nova, via itens lidos por IA
-  let _splitGroups=null;
-  if(!editingOrderId && !isMae && !isFilho && _iaItensPendentes && _iaItensPendentes.length){
-    const _an=_iaItensPendentes.filter(r=>r._categoria==='anestesico');
-    const _li=_iaItensPendentes.filter(r=>r._categoria!=='anestesico');
-    if(_an.length && _li.length) _splitGroups={an:_an, li:_li};
-  }
+  // Split anestésico + linha em 2 pedidos (mesmo nº) — a DETECÇÃO subiu p/ antes do cálculo da previsão (v151; exceção clorexidina precisa do prazo de anestésico)
   let savedOrder=null;
   if(_splitGroups){
     const _mapIt=r=>({produtoId:r.produtoId,codigo:r.codigo,nome:r.nome,qtd:parseFloat(r.qtd)||0,precoUnit:parseFloat(r.precoUnit)||0,volumetria:r.volumetria||'',embalagem:r.embalagem||'',precoTabela:parseFloat(r.precoTabela)||0,custo:parseFloat(r.custo)||0,desconto:Math.max(0,(parseFloat(r.precoTabela)||0)-(parseFloat(r.precoUnit)||0))});
@@ -7109,6 +7159,9 @@ function _fundirClientes(keepId, dropId){
   (orders||[]).forEach(o=>{ if(o.clienteId===dropId){ o.clienteId=keepId; o.cliente=keep.nome||o.cliente; } });
   (contasReceber||[]).forEach(x=>{ if(x.clienteId===dropId){ x.clienteId=keepId; x.clienteNome=keep.nome||x.clienteNome; } });
   (crmLeads||[]).forEach(l=>{ if(l.clienteId===dropId) l.clienteId=keepId; });
+  // v151 : REDE DE SEGURANÇA server-side — os re-apontamentos acima só alcançam o que esta aba tem na memória;
+  // o RPC re-aponta no SERVIDOR qualquer conversa/card/pedido/conta que sobrou no cadastro apagado (caso Stefanelli 13/07)
+  try{ if(_sb) _sb.rpc('cliente_fundir_repontar',{ p_de:dropId, p_para:keepId, p_nome:keep.nome||null }); }catch(_e){}
   _unirCardsNaFusao(keepId); // v110 — funde os cards do CRM do cliente unificado (2 viram 1)
   ['doc','email','tel1','tel2','cep','uf','cidade','bairro','rua','numero','conselhoTipo','conselhoNum','carteiraLinha','carteiraAnest','finContato','finEmail','finTel'].forEach(f=>{ if(!keep[f] && drop[f]) keep[f]=drop[f]; });
   if(drop.prodLinha) keep.prodLinha=true; if(drop.prodAnest) keep.prodAnest=true;
@@ -8017,6 +8070,30 @@ function openLeadModal(id, funil, etapa){
   if(_drEl) _drEl.value=lead?.dataRetorno||'';
   const _paEl=document.getElementById('lead-proxima-acao');
   if(_paEl) _paEl.value=lead?.proximaAcao||'';
+  // v151 : PRÓXIMAS AÇÕES AGENDADAS no modal do card (pedido do dono 13/07) — mostra as 2 mais próximas
+  // de acontecer (pendentes na agenda, de hoje em diante). Encerrou ou venceu → some e as seguintes assumem.
+  try{
+    const _pxEl=document.getElementById('lead-proximas-agenda');
+    if(_pxEl){
+      let _pxHtml='';
+      if(lead){
+        const _hj=today();
+        const _evs=(agendaEventos||[]).filter(ev=>ev&&ev.leadId===lead.id&&ev.status==='pendente'&&(ev.data||'')>=_hj)
+          .sort((a,b)=>((a.data||'')+' '+(a.hora||'')).localeCompare((b.data||'')+' '+(b.hora||'')));
+        const _dois=_evs.slice(0,2);
+        if(_dois.length){
+          _pxHtml='<div style="margin-bottom:10px">'
+            +_dois.map(ev=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:.5px solid var(--st-inf-bd);background:var(--st-inf-bg);border-radius:var(--r-md);margin-bottom:5px;font-size:12px">
+              <span style="font-weight:600;color:var(--st-inf-tx);white-space:nowrap">${ev.data===_hj?'📌 HOJE':'📅 '+fmtDate(ev.data)}${ev.hora?' · '+escapeHtml(ev.hora):''}</span>
+              <span style="flex:1;color:var(--text-primary)">${escapeHtml(ev.titulo||'')}</span>
+            </div>`).join('')
+            +(_evs.length>2?`<div style="font-size:10.5px;color:var(--text-tertiary);margin:2px 0 0 2px">+ ${_evs.length-2} outra(s) ação(ões) agendada(s) — ver na Agenda</div>`:'')
+            +'</div>';
+        }
+      }
+      _pxEl.innerHTML=_pxHtml;
+    }
+  }catch(_e){}
   document.getElementById('lead-followup').value=lead?lead.followup||'':'';
   document.getElementById('lead-valor').value=lead?lead.valor||'':'';
   document.getElementById('lead-tipo-produto').value=lead?lead.tipoProduto||'':'';
@@ -14693,6 +14770,16 @@ function _registrarDebitoFilho(o){
   // v106 — abate o valor CORRETO: líquido + frete cobrado (igual ao pagamento configurado)
   const _abate=(parseFloat(o.valor)||0)+(parseFloat(o.freteCob)||0);
   creditosCliente[o.clienteId].push({ id:'mov'+Date.now(), orderId:o.id, pedidoNum:o.num, tipo:'debito', valor:_abate, data:o.d1 });
+}
+// v151 : PAR DIVIDIDO (anest+linha) de venda filho — UM lançamento ÚNICO de débito, como se fosse um pedido só
+// (decisão do dono 13/07). orderId/orderId2 guardam as duas partes (dedup + estorno acham por qualquer uma).
+function _registrarDebitoFilhoPar(par, numBase){
+  const o=par[0]; if(!o || !o.clienteId) return;
+  if(!creditosCliente[o.clienteId]) creditosCliente[o.clienteId]=[];
+  const _ids=par.map(x=>String(x.id));
+  if(creditosCliente[o.clienteId].some(m=>m.tipo==='debito' && (_ids.includes(String(m.orderId)) || _ids.includes(String(m.orderId2||''))))) return; // já registrado
+  const _abate=par.reduce((s,x)=>s+(parseFloat(x.valor)||0)+(parseFloat(x.freteCob)||0),0);
+  creditosCliente[o.clienteId].push({ id:'mov'+Date.now(), orderId:o.id, orderId2:(par[1]?par[1].id:null), pedidoNum:numBase, tipo:'debito', valor:_abate, data:o.d1 });
 }
 // v106 — corrige abatimentos de Venda Filho já feitos a MENOS (sem o frete) → líquido+frete. Idempotente.
 function _migrarAbateFilho(){
@@ -21752,7 +21839,7 @@ function deleteContaFixa(id){
 function _pedidoAguardaCaixa(o){
   if(!o || o.caixaFinalizado) return false;
   if(o.tipo==='venda_filho'){ // novo Venda Filho: vai ao Caixa enquanto o débito do crédito NÃO foi registrado (antigos, já abatidos no save, ficam de fora)
-    const jaDebitou=(creditosCliente[o.clienteId]||[]).some(m=>String(m.orderId)===String(o.id)&&m.tipo==='debito');
+    const jaDebitou=(creditosCliente[o.clienteId]||[]).some(m=>m.tipo==='debito'&&(String(m.orderId)===String(o.id)||String(m.orderId2||'')===String(o.id))); // v151 : par dividido tem UM débito (orderId2 = 2ª parte)
     return !jaDebitou;
   }
   // v107 — TODOS os tipos passam pelo Caixa p/ aprovação (com pagamento configurado). Os que não geram financeiro
@@ -22012,14 +22099,21 @@ function _estornarPedidoEspecial(orderId){
   if(!currentUser || !(currentUser.perfil==='admin' || (typeof _temSetor==='function' && _temSetor('financeiro')))){ alert('Apenas o financeiro/admin pode estornar.'); return; }
   const o=orders.find(x=>String(x.id)===String(orderId)); if(!o) return;
   const ehFilho=o.tipo==='venda_filho';
-  const _val=(parseFloat(o.valor)||0)+(parseFloat(o.freteCob)||0);
-  let msg=`Estornar o pedido ${o.num} (${TIPOS_PEDIDO[o.tipo]?.label||o.tipo}) do Caixa?\n\nVolta para a fila do Caixa (Abertos) e fica editável.`;
+  // v151 : PAR DIVIDIDO — a aprovação (e o abate, no filho) foi ÚNICA → o estorno também estorna as duas partes juntas.
+  const _sibE=_splitSibling(o);
+  const _parE=(_sibE && _sibE.tipo===o.tipo && _sibE.caixaFinalizado && !_sibE.caixaReprovado) ? _splitPar(o) : [o];
+  const _val=_parE.reduce((s,x)=>s+(parseFloat(x.valor)||0)+(parseFloat(x.freteCob)||0),0);
+  const _rotE=_parE.length>1 ? _parE.map(x=>x.num).join(' + ')+' (par dividido — estorna junto)' : o.num;
+  let msg=`Estornar o pedido ${_rotE} (${TIPOS_PEDIDO[o.tipo]?.label||o.tipo}) do Caixa?\n\nVolta para a fila do Caixa (Abertos) e fica editável.`;
   if(ehFilho){ const s=getCreditoSaldo(o.clienteId); msg+=`\n\n↩ Devolve ${fmtMoney(_val)} ao crédito do cliente (saldo: ${fmtMoney(s)} → ${fmtMoney(s+_val)}).`; }
   if(!confirm(msg)) return;
-  o.caixaFinalizado=false; o.caixaReprovado=false; o.caixaAprovadoEm=null; o.caixaAprovadoPor=null;
-  if(ehFilho && creditosCliente[o.clienteId]){ creditosCliente[o.clienteId]=creditosCliente[o.clienteId].filter(m=>!(String(m.orderId)===String(o.id)&&m.tipo==='debito')); }
-  if(!o.historico) o.historico=[];
-  o.historico.push({ts:Date.now(),por:currentUser?.name||'—',acao:`↩ Estornado do Caixa${ehFilho?` — devolvido ${fmtMoney(_val)} ao crédito`:''} (voltou para edição).`});
+  const _idsE=_parE.map(x=>String(x.id));
+  _parE.forEach(x=>{
+    x.caixaFinalizado=false; x.caixaReprovado=false; x.caixaAprovadoEm=null; x.caixaAprovadoPor=null;
+    if(!x.historico) x.historico=[];
+    x.historico.push({ts:Date.now(),por:currentUser?.name||'—',acao:`↩ Estornado do Caixa${ehFilho?` — devolvido ${fmtMoney(_val)} ao crédito`:''}${_parE.length>1?' (par dividido)':''} (voltou para edição).`});
+  });
+  if(ehFilho && creditosCliente[o.clienteId]){ creditosCliente[o.clienteId]=creditosCliente[o.clienteId].filter(m=>!(m.tipo==='debito' && (_idsE.includes(String(m.orderId)) || _idsE.includes(String(m.orderId2||''))))); }
   saveData(); renderCaixa();
 }
 function renderCaixaFinalizados(){
@@ -22188,31 +22282,46 @@ async function aprovarCaixa(orderId){
   // v111 — pedido dividido (anestésico/linha): aprova os DOIS juntos numa confirmação só
   { const _sib=_splitSibling(o); if(_sib && typeof _pedidoAguardaCaixa==='function' && _pedidoAguardaCaixa(_sib) && _geraCaixa(o.tipo)) return _aprovarCaixaPar(_splitPar(o).filter(x=>_pedidoAguardaCaixa(x))); }
   // v105 — Venda Filho: aprovar = ABATER o crédito do cliente (sem conta a receber, sem plano de contas).
+  // v151 : PAR DIVIDIDO (anest+linha) de venda filho — aprova as DUAS partes numa confirmação só e o abate
+  // é UM lançamento único no extrato de crédito, como se fosse um pedido só (decisão do dono 13/07).
+  // Filho sem par segue EXATAMENTE igual ao fluxo antigo.
   if(o.tipo==='venda_filho'){
     const _saldo=getCreditoSaldo(o.clienteId);
-    const _val=(parseFloat(o.valor)||0)+(parseFloat(o.freteCob)||0); // v106 — abate líquido + frete
-    if(!confirm(`Aprovar Venda Filho ${o.num}?\n\nVai ABATER ${fmtMoney(_val)} do crédito do cliente.\nSaldo atual: ${fmtMoney(_saldo)} → ficará ${fmtMoney(_saldo-_val)}${(_saldo-_val<0)?' (NEGATIVO)':''}.\n(Não gera conta a receber.)`)) return;
-    _registrarDebitoFilho(o);
-    o.caixaFinalizado=true; o.caixaReprovado=false; o.caixaAprovadoEm=new Date().toISOString(); o.caixaAprovadoPor=currentUser?.name||'—';
-    if(!o.historico) o.historico=[];
-    o.historico.push({ts:Date.now(),por:currentUser?.name||'—',acao:`✅ Venda Filho aprovada — abatido ${fmtMoney(_val)} do crédito.`});
+    const _sibF=_splitSibling(o);
+    const _parF=(_sibF && _sibF.tipo==='venda_filho' && typeof _pedidoAguardaCaixa==='function' && _pedidoAguardaCaixa(_sibF)) ? _splitPar(o) : [o];
+    const _val=_parF.reduce((s,x)=>s+(parseFloat(x.valor)||0)+(parseFloat(x.freteCob)||0),0); // v106 — abate líquido + frete
+    const _numBase=_parF.length>1 ? String(o.num||'').replace(/[al]$/i,'') : String(o.num||'');
+    const _rotF=_parF.length>1 ? `${_numBase} (par dividido: ${_parF.map(x=>x.num).join(' + ')})` : o.num;
+    if(!confirm(`Aprovar Venda Filho ${_rotF}?\n\nVai ABATER ${fmtMoney(_val)} do crédito do cliente${_parF.length>1?' (lançamento ÚNICO do par)':''}.\nSaldo atual: ${fmtMoney(_saldo)} → ficará ${fmtMoney(_saldo-_val)}${(_saldo-_val<0)?' (NEGATIVO)':''}.\n(Não gera conta a receber.)`)) return;
+    if(_parF.length>1) _registrarDebitoFilhoPar(_parF, _numBase); else _registrarDebitoFilho(o);
+    _parF.forEach(x=>{
+      x.caixaFinalizado=true; x.caixaReprovado=false; x.caixaAprovadoEm=new Date().toISOString(); x.caixaAprovadoPor=currentUser?.name||'—';
+      if(!x.historico) x.historico=[];
+      x.historico.push({ts:Date.now(),por:currentUser?.name||'—',acao:`✅ Venda Filho aprovada${_parF.length>1?' (par dividido, abate único)':''} — abatido ${fmtMoney(_val)} do crédito.`});
+    });
     const _crf=await _saveAndConfirm();
     renderCaixaAbertos(); renderGestao&&renderGestao();
     if(_crf && _crf.ok===false){ alert('⚠ Não foi possível confirmar no servidor:\n'+(_crf.error||'')+'\n\nFicou guardado neste navegador e o sistema continua tentando salvar.'); return; }
-    alert(`✅ Venda Filho ${o.num} aprovada.\n↪ Abatido ${fmtMoney(_val)} do crédito (saldo agora: ${fmtMoney(getCreditoSaldo(o.clienteId))}).`);
+    alert(`✅ Venda Filho ${_rotF} aprovada.\n↪ Abatido ${fmtMoney(_val)} do crédito (saldo agora: ${fmtMoney(getCreditoSaldo(o.clienteId))}).`);
     return;
   }
   // v107 — tipos especiais que NÃO geram financeiro (bonificação/amostra/avaria/P&D): aprova sem conta a receber e sem plano de contas.
+  // v151 : par dividido (anest+linha) de tipo especial → aprova as duas partes numa confirmação só (mesmo padrão do filho).
   if(!_geraCaixa(o.tipo)){
-    if(!confirm(`Aprovar no Caixa o pedido ${o.num} (${TIPOS_PEDIDO[o.tipo]?.label||o.tipo})?\n\nEste tipo NÃO gera financeiro (sem conta a receber).`)) return;
-    o.caixaFinalizado=true; o.caixaReprovado=false; o.caixaAprovadoEm=new Date().toISOString(); o.caixaAprovadoPor=currentUser?.name||'—';
-    if(!o.historico) o.historico=[];
-    o.historico.push({ts:Date.now(),por:currentUser?.name||'—',acao:`✅ Caixa aprovado (${TIPOS_PEDIDO[o.tipo]?.label||o.tipo}, sem financeiro) por ${currentUser?.name}.`});
-    if(typeof sincronizarContasReceberDePedidos==='function') sincronizarContasReceberDePedidos(o.id); // garante que não fica conta a receber órfã
+    const _sibS=_splitSibling(o);
+    const _parS=(_sibS && _sibS.tipo===o.tipo && typeof _pedidoAguardaCaixa==='function' && _pedidoAguardaCaixa(_sibS)) ? _splitPar(o) : [o];
+    const _rotS=_parS.length>1 ? _parS.map(x=>x.num).join(' + ')+' — par dividido, aprova junto' : o.num;
+    if(!confirm(`Aprovar no Caixa o pedido ${_rotS} (${TIPOS_PEDIDO[o.tipo]?.label||o.tipo})?\n\nEste tipo NÃO gera financeiro (sem conta a receber).`)) return;
+    _parS.forEach(x=>{
+      x.caixaFinalizado=true; x.caixaReprovado=false; x.caixaAprovadoEm=new Date().toISOString(); x.caixaAprovadoPor=currentUser?.name||'—';
+      if(!x.historico) x.historico=[];
+      x.historico.push({ts:Date.now(),por:currentUser?.name||'—',acao:`✅ Caixa aprovado (${TIPOS_PEDIDO[o.tipo]?.label||o.tipo}, sem financeiro${_parS.length>1?', par dividido':''}) por ${currentUser?.name}.`});
+      if(typeof sincronizarContasReceberDePedidos==='function') sincronizarContasReceberDePedidos(x.id); // garante que não fica conta a receber órfã
+    });
     const _crs=await _saveAndConfirm();
     renderCaixaAbertos(); renderGestao&&renderGestao();
     if(_crs && _crs.ok===false){ alert('⚠ Não foi possível confirmar no servidor:\n'+(_crs.error||'')+'\n\nFicou guardado neste navegador e o sistema continua tentando salvar.'); return; }
-    alert(`✅ Pedido ${o.num} aprovado no Caixa (sem financeiro).`);
+    alert(`✅ Pedido ${_rotS.split(' — ')[0]} aprovado no Caixa (sem financeiro).`);
     return;
   }
   // v95.1 — para SAIR do Caixa (entrar no Financeiro) é OBRIGATÓRIO ter plano de contas classificado.
@@ -26303,6 +26412,7 @@ async function _waNormalizarImagem(file){
   return new File([blob],nome,{type:'image/jpeg'});
 }
 async function _convEnviarAnexos(){
+  if(window._authExpirada){ alert('⚠ Sua sessão expirou — o anexo NÃO foi enviado.\n\nRecarregue a página (F5) e entre novamente.'); return; } // v151 : vigia de autenticação
   const ov=document.getElementById('conv-anexo-overlay');
   const caption=(document.getElementById('conv-anexo-cap')?.value||'').trim();
   const files=_convAnexoFiles||[]; const containerId=_convAnexoCid;
@@ -26837,6 +26947,7 @@ function _convFwdRender(){
   list.innerHTML=cli.map(c=>`<div onclick="_convForwardEnviar('${c.id}')" style="padding:9px 11px;border-bottom:.5px solid var(--border);cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''"><strong>${escapeHtml(c.nome||'(sem nome)')}</strong> <span style="color:var(--text-tertiary);font-size:11px">${escapeHtml(c.tel1||c.tel2||'')}</span></div>`).join('');
 }
 async function _convForwardEnviar(destClienteId){
+  if(window._authExpirada){ alert('⚠ Sua sessão expirou — nada foi encaminhado.\n\nRecarregue a página (F5) e entre novamente.'); return; } // v151 : vigia de autenticação
   document.getElementById('conv-fwd-overlay')?.classList.remove('open');
   const cli=(clients||[]).find(c=>c.id===destClienteId); if(!cli) return;
   const phone=_waFoneCliente(cli); if(!phone){ alert('Esse contato não tem um telefone válido (DDD + número).'); return; }
@@ -26872,7 +26983,10 @@ async function _convForwardEnviar(destClienteId){
 function abrirConversa(convId){
   conversaAtivaId = convId;
   const conv = conversas.find(c=>c.id===convId);
-  if(conv){ conv.naoLidas=0; delete conv._naoLidaManual; saveData(); }
+  if(conv){ conv.naoLidas=0; delete conv._naoLidaManual; saveData();
+    // v151 — zera TAMBÉM no servidor (atômico): o realtime trazia o contador antigo de volta ("respondi e segue não lida")
+    try{ if(_sb) _sb.rpc('conv_zerar_nao_lidas', { p_conv_id: convId }); }catch(_e){}
+  }
   renderConversasLista();
   renderConversaTela(convId);
 }
@@ -26938,7 +27052,7 @@ function _convMsgsHtml(conv){
     }
     return `<div class="wa-row ${mine?'mine':''}">
       <div class="wa-bubble ${mine?'out':'in'}" data-mid="${m.id||''}">
-        ${mine&&autor?`<div class="wa-author">${escapeHtml(autor)}</div>`:''}
+        ${autor?`<div class="wa-author${mine?'':' in'}">${escapeHtml(autor)}</div>`:''}
         ${m.apagada?`<span class="wa-txt" style="font-style:italic;color:#8696a0">🚫 mensagem apagada</span>`:''}
         ${_q?`<div class="wa-quote" ${_q.mid?`onclick="_waScrollToMsg('${_q.mid}')" style="cursor:pointer"`:''}>${_q.aut?`<div class="wa-quote-aut">${escapeHtml(_q.aut)}</div>`:''}<div class="wa-quote-txt">${escapeHtml((_q.txt||'📎 anexo').slice(0,120))}</div></div>`:''}
         ${(!m.apagada&&m.texto)?`<span class="wa-txt">${escapeHtml(m.texto)}</span>`:''}
@@ -27013,6 +27127,7 @@ function renderConversaTela(convId, containerId){
       .wa-bubble.in::before{content:"";position:absolute;top:0;left:-7px;width:0;height:0;border-style:solid;border-width:0 7px 7px 0;border-color:transparent #fff transparent transparent}
       .wa-bubble.out::before{content:"";position:absolute;top:0;right:-7px;width:0;height:0;border-style:solid;border-width:0 0 7px 7px;border-color:transparent transparent transparent #d9fdd3}
       .wa-author{font-size:12px;font-weight:600;color:#1fa855;margin-bottom:2px}
+      .wa-author.in{color:#b45309} /* v151 : GRUPO — nome do PARTICIPANTE que mandou (recebida); âmbar p/ não confundir com atendente */
       .wa-txt{white-space:pre-wrap;word-break:break-word}
       .wa-copy{position:absolute;top:-9px;right:4px;opacity:0;transition:opacity .12s;background:#fff;border:.5px solid #d1d7db;border-radius:6px;font-size:12px;line-height:1;padding:2px 6px;cursor:pointer;color:#54656f;box-shadow:0 1px 2px rgba(0,0,0,.18)}
       .wa-bubble:hover .wa-copy{opacity:1}
@@ -27136,6 +27251,7 @@ function _setMsgDe(de, btn){
 }
 
 async function enviarMensagemConversa(containerId){
+  if(window._authExpirada){ alert('⚠ Sua sessão expirou — a mensagem NÃO foi enviada.\n\nRecarregue a página (F5) e entre novamente. O texto digitado fica guardado no rascunho.'); return; } // v151 : vigia de autenticação
   if(window._convEnviandoTrava) return; // v145 : anti-duplo-clique (reenvio no impulso duplicava)
   window._convEnviandoTrava=true; setTimeout(function(){ window._convEnviandoTrava=false; }, 1200);
   const cont = document.getElementById(containerId||'conv-tela');
@@ -27219,7 +27335,10 @@ function _convUniaoMsgs(base, other){
   if(!base||!other) return false;
   const b=Array.isArray(base.mensagens)?base.mensagens:(base.mensagens=[]);
   const o=Array.isArray(other.mensagens)?other.mensagens:[];
-  const k=m=>String((m&&(m.id||m.provedorMsgId||m.zapiMessageId))||((m&&m.de)+'|'+(m&&m.em)+'|'+((m&&m.texto)||'')));
+  // v151 : chave prefere o ID DO PROVEDOR (globalmente único) — a mesma mensagem com ids internos
+  // diferentes (original × recuperada "rec" do reconciliador) colapsa numa só. Sem id de provedor,
+  // a chave continua o id interno (comportamento antigo intacto).
+  const k=m=>String((m&&(m.provedorMsgId||m.providerMsgId||m.zapiMessageId||m.id))||((m&&m.de)+'|'+(m&&m.em)+'|'+((m&&m.texto)||'')));
   const have=new Map(b.map(m=>[k(m),m])); let added=false;
   const _RK={fila:0,falha:1,enviada:1,entregue:2,lida:3,sistema:9};
   o.forEach(m=>{
@@ -27227,6 +27346,7 @@ function _convUniaoMsgs(base, other){
     const ex=have.get(k(m));
     if(!ex){ b.push(m); have.set(k(m),m); added=true; return; }
     // v141 : reconcilia a mesma mensagem: adota ids do provedor e status de tick mais avancado
+    if(m.autorId&&!ex.autorId) ex.autorId=m.autorId; // v151 : adota o autor quando a cópia local não tem
     if(m.provedorMsgId&&!ex.provedorMsgId) ex.provedorMsgId=m.provedorMsgId;
     if(m.providerMsgId&&!ex.providerMsgId) ex.providerMsgId=m.providerMsgId;
     if(m.zapiMessageId&&!ex.zapiMessageId) ex.zapiMessageId=m.zapiMessageId;
@@ -27235,6 +27355,8 @@ function _convUniaoMsgs(base, other){
   if(added){ b.sort((x,y)=>(x.em||0)-(y.em||0)); const lm=b[b.length-1]; if(lm){ base.ultimaMsg=lm.texto?_txCut(lm.texto,80):(lm.anexo?'📎 anexo':base.ultimaMsg); base.ultimaMsgEm=lm.em||base.ultimaMsgEm; } }
   if(!base.telefone && other.telefone) base.telefone=other.telefone;
   if(!base.chatLid && other.chatLid) base.chatLid=other.chatLid;
+  // v151 — conversa ABERTA nesta tela é lida por definição: o realtime não ressuscita o badge dela
+  try{ if(typeof conversaAtivaId!=='undefined' && conversaAtivaId===base.id) base.naoLidas=0; }catch(_e){}
   // v143 : atendente com carimbo mais novo vence (assumir/transferir de outra tela nao e desfeito)
   if((other.atendEm||0) > (base.atendEm||0)){ base.atendenteId=other.atendenteId||null; base.atendEm=other.atendEm; if(other.equipeId) base.equipeId=other.equipeId; }
   // v143 : STATUS (encerrada/ativa) idem: carimbo mais novo vence (aba velha 'ativa' nao desfaz um encerramento)
@@ -27299,6 +27421,7 @@ function _waFoneCliente(cli){
 async function _waEnviarMsg(conv, msg){
   try{
     if(!_sb || !msg) return;
+    if(window._authExpirada){ alert('⚠ Sua sessão expirou — a mensagem NÃO foi enviada ao WhatsApp.\n\nRecarregue a página (F5) e entre novamente.'); return; } // v151 : vigia de autenticação (cobre também o "reenviar")
     const cli = clients.find(c=>c.id===conv.clienteId);
     // v106 — envia para o número DA CONVERSA (contato), com fallback para o telefone do cliente
     const phone = (conv && conv.telefone && _waFone(conv.telefone).length>=12 ? _waFone(conv.telefone) : '') || _waFoneCliente(cli);
@@ -27582,6 +27705,7 @@ function abrirConversaCliente(clienteId, telefone){
   saveData();
   conversaAtivaId = conv.id;
   conv.naoLidas = 0;
+  try{ if(_sb) _sb.rpc('conv_zerar_nao_lidas', { p_conv_id: conv.id }); }catch(_e){} // v151 — zera no servidor também
   // Monta um modal que reusa a tela de conversa
   let overlay = document.getElementById('conv-modal-overlay');
   if(overlay) overlay.remove();

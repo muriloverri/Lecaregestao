@@ -4378,7 +4378,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v151';
+var APP_VERSION = 'v152';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6282,9 +6282,9 @@ async function saveOrder(){
   if(_splitGroups){
     const _mapIt=r=>({produtoId:r.produtoId,codigo:r.codigo,nome:r.nome,qtd:parseFloat(r.qtd)||0,precoUnit:parseFloat(r.precoUnit)||0,volumetria:r.volumetria||'',embalagem:r.embalagem||'',precoTabela:parseFloat(r.precoTabela)||0,custo:parseFloat(r.custo)||0,desconto:Math.max(0,(parseFloat(r.precoTabela)||0)-(parseFloat(r.precoUnit)||0))});
     const _sum=arr=>arr.reduce((s,r)=>s+(parseFloat(r.qtd)||0)*(parseFloat(r.precoUnit)||0),0);
-    const _vA=+_sum(_splitGroups.an).toFixed(2), _vL=+_sum(_splitGroups.li).toFixed(2), _vT=_vA+_vL;
+    const _vA=+_sum(_splitGroups.an).toFixed(4), _vL=+_sum(_splitGroups.li).toFixed(4), _vT=_vA+_vL; // v152 : 4 casas em conta DERIVADA (regra do dono 13/07); dinheiro real (parcelas) segue 2
     const _sumB=arr=>arr.reduce((s,r)=>s+(parseFloat(r.qtd)||0)*(parseFloat(r.precoTabela)||0),0); // v113 — bruto REAL de cada produto (não proporcional)
-    const _bA=+_sumB(_splitGroups.an).toFixed(2), _bL=+_sumB(_splitGroups.li).toFixed(2);
+    const _bA=+_sumB(_splitGroups.an).toFixed(4), _bL=+_sumB(_splitGroups.li).toFixed(4); // v152 : 4 casas
     const _bT=parseFloat(document.getElementById('f-valor-bruto').value)||0;
     // v113 — VERIFICAÇÃO: a soma dos dois pedidos divididos tem que bater com o pedido inteiro (bruto E líquido; o líquido é o valor real)
     { const _liqW=parseFloat(document.getElementById('f-valor').value)||0;
@@ -8070,29 +8070,12 @@ function openLeadModal(id, funil, etapa){
   if(_drEl) _drEl.value=lead?.dataRetorno||'';
   const _paEl=document.getElementById('lead-proxima-acao');
   if(_paEl) _paEl.value=lead?.proximaAcao||'';
-  // v151 : PRÓXIMAS AÇÕES AGENDADAS no modal do card (pedido do dono 13/07) — mostra as 2 mais próximas
-  // de acontecer (pendentes na agenda, de hoje em diante). Encerrou ou venceu → some e as seguintes assumem.
+  // v151 : PRÓXIMAS AÇÕES AGENDADAS no modal do card — mostra as 2 mais próximas (pendentes, de hoje em diante).
+  // v152 : quando JÁ HÁ ação agendada (o quadro mostra), os campos de registro abrem VAZIOS — livres para a
+  // próxima ação/compromisso (pedido do dono 13/07). Sem nada agendado, o preenchimento antigo continua.
   try{
-    const _pxEl=document.getElementById('lead-proximas-agenda');
-    if(_pxEl){
-      let _pxHtml='';
-      if(lead){
-        const _hj=today();
-        const _evs=(agendaEventos||[]).filter(ev=>ev&&ev.leadId===lead.id&&ev.status==='pendente'&&(ev.data||'')>=_hj)
-          .sort((a,b)=>((a.data||'')+' '+(a.hora||'')).localeCompare((b.data||'')+' '+(b.hora||'')));
-        const _dois=_evs.slice(0,2);
-        if(_dois.length){
-          _pxHtml='<div style="margin-bottom:10px">'
-            +_dois.map(ev=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:.5px solid var(--st-inf-bd);background:var(--st-inf-bg);border-radius:var(--r-md);margin-bottom:5px;font-size:12px">
-              <span style="font-weight:600;color:var(--st-inf-tx);white-space:nowrap">${ev.data===_hj?'📌 HOJE':'📅 '+fmtDate(ev.data)}${ev.hora?' · '+escapeHtml(ev.hora):''}</span>
-              <span style="flex:1;color:var(--text-primary)">${escapeHtml(ev.titulo||'')}</span>
-            </div>`).join('')
-            +(_evs.length>2?`<div style="font-size:10.5px;color:var(--text-tertiary);margin:2px 0 0 2px">+ ${_evs.length-2} outra(s) ação(ões) agendada(s) — ver na Agenda</div>`:'')
-            +'</div>';
-        }
-      }
-      _pxEl.innerHTML=_pxHtml;
-    }
+    const _nPend=_renderLeadProximasAgenda(lead);
+    if(_nPend>0){ if(_drEl) _drEl.value=''; if(_paEl) _paEl.value=''; }
   }catch(_e){}
   document.getElementById('lead-followup').value=lead?lead.followup||'':'';
   document.getElementById('lead-valor').value=lead?lead.valor||'':'';
@@ -14579,9 +14562,9 @@ function _aplicarItensIA(itens, liquidoAlvo){
     else if(it.totalLiquido!=null) _puLiq=(q>0)?(+it.totalLiquido/q):0;
     else if(it.desconto!=null && _puBruto) _puLiq=_puBruto-((+it.desconto)/(q||1)); // desconto = total da linha
     rows.push({ produtoId:prod.id, codigo:prod.codigo||'', nome:prod.nome||it.nome||'', qtd:q,
-      precoUnit:(_puLiq!=null?+(+_puLiq).toFixed(2):(_puBruto||0)), _puBruto:_puBruto||0, _temLiq:(_puLiq!=null),
+      precoUnit:(_puLiq!=null?+(+_puLiq).toFixed(4):(_puBruto||0)), _puBruto:_puBruto||0, _temLiq:(_puLiq!=null), // v152 : 4 casas (era 2 — qtd×unit não fechava com o total da linha)
       volumetria:it.volumetria||'', embalagem:'',
-      precoTabela:+( _puBruto||parseFloat(prod.precoVenda)||0 ).toFixed(2), custo:(parseFloat(prod.custo)||0),
+      precoTabela:+( _puBruto||parseFloat(prod.precoVenda)||0 ).toFixed(4), custo:(parseFloat(prod.custo)||0), // v152 : 4 casas
       _categoria:(prod.categoria==='anestesico'?'anestesico':'linha'), _incompleto:novo });
   });
   // v113 — se a IA trouxe o líquido de TODOS os itens, usa direto (já está em precoUnit). Senão, comportamento antigo: rateia proporcional pro líquido do pedido.
@@ -14593,9 +14576,9 @@ function _aplicarItensIA(itens, liquidoAlvo){
       const ratio=_liq/_bruto; let acc=0;
       rows.forEach((r,i)=>{
         const bruto=r._puBruto||0;
-        r.precoTabela=+bruto.toFixed(2); // referência = preço cheio do PDF
-        if(i<rows.length-1){ r.precoUnit=+(bruto*ratio).toFixed(2); acc+=r.precoUnit*r.qtd; }
-        else { r.precoUnit = r.qtd>0 ? +(((_liq-acc))/r.qtd).toFixed(2) : 0; } // último item absorve o arredondamento → soma EXATA = líquido
+        r.precoTabela=+bruto.toFixed(4); // referência = preço cheio do PDF (v152 : 4 casas)
+        if(i<rows.length-1){ r.precoUnit=+(bruto*ratio).toFixed(4); acc+=r.precoUnit*r.qtd; }
+        else { r.precoUnit = r.qtd>0 ? +(((_liq-acc))/r.qtd).toFixed(4) : 0; } // último item absorve o arredondamento → soma EXATA = líquido (v152 : 4 casas)
       });
     }
   }
@@ -25708,7 +25691,37 @@ function registrarNaAgendaFromCard(){
   criarEventoAgendaDoLead(lead, { data:d, acao:a, autoCadencia:false, origem:'manual' });
   saveData();
   try{ renderCrm(); }catch(_e){}
-  alert('\u2713 Evento criado na agenda para ' + fmtDate(d) + '.');
+  // v152 : a a\u00e7\u00e3o registrada sobe pro quadro "pr\u00f3ximas a\u00e7\u00f5es" e os campos ESVAZIAM \u2014 livres p/ o pr\u00f3ximo compromisso (pedido do dono 13/07)
+  try{
+    _renderLeadProximasAgenda(lead);
+    var _de=document.getElementById('lead-data-retorno'); if(_de) _de.value='';
+    var _pe=document.getElementById('lead-proxima-acao'); if(_pe) _pe.value='';
+  }catch(_e){}
+  alert('\u2713 Evento criado na agenda para ' + fmtDate(d) + '.\nO campo foi liberado para registrar a pr\u00f3xima a\u00e7\u00e3o.');
+}
+// v152 \u2014 quadro "pr\u00f3ximas a\u00e7\u00f5es agendadas" do modal do card (as 2 mais pr\u00f3ximas, pendentes, de hoje em diante).
+// Devolve QUANTAS a\u00e7\u00f5es pendentes futuras o lead tem (o modal usa p/ abrir os campos de registro vazios).
+function _renderLeadProximasAgenda(lead){
+  var _pxEl=document.getElementById('lead-proximas-agenda'); if(!_pxEl) return 0;
+  var _pxHtml=''; var _n=0;
+  if(lead){
+    var _hj=today();
+    var _evs=(agendaEventos||[]).filter(function(ev){ return ev&&ev.leadId===lead.id&&ev.status==='pendente'&&(ev.data||'')>=_hj; })
+      .sort(function(a,b){ return ((a.data||'')+' '+(a.hora||'')).localeCompare((b.data||'')+' '+(b.hora||'')); });
+    _n=_evs.length;
+    var _dois=_evs.slice(0,2);
+    if(_dois.length){
+      _pxHtml='<div style="margin-bottom:10px">'
+        +_dois.map(function(ev){ return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:.5px solid var(--st-inf-bd);background:var(--st-inf-bg);border-radius:var(--r-md);margin-bottom:5px;font-size:12px">'
+          +'<span style="font-weight:600;color:var(--st-inf-tx);white-space:nowrap">'+(ev.data===_hj?'\ud83d\udccc HOJE':'\ud83d\udcc5 '+fmtDate(ev.data))+(ev.hora?' \u00b7 '+escapeHtml(ev.hora):'')+'</span>'
+          +'<span style="flex:1;color:var(--text-primary)">'+escapeHtml(ev.titulo||'')+'</span>'
+          +'</div>'; }).join('')
+        +(_evs.length>2?'<div style="font-size:10.5px;color:var(--text-tertiary);margin:2px 0 0 2px">+ '+(_evs.length-2)+' outra(s) a\u00e7\u00e3o(\u00f5es) agendada(s) \u2014 ver na Agenda</div>':'')
+        +'</div>';
+    }
+  }
+  _pxEl.innerHTML=_pxHtml;
+  return _n;
 }
 
 // ── UI de configuração de cadências (Fase 2 / D6) ──
@@ -27335,26 +27348,49 @@ function _convUniaoMsgs(base, other){
   if(!base||!other) return false;
   const b=Array.isArray(base.mensagens)?base.mensagens:(base.mensagens=[]);
   const o=Array.isArray(other.mensagens)?other.mensagens:[];
-  // v151 : chave prefere o ID DO PROVEDOR (globalmente único) — a mesma mensagem com ids internos
-  // diferentes (original × recuperada "rec" do reconciliador) colapsa numa só. Sem id de provedor,
-  // a chave continua o id interno (comportamento antigo intacto).
-  const k=m=>String((m&&(m.provedorMsgId||m.providerMsgId||m.zapiMessageId||m.id))||((m&&m.de)+'|'+(m&&m.em)+'|'+((m&&m.texto)||'')));
-  const have=new Map(b.map(m=>[k(m),m])); let added=false;
+  // v152 : a mesma mensagem casa por QUALQUER identidade — id interno OU qualquer id de provedor.
+  // (v151 usava UMA chave com preferência pro provedor e DUPLICAVA a msg recém-enviada: a cópia local
+  // ainda sem ids ficava com chave=id e a do servidor, já carimbada, com chave=código → caso Maria
+  // Fernanda 13/07 14:04, duas entradas com o MESMO id. Índice multi-chave cobre os dois mundos:
+  // original×rec do reconciliador com ids em campos diferentes E local×servidor da mesma msg.)
+  const _fk=m=>String((m&&m.de)+'|'+(m&&m.em)+'|'+((m&&m.texto)||''));
+  const _keys=m=>{ const a=[]; if(m){ if(m.id)a.push(String(m.id)); if(m.provedorMsgId)a.push('p:'+m.provedorMsgId); if(m.providerMsgId)a.push('p:'+m.providerMsgId); if(m.zapiMessageId)a.push('p:'+m.zapiMessageId); } if(!a.length)a.push(_fk(m)); return a; };
+  const have=new Map(); const _reg=m=>{ _keys(m).forEach(kk=>{ if(!have.has(kk)) have.set(kk,m); }); };
+  b.forEach(m=>{ if(m) _reg(m); });
+  let added=false;
   const _RK={fila:0,falha:1,enviada:1,entregue:2,lida:3,sistema:9};
   o.forEach(m=>{
     if(!m) return;
-    const ex=have.get(k(m));
-    if(!ex){ b.push(m); have.set(k(m),m); added=true; return; }
+    let ex=null; const kk=_keys(m); for(let i=0;i<kk.length && !ex;i++) ex=have.get(kk[i])||null;
+    if(!ex){ b.push(m); _reg(m); added=true; return; }
     // v141 : reconcilia a mesma mensagem: adota ids do provedor e status de tick mais avancado
     if(m.autorId&&!ex.autorId) ex.autorId=m.autorId; // v151 : adota o autor quando a cópia local não tem
     if(m.provedorMsgId&&!ex.provedorMsgId) ex.provedorMsgId=m.provedorMsgId;
     if(m.providerMsgId&&!ex.providerMsgId) ex.providerMsgId=m.providerMsgId;
     if(m.zapiMessageId&&!ex.zapiMessageId) ex.zapiMessageId=m.zapiMessageId;
     if(m.status&&ex.status!=='sistema'&&(_RK[m.status]??0)>(_RK[ex.status]??0)) ex.status=m.status;
+    _reg(ex); // ids recém-adotados entram no índice (a próxima cópia da mesma msg casa por eles)
   });
+  // v152 : cinto-e-suspensório — se cópias com o MESMO id sobraram de versões anteriores (dado já
+  // duplicado no banco), colapsa aqui: mantém a de status mais avançado e adota os ids da outra.
+  { const _seen=new Map(); const _out=[];
+    b.forEach(m=>{ if(!m){return;} const idk=m.id?String(m.id):_fk(m); const ex=_seen.get(idk);
+      if(!ex){ _seen.set(idk,m); _out.push(m); return; }
+      if(m.provedorMsgId&&!ex.provedorMsgId) ex.provedorMsgId=m.provedorMsgId;
+      if(m.providerMsgId&&!ex.providerMsgId) ex.providerMsgId=m.providerMsgId;
+      if(m.zapiMessageId&&!ex.zapiMessageId) ex.zapiMessageId=m.zapiMessageId;
+      if(m.autorId&&!ex.autorId) ex.autorId=m.autorId;
+      if(m.status&&ex.status!=='sistema'&&(_RK[m.status]??0)>(_RK[ex.status]??0)) ex.status=m.status;
+      added=true; });
+    if(_out.length!==b.length){ b.length=0; _out.forEach(m=>b.push(m)); }
+  }
   if(added){ b.sort((x,y)=>(x.em||0)-(y.em||0)); const lm=b[b.length-1]; if(lm){ base.ultimaMsg=lm.texto?_txCut(lm.texto,80):(lm.anexo?'📎 anexo':base.ultimaMsg); base.ultimaMsgEm=lm.em||base.ultimaMsgEm; } }
   if(!base.telefone && other.telefone) base.telefone=other.telefone;
   if(!base.chatLid && other.chatLid) base.chatLid=other.chatLid;
+  // v152 : se o cliente apontado pela cópia LOCAL não existe mais (fusão apagou o cadastro), adota o clienteId
+  // do servidor — sem isso, a aba desfazia as correções de vínculo re-salvando o id morto (caso Stefanelli 13/07,
+  // conversa presa no título "Cliente" mesmo depois de re-apontada no banco).
+  try{ if(other.clienteId && other.clienteId!==base.clienteId && (!base.clienteId || !(clients||[]).some(function(c){ return c&&c.id===base.clienteId; }))) base.clienteId=other.clienteId; }catch(_e){}
   // v151 — conversa ABERTA nesta tela é lida por definição: o realtime não ressuscita o badge dela
   try{ if(typeof conversaAtivaId!=='undefined' && conversaAtivaId===base.id) base.naoLidas=0; }catch(_e){}
   // v143 : atendente com carimbo mais novo vence (assumir/transferir de outra tela nao e desfeito)

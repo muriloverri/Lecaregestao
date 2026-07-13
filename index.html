@@ -3232,7 +3232,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
     <h2 id="order-modal-title">Novo Pedido</h2>
     <div class="om-sub">Preencha os dados ou importe o PDF do pedido para preencher automaticamente.</div>
     <!-- PDF Import -->
-    <div id="pdf-import-section" style="margin-bottom:14px;padding:12px 14px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md)">
+    <!-- v153 : importação via PDF/IA DESABILITADA no Novo Pedido (pedido do dono 13/07 — os pedidos entram pela rotina da nuvem; o código segue intacto, é só reexibir esta seção p/ reativar) -->
+    <div id="pdf-import-section" style="display:none;margin-bottom:14px;padding:12px 14px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md)">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div>
           <div style="font-size:12px;font-weight:500;margin-bottom:2px">Importar pedido via PDF</div>
@@ -4378,7 +4379,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v152';
+var APP_VERSION = 'v153';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5886,6 +5887,10 @@ function deleteOrderDirect(oid){
     contasReceber=contasReceber.filter(c=>!(c.origem==='pedido'&&String(c.origemId)===String(oid)));
     freteRealLanc=freteRealLanc.filter(x=>String(x.pedidoId)!==String(oid)); // v108 — sem o pedido/rastreio, o frete real lançado sai junto
     _removerCreditoOrderId(oid); // v110 (B1) — devolve/limpa o crédito (mãe e/ou débito de filho) p/ não deixar saldo órfão
+    // v153 : DELETE explícito e IMEDIATO no servidor (caso 40213: a exclusão dependia do diff do sync
+    // e uma corrida resync×save a engolia — o pedido "voltava" ~1min depois). O trigger do banco grava
+    // a lápide deleted_orders e o trg_block_resurrect_order impede re-inserção. O sync continua como reserva.
+    try{ if(_sb) _sb.from('orders').delete().eq('id', oid).then(function(r){ if(r&&r.error) console.warn('delete pedido (server):', r.error.message); }); }catch(_e){}
     document.getElementById('confirm-overlay').classList.remove('open');
     refreshAll(); saveData();
   };
@@ -6000,7 +6005,7 @@ async function doLogin(){
   document.getElementById('nav-setor-financeiro').classList.toggle('hidden',  !hasSetor('financeiro'));
   document.getElementById('nav-setor-expedicao').classList.toggle('hidden',   !hasSetor('expedicao'));
   document.getElementById('nav-pendencias')?.classList.toggle('hidden', !isAdmin);
-  document.getElementById('nav-analise-gerencial')?.classList.toggle('hidden', !isAdmin);
+  document.getElementById('nav-analise-gerencial')?.classList.toggle('hidden', !(isAdmin||u.perfil==='diretor_comercial')); // v153 : diretora comercial vê TODO o menu Análise Gerencial (pedido do dono 13/07)
   document.getElementById('nav-inconsistencias')?.classList.toggle('hidden', !isAdmin);
   document.getElementById('nav-importacoes')?.classList.toggle('hidden', !(isAdmin||hasSetor('financeiro')));
   setTimeout(function(){ try{ _checkImportBadge(); }catch(_e){} }, 1500);
@@ -6652,6 +6657,18 @@ function confirmStatus(){
     var _vd=parseFloat(o.valor)||0;
     if(Math.round(Math.abs(_pt-_vd)*100)>10){ // v149 — tolerância 10 centavos
       alert('Não é possível marcar "Produtos informados": o total dos produtos ('+fmtMoney(_pt)+') não confere com o valor da venda sem frete ('+fmtMoney(_vd)+').\nDiferença de '+fmtMoney(Math.abs(_pt-_vd))+'. Ajuste os produtos (ou o valor do pedido) antes de informar.');
+      return;
+    }
+  }
+
+  // v153 : PRODUÇÃO — "Finalizado e conf." (e "Enviado para expedição", senão a trava seria pulável)
+  // só com TODOS os produtos com responsável indicado em "Quem produziu" (regra do dono 13/07).
+  // Pedido sem itens informados não tem o que indicar — passa (legado/tipos sem produtos).
+  if(statusCtx.setor==='producao' && (selectedStatus==='Finalizado e conf.' || selectedStatus==='Enviado para expedição')){
+    const _itsP=Array.isArray(o.itens)?o.itens:[];
+    const _semRespP=_itsP.filter(function(it){ return !(it&&it.prodRespNome); }).length;
+    if(_itsP.length>0 && _semRespP>0){
+      alert('Não é possível marcar "'+selectedStatus+'": '+_semRespP+' de '+_itsP.length+' produto(s) ainda sem responsável de produção.\n\nUse "🏭 Indicar quem produziu (por produto)" aqui no modal do setor antes de finalizar.');
       return;
     }
   }
@@ -19772,7 +19789,7 @@ async function renderAnaliseComercial(){
               ? `<div style="font-size:11.5px;color:var(--st-ok-tx);margin-top:4px">✓ Lida pelo agente${o.resposta?` — <span style="color:var(--text-secondary)">${escapeHtml(o.resposta)}</span>`:''}</div>`
               : '<div style="font-size:11.5px;color:var(--st-mid-tx);margin-top:4px">🕐 Aguardando a próxima rodada do agente</div>'}
           </div>
-          ${currentUser?.perfil==='admin'?`<button onclick="arquivarOrientacao(${o.id})" title="Arquivar — deixa de valer nas próximas análises" style="font-size:11px;padding:3px 9px;flex-shrink:0">Arquivar</button>`:''}
+          ${(currentUser?.perfil==='admin'||currentUser?.perfil==='diretor_comercial')?`<button onclick="arquivarOrientacao(${o.id})" title="Arquivar — deixa de valer nas próximas análises" style="font-size:11px;padding:3px 9px;flex-shrink:0">Arquivar</button>`:''}
         </div>
       </div>`).join('');
     return `
@@ -19843,7 +19860,7 @@ async function enviarOrientacaoAgente(){
   }catch(err){ alert('Erro: '+err); }
 }
 async function arquivarOrientacao(id){
-  if(currentUser?.perfil!=='admin'){ alert('Apenas o administrador arquiva orientações.'); return; }
+  if(currentUser?.perfil!=='admin'&&currentUser?.perfil!=='diretor_comercial'){ alert('Apenas Administrador ou Diretor Comercial arquiva orientações.'); return; } // v153
   if(!confirm('Arquivar esta orientação? Ela deixa de valer nas próximas análises (o histórico fica guardado).')) return;
   try{
     const { error } = await _sb.from('agente_orientacoes').update({status:'arquivada'}).eq('id', id);

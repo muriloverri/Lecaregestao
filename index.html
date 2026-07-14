@@ -1422,6 +1422,23 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         </div>
       </div>
       <!-- v130 — MODAL: cotação de um item da lista -->
+      <!-- v155 — MODAL: lista de compra ABERTA (itens + cotar/comprar; a tela mostra só o índice de listas).
+           Fica ANTES dos modais de cotação/compra no DOM para eles abrirem POR CIMA deste. -->
+      <div class="overlay" id="lista-compra-overlay">
+        <div class="modal" style="width:96vw;max-width:1600px;height:92vh;max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+            <div>
+              <h2 id="lc-ab-titulo" style="margin:0 0 2px">Lista de compra</h2>
+              <div id="lc-ab-sub" style="font-size:12px;color:var(--text-secondary)"></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+              <div id="lc-ab-resumo" style="font-size:12px;color:var(--text-secondary)"></div>
+              <button onclick="closeListaCompraAberta()">Fechar</button>
+            </div>
+          </div>
+          <div id="lc-ab-body" style="flex:1;overflow:auto;margin-top:10px"></div>
+        </div>
+      </div>
       <div class="overlay" id="cotacao-modal">
         <div class="modal" style="width:560px;max-width:96vw;max-height:90vh;overflow-y:auto">
           <h2>Cotação do item</h2>
@@ -4379,7 +4396,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v154';
+var APP_VERSION = 'v155';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -9859,9 +9876,15 @@ var _solOrderId=null;
 function _solTipoInsumo(tab){ return tab==='ativo'?'insumo':'embalagem'; }
 // v138 — '__geral__' (compra avulsa / Produtos gerais) pode ter VÁRIAS solicitações ao longo do tempo:
 // aqui devolve só a ABERTA (status 'solicitado'); pedidos continuam 1 por (pedido,tipo).
+function _solTodasSolic(orderId, tab){
+  return (solicitacoesCompra||[]).filter(function(s){ return s && String(s.orderId)===String(orderId) && s.tipo===tab; });
+}
 function _solGetSolic(orderId, tab){
   if(String(orderId)==='__geral__') return (solicitacoesCompra||[]).find(function(s){ return s && s.orderId==='__geral__' && s.tipo===tab && s.status==='solicitado'; });
-  return (solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(orderId) && s.tipo===tab; });
+  // v155 — um pedido pode ter MAIS de uma solicitação por tipo (complementar / devolução do "✕ Não comprar"):
+  // devolve a ABERTA ('solicitado') primeiro — é ela que se edita; sem aberta, a mais recente (p/ status)
+  var all=_solTodasSolic(orderId, tab);
+  return all.find(function(s){ return s.status==='solicitado'; }) || all[all.length-1] || null;
 }
 function setSolCompraTab(tab){
   _solTab=tab;
@@ -9895,7 +9918,8 @@ function renderSolCompra(tab){
   var _statLbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado'};
   var _statCor={solicitado:'var(--text-info)', em_lista:'var(--st-mid-tx)', comprado:'var(--st-ok-tx)'};
   var rows=[];
-  lista.forEach(function(o){ var s=_solGetSolic(o.id, tab); if(soPend && s) return; rows.push({o:o, s:s}); });
+  // v155 — "só sem solicitação" também esconde os marcados "não necessário" (já estão resolvidos)
+  lista.forEach(function(o){ var s=_solGetSolic(o.id, tab); var nn=o.compraNaoNec&&o.compraNaoNec[tab]; if(soPend && (s||nn)) return; rows.push({o:o, s:s}); });
   var info=document.getElementById('sol-info'); if(info) info.textContent=rows.length+' pedido(s) · '+(tab==='ativo'?'Ativos':'Embalagem');
   // v138 — solicitação AVULSA aberta (Produtos gerais) aparece destacada acima da tabela de pedidos
   var _av=_solGetSolic('__geral__', tab), _avBanner='';
@@ -9910,10 +9934,36 @@ function renderSolCompra(tab){
   el.innerHTML=_avBanner+'<div class="panel" style="padding:0"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+
     '<thead><tr><th style="'+th+'">Pedido</th><th style="'+th+'">Cliente</th><th style="'+th+'">D1</th><th style="'+th+'">Itens</th><th style="'+th+'">Status</th><th style="'+th+'"></th></tr></thead><tbody>'+
     rows.map(function(r){
-      var o=r.o, s=r.s, nItens=s?(s.itens||[]).length:0;
-      var stTxt = s ? '<span style="font-size:11px;font-weight:600;color:'+(_statCor[s.status]||'')+'">'+(_statLbl[s.status]||s.status)+'</span>' : '<span style="font-size:11px;color:var(--text-tertiary)">— a solicitar</span>';
+      var o=r.o, s=r.s;
+      // v155 — pode haver várias solicitações (original em lista + complementar aberta): itens = soma de todas
+      var todas=_solTodasSolic(o.id, tab);
+      var nItens=todas.reduce(function(acc,x){ return acc+((x.itens||[]).length); },0);
+      var temTravada=todas.some(function(x){ return x.status==='em_lista'||x.status==='comprado'; });
+      var nn=o.compraNaoNec&&o.compraNaoNec[tab];
+      var stTxt;
+      if(s){
+        stTxt='<span style="font-size:11px;font-weight:600;color:'+(_statCor[s.status]||'')+'">'+(_statLbl[s.status]||s.status)+'</span>';
+        if(s.status==='solicitado' && temTravada) stTxt='<span style="font-size:11px;font-weight:600;color:var(--st-mid-tx)">Em lista</span> <span style="font-size:11px;font-weight:600;color:var(--text-info)">+ complementar aberta</span>';
+      } else if(nn){
+        stTxt='<span style="font-size:11px;font-weight:600;color:var(--st-ok-tx)" title="Marcado por '+escapeHtml(nn.por||'')+'">✓ Não necessário</span>';
+      } else {
+        stTxt='<span style="font-size:11px;color:var(--text-tertiary)">— a solicitar</span>';
+      }
       var bloq = s && (s.status==='em_lista'||s.status==='comprado');
-      var btn = '<button class="btn-primary" onclick="openSolicitarModal(\''+o.id+'\')" '+(bloq?'disabled style="opacity:.5;cursor:not-allowed"':'')+' style="font-size:11px;padding:4px 10px'+(bloq?';opacity:.5;cursor:not-allowed':'')+'">'+(s?'Editar':'Solicitar compra')+'</button>';
+      var btn;
+      if(bloq){
+        // v155 — a original está presa na lista: Editar trava, mas dá pra abrir uma solicitação COMPLEMENTAR
+        btn='<button disabled style="font-size:11px;padding:4px 10px;opacity:.5;cursor:not-allowed">Editar</button> '+
+            '<button class="btn-primary" onclick="openSolicitarModal(\''+o.id+'\')" title="Solicitar itens esquecidos — entra na próxima lista de compra (ou numa lista aberta via Complementar lista)" style="font-size:11px;padding:4px 10px">＋ Complementar</button>';
+      } else if(s){
+        btn='<button class="btn-primary" onclick="openSolicitarModal(\''+o.id+'\')" style="font-size:11px;padding:4px 10px">Editar</button>';
+      } else if(nn){
+        btn='<button onclick="desfazerCompraNaoNec(\''+o.id+'\')" style="font-size:11px;padding:4px 10px">Desfazer</button> '+
+            '<button class="btn-primary" onclick="openSolicitarModal(\''+o.id+'\')" style="font-size:11px;padding:4px 10px">Solicitar compra</button>';
+      } else {
+        btn='<button onclick="marcarCompraNaoNec(\''+o.id+'\')" title="Tem estoque — este pedido não precisa de compra de '+(tab==='ativo'?'ativos':'embalagem')+'" style="font-size:11px;padding:4px 10px">Não necessário</button> '+
+            '<button class="btn-primary" onclick="openSolicitarModal(\''+o.id+'\')" style="font-size:11px;padding:4px 10px">Solicitar compra</button>';
+      }
       return '<tr><td style="'+td+';font-weight:600">'+escapeHtml(o.num||'')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(o.cliente||'—')+'</td>'+
         '<td style="'+td+'">'+(o.d1?fmtDate(o.d1):'—')+'</td>'+
@@ -9927,15 +9977,17 @@ function openSolicitarModal(orderId){
   var o=null;
   if(!ehGeral){ o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); }); if(!o) return; }
   var s=_solGetSolic(orderId, _solTab);
-  if(s && (s.status==='em_lista'||s.status==='comprado')){ alert('Esta solicitação já entrou numa lista de compra — não pode mais ser editada aqui.'); return; }
+  // v155 — original presa em lista e SEM aberta: não trava mais — abre em modo COMPLEMENTAR (cria nova solicitação)
+  var complementar = !!(s && (s.status==='em_lista'||s.status==='comprado'));
+  if(complementar) s=null;
   _solOrderId=orderId;
   _solRows = s ? (s.itens||[]).map(function(it){ return {itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:it.qtd, unidade:it.unidade}; }) : [];
   var ehAtivo=_solTab==='ativo';
-  document.getElementById('solicitar-modal-title').textContent=(s?'Editar solicitação de ':'Solicitar ')+(ehAtivo?'ativos':'embalagens')+(ehGeral?' — avulsa':'');
+  document.getElementById('solicitar-modal-title').textContent=(complementar?'Solicitação COMPLEMENTAR de ':(s?'Editar solicitação de ':'Solicitar '))+(ehAtivo?'ativos':'embalagens')+(ehGeral?' — avulsa':'');
   document.getElementById('solicitar-item-label').textContent=ehAtivo?'Buscar insumo (ativo) do catálogo':'Buscar embalagem do catálogo';
   document.getElementById('solicitar-pedido-info').innerHTML=ehGeral
     ? '<b>🏪 Produtos gerais</b> — uso e consumo da farmácia / estoque (sem vínculo com pedido)'
-    : 'Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'');
+    : 'Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+(complementar?'<div style="font-size:11px;color:var(--st-mid-tx);margin-top:2px">⚠ A solicitação original já está numa lista de compra (fica como está). Estes itens entram como solicitação NOVA — na próxima lista gerada, ou numa lista aberta via "Complementar lista".</div>':'');
   document.getElementById('sol-item-busca').value='';
   document.getElementById('sol-item-ac').classList.remove('open');
   _renderSolItens();
@@ -9980,13 +10032,14 @@ function saveSolicitacao(){
   var ehGeral=String(_solOrderId)==='__geral__'; // v138 — compra avulsa
   var o=ehGeral?null:(orders||[]).find(function(x){ return String(x.id)===String(_solOrderId); });
   var s=_solGetSolic(_solOrderId, _solTab); var now=Date.now();
+  if(s && (s.status==='em_lista'||s.status==='comprado')) s=null; // v155 — original presa: cria COMPLEMENTAR em vez de travar
   if(s){
-    if(s.status==='em_lista'||s.status==='comprado'){ alert('Já está em lista — não pode editar.'); return; }
     s.itens=itens; s.atualizadoEm=now; s.status='solicitado';
   } else {
     s={ id:'solc'+now, orderId:_solOrderId, orderNum:ehGeral?'Produtos gerais':((o&&o.num)||''), cliente:ehGeral?'Uso e consumo / estoque':((o&&o.cliente)||''), tipo:_solTab, itens:itens, status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
     solicitacoesCompra.push(s);
   }
+  if(o && o.compraNaoNec && o.compraNaoNec[_solTab]) delete o.compraNaoNec[_solTab]; // v155 — solicitar desfaz o "não necessário" do tipo
   if(_solTab==='embalagem' && o) _autoEstoqueSolicitado(o); // v130 — embalagem solicitada → estoque 'Solicitado compra'
   closeSolicitarModal(); renderSolCompra(_solTab); saveData();
 }
@@ -9999,6 +10052,67 @@ function _autoEstoqueSolicitado(o){
   if(!o.statusDates) o.statusDates={};
   o.statusDates.estoque={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:prev,to:'Solicitado compra'};
   try{ addAudit(o,'estoque','status',prev,'Solicitado compra (automático — solicitação de embalagem)'); }catch(_e){}
+}
+// ═══════════ v155 — "NÃO NECESSÁRIO" (tem estoque; pedido não precisa comprar) ═══════════
+// Marcado POR TIPO em o.compraNaoNec={ativo:{em,por}, embalagem:{em,por}}. Quando os DOIS tipos estão
+// marcados (regra do dono 14/07): estoque → 'Separação completa' e compras → 'Produto entregue'
+// (só avança, nunca regride — padrão dos auto-status). O salto fica registrado em _jump p/ o desfazer reverter.
+function marcarCompraNaoNec(orderId){
+  var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); }); if(!o) return;
+  var tab=_solTab;
+  if(_solTodasSolic(orderId, tab).length){ alert('Este pedido já tem solicitação de '+(tab==='ativo'?'ativos':'embalagem')+' — o "não necessário" é só para pedido sem solicitação.'); return; }
+  if(!confirm('Marcar '+(tab==='ativo'?'ATIVOS':'EMBALAGEM')+' como NÃO NECESSÁRIO no pedido '+(o.num||'')+'?\n\n(tem estoque — não precisa comprar nada deste tipo)')) return;
+  if(!o.compraNaoNec) o.compraNaoNec={};
+  o.compraNaoNec[tab]={ em:Date.now(), por:(currentUser&&currentUser.name)||'' };
+  _aplicarNaoNecStatus(o);
+  renderSolCompra(tab); saveData(); try{ refreshAll(); }catch(_e){}
+}
+function _aplicarNaoNecStatus(o){
+  var nn=o.compraNaoNec||{};
+  if(!(nn.ativo && nn.embalagem)) return; // os DOIS tipos marcados
+  if(!o.statuses) o.statuses={};
+  if(!o.statusDates) o.statusDates={};
+  var jump={};
+  var ORD_E=['Não iniciado','Solicitado compra','Separação completa'];
+  var curE=o.statuses.estoque||'Não iniciado';
+  if(ORD_E.indexOf('Separação completa')>ORD_E.indexOf(curE)){
+    jump.estoqueFrom=curE; o.statuses.estoque='Separação completa';
+    o.statusDates.estoque={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:curE,to:'Separação completa'};
+    try{ addAudit(o,'estoque','status',curE,'Separação completa (automático — compra não necessária)'); }catch(_e){}
+  }
+  var ORD_C=['Não iniciado','Orçamento feito','Compra finalizada','Produto entregue'];
+  var curC=o.statuses.compras||'Não iniciado';
+  if(ORD_C.indexOf('Produto entregue')>ORD_C.indexOf(curC)){
+    jump.comprasFrom=curC; o.statuses.compras='Produto entregue';
+    o.statusDates.compras={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:curC,to:'Produto entregue'};
+    try{ addAudit(o,'compras','status',curC,'Produto entregue (automático — compra não necessária)'); }catch(_e){}
+  }
+  if(jump.estoqueFrom!=null || jump.comprasFrom!=null) nn._jump=jump;
+}
+function desfazerCompraNaoNec(orderId){
+  var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); }); if(!o) return;
+  var tab=_solTab;
+  if(!(o.compraNaoNec && o.compraNaoNec[tab])) return;
+  if(!confirm('Desfazer o "não necessário" de '+(tab==='ativo'?'ATIVOS':'EMBALAGEM')+' no pedido '+(o.num||'')+'?')) return;
+  // reverte o salto de status SE ele aconteceu e ninguém mexeu nos status desde então
+  var jump=o.compraNaoNec._jump;
+  if(jump){
+    if(!o.statuses) o.statuses={};
+    if(!o.statusDates) o.statusDates={};
+    if(jump.estoqueFrom!=null && o.statuses.estoque==='Separação completa'){
+      o.statuses.estoque=jump.estoqueFrom;
+      o.statusDates.estoque={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:'Separação completa',to:jump.estoqueFrom};
+      try{ addAudit(o,'estoque','status','Separação completa',jump.estoqueFrom+' (automático — desfeito o "não necessário")'); }catch(_e){}
+    }
+    if(jump.comprasFrom!=null && o.statuses.compras==='Produto entregue'){
+      o.statuses.compras=jump.comprasFrom;
+      o.statusDates.compras={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:'Produto entregue',to:jump.comprasFrom};
+      try{ addAudit(o,'compras','status','Produto entregue',jump.comprasFrom+' (automático — desfeito o "não necessário")'); }catch(_e){}
+    }
+    delete o.compraNaoNec._jump;
+  }
+  delete o.compraNaoNec[tab];
+  renderSolCompra(tab); saveData(); try{ refreshAll(); }catch(_e){}
 }
 // ═══════════ v130 — LISTA DE COMPRA (consolidação + cotação) ═══════════
 var _listaTipo='ativo';
@@ -10041,23 +10155,115 @@ function _autoComprasOrcamento(o){
   try{ addAudit(o,'compras','status',prev,'Orçamento feito (automático — item entrou em lista de compra)'); }catch(_e){}
 }
 function _cotItemEscolhida(it){ if(it.escolhida==null || !it.cotacoes || !it.cotacoes[it.escolhida]) return null; return it.cotacoes[it.escolhida]; }
+// v155 — código automático da lista: sequencial por tipo, na ordem de criação (estável: lista não se apaga).
+// LA-001 = lista de Ativos, LE-001 = lista de Embalagens.
+function _lcCodigo(l){
+  var mesmas=(listasCompra||[]).filter(function(x){ return x.tipo===l.tipo; }).sort(function(a,b){ return (a.criadoEm||0)-(b.criadoEm||0); });
+  var ix=mesmas.findIndex(function(x){ return x.id===l.id; });
+  var n=String(ix+1); while(n.length<3) n='0'+n;
+  return (l.tipo==='ativo'?'LA-':'LE-')+n;
+}
+var _lcStatusLbl={cotacao:'Em cotação', compra:'Em compra', finalizada:'Finalizada'};
+function _lcStatusBadge(st){
+  var cfg = st==='finalizada' ? ['var(--st-ok-bg)','var(--st-ok-tx)'] : st==='compra' ? ['var(--st-mid-bg)','var(--st-mid-tx)'] : ['var(--st-inf-bg)','var(--st-inf-tx)'];
+  return '<span style="font-size:11px;padding:2px 10px;border-radius:20px;background:'+cfg[0]+';color:'+cfg[1]+';font-weight:500;white-space:nowrap">'+(_lcStatusLbl[st]||st)+'</span>';
+}
+// v155 — a TELA virou um índice (uma linha por lista + botão Abrir); os itens moram no modal.
 function renderListaCompra(){
   var el=document.getElementById('lst-list'); if(!el) return;
   var tipo=_listaTipo;
   var pend=_solicPendentes(tipo);
   var pi=document.getElementById('lst-pend-info'); if(pi) pi.textContent=pend.length+' solicitação(ões) pendente(s) p/ próxima lista';
   var minhas=(listasCompra||[]).filter(function(l){ return l.tipo===tipo; }).sort(function(a,b){ return (b.criadoEm||0)-(a.criadoEm||0); });
-  var _stLbl={cotacao:'Em cotação', compra:'Em compra', finalizada:'Finalizada'};
-  if(!minhas.length){ el.innerHTML='<div class="empty" style="padding:24px">Nenhuma lista de '+(tipo==='ativo'?'ativos':'embalagens')+' gerada ainda. Clique em "Gerar lista".</div>'; return; }
+  if(!minhas.length){ el.innerHTML='<div class="empty" style="padding:24px">Nenhuma lista de '+(tipo==='ativo'?'ativos':'embalagens')+' gerada ainda. Clique em "Gerar lista".</div>'; if(_lcAbertaId)_renderListaCompraAberta(); return; }
+  var th='padding:8px 12px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
+  var td='padding:8px 12px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
+  el.innerHTML='<div class="panel" style="padding:0"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:760px"><thead><tr>'+
+    '<th style="'+th+'">Código</th><th style="'+th+'">Gerada em</th><th style="'+th+'">Gerada por</th><th style="'+th+';text-align:right">Itens</th><th style="'+th+';text-align:right">Cotados</th><th style="'+th+';text-align:right">Estimado</th><th style="'+th+'">Status</th><th style="'+th+'"></th>'+
+    '</tr></thead><tbody>'+
+    minhas.map(function(l){
+      var its=l.itens||[];
+      var nCot=its.filter(function(it){ return it.escolhida!=null; }).length;
+      var totalEsc=its.reduce(function(s,it){ var c=_cotItemEscolhida(it); return s+(c?(parseFloat(c.preco)||0):0)*(parseFloat(it.qtdTotal)||0); },0);
+      var dt=l.criadoEm?new Date(l.criadoEm):null;
+      var dtTxt=dt?(fmtDate(dt.toISOString().slice(0,10))+' <span style="color:var(--text-tertiary);font-size:11px">'+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</span>'):'—';
+      return '<tr>'+
+        '<td style="'+td+';font-weight:600;font-family:monospace">'+_lcCodigo(l)+'</td>'+
+        '<td style="'+td+'">'+dtTxt+'</td>'+
+        '<td style="'+td+'">'+escapeHtml(l.criadoPor||'—')+'</td>'+
+        '<td style="'+td+';text-align:right">'+its.length+'</td>'+
+        '<td style="'+td+';text-align:right">'+nCot+'/'+its.length+'</td>'+
+        '<td style="'+td+';text-align:right">'+(totalEsc>0?fmtMoney(totalEsc):'—')+'</td>'+
+        '<td style="'+td+'">'+_lcStatusBadge(l.status)+'</td>'+
+        '<td style="'+td+';text-align:right"><button class="btn-primary" onclick="openListaCompraAberta(\''+l.id+'\')" style="font-size:12px;padding:4px 14px">Abrir</button></td>'+
+      '</tr>';
+    }).join('')+'</tbody></table></div></div>';
+  if(_lcAbertaId) _renderListaCompraAberta(); // cotar/comprar/não-comprar chamam renderListaCompra → o modal aberto acompanha
+}
+// v155 — modal da lista aberta (quase tela cheia)
+var _lcAbertaId=null;
+function openListaCompraAberta(id){
+  _lcAbertaId=id; _renderListaCompraAberta();
+  var ov=document.getElementById('lista-compra-overlay'); if(ov) ov.classList.add('open');
+}
+function closeListaCompraAberta(){
+  _lcAbertaId=null;
+  var ov=document.getElementById('lista-compra-overlay'); if(ov) ov.classList.remove('open');
+}
+function _renderListaCompraAberta(){
+  if(!_lcAbertaId) return;
+  var l=(listasCompra||[]).find(function(x){ return x.id===_lcAbertaId; }); if(!l){ closeListaCompraAberta(); return; }
+  var t=document.getElementById('lc-ab-titulo'); if(t) t.textContent='Lista '+_lcCodigo(l)+' — '+(l.tipo==='ativo'?'Ativos':'Embalagens');
+  var sub=document.getElementById('lc-ab-sub'); if(sub) sub.textContent='Gerada em '+(l.criadoEm?fmtDate(new Date(l.criadoEm).toISOString().slice(0,10))+' às '+new Date(l.criadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—')+(l.criadoPor?' por '+l.criadoPor:'')+' · consolida '+((l.solicIds||[]).length)+' solicitação(ões)';
+  var nCot=(l.itens||[]).filter(function(it){ return it.escolhida!=null; }).length;
+  var totalEsc=(l.itens||[]).reduce(function(s,it){ var c=_cotItemEscolhida(it); return s+(c?(parseFloat(c.preco)||0):0)*(parseFloat(it.qtdTotal)||0); },0);
+  var res=document.getElementById('lc-ab-resumo');
+  if(res){
+    // v155 — lista ainda "só cotação" (nenhum comprado/não-comprado) aceita puxar as pendências p/ dentro dela
+    var btnC=_lcPodeComplementar(l)
+      ? '<button onclick="complementarLista(\''+l.id+'\')" title="Puxa as solicitações pendentes deste tipo para DENTRO desta lista (itens iguais somam a quantidade)" style="font-size:12px;padding:4px 12px">＋ Complementar lista</button>'
+      : '<button disabled title="Esta lista já tem compra (ou item não comprado) registrada — as pendências entram na próxima lista gerada" style="font-size:12px;padding:4px 12px;opacity:.5;cursor:not-allowed">＋ Complementar lista</button>';
+    res.innerHTML='Cotados: <b>'+nCot+'/'+((l.itens||[]).length)+'</b>'+(totalEsc>0?' · Estimado <b>'+fmtMoney(totalEsc)+'</b>':'')+' · '+_lcStatusBadge(l.status)+' '+btnC;
+  }
+  var body=document.getElementById('lc-ab-body'); if(body) body.innerHTML=_lcItensTableHtml(l);
+}
+// v155 — pode complementar: lista sem NENHUMA resolução ainda (sem comprado e sem "não comprado"; cotação pode ter)
+function _lcPodeComplementar(l){
+  if(!l || l.status==='finalizada') return false;
+  return !(l.itens||[]).some(function(it){ return (it.compra&&it.compra.comprado) || it.naoComprado; });
+}
+// v155 — puxa as solicitações PENDENTES ('solicitado') do tipo para DENTRO da lista aberta:
+// item igual soma quantidade (e ganha a origem); item novo entra com cotação zerada. Mesmo pós-processo
+// do gerarListaCompra (solicitação vira em_lista + pedido avança p/ 'Orçamento feito').
+function complementarLista(listaId){
+  var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return;
+  if(!_lcPodeComplementar(l)){ alert('Esta lista já tem compra registrada — gere uma nova lista para as pendências.'); return; }
+  var pend=_solicPendentes(l.tipo);
+  if(!pend.length){ alert('Nenhuma solicitação de '+(l.tipo==='ativo'?'ativos':'embalagens')+' pendente para complementar.'); return; }
+  var nItens=0; pend.forEach(function(s){ nItens+=(s.itens||[]).length; });
+  if(!confirm('Complementar a lista '+_lcCodigo(l)+' com '+pend.length+' solicitação(ões) pendente(s) ('+nItens+' item(ns))?\n\nItens iguais somam a quantidade; itens novos entram sem cotação.')) return;
+  var now=Date.now(), novos=0, somados=0;
+  pend.forEach(function(s){
+    (s.itens||[]).forEach(function(it){
+      var q=parseFloat(it.qtd)||0; if(q<=0) return;
+      var ex=(l.itens||[]).find(function(x){ return x.itemId===it.itemId; });
+      if(ex){ ex.qtdTotal=(parseFloat(ex.qtdTotal)||0)+q; (ex.origem=ex.origem||[]).push({orderId:s.orderId, orderNum:s.orderNum, qtd:q}); somados++; }
+      else { l.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, unidade:it.unidade, qtdTotal:q, origem:[{orderId:s.orderId, orderNum:s.orderNum, qtd:q}], cotacoes:[], escolhida:null, compra:{} }); novos++; }
+    });
+    s.status='em_lista'; s.listaId=l.id; s.atualizadoEm=now;
+    (l.solicIds=l.solicIds||[]).push(s.id);
+    var o=(orders||[]).find(function(x){ return String(x.id)===String(s.orderId); });
+    if(o) _autoComprasOrcamento(o);
+  });
+  l.itens.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+  renderListaCompra(); saveData();
+  alert('✓ Lista '+_lcCodigo(l)+' complementada: '+novos+' item(ns) novo(s), '+somados+' com quantidade somada.');
+}
+// v155 — tabela de ITENS de uma lista (o miolo que antes ficava solto na tela; agora vive no modal)
+function _lcItensTableHtml(l){
   var th='padding:7px 9px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
   var td='padding:6px 9px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
-  el.innerHTML=minhas.map(function(l){
-    var nCot=(l.itens||[]).filter(function(it){ return it.escolhida!=null; }).length;
-    var totalEsc=(l.itens||[]).reduce(function(s,it){ var c=_cotItemEscolhida(it); return s+(c?(parseFloat(c.preco)||0):0)*(parseFloat(it.qtdTotal)||0); },0);
-    var head='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;flex-wrap:wrap">'+
-      '<div><b>Lista '+(tipo==='ativo'?'de ativos':'de embalagens')+'</b> <span style="font-size:11px;color:var(--text-tertiary)">· '+(l.criadoEm?fmtDate(new Date(l.criadoEm).toISOString().slice(0,10)):'')+' · '+(l.itens||[]).length+' itens · '+(_stLbl[l.status]||l.status)+'</span></div>'+
-      '<div style="font-size:12px;color:var(--text-secondary)">Cotados: <b>'+nCot+'/'+(l.itens||[]).length+'</b>'+(totalEsc>0?' · Estimado <b>'+fmtMoney(totalEsc)+'</b>':'')+'</div></div>';
-    var rows=(l.itens||[]).map(function(it,ix){
+  var rows=(l.itens||[]).map(function(it,ix){
       var c=_cotItemEscolhida(it);
       var cotTxt = c ? '<span style="color:var(--st-ok-tx)">'+escapeHtml(c.fornecedorNome||'')+' · '+fmtMoney(c.preco)+'</span>' : ((it.cotacoes&&it.cotacoes.length)? '<span style="color:var(--st-mid-tx)">'+it.cotacoes.length+' cotação(ões) — escolher</span>':'<span style="color:var(--text-tertiary)">— sem cotação</span>');
       var origTxt=(it.origem||[]).map(function(o){ return o.orderNum; }).join(', ');
@@ -10088,11 +10294,9 @@ function renderListaCompra(){
         '<td style="'+td+';text-align:right;white-space:nowrap">'+_histBtn+'<button onclick="openCotacaoModal(\''+l.id+'\','+ix+')" style="font-size:11px;padding:3px 9px">Cotar</button> '+
           ((it.compra&&it.compra.comprado)?'<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(it.compra.recebido?' · recebido':'')+'</span>':'<button class="btn-primary" onclick="openComprarModal(\''+l.id+'\','+ix+')" style="font-size:11px;padding:3px 9px">Comprar</button> <button onclick="naoComprarItem(\''+l.id+'\','+ix+')" title="Não comprar este item — as quantidades voltam para a próxima lista" style="font-size:11px;padding:3px 9px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">✕ Não comprar</button>')+
         '</td></tr>'+_histRow;
-    }).join('');
-    return '<div class="panel" style="padding:0;margin-bottom:14px">'+head+
-      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
-      '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd total</th><th style="'+th+'">Origem</th><th style="'+th+'">Cotação escolhida</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
   }).join('');
+  return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:900px"><thead><tr>'+
+    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd total</th><th style="'+th+'">Origem</th><th style="'+th+'">Cotação escolhida</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 // ── Cotação ──
 var _cotListaId=null, _cotItemIdx=null, _cotRows=[], _cotEscolhida=null;
@@ -17093,16 +17297,21 @@ function renderTransito(){
   const _fmes=document.getElementById('exp-mes')?.value||''; // v133 — mês pela DATA DO PEDIDO (D1), igual à Gestão
   // v133 — a base (e os CARDS de alerta: +10 dias, ocorrência, extraviado) é GLOBAL, sem filtro de mês:
   // alerta operacional nunca pode sumir por causa do mês selecionado (era por isso que o Everton via 0).
+  // v155 — Envio Parcial não carimba envioReal (só o envio TOTAL carimba, e as métricas de prazo/produtividade
+  // dependem disso). Aqui a data de envio EFETIVA cai para a 1ª data do histórico de envios: o pedido parcial
+  // aparece em trânsito com seus rastreios desde o 1º volume despachado (antes ele só entrava no envio total).
+  const _envioEfetivo = o => o.envioReal || ((o.enviosHistorico||[]).map(e=>e&&e.data).filter(Boolean).sort()[0]||'');
   let transito = orders.filter(o=>{
     const exp = o.statuses?.expedicao||'';
-    return (exp==='Enviado'||exp==='Envio Parcial'||exp==='Entregue Parcial') && o.envioReal;
+    return (exp==='Enviado'||exp==='Envio Parcial'||exp==='Entregue Parcial') && _envioEfetivo(o);
   });
 
   // Calculate days in transit and extraviated
   transito = transito.map(o=>{
-    const dias = Math.round((new Date(hoje+'T12:00:00')-new Date(o.envioReal+'T12:00:00'))/86400000);
+    const envEf = _envioEfetivo(o); // cópia de exibição: NÃO grava no pedido
+    const dias = Math.round((new Date(hoje+'T12:00:00')-new Date(envEf+'T12:00:00'))/86400000);
     const extraviado = o.extraviado||false;
-    return {...o, diasTransito:dias, extraviado};
+    return {...o, envioReal:envEf, diasTransito:dias, extraviado};
   });
 
   // Summary cards

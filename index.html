@@ -4379,7 +4379,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v153';
+var APP_VERSION = 'v154';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -11902,6 +11902,23 @@ function sincronizarContasReceberDePedidos(orderId){
 // A parte BONIFICADA da nota (v139: forma por bloco) fica FORA da conta a pagar — só a parte real vai ao Caixa.
 function sincronizarContasPagar(){
   if(!_temSetor('financeiro')) return; // v80: idem contas a pagar
+  // v154 : DEDUP por compra (caso Vendramini NF 348133, 30/06 — corrida entre abas criou 2 contas p/ a
+  // MESMA compra, cada uma com id aleatório). Garante UMA conta por origemId: mantém a que tem baixa
+  // (senão a de id mais antigo) e herda o statusCaixa mais avançado. Converge entre as abas pelo sync.
+  try{
+    const _porOrigem={};
+    contasPagar.forEach(p=>{ if(p&&p.origem==='compra'&&p.origemId){ (_porOrigem[p.origemId]=_porOrigem[p.origemId]||[]).push(p); } });
+    Object.keys(_porOrigem).forEach(k=>{
+      const list=_porOrigem[k]; if(list.length<2) return;
+      const temBaixa=p=>(p.parcelas||[]).some(x=>x&&x.pago);
+      list.sort((a,b)=>((temBaixa(b)?1:0)-(temBaixa(a)?1:0)) || String(a.id).localeCompare(String(b.id)));
+      const keep=list[0];
+      list.slice(1).forEach(dup=>{
+        if(dup.statusCaixa==='aprovada' && keep.statusCaixa!=='aprovada') keep.statusCaixa='aprovada';
+        const i=contasPagar.indexOf(dup); if(i>=0) contasPagar.splice(i,1);
+      });
+    });
+  }catch(_e){}
   compras.forEach(c=>{
     // v118/v139 — nota SEM parte real (100% bonificada) → NÃO gera conta a pagar. Remove conta órfã se não estiver baixada.
     const _reais=_compraParcelasReais(c);
@@ -11916,7 +11933,7 @@ function sincronizarContasPagar(){
     const fn = fornecedores.find(f=>f.id===c.fornecedorId);
     if(!contasPagar.find(p=>p.origemId===c.id&&p.origem==='compra')){
       contasPagar.push({
-        id:'cp'+Date.now()+Math.random(),
+        id:'cp_'+c.id, // v154 : id DETERMINÍSTICO por compra (era Date.now()+random — corrida entre abas gerava 2 contas; com id previsível o upsert converge, padrão do contas a receber cr_ped_*)
         origem:'compra', origemId:c.id,
         fornecedorId:c.fornecedorId, fornecedorNome:fn?.nome||'—',
         descricao:c.desc||fn?.nome||'Compra',
@@ -12191,7 +12208,14 @@ function _finPassaFiltro(tipo, r, f){
   if(f.nf && !((c.notaFiscal||'').toLowerCase().includes(f.nf))) return false;
   if(Array.isArray(f.statusArr) && f.statusArr.length && !f.statusArr.includes(r.st)) return false;
   if(Array.isArray(f.formaArr) && f.formaArr.length && f.formaArr.length<FORMAS_PAG.length){
-    const fl=_formaLabel(c.formaPag); if(!f.formaArr.includes(fl) && !f.formaArr.includes(c.formaPag||'')) return false;
+    // v154 : comparação NORMALIZADA (sem acento/maiúscula/espaços) — o filtro tinha 'Cartão de Crédito'
+    // e a conta 'Cartão de crédito' → conta sumia ao filtrar só essa forma (relato do dono 14/07).
+    // Também considera a forma DA PARCELA (compra multi-forma: a parcela Boleto de uma nota mista
+    // aparece ao filtrar Boleto), além da forma da conta.
+    const _nrm=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+    const _sel=f.formaArr.map(_nrm);
+    const _cand=[c.formaPag, _formaLabel(c.formaPag), p.forma, _formaLabel(p.forma)].filter(Boolean).map(_nrm);
+    if(!_cand.some(x=>_sel.indexOf(x)>=0)) return false;
   }
   if(f.emisDe && (!r.emissao || r.emissao<f.emisDe)) return false;
   if(f.emisAte && (!r.emissao || r.emissao>f.emisAte)) return false;
@@ -17788,7 +17812,7 @@ async function renderImportacoes(){
     if(R.obs) html+='<div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">'+esc(R.obs)+'</div>';
     html+=lista('✅ Inseridos', ins, x=>'<div style="font-size:13px;border-left:3px solid #1E8E4E;padding-left:8px">'+esc(x.num)+' — '+esc(x.cliente||'')+' <span style="color:var(--text-tertiary)">'+esc(x.tipo||'')+(x.valor!=null?' · '+money(x.valor):'')+'</span></div>', '#1E8E4E');
     html+=lista('⏳ Aguardando cadastro do cliente', aguard, x=>'<div style="font-size:13px;border-left:3px solid #BF8F00;padding-left:8px">'+esc(x.num)+' — '+esc(x.cliente||'')+' <span style="color:var(--text-tertiary)">'+esc(x.doc||'sem CPF/CNPJ')+'</span></div>', '#BF8F00');
-    html+=lista('⚠ Pendências (não inseridas)', pend, x=>'<div style="font-size:13px;border-left:3px solid #C0392B;padding-left:8px">'+esc(x.arquivo||x.num||'?')+' — <span style="color:var(--st-bad-tx)">'+esc(x.motivo||'')+'</span></div>', '#C0392B');
+    html+=lista('⚠ Pendências e avisos da importação', pend, x=>'<div style="font-size:13px;border-left:3px solid #C0392B;padding-left:8px">'+esc(x.arquivo||x.num||'?')+' — <span style="color:var(--st-bad-tx)">'+esc(x.motivo||'')+'</span></div>', '#C0392B');
     html+=lista('↺ Já constavam no sistema', ja, x=>'<div style="font-size:13px;color:var(--text-tertiary);padding-left:8px">'+esc((x&&x.num)||x)+'</div>');
     html+='</div>';
   });
@@ -26406,13 +26430,9 @@ function _convHidratar(conv){
 }
 // v104 — ao anexar, abre um modal para escrever uma LEGENDA antes de enviar (texto vai junto com o arquivo)
 var _convAnexoFiles=null, _convAnexoCid=null;
-function handleConvAnexo(input, containerId){
-  const conv = conversas.find(c=>c.id===conversaAtivaId);
-  if(!conv){ input.value=''; return; }
-  if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de enviar anexos.\nUse "📥 Atribuir para mim".'); input.value=''; return; }
-  if(!_sb || !_sbReady){ alert('Conexão com o servidor indisponível. Tente novamente em instantes.'); input.value=''; return; }
-  const files=Array.from(input.files); input.value='';
-  if(!files.length) return;
+// v154 : miolo do preview de anexo extraído — usado pelo 📎 (handleConvAnexo) E pelo Ctrl+V de imagem.
+function _convAbrirAnexoPreview(files, containerId){
+  if(!files || !files.length) return;
   _convAnexoFiles=files; _convAnexoCid=containerId||'conv-tela';
   let ov=document.getElementById('conv-anexo-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='conv-anexo-overlay'; ov.className='overlay'; ov.style.zIndex='4200'; document.body.appendChild(ov); }
@@ -26426,6 +26446,43 @@ function handleConvAnexo(input, containerId){
   ov.classList.add('open');
   setTimeout(()=>document.getElementById('conv-anexo-cap')?.focus(),0);
 }
+function handleConvAnexo(input, containerId){
+  const conv = conversas.find(c=>c.id===conversaAtivaId);
+  if(!conv){ input.value=''; return; }
+  if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de enviar anexos.\nUse "📥 Atribuir para mim".'); input.value=''; return; }
+  if(!_sb || !_sbReady){ alert('Conexão com o servidor indisponível. Tente novamente em instantes.'); input.value=''; return; }
+  const files=Array.from(input.files); input.value='';
+  if(!files.length) return;
+  _convAbrirAnexoPreview(files, containerId);
+}
+// v154 : COLAR IMAGEM (Ctrl+V) no campo de mensagem (pedido do dono 14/07) — imagem da área de
+// transferência cai no MESMO fluxo do 📎 (preview + legenda + normalização EXIF + wa-send-media).
+// Colar TEXTO continua exatamente igual (só intercepta quando a área de transferência tem imagem).
+document.addEventListener('paste', function(e){
+  try{
+    const t=e.target;
+    if(!t || !t.classList || !t.classList.contains('conv-input-field')) return;
+    const its=(e.clipboardData && e.clipboardData.items) || [];
+    const imgs=[];
+    for(let i=0;i<its.length;i++){ const it=its[i]; if(it.kind==='file'){ const f=it.getAsFile(); if(f && /^image\//.test(f.type||'')) imgs.push(f); } }
+    if(!imgs.length) return; // sem imagem no clipboard → colar de texto segue normal
+    e.preventDefault();
+    const conv=conversas.find(c=>c.id===conversaAtivaId); if(!conv) return;
+    if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de enviar anexos.\nUse "📥 Atribuir para mim".'); return; }
+    if(!_sb || !_sbReady){ alert('Conexão com o servidor indisponível. Tente novamente em instantes.'); return; }
+    // clipboard nomeia tudo "image.png" — dá um nome útil (foto_colada_HHMMSS)
+    const d=new Date(); const hh=String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0');
+    const nomeados=imgs.map(function(f,i){
+      const ext=((f.type.split('/')[1]||'png').replace('jpeg','jpg'));
+      const generico=!f.name || /^image\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name);
+      return generico ? new File([f], 'foto_colada_'+hh+(imgs.length>1?('_'+(i+1)):'')+'.'+ext, {type:f.type}) : f;
+    });
+    // descobre o container da conversa (tela cheia OU modal do card): 1º ancestral com id que contém a lista de mensagens
+    let cid='conv-tela', el=t.parentElement;
+    while(el){ if(el.id && el.querySelector && el.querySelector('.conv-msgs-field')){ cid=el.id; break; } el=el.parentElement; }
+    _convAbrirAnexoPreview(nomeados, cid);
+  }catch(_e){ /* nunca atrapalha o colar de texto */ }
+});
 // v144 : normaliza JPEG p/ envio ao WhatsApp: aplica a orientacao EXIF nos PIXELS (o WhatsApp
 // descarta o EXIF ao re-comprimir e a foto chegava DEITADA para o cliente) e limita a 2560px
 // no lado maior (envio mais leve). Qualquer falha -> envia o arquivo original como sempre.
@@ -26485,6 +26542,78 @@ async function _waEnviarAnexo(conv, msg, file, path){
     if(error) console.warn('wa-send-media retornou erro:', error.message||error);
     // status (enviada/falha) é atualizado no banco pela função e chega via realtime
   }catch(e){ console.warn('wa-send-media falhou:', e); }
+}
+// ── v154 : ÁUDIO DIRETO DO CAMPO (pedido do dono 14/07) — 🎤 clica = grava, clica de novo = ENVIA
+// (padrão WhatsApp); Esc cancela. Sai pela MESMA esteira do anexo (storage → wa-send-media, que roteia
+// audio/* para o send-audio do Z-API = chega como MENSAGEM DE VOZ no cliente). ──
+var _micRec=null, _micChunks=null, _micTimer=null, _micT0=0, _micCancelado=false;
+async function _convMicToggle(cid){
+  // 2º clique: parar e ENVIAR
+  if(_micRec && _micRec.state==='recording'){ _micCancelado=false; try{ _micRec.stop(); }catch(_e){} return; }
+  const conv=conversas.find(c=>c.id===conversaAtivaId); if(!conv) return;
+  if(conv.grupo){ alert('Envio de áudio em GRUPO ainda não é suportado — use o 📎 para mandar o arquivo.'); return; }
+  if(window._authExpirada){ alert('⚠ Sua sessão expirou — recarregue a página (F5) e entre novamente.'); return; }
+  if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de enviar áudio.\nUse "📥 Atribuir para mim".'); return; }
+  if(!_sb || !_sbReady){ alert('Conexão com o servidor indisponível. Tente novamente em instantes.'); return; }
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia) || typeof MediaRecorder==='undefined'){ alert('Este navegador não suporta gravação de áudio.'); return; }
+  let stream;
+  try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(_e){ alert('Não consegui acessar o microfone — verifique a permissão do navegador (cadeado na barra de endereço).'); return; }
+  const _mt=['audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/mp4'].find(function(m){ try{ return MediaRecorder.isTypeSupported(m); }catch(_e){ return false; } })||'';
+  try{ _micRec=new MediaRecorder(stream, _mt?{mimeType:_mt}:undefined); }
+  catch(_e){ try{ stream.getTracks().forEach(function(t){t.stop();}); }catch(_e2){} alert('Não consegui iniciar a gravação neste navegador.'); return; }
+  _micChunks=[]; _micCancelado=false; _micT0=Date.now();
+  const _convRef=conv, _cidRef=cid;
+  _micRec.ondataavailable=function(e){ if(e.data&&e.data.size) _micChunks.push(e.data); };
+  _micRec.onstop=function(){
+    try{ stream.getTracks().forEach(function(t){t.stop();}); }catch(_e){}
+    _micUiParar(_cidRef);
+    const durMs=Date.now()-_micT0;
+    const tipoBlob=(_micRec&&_micRec.mimeType)||_mt||'audio/webm';
+    const chunks=_micChunks; _micChunks=null; _micRec=null;
+    if(_micCancelado) return;
+    if(durMs<800){ alert('Áudio muito curto — grave por pelo menos 1 segundo.'); return; }
+    const blob=new Blob(chunks||[],{type:tipoBlob});
+    if(!blob.size){ alert('A gravação saiu vazia — tente de novo.'); return; }
+    const ext=/ogg/.test(tipoBlob)?'ogg':(/mp4/.test(tipoBlob)?'m4a':'webm');
+    const d=new Date(); const hh=String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0');
+    const file=new File([blob],'audio_'+hh+'.'+ext,{type:tipoBlob});
+    _convEnviarAudio(_convRef, file, _cidRef);
+  };
+  _micRec.start();
+  _micUiGravar(cid);
+}
+function _micUiGravar(cid){
+  if(_micTimer) clearInterval(_micTimer);
+  const _tick=function(){
+    const btn=document.getElementById('conv-mic-'+cid); if(!btn) return;
+    const s=Math.floor((Date.now()-_micT0)/1000);
+    btn.textContent='⏹'; btn.style.background='#B00020'; btn.style.color='#fff'; btn.style.borderColor='#B00020';
+    btn.title='Gravando '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0')+' — clique para ENVIAR · Esc cancela';
+  };
+  _tick(); _micTimer=setInterval(_tick,1000);
+}
+function _micUiParar(cid){
+  if(_micTimer){ clearInterval(_micTimer); _micTimer=null; }
+  const btn=document.getElementById('conv-mic-'+cid);
+  if(btn){ btn.textContent='🎤'; btn.style.background=''; btn.style.color=''; btn.style.borderColor=''; btn.title='Gravar áudio (clique para gravar, clique de novo para enviar; Esc cancela)'; }
+}
+document.addEventListener('keydown', function(e){
+  if(e.key==='Escape' && _micRec && _micRec.state==='recording'){ _micCancelado=true; try{ _micRec.stop(); }catch(_e){} }
+});
+async function _convEnviarAudio(conv, file, containerId){
+  if(file.size>50*1024*1024){ alert('O áudio excede 50MB e não será enviado.'); return; }
+  const safe=(file.name||'audio').replace(/[^\w.\-]+/g,'_');
+  const path='conversa_'+conv.id+'/'+Date.now()+'_'+Math.floor(Math.random()*1000)+'_'+safe;
+  try{
+    const up=await _sb.storage.from('anexos').upload(path, file, {upsert:false, contentType:file.type||undefined});
+    if(up.error){ alert('Falha ao enviar o áudio: '+(up.error.message||up.error)); return; }
+    const sizeStr=file.size>1024*1024?(file.size/1024/1024).toFixed(1)+' MB':(file.size/1024).toFixed(0)+' KB';
+    registrarMensagem(conv.clienteId, _msgDeAtual, '', { nome:file.name, tamanho:sizeStr, tipo:file.type, kind:_waKindFromMime(file.type)||'audio', path:path }, conv.telefone);
+    const _msg=_ultimaMsgReg;
+    saveData(); renderConversaTela(conv.id, containerId); renderConversasLista(); _updateConvBadge();
+    if(_msg && conv.canal==='whatsapp' && _msgDeAtual==='atendente'){ _waUpsertConversa(conv).then(function(){ _waEnviarAnexo(conv, _msg, file, path); }); }
+  }catch(err){ alert('Erro ao enviar o áudio: '+err); }
 }
 var _ultimaMsgReg = null; // v86 — última mensagem criada por registrarMensagem (p/ outbound)
 // v86 — tiquinho de status estilo WhatsApp (só nas minhas mensagens)
@@ -27239,6 +27368,7 @@ function renderConversaTela(convId, containerId){
       <div class="conv-emoji-panel" id="emoji-panel-${_cid}"></div>
       <div class="wa-inputrow">
         <label class="wa-attach" title="Anexar / enviar documento ao cliente">📎<input type="file" style="display:none" onchange="handleConvAnexo(this,'${_cid}')" multiple></label>
+        <button type="button" class="wa-attach" id="conv-mic-${_cid}" title="Gravar áudio (clique para gravar, clique de novo para enviar; Esc cancela)" onclick="_convMicToggle('${_cid}')" style="font-size:19px">🎤</button>
         <button type="button" class="wa-attach" title="Emojis" onclick="_convToggleEmoji('${_cid}')" style="font-size:20px">😊</button>
         <button type="button" class="wa-attach" title="Mensagens rápidas" onclick="_convQuickToggle('${_cid}')" style="font-size:18px">⚡</button>
         <textarea class="conv-input-field wa-input" rows="1" placeholder="Mensagem (Shift+Enter = nova linha)" onkeydown="_convInputKey(event,'${_cid}')" oninput="_convDrafts['${conv.id}']=this.value;_convGrow(this)" style="resize:none;max-height:120px;overflow-y:auto;line-height:1.4"></textarea>

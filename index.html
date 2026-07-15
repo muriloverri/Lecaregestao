@@ -549,9 +549,13 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
     <div class="login-brand">Lecare</div>
     <div class="login-sub">Sistema de Gestão de Pedidos</div>
     <div class="login-err" id="login-err">Usuário ou senha incorretos.</div>
-    <div class="form-group" style="margin-bottom:12px"><label>Usuário</label><input type="text" id="login-user" placeholder="seu usuário" autocomplete="username"></div>
-    <div class="form-group" style="margin-bottom:20px"><label>Senha</label><div style="position:relative"><input type="password" id="login-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()" style="padding-right:38px;width:100%;box-sizing:border-box"><button type="button" title="Segure para ver" tabindex="-1" onmousedown="_pwHold('login-pass',1)" onmouseup="_pwHold('login-pass',0)" onmouseleave="_pwHold('login-pass',0)" ontouchstart="_pwHold('login-pass',1)" ontouchend="_pwHold('login-pass',0)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;padding:2px;line-height:1">👁</button></div></div>
-    <button id="login-btn" class="btn-primary" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()">Entrar</button>
+    <!-- v157 — <form> de verdade + autocomplete: é o que faz o NAVEGADOR oferecer "salvar senha"
+         (como no e-mail). A senha fica no cofre do navegador do usuário, não no sistema. -->
+    <form id="login-form" onsubmit="event.preventDefault();doLogin();">
+    <div class="form-group" style="margin-bottom:12px"><label>Usuário</label><input type="text" id="login-user" name="username" placeholder="seu usuário" autocomplete="username"></div>
+    <div class="form-group" style="margin-bottom:20px"><label>Senha</label><div style="position:relative"><input type="password" id="login-pass" name="password" placeholder="••••••••" autocomplete="current-password" style="padding-right:38px;width:100%;box-sizing:border-box"><button type="button" title="Segure para ver" tabindex="-1" onmousedown="_pwHold('login-pass',1)" onmouseup="_pwHold('login-pass',0)" onmouseleave="_pwHold('login-pass',0)" ontouchstart="_pwHold('login-pass',1)" ontouchend="_pwHold('login-pass',0)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;padding:2px;line-height:1">👁</button></div></div>
+    <button id="login-btn" type="submit" class="btn-primary" style="width:100%;justify-content:center;padding:10px">Entrar</button>
+    </form>
     <div id="login-loading" style="display:none;text-align:center;margin-top:14px;font-size:13px;color:var(--text-secondary)">
       <span class="login-spinner" style="display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--text-primary);border-radius:50%;vertical-align:middle;margin-right:7px;animation:lcspin .7s linear infinite"></span>Iniciando o sistema, aguarde…
     </div>
@@ -1398,7 +1402,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="form-group"><label>Qtd comprada *</label><input type="number" id="cmp-qtd" min="0" step="any" placeholder="0"></div>
             <div class="form-group"><label>Preço unitário pago (R$) *</label><input type="number" id="cmp-preco" min="0" step="0.01" placeholder="0,00"></div>
           </div>
-          <div class="form-group" style="margin-bottom:12px"><label>Nº da Nota Fiscal *</label><input type="text" id="cmp-nf" placeholder="NF"></div>
+          <div class="form-group" style="margin-bottom:12px"><label>Nº da Nota Fiscal <span style="font-size:10px;color:var(--text-tertiary)">(opcional — pode preencher depois pelo ✏ da lista)</span></label><input type="text" id="cmp-nf" placeholder="NF (se já tiver)"></div>
           <div id="cmp-total" style="font-size:12px;color:var(--text-secondary);margin-bottom:10px"></div>
           <div class="modal-footer"><button onclick="closeComprarModal()">Cancelar</button><button class="btn-primary" onclick="saveCompraItem()">Marcar como comprado</button></div>
         </div>
@@ -4396,7 +4400,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v156';
+var APP_VERSION = 'v157';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -10224,7 +10228,7 @@ function renderListaCompra(){
         '<td style="'+td+';text-align:right">'+nCot+'/'+its.length+'</td>'+
         '<td style="'+td+';text-align:right">'+(totalEsc>0?fmtMoney(totalEsc):'—')+'</td>'+
         '<td style="'+td+'">'+_lcStatusBadge(l.status)+'</td>'+
-        '<td style="'+td+';text-align:right"><button class="btn-primary" onclick="openListaCompraAberta(\''+l.id+'\')" style="font-size:12px;padding:4px 14px">Abrir</button></td>'+
+        '<td style="'+td+';text-align:right;white-space:nowrap"><button onclick="gerarPdfListaCompra(\''+l.id+'\')" title="Gerar PDF com produtos e quantidades (para enviar ao fornecedor — sem preços)" style="font-size:12px;padding:4px 10px">📄 PDF</button> <button class="btn-primary" onclick="openListaCompraAberta(\''+l.id+'\')" style="font-size:12px;padding:4px 14px">Abrir</button></td>'+
       '</tr>';
     }).join('')+'</tbody></table></div></div>';
   if(_lcAbertaId) _renderListaCompraAberta(); // cotar/comprar/não-comprar chamam renderListaCompra → o modal aberto acompanha
@@ -10288,6 +10292,32 @@ function complementarLista(listaId){
   renderListaCompra(); saveData();
   alert('✓ Lista '+_lcCodigo(l)+' complementada: '+novos+' item(ns) novo(s), '+somados+' com quantidade somada.');
 }
+// v157 — PDF da lista de compra (pedido do dono 15/07): produtos e quantidades para ENVIAR AO FORNECEDOR.
+// De propósito SEM preços/cotações/origens (informação interna não vaza). Janela de impressão limpa →
+// "Salvar como PDF" do navegador; itens "não comprado" ficam de fora (voltaram p/ a próxima lista).
+function gerarPdfListaCompra(listaId){
+  var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return;
+  var itens=(l.itens||[]).filter(function(it){ return !it.naoComprado; });
+  if(!itens.length){ alert('Esta lista não tem itens ativos para gerar o PDF.'); return; }
+  var dt=l.criadoEm?new Date(l.criadoEm):new Date();
+  var dtTxt=dt.toLocaleDateString('pt-BR');
+  var rows=itens.map(function(it,i){
+    return '<tr><td style="text-align:center">'+(i+1)+'</td><td style="font-family:monospace">'+escapeHtml(it.codigo||'—')+'</td><td>'+escapeHtml(it.nome||'')+'</td><td style="text-align:right;white-space:nowrap">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td></tr>';
+  }).join('');
+  var html='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Lista de compra '+_lcCodigo(l)+' — Lecare</title>'+
+    '<style>body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:32px}h1{font-size:20px;margin:0 0 2px}h2{font-size:13px;font-weight:normal;color:#555;margin:0 0 20px}'+
+    'table{width:100%;border-collapse:collapse;font-size:13px}th{background:#f0f0f0;border:1px solid #ccc;padding:7px 10px;text-align:left;font-size:12px}td{border:1px solid #ccc;padding:6px 10px}'+
+    'tfoot td{border:none;padding-top:16px;font-size:11px;color:#777}@media print{body{margin:12mm}}</style></head><body>'+
+    '<h1>Lecare — Lista de compra '+_lcCodigo(l)+' ('+(l.tipo==='ativo'?'Ativos':'Embalagens')+')</h1>'+
+    '<h2>Gerada em '+dtTxt+' · '+itens.length+' item(ns)</h2>'+
+    '<table><thead><tr><th style="width:36px;text-align:center">#</th><th style="width:90px">Código</th><th>Produto</th><th style="width:130px;text-align:right">Quantidade</th></tr></thead>'+
+    '<tbody>'+rows+'</tbody>'+
+    '<tfoot><tr><td colspan="4">Documento gerado pelo sistema Lecare em '+new Date().toLocaleString('pt-BR')+'. Solicitamos cotação/fornecimento dos itens acima.</td></tr></tfoot></table>'+
+    '<script>window.onload=function(){ setTimeout(function(){ window.print(); }, 250); };<\/script></body></html>';
+  var w=window.open('','_blank');
+  if(!w){ alert('O navegador bloqueou a janela do PDF — libere pop-ups para este site e tente de novo.'); return; }
+  w.document.write(html); w.document.close(); w.focus();
+}
 // v155 — tabela de ITENS de uma lista (o miolo que antes ficava solto na tela; agora vive no modal)
 function _lcItensTableHtml(l){
   var th='padding:7px 9px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
@@ -10302,30 +10332,43 @@ function _lcItensTableHtml(l){
         return '<tr><td style="'+_tdNc+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(it.codigo||'—')+'</td>'+
           '<td style="'+_tdNc+';text-decoration:line-through">'+escapeHtml(it.nome||'')+'</td>'+
           '<td style="'+_tdNc+';text-align:right;text-decoration:line-through">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
+          '<td style="'+_tdNc+';text-align:right;color:var(--text-tertiary)">—</td>'+
           '<td style="'+_tdNc+';font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' pedido(s)</td>'+
-          '<td style="'+_tdNc+'" colspan="2"><span style="font-size:11px;color:var(--st-bad-tx);font-weight:600">✕ Não comprado</span>'+(it.naoCompradoMotivo?' <span style="font-size:11px;color:var(--text-tertiary)">· '+escapeHtml(it.naoCompradoMotivo)+'</span>':'')+' <span style="font-size:10px;color:var(--text-tertiary)">→ voltou p/ próxima lista</span></td></tr>';
+          '<td style="'+_tdNc+'" colspan="3"><span style="font-size:11px;color:var(--st-bad-tx);font-weight:600">✕ Não comprado</span>'+(it.naoCompradoMotivo?' <span style="font-size:11px;color:var(--text-tertiary)">· '+escapeHtml(it.naoCompradoMotivo)+'</span>':'')+' <span style="font-size:10px;color:var(--text-tertiary)">→ voltou p/ próxima lista</span></td></tr>';
       }
       // v150 — histórico de fornecedores/preços do item (deriva das compras anteriores) — botão 📈 expande
       var _hist=_histComprasItem(it.itemId, it.codigo);
       var _cstIt=_hist.length?_custosItem(it.itemId, it.codigo):null;
       var _hid='hist_'+l.id+'_'+ix;
       var _histBtn=_hist.length?'<button onclick="_histItemToggle(this)" data-hid="'+_hid+'" title="Histórico de compras deste item ('+_hist.length+')" style="font-size:11px;padding:3px 8px">📈 '+_hist.length+'</button> ':'';
-      var _histRow=_hist.length?('<tr id="'+_hid+'" style="display:none"><td colspan="6" style="padding:6px 12px;background:var(--bg-secondary);border-bottom:.5px solid var(--border)">'+
+      var _histRow=_hist.length?('<tr id="'+_hid+'" style="display:none"><td colspan="8" style="padding:6px 12px;background:var(--bg-secondary);border-bottom:.5px solid var(--border)">'+
         '<div style="font-size:11px;margin-bottom:3px"><b>📈 Histórico de compras</b>'+(_cstIt?' <span style="color:var(--text-secondary)">— médio '+fmtMoney(_cstIt.medio)+' · última '+fmtMoney(_cstIt.ultimo)+' · <span style="color:var(--st-ok-tx)">menor '+fmtMoney(_cstIt.minimo)+'</span></span>':'')+'</div>'+
         _hist.slice(0,8).map(function(hh){ return '<div style="font-size:11px;padding:2px 0;border-top:.5px dashed var(--border);color:var(--text-secondary)">'+(hh.em?fmtDate(new Date(hh.em).toISOString().slice(0,10)):'—')+' · <b>'+escapeHtml(hh.fornecedor)+'</b> · '+fmtMoney(hh.preco)+(hh.qtd?' · '+hh.qtd.toLocaleString('pt-BR')+' un':'')+(hh.comprado?' · ✓ comprada':' · cotada')+'</div>'; }).join('')+
         (_hist.length>8?'<div style="font-size:10px;color:var(--text-tertiary);padding-top:2px">+ '+(_hist.length-8)+' compra(s) mais antiga(s)</div>':'')+
         '</td></tr>'):'';
+      // v157 — colunas da COMPRA: qtd comprada (pode ser MAIOR que a solicitada), fornecedor · preço · NF
+      var _c=it.compra||{};
+      var _qtdCmp = _c.comprado
+        ? ('<span'+((parseFloat(_c.qtdComprada)||0)>(parseFloat(it.qtdTotal)||0)?' style="color:var(--text-info);font-weight:600" title="Comprado ACIMA do solicitado"':'')+'>'+(parseFloat(_c.qtdComprada)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</span>')
+        : '<span style="color:var(--text-tertiary)">—</span>';
+      var _cmpInfo = _c.comprado
+        ? '<span style="font-size:11px">'+escapeHtml(_c.fornecedorNome||'—')+' · '+fmtMoney(_c.precoPago||0)+'/'+escapeHtml(it.unidade||'un')+' · '+(_c.nf?('NF '+escapeHtml(_c.nf)):'<span style="color:var(--st-bad-tx);font-weight:600">⚠ NF pendente</span>')+'</span>'
+        : '<span style="color:var(--text-tertiary)">—</span>';
       return '<tr><td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(it.codigo||'—')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(it.nome||'')+'</td>'+
         '<td style="'+td+';text-align:right">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
+        '<td style="'+td+';text-align:right">'+_qtdCmp+'</td>'+
         '<td style="'+td+';font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' pedido(s)</td>'+
         '<td style="'+td+'">'+cotTxt+'</td>'+
+        '<td style="'+td+'">'+_cmpInfo+'</td>'+
         '<td style="'+td+';text-align:right;white-space:nowrap">'+_histBtn+'<button onclick="openCotacaoModal(\''+l.id+'\','+ix+')" style="font-size:11px;padding:3px 9px">Cotar</button> '+
-          ((it.compra&&it.compra.comprado)?'<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(it.compra.recebido?' · recebido':'')+'</span>':'<button class="btn-primary" onclick="openComprarModal(\''+l.id+'\','+ix+')" style="font-size:11px;padding:3px 9px">Comprar</button> <button onclick="naoComprarItem(\''+l.id+'\','+ix+')" title="Não comprar este item — as quantidades voltam para a próxima lista" style="font-size:11px;padding:3px 9px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">✕ Não comprar</button>')+
+          (_c.comprado
+            ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(_c.recebido?' · recebido':'')+'</span>'+(_c.recebido?'':' <button onclick="openComprarModal(\''+l.id+'\','+ix+')" title="Editar a compra / preencher a NF" style="font-size:11px;padding:3px 8px">✏</button>')
+            : '<button class="btn-primary" onclick="openComprarModal(\''+l.id+'\','+ix+')" style="font-size:11px;padding:3px 9px">Comprar</button> <button onclick="naoComprarItem(\''+l.id+'\','+ix+')" title="Não comprar este item — as quantidades voltam para a próxima lista" style="font-size:11px;padding:3px 9px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">✕ Não comprar</button>')+
         '</td></tr>'+_histRow;
   }).join('');
-  return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:900px"><thead><tr>'+
-    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd total</th><th style="'+th+'">Origem</th><th style="'+th+'">Cotação escolhida</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:1050px"><thead><tr>'+
+    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solicitada</th><th style="'+th+';text-align:right">Qtd comprada</th><th style="'+th+'">Origem</th><th style="'+th+'">Cotação escolhida</th><th style="'+th+'">Compra (fornecedor · preço · NF)</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 // ── Cotação ──
 var _cotListaId=null, _cotItemIdx=null, _cotRows=[], _cotEscolhida=null;
@@ -10626,7 +10669,8 @@ function saveCompraItem(){
   if(!forn){ alert('Informe o fornecedor.'); return; }
   if(qtd<=0){ alert('Informe a quantidade comprada.'); return; }
   if(preco<=0){ alert('Informe o preço unitário pago.'); return; }
-  if(!nf){ alert('Informe o número da NF.'); return; }
+  // v157 — NF deixou de ser obrigatória na hora da compra (pedido do dono 15/07): pode comprar e
+  // preencher a NF depois pelo ✏ da lista; a linha fica com aviso "NF pendente" até preencher.
   var f=(fornecedores||[]).find(function(x){return (x.nome||'').toLowerCase()===forn.toLowerCase();});
   it.compra=Object.assign({}, it.compra||{}, { fornecedorId:f?f.id:null, fornecedorNome:forn, qtdComprada:qtd, precoPago:preco, nf:nf, comprado:true, compradoEm:Date.now(), compradoPor:(currentUser&&currentUser.name)||'' });
   _atualizaStatusLista(l); // v138 — finalizada automaticamente quando todos os itens estão comprados/não comprados

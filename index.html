@@ -4396,7 +4396,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v155';
+var APP_VERSION = 'v156';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -4831,7 +4831,7 @@ const STATUS_DEADLINES = [
   { linha:'personalizada', setor:'estoque', status:'Separação completa', limitDay:7, level:'warn', desc:'Separação de embalagem completa' },
   // Compras
   { linha:'personalizada', setor:'compras', status:'Orçamento feito',   limitDay:2, level:'warn', desc:'Orçamento de embalagem' },
-  { linha:'personalizada', setor:'compras', status:'Compra finalizada', limitDay:4, level:'warn', desc:'Compra de embalagem finalizada' },
+  { linha:'personalizada', setor:'compras', status:'Compra finalizada', limitDay:4, level:'warn', desc:'Compra de embalagem finalizada', ok:['Compra embalagem finalizado'] }, // v156 — o prazo D4 é da EMBALAGEM: o rótulo novo satisfaz; 'Compra ativo finalizado' sozinho NÃO
   { linha:'personalizada', setor:'compras', status:'Produto entregue',  limitDay:7, level:'crit', desc:'Entrega da embalagem na Lecare' },
   // Designer (ordered by prazo)
   { linha:'personalizada', setor:'designer', status:'Em produção',          limitDay:2,  level:'warn', desc:'Início da produção dos rótulos' },
@@ -4910,8 +4910,8 @@ const SETORES = {
     statuses:['Não iniciado','Concluído','Emitido NF','Emitido sem NF']},
   estoque:   {label:'Estoque',   color:'#BA7517',
     statuses:['Não iniciado','Solicitado compra','Separação completa']},
-  compras:   {label:'Compras',   color:'#D4537E',
-    statuses:['Não iniciado','Orçamento feito','Compra finalizada','Produto entregue']},
+  compras:   {label:'Compras',   color:'#D4537E', // v156 — escada nova (os dois 'finalizado' são o mesmo degrau); 'Compra finalizada' = legado (pedidos pré-virada)
+    statuses:['Não iniciado','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Compra finalizada','Produto entregue']},
   designer:  {label:'Designer',  color:'#0F6E56',
     statuses:['Não iniciado','Em produção','Envio p/ aprovação','Aprovado',
               'Montagem pranchas','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno']},
@@ -5546,7 +5546,7 @@ const STATUS_SEQUENCE = {
   comercial:  ['Não iniciado','Fechamento concluído','Produtos informados'],
   financeiro: ['Não iniciado','Concluído','Emitido NF','Emitido sem NF'],
   estoque:    ['Não iniciado','Solicitado compra','Separação completa'],
-  compras:    ['Não iniciado','Orçamento feito','Compra finalizada','Produto entregue'],
+  compras:    ['Não iniciado','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Compra finalizada','Produto entregue'], // v156 — novos rótulos por lado
   designer:   ['Não iniciado','Em produção','Envio p/ aprovação','Aprovado','Montagem pranchas','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno'],
   producao:   ['Não iniciado','Conferência inicial','Liberado produção','Checagem ativos','Checagem embalagens','Em produção','Finalizado e conf.','Enviado para expedição'],
   rotulos:    ['Não iniciado','Em andamento','Finalizado'],
@@ -5643,7 +5643,7 @@ function badgeClass(st,alertLevel){
   if(st==='Entregue Parcial')return'b-inf'; // v131 — entrega parcial de volumes (azul, distinto de Enviado/Entregue)
   const ok=['Concluído','Concluído (caixa)','Finalizado','Entregue','Enviado','Fechamento concluído','Produtos informados','Separação completa','Produto entregue','Compra finalizada','Aprovado','Emitido NF','Emitido s/ NF','Emitido sem NF','Rótulos recebidos','Separação concluída','Finalizado e conferido','Conferido e liberado','Enviado para expedição','Finalizado e conf.','Rótulo Interno'];
   if(ok.includes(st))return'b-ok';
-  const mid=['Em produção','Em separação','Em andamento','Em expedição','Orçamento feito','Montagem pranchas','Envio p/ aprovação','Enviado p/ gráfica','Conferência inicial','Checagem ativos','Checagem embalagens','Solicitado compra','Liberado produção','Distribuido tarefas','Rotulando'];
+  const mid=['Em produção','Em separação','Em andamento','Em expedição','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Montagem pranchas','Envio p/ aprovação','Enviado p/ gráfica','Conferência inicial','Checagem ativos','Checagem embalagens','Solicitado compra','Liberado produção','Distribuido tarefas','Rotulando'];
   if(mid.includes(st))return'b-mid';
   return'b-inf';
 }
@@ -6001,7 +6001,7 @@ async function doLogin(){
     document.getElementById(id)?.classList.remove('hidden');
   });
   document.getElementById('nav-compras').classList.toggle('hidden',!canAccessCompras());
-  document.getElementById('nav-solicitacao-compra')?.classList.toggle('hidden',!canAccessCompras() && !_temSetor('financeiro')); // v130 — compras (solicitar/comprar) + financeiro (recebimento)
+  document.getElementById('nav-solicitacao-compra')?.classList.toggle('hidden',!canAccessCompras() && !_temSetor('financeiro') && !_temSetor('estoque')); // v130 — compras (solicitar/comprar) + financeiro (recebimento); v156 — estoque (solicita embalagem/ativos, caso Luiz)
   // v98 — Fornecedores grava na tabela que exige o setor 'compras'; o menu estava visível p/ todos
   // → usuário sem 'compras' cadastrava e o save era silenciosamente pulado. Gate igual ao Compras.
   // v109 — liberado também para a expedição (responsável cadastra transportadoras/fornecedores de frete).
@@ -6527,7 +6527,21 @@ function openStatusModal(oid,setor){
     parallelBanner.textContent=`Status paralelos: selecionar qualquer um de "${parallelGroup.join('" ou "')}" cumpre o prazo do D${statusDlMap[parallelGroup[0]]?.limitDay||'?'}.`;
   } else {parallelBanner.style.display='none';}
   // Build sequential index: index of current status in setor list
-  const statuses=setorCfg.statuses;
+  let statuses=setorCfg.statuses;
+  // v156 — COMPRAS: escada por pedido. Novos (pós-virada 15/07/26): sem 'Compra finalizada' (legado);
+  // legados: sem os dois rótulos novos (motor antigo). Selos dos lados no subtítulo p/ os novos.
+  if(setor==='compras' && linha==='personalizada'){
+    if(_pedidoNovoCompras(o)){
+      statuses=statuses.filter(s=>s!=='Compra finalizada');
+      try{
+        const _la=_ladoComprasEstado(o,'ativo'), _le=_ladoComprasEstado(o,'embalagem');
+        const _selo=(st,nome)=> (st.compradoOk?'✅ ':(st.definido?'⏳ ':'⚠ '))+nome+(st.definido?'':' (sem solicitação/não necessário)');
+        document.getElementById('sm-sub').textContent+='  ·  '+_selo(_la,'Ativos')+'  ·  '+_selo(_le,'Embalagem');
+      }catch(_e){}
+    } else {
+      statuses=statuses.filter(s=>s!=='Compra ativo finalizado'&&s!=='Compra embalagem finalizado');
+    }
+  }
   // v91 — status legado/avançado fora da lista atual (ex.: financeiro 'Emitido NF' ou
   // 'Concluído (caixa)' já passaram do 'Concluído' — sequência: conclui -> emite).
   // Considera 'Concluído' como JÁ marcado: destrava e mostra selecionado, SEM alterar o
@@ -6674,6 +6688,19 @@ function confirmStatus(){
     var _vd=parseFloat(o.valor)||0;
     if(Math.round(Math.abs(_pt-_vd)*100)>10){ // v149 — tolerância 10 centavos
       alert('Não é possível marcar "Produtos informados": o total dos produtos ('+fmtMoney(_pt)+') não confere com o valor da venda sem frete ('+fmtMoney(_vd)+').\nDiferença de '+fmtMoney(Math.abs(_pt-_vd))+'. Ajuste os produtos (ou o valor do pedido) antes de informar.');
+      return;
+    }
+  }
+
+  // v156 — COMPRAS (pedidos pós-virada): "Produto entregue" só com os DOIS lados resolvidos e recebidos
+  if(statusCtx.setor==='compras' && selectedStatus==='Produto entregue' && _pedidoNovoCompras(o)){
+    var _cla=_ladoComprasEstado(o,'ativo'), _cle=_ladoComprasEstado(o,'embalagem');
+    if(!(_cla.definido && _cle.definido)){
+      alert('🚫 "Produto entregue" exige os DOIS lados definidos.\n\nCada lado (ATIVOS e EMBALAGEM) precisa ter solicitação de compra OU estar marcado "Não necessário" no menu Solicitação de Compra.\n\nAtivos: '+(_cla.definido?'ok':'SEM definição')+' · Embalagem: '+(_cle.definido?'ok':'SEM definição'));
+      return;
+    }
+    if(!(_cla.recebidoOk && _cle.recebidoOk)){
+      alert('🚫 "Produto entregue" só quando TUDO estiver recebido nos dois lados (ou marcado "Não necessário").\n\nAtivos: '+(_cla.recebidoOk?'ok':'pendente')+' · Embalagem: '+(_cle.recebidoOk?'ok':'pendente')+'\n\nConfira a sub-aba Recebimento na Solicitação de Compra.');
       return;
     }
   }
@@ -10065,6 +10092,7 @@ function marcarCompraNaoNec(orderId){
   if(!o.compraNaoNec) o.compraNaoNec={};
   o.compraNaoNec[tab]={ em:Date.now(), por:(currentUser&&currentUser.name)||'' };
   _aplicarNaoNecStatus(o);
+  try{ _reavaliarComprasPedido(o.id); }catch(_e){} // v156 — motor novo: "não necessário" fecha o LADO (selo + status)
   renderSolCompra(tab); saveData(); try{ refreshAll(); }catch(_e){}
 }
 function _aplicarNaoNecStatus(o){
@@ -10112,6 +10140,7 @@ function desfazerCompraNaoNec(orderId){
     delete o.compraNaoNec._jump;
   }
   delete o.compraNaoNec[tab];
+  try{ _reavaliarComprasPedido(o.id); }catch(_e){} // v156 — motor novo: desfazer reabre o lado (selo apaga; campo não regride)
   renderSolCompra(tab); saveData(); try{ refreshAll(); }catch(_e){}
 }
 // ═══════════ v130 — LISTA DE COMPRA (consolidação + cotação) ═══════════
@@ -10140,7 +10169,7 @@ function gerarListaCompra(){
   pend.forEach(function(s){
     s.status='em_lista'; s.listaId=lista.id; s.atualizadoEm=now;
     var o=(orders||[]).find(function(x){ return String(x.id)===String(s.orderId); });
-    if(o) _autoComprasOrcamento(o);
+    if(o && !_pedidoNovoCompras(o)) _autoComprasOrcamento(o); // v156 — novos: 'Orçamento feito' só quando as embalagens forem COTADAS (não ao entrar na lista)
   });
   renderListaCompra(); saveData();
   alert('✓ Lista de '+(tipo==='ativo'?'ativos':'embalagens')+' gerada com '+itens.length+' item(ns), consolidando '+pend.length+' solicitação(ões).');
@@ -10253,7 +10282,7 @@ function complementarLista(listaId){
     s.status='em_lista'; s.listaId=l.id; s.atualizadoEm=now;
     (l.solicIds=l.solicIds||[]).push(s.id);
     var o=(orders||[]).find(function(x){ return String(x.id)===String(s.orderId); });
-    if(o) _autoComprasOrcamento(o);
+    if(o && !_pedidoNovoCompras(o)) _autoComprasOrcamento(o); // v156 — novos: 'Orçamento feito' só quando as embalagens forem COTADAS (não ao entrar na lista)
   });
   l.itens.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
   renderListaCompra(); saveData();
@@ -10339,6 +10368,7 @@ function saveCotacao(){
   it.cotacoes=cot;
   it.escolhida = escNome ? cot.findIndex(function(c){ return c.fornecedorNome===escNome; }) : null;
   if(it.escolhida===-1) it.escolhida=null;
+  (it.origem||[]).forEach(function(og){ try{ _reavaliarOrcamentoEmb(og.orderId); }catch(_e){} }); // v156 — embalagens todas cotadas → 'Orçamento feito'
   closeCotacaoModal(); renderListaCompra(); saveData();
 }
 // ═══════════ v130 — COMPRA + RECEBIMENTO (Fase 3) ═══════════
@@ -10471,14 +10501,97 @@ function renderSolAcomp(){
         '<td style="'+td+';text-align:right;font-weight:600">'+(x.total>0?fmtMoney(x.total):'—')+'</td></tr>';
     }).join('')+'</tbody></table></div></div>';
 }
+// ═══════════ v156 — MOTOR NOVO do setor COMPRAS (por LADO ativo/embalagem) ═══════════
+// VIRADA: pedidos LANÇADOS no sistema (criadoEm) a partir de 15/07/2026 usam a escada nova
+// (Orçamento feito ← embalagens cotadas; Compra ativo finalizado / Compra embalagem finalizado por lado;
+// Produto entregue SÓ com os dois lados definidos [solicitação OU "não necessário"] e tudo recebido).
+// Pedidos anteriores seguem o motor antigo intacto (rótulo 'Compra finalizada' incluso).
+var COMPRAS_VIRADA_TS = new Date('2026-07-15T00:00:00-03:00').getTime();
+function _pedidoNovoCompras(o){ return !!(o && (o.criadoEm||0)>=COMPRAS_VIRADA_TS && (o.linha||'personalizada')==='personalizada'); }
+// Estado de um LADO (tipo 'ativo'|'embalagem'): "não necessário" resolve o lado inteiro;
+// senão exige TODAS as solicitações do tipo em lista e todos os itens comprados/recebidos
+// (item "não comprado" não conta aqui — as qtds devolvidas viram solicitação pendente e seguram o lado).
+function _ladoComprasEstado(o, tipo){
+  var nn=o.compraNaoNec && o.compraNaoNec[tipo];
+  var solics=_solTodasSolic(o.id, tipo).filter(function(s){ return (s.itens||[]).length; });
+  if(!solics.length) return nn ? {definido:true, compradoOk:true, recebidoOk:true} : {definido:false, compradoOk:false, recebidoOk:false};
+  var compradoOk=true, recebidoOk=true;
+  for(var i=0;i<solics.length;i++){
+    var s=solics[i];
+    if(!s.listaId || s.status==='solicitado') return {definido:true, compradoOk:false, recebidoOk:false};
+    var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; });
+    if(!l) return {definido:true, compradoOk:false, recebidoOk:false};
+    for(var j=0;j<s.itens.length;j++){
+      var li=(l.itens||[]).find(function(x){ return x.itemId===s.itens[j].itemId; });
+      if(li && li.naoComprado) continue;
+      if(!li || !li.compra || !li.compra.comprado) compradoOk=false;
+      if(!li || !li.compra || !li.compra.recebido) recebidoOk=false;
+    }
+  }
+  return {definido:true, compradoOk:compradoOk, recebidoOk:recebidoOk};
+}
+// Avança o campo de status (escada nova); entre os dois "finalizado" o movimento é LATERAL
+// (mesmo degrau — o campo mostra o último lado fechado; os selos mostram os dois).
+function _setComprasStatusNovo(o, alvo, motivo){
+  if(!o.statuses) o.statuses={};
+  var seq=STATUS_SEQUENCE.compras;
+  var cur=o.statuses.compras||'Não iniciado';
+  if(alvo===cur) return;
+  var _fin=['Compra ativo finalizado','Compra embalagem finalizado'];
+  var lateral=_fin.indexOf(alvo)>=0 && _fin.indexOf(cur)>=0;
+  if(!lateral && seq.indexOf(alvo)<=seq.indexOf(cur)) return; // só avança
+  o.statuses.compras=alvo;
+  if(!o.statusDates) o.statusDates={};
+  o.statusDates.compras={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:cur,to:alvo};
+  try{ addAudit(o,'compras','status',cur,alvo+' (automático — '+(motivo||'compra vinculada')+')'); }catch(_e){}
+}
+// v156 — 'Orçamento feito' pela COTAÇÃO das EMBALAGENS (regra do dono: só embalagem, pelo prazo).
+// Dispara quando TODAS as embalagens solicitadas do pedido têm cotação lançada (ou já resolvidas).
+function _reavaliarOrcamentoEmb(orderId){
+  var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); });
+  if(!o || !_pedidoNovoCompras(o)) return;
+  var solics=_solTodasSolic(orderId,'embalagem').filter(function(s){ return (s.itens||[]).length; });
+  if(!solics.length) return;
+  for(var i=0;i<solics.length;i++){
+    var s=solics[i];
+    if(!s.listaId || s.status==='solicitado') return;
+    var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; }); if(!l) return;
+    for(var j=0;j<s.itens.length;j++){
+      var li=(l.itens||[]).find(function(x){ return x.itemId===s.itens[j].itemId; });
+      if(!li) return;
+      if(li.naoComprado || (li.compra&&li.compra.comprado)) continue;
+      if(!(li.cotacoes||[]).length) return;
+    }
+  }
+  _setComprasStatusNovo(o,'Orçamento feito','embalagens cotadas');
+}
 function _reavaliarComprasPedido(orderId){
   var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); }); if(!o) return;
+  if(!o.statuses) o.statuses={};
+  if(_pedidoNovoCompras(o)){
+    // ── MOTOR NOVO (v156): por lado, com registro durável em o.comprasLados ──
+    var lados=o.comprasLados||(o.comprasLados={});
+    var est={ ativo:_ladoComprasEstado(o,'ativo'), embalagem:_ladoComprasEstado(o,'embalagem') };
+    ['ativo','embalagem'].forEach(function(t){
+      var lbl = t==='ativo' ? 'Compra ativo finalizado' : 'Compra embalagem finalizado';
+      if(est[t].compradoOk && !lados[t]){
+        lados[t]={ts:Date.now(), by:(currentUser&&currentUser.name)||'Sistema'};
+        _setComprasStatusNovo(o,lbl,'lado '+t+' fechado (comprado ou não necessário)');
+      } else if(!est[t].compradoOk && lados[t]){
+        delete lados[t]; // lado reabriu (ex.: solicitação complementar nova) — selo apaga; o campo não regride
+        try{ addAudit(o,'compras','status',o.statuses.compras||'',(t==='ativo'?'lado ATIVOS':'lado EMBALAGEM')+' reaberto (nova solicitação pendente)'); }catch(_e){}
+      }
+    });
+    if(est.ativo.definido && est.embalagem.definido && est.ativo.recebidoOk && est.embalagem.recebidoOk)
+      _setComprasStatusNovo(o,'Produto entregue','tudo recebido nos dois lados');
+    return;
+  }
+  // ── MOTOR ANTIGO (pedidos lançados antes da virada) — intacto ──
   var ORD=['Não iniciado','Orçamento feito','Compra finalizada','Produto entregue'];
   var alvo=null;
   if(_pedidoTudoNoEstado(orderId,'recebido')) alvo='Produto entregue';
   else if(_pedidoTudoNoEstado(orderId,'comprado')) alvo='Compra finalizada';
   if(!alvo) return;
-  if(!o.statuses) o.statuses={};
   var cur=o.statuses.compras||'Não iniciado';
   if(ORD.indexOf(alvo) <= ORD.indexOf(cur)) return; // só avança, nunca regride
   o.statuses.compras=alvo;
@@ -13128,7 +13241,7 @@ function _producaoMesRotulo(mk){
 // v111 — produção do mês considerando SÓ pedidos cuja compra JÁ foi realizada (status Compras = "Compra finalizada" ou "Produto entregue").
 // Referência p/ o limite de Embalagem+MP que anda no ritmo da compra real, sem o delay do pedido (~10 dias até comprar/lançar).
 function _producaoMesComprada(mk){
-  return orders.filter(o=>(o.d1||'').slice(0,7)===mk && _geraProducao(o.tipo) && ['Compra finalizada','Produto entregue'].includes((o.statuses&&o.statuses.compras)||'')).reduce((s,o)=>s+(parseFloat(o.valor)||0),0);
+  return orders.filter(o=>(o.d1||'').slice(0,7)===mk && _geraProducao(o.tipo) && (['Compra finalizada','Produto entregue'].includes((o.statuses&&o.statuses.compras)||'') || (o.comprasLados&&o.comprasLados.ativo&&o.comprasLados.embalagem))).reduce((s,o)=>s+(parseFloat(o.valor)||0),0); // v156 — motor novo: os DOIS lados fechados = compra realizada
 }
 function _faturamentoCaixaMes(mk){
   return orders.filter(o=>(o.d1||'').slice(0,7)===mk && _geraCaixa(o.tipo)).reduce((s,o)=>s+(parseFloat(o.valor)||0),0);
@@ -13836,7 +13949,12 @@ function renderGestao(){
       const dateStr=sd?`<span class="badge-date">${new Date(sd.ts).toLocaleDateString('pt-BR')}</span>`:'';
       const pendBadge=activePend?`<span class="pend-alert-badge" onclick="event.stopPropagation();openPendAlertModal(${o.id},'${k}')" title="Pendência ativa — clique para ver">⚠ Pendência</span>`:'';
       const obsIcon=(typeof _obsCount==='function'&&_obsCount(o,k)>0)?`<span onclick="event.stopPropagation();openObsModal(${o.id},'${k}')" title="Tem observação — clique para ver" style="cursor:pointer;font-size:12px;line-height:1">💬</span>`:''; // v120 — sinal discreto de observação
-      return`<td class="audit-cell"><div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap"><span class="badge ${bc} ${edit?'clickable':''}" style="flex-direction:column;align-items:flex-start;gap:0" ${edit?`onclick="openStatusModal(${o.id},'${k}')"` :''}>${st}${dateStr}</span>${obsIcon}${pendBadge}</div>${tip}</td>`;
+      // v156 — COMPRAS (pedidos pós-virada): selos dos DOIS lados (A=ativos, E=embalagem) — "marcados ao mesmo tempo"
+      let ladosSelo='';
+      if(k==='compras' && typeof _pedidoNovoCompras==='function' && _pedidoNovoCompras(o) && o.comprasLados && (o.comprasLados.ativo||o.comprasLados.embalagem)){
+        ladosSelo=`<span style="font-size:9px;white-space:nowrap;color:var(--st-ok-tx)" title="Lados finalizados (comprado ou não necessário)">${o.comprasLados.ativo?'A✓':''}${o.comprasLados.ativo&&o.comprasLados.embalagem?' ':''}${o.comprasLados.embalagem?'E✓':''}</span>`;
+      }
+      return`<td class="audit-cell"><div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap"><span class="badge ${bc} ${edit?'clickable':''}" style="flex-direction:column;align-items:flex-start;gap:0" ${edit?`onclick="openStatusModal(${o.id},'${k}')"` :''}>${st}${dateStr}</span>${ladosSelo}${obsIcon}${pendBadge}</div>${tip}</td>`;
     }).join('');
     return`<tr class="${rc}"><td style="font-weight:500">${escapeHtml(o.num)}${tag}</td><td>${tipoBadgeHtml(o.tipo||'venda')}</td><td>${escapeHtml(o.cliente)}</td><td style="color:var(--text-secondary);font-size:12px;white-space:nowrap">${fmtDate(_dataInclusao(o))}</td><td>${fmtDate(o.previsao)}</td><td>${fmtMoney(o.valor)}</td>${cells}<td style="color:var(--text-secondary);font-size:12px">${(()=>{const hist=o.enviosHistorico||[];if(hist.length<=1)return fmtDate(o.envioReal)||'—';const datas=[...new Set(hist.map(e=>e.data).filter(Boolean))];return datas.length===1?fmtDate(datas[0]):datas.map(d=>fmtDate(d)).join('<br>');})()}</td><td style="font-size:12px">${transpCellHtml(o)}</td><td style="font-size:12px">${rastreiosCellHtml(o)}</td><td style="white-space:nowrap"><button onclick="openDetailModal(${o.id})" class="btn-primary" style="padding:3px 12px;font-size:11px">Abrir</button> <button onclick="openEnvioModal(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px;background:var(--bg-info);color:var(--text-info);border-color:var(--text-info)">📮 Envio</button> ${canEditOrder()?`<button onclick="openOrderModal(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px">Editar</button>`:''} ${currentUser?.perfil==='admin'?`<button onclick="deleteOrderDirect(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">Excluir</button>`:''}</td></tr>`;
   }).join('');
@@ -26858,7 +26976,11 @@ function registrarMensagem(clienteId, de, texto, anexo, telefone){
   if(conv.status==='encerrada'){
     conv.status='ativa';
     conv.reabertaEm=msg.em;
+    conv.statusEm=Date.now(); // v156 \u2014 SEM este carimbo a reabertura PERDIA no merge "mais-novo-vence" (v143):
+    // outra aba com a c\u00f3pia encerrada regravava por cima e a conversa ficava ativa-de-mentira no Hist\u00f3rico
+    // (caso Bruna/MARINA 15/07 \u2014 10 conversas presas). O bot\u00e3o Reabrir e o inbound (conv_inbound_meta) j\u00e1 carimbavam.
     conv.mensagens.push({ id:'m'+Date.now()+Math.floor(Math.random()*1000), de:'sistema', texto:'\ud83d\udd04 Conversa reaberta (nova mensagem)', em:Date.now()+1, autorId:null, status:'sistema' });
+    try{ if(typeof _waUpsertConversa==='function') _waUpsertConversa(conv); }catch(_e){} // grava J\u00c1 (padr\u00e3o v143)
   } else if(!conv.status){ conv.status='ativa'; }
   // Quem responder primeiro assume o atendimento (conversa do pool da equipe)
   if(de==='atendente' && currentUser && !conv.atendenteId){
@@ -26987,6 +27109,10 @@ function renderConversasLista(){
     visiveis = visiveis.filter(c=>{ const cli=clients.find(x=>x.id===c.clienteId); const nm=_nomeConversaCli(c.clienteId)||''; return nm.toLowerCase().includes(termo) || (cli && (cli.nome||'').toLowerCase().includes(termo)); });
   }
   const ordena=(a,b)=>(b.ultimaMsgEm||0)-(a.ultimaMsgEm||0);
+  // v156 — conversa criada ao abrir o card e NUNCA usada (0 mensagens, sem não-lidas) não polui a lista
+  // nem as contagens: só aparece se for a conversa aberta agora; volta sozinha na 1ª mensagem (147 vazias
+  // acumuladas no banco ficam invisíveis — o dado não é tocado). Relato do dono 15/07.
+  visiveis = visiveis.filter(c=> (Array.isArray(c.mensagens)&&c.mensagens.length>0) || (c.naoLidas>0) || c.id===conversaAtivaId);
   // v148 : GRUPOS ficam fora das listas/contagens normais — só aparecem no chip próprio
   const gruposList = visiveis.filter(c=>c.grupo).sort((a,b)=>(b.ultimaMsgEm||0)-(a.ultimaMsgEm||0));
   visiveis = visiveis.filter(c=>!c.grupo);

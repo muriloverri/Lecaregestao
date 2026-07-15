@@ -4400,7 +4400,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v157';
+var APP_VERSION = 'v159';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -4462,6 +4462,14 @@ function _trazerModalFrente(el){
 function _fecharModalX(btn){
   try{ var ov=btn && btn.closest ? btn.closest('.overlay') : null; if(!ov) return;
     ov.classList.remove('open');
+    // v159 — fechar o modal de conversa do card LIMPA o ponteiro da conversa ativa (fantasma zerava
+    // não-lidas de mensagem nova p/ todos via guard v151); se a página Conversas estiver visível
+    // atrás, o ponteiro é dela e fica.
+    if(ov.id==='conv-modal-overlay'){
+      try{ var _pgc=document.getElementById('pg-conversas'); if(!(_pgc && _pgc.style.display!=='none')) conversaAtivaId=null; }catch(_e){}
+      // v159 — fechar o modal GRAVANDO áudio: cancela a gravação (o microfone ficava capturando sem ⏹ visível)
+      try{ if(typeof _micRec!=='undefined' && _micRec && _micRec.state==='recording'){ _micCancelado=true; _micRec.stop(); } }catch(_e){}
+    }
     if(ov.getAttribute('data-dyn')==='1'){ try{ ov.remove(); }catch(_e){} }
   }catch(e){}
 }
@@ -5583,6 +5591,12 @@ function ruleIsSatisfied(rule, order){
   // TODAS as regras de financeiro estão satisfeitas → verde, sem alerta, em qualquer linha.
   if(rule.setor==='financeiro' && ['Emitido NF','Emitido sem NF','Emitido s/ NF'].includes(st)) return true;
 
+  // v159 — compras (motor novo v156): o prazo D4 "compra de embalagem finalizada" é satisfeito pelo
+  // SELO durável do lado (o.comprasLados.embalagem), não só pelo campo — o campo mostra o ÚLTIMO lado
+  // fechado e pode "andar de lado" p/ 'Compra ativo finalizado' (índice menor), reacendendo alerta falso
+  // de embalagem já comprada. O selo não regride enquanto o lado estiver fechado.
+  if(rule.setor==='compras' && rule.targetStatus==='Compra finalizada' && order.comprasLados && order.comprasLados.embalagem) return true;
+
   // Paralelos: basta um do grupo estar ativo
   if(rule.parallel) return rule.parallel.includes(st);
 
@@ -5767,6 +5781,9 @@ function today(){ // v148 : data LOCAL (Brasília) — a versão UTC datava o di
 // antigos deriva do id (que é Date.now() na criação); se nada disso, cai na data do pedido.
 function _dataInclusao(o){
   var ts = o.criadoEm || (typeof o.id==='number' && o.id>1e12 ? o.id : null);
+  // v158 — carimbo NO FUTURO não é data de inclusão (legado Mercos usa ids na base 1.9e12 = ano 2030;
+  // e carimbo inventado por agente idem) → cai no d1, que é a melhor aproximação honesta
+  if(ts && ts > Date.now()+3600000) ts=null;
   if(ts){ try{ return new Date(ts).toISOString().split('T')[0]; }catch(_e){} }
   return o.d1 || '';
 }
@@ -6557,6 +6574,20 @@ function openStatusModal(oid,setor){
   }
   const curIdx=statuses.indexOf(_effStatus);
 
+  // v158 — data em que cada status foi SELECIONADO (registro, pedido do dono 15/07): último audit de
+  // status deste pedido+setor; sufixo "(automático — ...)" é cortado p/ casar com o rótulo da lista.
+  // Fallback: carimbo statusDates (cobre a última troca mesmo sem audit carregado).
+  const _selDates={};
+  try{
+    for(let _ai=0;_ai<auditLog.length;_ai++){ const _ae=auditLog[_ai];
+      if(_ae.field!=='status'||String(_ae.orderId)!==String(o.id)||_ae.setor!==setor) continue;
+      const _to=String(_ae.to||'').replace(/\s*\(.*$/,'').trim();
+      if(_to && (!_selDates[_to]||_ae.ts>_selDates[_to])) _selDates[_to]=_ae.ts;
+    }
+  }catch(_e){}
+  const _sdCar=o.statusDates&&o.statusDates[setor];
+  if(_sdCar&&_sdCar.to&&_sdCar.ts){ const _to2=String(_sdCar.to).replace(/\s*\(.*$/,'').trim(); if(_to2&&(!_selDates[_to2]||_sdCar.ts>_selDates[_to2])) _selDates[_to2]=_sdCar.ts; }
+
   document.getElementById('sm-options').innerHTML=statuses.map((s,si)=>{
     const rule=statusDlMap[s];
     const dlStr=rule?`<span style="margin-left:auto;font-size:10px;color:var(--text-tertiary);font-weight:400;flex-shrink:0">limite D${rule.limitDay} — ${fmtDate(deadlineDate(o.d1,rule.limitDay))}</span>`:'';
@@ -6601,11 +6632,14 @@ function openStatusModal(oid,setor){
          </span>`
       : dlStr;
 
+    // v158 — data em que o status foi selecionado (pequena, dentro da própria linha)
+    const selTs=_selDates[s];
+    const selStr=selTs?`<span style="font-size:10px;color:var(--st-ok-tx);white-space:nowrap;flex-shrink:0" title="Selecionado em ${new Date(selTs).toLocaleString('pt-BR')}">✓ ${new Date(selTs).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit'})}</span>`:'';
     return`<button class="status-opt ${(s===selectedStatus||s===_effStatus)?'selected':''}"
       onclick="${locked?'void(0)':"pickStatus('" + s + "')"}"
       ${locked?'disabled':''}
       style="display:flex;align-items:center;gap:8px;justify-content:space-between;${lockStyle}">
-      ${s}${lockSuffix}
+      <span style="display:flex;align-items:center;gap:7px;min-width:0">${s}${selStr}</span>${lockSuffix}
     </button>`;
   }).join('');
   document.getElementById('status-overlay').classList.add('open');
@@ -10128,6 +10162,7 @@ function desfazerCompraNaoNec(orderId){
   if(!confirm('Desfazer o "não necessário" de '+(tab==='ativo'?'ATIVOS':'EMBALAGEM')+' no pedido '+(o.num||'')+'?')) return;
   // reverte o salto de status SE ele aconteceu e ninguém mexeu nos status desde então
   var jump=o.compraNaoNec._jump;
+  delete o.compraNaoNec[tab]; // v159 — remove a marca ANTES: o cálculo do rótulo usa o estado real dos lados
   if(jump){
     if(!o.statuses) o.statuses={};
     if(!o.statusDates) o.statusDates={};
@@ -10137,13 +10172,19 @@ function desfazerCompraNaoNec(orderId){
       try{ addAudit(o,'estoque','status','Separação completa',jump.estoqueFrom+' (automático — desfeito o "não necessário")'); }catch(_e){}
     }
     if(jump.comprasFrom!=null && o.statuses.compras==='Produto entregue'){
-      o.statuses.compras=jump.comprasFrom;
-      o.statusDates.compras={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:'Produto entregue',to:jump.comprasFrom};
-      try{ addAudit(o,'compras','status','Produto entregue',jump.comprasFrom+' (automático — desfeito o "não necessário")'); }catch(_e){}
+      // v159 (item 9 da revisão 15/07) — o rótulo de volta é RECALCULADO pelo estado real dos lados:
+      // o valor guardado podia ser o rótulo do PRÓPRIO lado que acabou de reabrir (marcou ativo→embalagem,
+      // desfez ativo → voltava p/ 'Compra ativo finalizado'). Se o OUTRO lado segue fechado, volta pro
+      // rótulo DELE; senão, volta pro valor guardado (estado de antes do salto).
+      var _outroLado=(tab==='ativo')?'embalagem':'ativo';
+      var _estOutro=_ladoComprasEstado(o,_outroLado);
+      var _alvoVolta=_estOutro.compradoOk?(_outroLado==='ativo'?'Compra ativo finalizado':'Compra embalagem finalizado'):jump.comprasFrom;
+      o.statuses.compras=_alvoVolta;
+      o.statusDates.compras={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:'Produto entregue',to:_alvoVolta};
+      try{ addAudit(o,'compras','status','Produto entregue',_alvoVolta+' (automático — desfeito o "não necessário")'); }catch(_e){}
     }
     delete o.compraNaoNec._jump;
   }
-  delete o.compraNaoNec[tab];
   try{ _reavaliarComprasPedido(o.id); }catch(_e){} // v156 — motor novo: desfazer reabre o lado (selo apaga; campo não regride)
   renderSolCompra(tab); saveData(); try{ refreshAll(); }catch(_e){}
 }
@@ -10196,6 +10237,9 @@ function _lcCodigo(l){
   var n=String(ix+1); while(n.length<3) n='0'+n;
   return (l.tipo==='ativo'?'LA-':'LE-')+n;
 }
+// v159 — data/mês LOCAIS de um timestamp (padrão do today() v148: toISOString é UTC e "vira o dia" após ~21h BRT)
+function _dtLocalStr(ts){ var d=new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _mesLocalStr(ts){ return _dtLocalStr(ts).slice(0,7); }
 var _lcStatusLbl={cotacao:'Em cotação', compra:'Em compra', finalizada:'Finalizada'};
 function _lcStatusBadge(st){
   var cfg = st==='finalizada' ? ['var(--st-ok-bg)','var(--st-ok-tx)'] : st==='compra' ? ['var(--st-mid-bg)','var(--st-mid-tx)'] : ['var(--st-inf-bg)','var(--st-inf-tx)'];
@@ -10219,7 +10263,7 @@ function renderListaCompra(){
       var nCot=its.filter(function(it){ return it.escolhida!=null; }).length;
       var totalEsc=its.reduce(function(s,it){ var c=_cotItemEscolhida(it); return s+(c?(parseFloat(c.preco)||0):0)*(parseFloat(it.qtdTotal)||0); },0);
       var dt=l.criadoEm?new Date(l.criadoEm):null;
-      var dtTxt=dt?(fmtDate(dt.toISOString().slice(0,10))+' <span style="color:var(--text-tertiary);font-size:11px">'+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</span>'):'—';
+      var dtTxt=dt?(fmtDate(_dtLocalStr(dt))+' <span style="color:var(--text-tertiary);font-size:11px">'+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+'</span>'):'—'; // v159 — data LOCAL (era UTC)
       return '<tr>'+
         '<td style="'+td+';font-weight:600;font-family:monospace">'+_lcCodigo(l)+'</td>'+
         '<td style="'+td+'">'+dtTxt+'</td>'+
@@ -10247,7 +10291,7 @@ function _renderListaCompraAberta(){
   if(!_lcAbertaId) return;
   var l=(listasCompra||[]).find(function(x){ return x.id===_lcAbertaId; }); if(!l){ closeListaCompraAberta(); return; }
   var t=document.getElementById('lc-ab-titulo'); if(t) t.textContent='Lista '+_lcCodigo(l)+' — '+(l.tipo==='ativo'?'Ativos':'Embalagens');
-  var sub=document.getElementById('lc-ab-sub'); if(sub) sub.textContent='Gerada em '+(l.criadoEm?fmtDate(new Date(l.criadoEm).toISOString().slice(0,10))+' às '+new Date(l.criadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—')+(l.criadoPor?' por '+l.criadoPor:'')+' · consolida '+((l.solicIds||[]).length)+' solicitação(ões)';
+  var sub=document.getElementById('lc-ab-sub'); if(sub) sub.textContent='Gerada em '+(l.criadoEm?fmtDate(_dtLocalStr(l.criadoEm))+' às '+new Date(l.criadoEm).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—')+(l.criadoPor?' por '+l.criadoPor:'')+' · consolida '+((l.solicIds||[]).length)+' solicitação(ões)';
   var nCot=(l.itens||[]).filter(function(it){ return it.escolhida!=null; }).length;
   var totalEsc=(l.itens||[]).reduce(function(s,it){ var c=_cotItemEscolhida(it); return s+(c?(parseFloat(c.preco)||0):0)*(parseFloat(it.qtdTotal)||0); },0);
   var res=document.getElementById('lc-ab-resumo');
@@ -10343,11 +10387,12 @@ function _lcItensTableHtml(l){
       var _histBtn=_hist.length?'<button onclick="_histItemToggle(this)" data-hid="'+_hid+'" title="Histórico de compras deste item ('+_hist.length+')" style="font-size:11px;padding:3px 8px">📈 '+_hist.length+'</button> ':'';
       var _histRow=_hist.length?('<tr id="'+_hid+'" style="display:none"><td colspan="8" style="padding:6px 12px;background:var(--bg-secondary);border-bottom:.5px solid var(--border)">'+
         '<div style="font-size:11px;margin-bottom:3px"><b>📈 Histórico de compras</b>'+(_cstIt?' <span style="color:var(--text-secondary)">— médio '+fmtMoney(_cstIt.medio)+' · última '+fmtMoney(_cstIt.ultimo)+' · <span style="color:var(--st-ok-tx)">menor '+fmtMoney(_cstIt.minimo)+'</span></span>':'')+'</div>'+
-        _hist.slice(0,8).map(function(hh){ return '<div style="font-size:11px;padding:2px 0;border-top:.5px dashed var(--border);color:var(--text-secondary)">'+(hh.em?fmtDate(new Date(hh.em).toISOString().slice(0,10)):'—')+' · <b>'+escapeHtml(hh.fornecedor)+'</b> · '+fmtMoney(hh.preco)+(hh.qtd?' · '+hh.qtd.toLocaleString('pt-BR')+' un':'')+(hh.comprado?' · ✓ comprada':' · cotada')+'</div>'; }).join('')+
+        _hist.slice(0,8).map(function(hh){ return '<div style="font-size:11px;padding:2px 0;border-top:.5px dashed var(--border);color:var(--text-secondary)">'+(hh.em?fmtDate(_dtLocalStr(hh.em)):'—')+' · <b>'+escapeHtml(hh.fornecedor)+'</b> · '+fmtMoney(hh.preco)+(hh.qtd?' · '+hh.qtd.toLocaleString('pt-BR')+' un':'')+(hh.comprado?' · ✓ comprada':' · cotada')+'</div>'; }).join('')+
         (_hist.length>8?'<div style="font-size:10px;color:var(--text-tertiary);padding-top:2px">+ '+(_hist.length-8)+' compra(s) mais antiga(s)</div>':'')+
         '</td></tr>'):'';
       // v157 — colunas da COMPRA: qtd comprada (pode ser MAIOR que a solicitada), fornecedor · preço · NF
       var _c=it.compra||{};
+      var _ref=(it.itemId!=null&&it.itemId!=='')?String(it.itemId):('#'+ix); // v159 — identidade do item p/ os botões (fallback raro: posição)
       var _qtdCmp = _c.comprado
         ? ('<span'+((parseFloat(_c.qtdComprada)||0)>(parseFloat(it.qtdTotal)||0)?' style="color:var(--text-info);font-weight:600" title="Comprado ACIMA do solicitado"':'')+'>'+(parseFloat(_c.qtdComprada)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</span>')
         : '<span style="color:var(--text-tertiary)">—</span>';
@@ -10361,22 +10406,32 @@ function _lcItensTableHtml(l){
         '<td style="'+td+';font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' pedido(s)</td>'+
         '<td style="'+td+'">'+cotTxt+'</td>'+
         '<td style="'+td+'">'+_cmpInfo+'</td>'+
-        '<td style="'+td+';text-align:right;white-space:nowrap">'+_histBtn+'<button onclick="openCotacaoModal(\''+l.id+'\','+ix+')" style="font-size:11px;padding:3px 9px">Cotar</button> '+
+        // v159 — botões passam a IDENTIDADE do item (itemId), não a posição: a lista pode ser reordenada
+        // por baixo (complementar em outra tela + re-sync) e a posição apontaria para o item ERRADO.
+        '<td style="'+td+';text-align:right;white-space:nowrap">'+_histBtn+'<button onclick="openCotacaoModal(\''+l.id+'\',\''+_ref+'\')" style="font-size:11px;padding:3px 9px">Cotar</button> '+
           (_c.comprado
-            ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(_c.recebido?' · recebido':'')+'</span>'+(_c.recebido?'':' <button onclick="openComprarModal(\''+l.id+'\','+ix+')" title="Editar a compra / preencher a NF" style="font-size:11px;padding:3px 8px">✏</button>')
-            : '<button class="btn-primary" onclick="openComprarModal(\''+l.id+'\','+ix+')" style="font-size:11px;padding:3px 9px">Comprar</button> <button onclick="naoComprarItem(\''+l.id+'\','+ix+')" title="Não comprar este item — as quantidades voltam para a próxima lista" style="font-size:11px;padding:3px 9px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">✕ Não comprar</button>')+
+            ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(_c.recebido?' · recebido':'')+'</span>'+(_c.recebido?'':' <button onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" title="Editar a compra / preencher a NF" style="font-size:11px;padding:3px 8px">✏</button>')
+            : '<button class="btn-primary" onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" style="font-size:11px;padding:3px 9px">Comprar</button> <button onclick="naoComprarItem(\''+l.id+'\',\''+_ref+'\')" title="Não comprar este item — as quantidades voltam para a próxima lista" style="font-size:11px;padding:3px 9px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">✕ Não comprar</button>')+
         '</td></tr>'+_histRow;
   }).join('');
   return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:1050px"><thead><tr>'+
     '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solicitada</th><th style="'+th+';text-align:right">Qtd comprada</th><th style="'+th+'">Origem</th><th style="'+th+'">Cotação escolhida</th><th style="'+th+'">Compra (fornecedor · preço · NF)</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 // ── Cotação ──
+// v159 — resolve o item pela IDENTIDADE (itemId); '#N' é fallback por posição (item legado sem itemId).
+// A lista pode mudar por baixo (complementar de outra tela + re-sync): posição NÃO é identidade.
+function _lcItemByRef(l, ref){
+  if(!l || ref==null) return null;
+  var s=String(ref);
+  if(s.charAt(0)==='#'){ return (l.itens||[])[parseInt(s.slice(1),10)]||null; }
+  return (l.itens||[]).find(function(x){ return x && String(x.itemId)===s; })||null;
+}
 var _cotListaId=null, _cotItemIdx=null, _cotRows=[], _cotEscolhida=null;
 function openCotacaoModal(listaId, idx){
-  _cotListaId=listaId; _cotItemIdx=idx;
+  _cotListaId=listaId; _cotItemIdx=idx; // v159 — idx agora carrega a REF (itemId ou '#pos')
   var l=(listasCompra||[]).find(function(x){return x.id===listaId;}); if(!l) return;
   if(l.status==='finalizada'){ alert('Lista finalizada — cotação travada.'); return; }
-  var it=l.itens[idx]; if(!it) return;
+  var it=_lcItemByRef(l, idx); if(!it) return;
   _cotRows=(it.cotacoes||[]).map(function(c){ return {fornecedorId:c.fornecedorId, fornecedorNome:c.fornecedorNome, preco:c.preco}; });
   while(_cotRows.length<3) _cotRows.push({fornecedorId:null,fornecedorNome:'',preco:''});
   _cotEscolhida = (it.escolhida!=null?it.escolhida:null);
@@ -10404,12 +10459,14 @@ function _renderCotRows(){
 }
 function saveCotacao(){
   var l=(listasCompra||[]).find(function(x){return x.id===_cotListaId;}); if(!l) return;
-  var it=l.itens[_cotItemIdx]; if(!it) return;
-  var escNome=(_cotEscolhida!=null&&_cotRows[_cotEscolhida])?(_cotRows[_cotEscolhida].fornecedorNome||'').trim():null;
-  var cot=_cotRows.filter(function(r){ return (r.fornecedorNome||'').trim() && (parseFloat(r.preco)||0)>0; })
-    .map(function(r){ return {fornecedorId:r.fornecedorId||null, fornecedorNome:(r.fornecedorNome||'').trim(), preco:parseFloat(r.preco)||0}; });
-  it.cotacoes=cot;
-  it.escolhida = escNome ? cot.findIndex(function(c){ return c.fornecedorNome===escNome; }) : null;
+  var it=_lcItemByRef(l, _cotItemIdx); // v159 — por identidade
+  if(!it){ alert('Este item não está mais nesta lista (ela mudou em outra tela). Feche e reabra a lista.'); closeCotacaoModal(); return; }
+  // v159 — a escolhida é rastreada pela LINHA (referência), não pelo nome: duas cotações do MESMO
+  // fornecedor (à vista × a prazo) apontavam sempre para a primeira.
+  var escRow=(_cotEscolhida!=null)?_cotRows[_cotEscolhida]:null;
+  var validas=_cotRows.filter(function(r){ return (r.fornecedorNome||'').trim() && (parseFloat(r.preco)||0)>0; });
+  it.cotacoes=validas.map(function(r){ return {fornecedorId:r.fornecedorId||null, fornecedorNome:(r.fornecedorNome||'').trim(), preco:parseFloat(r.preco)||0}; });
+  it.escolhida = escRow ? validas.indexOf(escRow) : null;
   if(it.escolhida===-1) it.escolhida=null;
   (it.origem||[]).forEach(function(og){ try{ _reavaliarOrcamentoEmb(og.orderId); }catch(_e){} }); // v156 — embalagens todas cotadas → 'Orçamento feito'
   closeCotacaoModal(); renderListaCompra(); saveData();
@@ -10441,7 +10498,7 @@ function _atualizaStatusLista(l){
 // (por pedido de origem ou Produtos gerais) — entram automaticamente na PRÓXIMA lista gerada.
 function naoComprarItem(listaId, idx){
   var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return;
-  var it=l.itens[idx]; if(!it) return;
+  var it=_lcItemByRef(l, idx); if(!it) return; // v159 — por identidade (idx = itemId ou '#pos')
   if(it.compra && it.compra.comprado){ alert('Este item já foi comprado.'); return; }
   if(it.naoComprado) return;
   var motivo=prompt('Não comprar "'+(it.nome||'')+'"?\n\nMotivo (falta no fornecedor, preço, etc.):');
@@ -10487,8 +10544,8 @@ function renderSolAcomp(){
   // meses disponíveis (pela data da SOLICITAÇÃO) — default mês atual
   var selMes=document.getElementById('acomp-mes');
   if(selMes && !selMes.options.length){
-    var mset={}; (solicitacoesCompra||[]).forEach(function(s){ if(s&&s.criadoEm) mset[new Date(s.criadoEm).toISOString().slice(0,7)]=1; });
-    var hoje=new Date().toISOString().slice(0,7); mset[hoje]=1;
+    var mset={}; (solicitacoesCompra||[]).forEach(function(s){ if(s&&s.criadoEm) mset[_mesLocalStr(s.criadoEm)]=1; }); // v159 — mês LOCAL (era UTC: após 21h caía no mês seguinte)
+    var hoje=_mesLocalStr(Date.now()); mset[hoje]=1;
     var meses=Object.keys(mset).sort().reverse();
     var nm={'01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun','07':'Jul','08':'Ago','09':'Set','10':'Out','11':'Nov','12':'Dez'};
     selMes.innerHTML='<option value="">Todos os meses</option>'+meses.map(function(m){ return '<option value="'+m+'"'+(m===hoje?' selected':'')+'>'+nm[m.slice(5,7)]+'/'+m.slice(0,4)+'</option>'; }).join('');
@@ -10501,7 +10558,7 @@ function renderSolAcomp(){
   (solicitacoesCompra||[]).forEach(function(s){
     if(!s || !(s.itens||[]).length) return;
     if(fTipo && s.tipo!==fTipo) return;
-    var mesS=s.criadoEm?new Date(s.criadoEm).toISOString().slice(0,7):'';
+    var mesS=s.criadoEm?_mesLocalStr(s.criadoEm):''; // v159 — mês LOCAL
     if(fMes && mesS!==fMes) return;
     s.itens.forEach(function(it){
       var r=_acompStatusItem(s, it), cmp=(r.li&&r.li.compra)||{};
@@ -10537,8 +10594,8 @@ function renderSolAcomp(){
         '<td style="'+td+(x.pedido==='Produtos gerais'?';color:var(--text-info);font-weight:600':';font-weight:600')+'">'+escapeHtml(x.pedido)+'</td>'+
         '<td style="'+td+'"><span style="font-size:11px;font-weight:600;color:'+(_cor[x.status]||'')+'">'+x.status+'</span>'+(x.motivo?' <span style="font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(x.motivo)+'">ⓘ</span>':'')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(x.fornecedor||'—')+'</td>'+
-        '<td style="'+td+'">'+(x.dtSolic?fmtDate(new Date(x.dtSolic).toISOString().slice(0,10)):'—')+'</td>'+
-        '<td style="'+td+'">'+(x.dtCompra?fmtDate(new Date(x.dtCompra).toISOString().slice(0,10)):'—')+'</td>'+
+        '<td style="'+td+'">'+(x.dtSolic?fmtDate(_dtLocalStr(x.dtSolic)):'—')+'</td>'+
+        '<td style="'+td+'">'+(x.dtCompra?fmtDate(_dtLocalStr(x.dtCompra)):'—')+'</td>'+
         '<td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(x.nf||'—')+'</td>'+
         '<td style="'+td+';text-align:right">'+(x.preco>0?fmtMoney(x.preco):'—')+'</td>'+
         '<td style="'+td+';text-align:right;font-weight:600">'+(x.total>0?fmtMoney(x.total):'—')+'</td></tr>';
@@ -10550,13 +10607,20 @@ function renderSolAcomp(){
 // Produto entregue SÓ com os dois lados definidos [solicitação OU "não necessário"] e tudo recebido).
 // Pedidos anteriores seguem o motor antigo intacto (rótulo 'Compra finalizada' incluso).
 var COMPRAS_VIRADA_TS = new Date('2026-07-15T00:00:00-03:00').getTime();
-function _pedidoNovoCompras(o){ return !!(o && (o.criadoEm||0)>=COMPRAS_VIRADA_TS && (o.linha||'personalizada')==='personalizada'); }
+function _pedidoNovoCompras(o){
+  // v159 — carimbo NO FUTURO (>1h) não é confiável (legado Mercos id-2030 / agente com relógio errado):
+  // trata como legado — motor antigo, mesma guarda do _dataInclusao. O trigger do banco já corrige novos.
+  var ce=(o&&o.criadoEm)||0;
+  return !!(o && ce>=COMPRAS_VIRADA_TS && ce<=Date.now()+3600000 && (o.linha||'personalizada')==='personalizada');
+}
 // Estado de um LADO (tipo 'ativo'|'embalagem'): "não necessário" resolve o lado inteiro;
 // senão exige TODAS as solicitações do tipo em lista e todos os itens comprados/recebidos
 // (item "não comprado" não conta aqui — as qtds devolvidas viram solicitação pendente e seguram o lado).
-function _ladoComprasEstado(o, tipo){
+function _ladoComprasEstado(o, tipo, cutTs){
+  // v159 — cutTs (opcional): considera SÓ solicitações criadas até esse instante. Usado para decidir se um
+  // selo apaga: solicitação COMPLEMENTAR criada DEPOIS do lado fechado não conta (regra do dono 15/07).
   var nn=o.compraNaoNec && o.compraNaoNec[tipo];
-  var solics=_solTodasSolic(o.id, tipo).filter(function(s){ return (s.itens||[]).length; });
+  var solics=_solTodasSolic(o.id, tipo).filter(function(s){ return (s.itens||[]).length && (!cutTs || (s.criadoEm||0)<=cutTs); });
   if(!solics.length) return nn ? {definido:true, compradoOk:true, recebidoOk:true} : {definido:false, compradoOk:false, recebidoOk:false};
   var compradoOk=true, recebidoOk=true;
   for(var i=0;i<solics.length;i++){
@@ -10621,8 +10685,14 @@ function _reavaliarComprasPedido(orderId){
         lados[t]={ts:Date.now(), by:(currentUser&&currentUser.name)||'Sistema'};
         _setComprasStatusNovo(o,lbl,'lado '+t+' fechado (comprado ou não necessário)');
       } else if(!est[t].compradoOk && lados[t]){
-        delete lados[t]; // lado reabriu (ex.: solicitação complementar nova) — selo apaga; o campo não regride
-        try{ addAudit(o,'compras','status',o.statuses.compras||'',(t==='ativo'?'lado ATIVOS':'lado EMBALAGEM')+' reaberto (nova solicitação pendente)'); }catch(_e){}
+        // v159 — regra do dono 15/07: complementar NÃO apaga o selo. O selo só apaga se o próprio
+        // fechamento caiu (ex.: desfazer "não necessário"): recomputa ignorando solicitações
+        // criadas DEPOIS do carimbo do selo.
+        var estBase=_ladoComprasEstado(o, t, lados[t].ts||0);
+        if(!estBase.compradoOk){
+          delete lados[t];
+          try{ addAudit(o,'compras','status',o.statuses.compras||'',(t==='ativo'?'lado ATIVOS':'lado EMBALAGEM')+' reaberto (o fechamento foi desfeito)'); }catch(_e){}
+        }
       }
     });
     if(est.ativo.definido && est.embalagem.definido && est.ativo.recebidoOk && est.embalagem.recebidoOk)
@@ -10646,7 +10716,8 @@ function _reavaliarComprasPedido(orderId){
 var _cmpListaId=null, _cmpItemIdx=null;
 function openComprarModal(listaId, idx){
   var l=(listasCompra||[]).find(function(x){return x.id===listaId;}); if(!l) return;
-  var it=l.itens[idx]; if(!it) return;
+  var it=_lcItemByRef(l, idx); if(!it) return; // v159 — por identidade (idx = itemId ou '#pos')
+  if(it.compra && it.compra.recebido){ alert('Esta compra já foi RECEBIDA (lançamento enviado ao Caixa) — não pode mais ser editada aqui.\nSe precisar corrigir, fale com o financeiro/administrador.'); return; } // v159
   _cmpListaId=listaId; _cmpItemIdx=idx;
   var esc=_cotItemEscolhida(it), cmp=it.compra||{};
   document.getElementById('cmp-item-info').textContent=(it.codigo?it.codigo+' — ':'')+(it.nome||'');
@@ -10661,7 +10732,9 @@ function openComprarModal(listaId, idx){
 function closeComprarModal(){ document.getElementById('comprar-modal').classList.remove('open'); _cmpListaId=null; _cmpItemIdx=null; }
 function saveCompraItem(){
   var l=(listasCompra||[]).find(function(x){return x.id===_cmpListaId;}); if(!l) return;
-  var it=l.itens[_cmpItemIdx]; if(!it) return;
+  var it=_lcItemByRef(l, _cmpItemIdx); // v159 — por identidade
+  if(!it){ alert('Este item não está mais nesta lista (ela mudou em outra tela). Feche e reabra a lista.'); closeComprarModal(); return; }
+  if(it.compra && it.compra.recebido){ alert('Esta compra já foi RECEBIDA (lançamento enviado ao Caixa) — a edição não foi aplicada.'); closeComprarModal(); return; } // v159 — o recebimento pode ter acontecido em outra tela enquanto o modal estava aberto
   var forn=(document.getElementById('cmp-fornec').value||'').trim();
   var qtd=parseFloat(document.getElementById('cmp-qtd').value)||0;
   var preco=parseFloat(document.getElementById('cmp-preco').value)||0;
@@ -10679,25 +10752,33 @@ function saveCompraItem(){
 }
 // ── Recebimento (financeiro) — agrupa por fornecedor+NF ──
 function _recebGrupos(){
-  var grupos={};
+  var grupos={}, semNf=0;
   (listasCompra||[]).forEach(function(l){
     (l.itens||[]).forEach(function(it,ix){
       var c=it.compra; if(!c || !c.comprado || c.recebido) return;
+      // v159 — regra do dono 15/07: compra SEM NF não libera para receber (o agrupamento é por
+      // fornecedor+NF; sem NF, compras diferentes do mesmo fornecedor colapsariam num grupo só e
+      // receber uma marcava as outras). Preenche a NF pelo ✏ da Lista de Compra e ela aparece aqui.
+      if(!(c.nf||'').trim()){ semNf++; return; }
       var k=(c.fornecedorId||c.fornecedorNome||'?')+'||'+(c.nf||'');
       if(!grupos[k]) grupos[k]={ key:k, fornecedorNome:c.fornecedorNome||'—', fornecedorId:c.fornecedorId||null, nf:c.nf||'', tipo:l.tipo, itens:[], total:0 };
       grupos[k].itens.push({ listaId:l.id, idx:ix, it:it });
       grupos[k].total += (parseFloat(c.precoPago)||0)*(parseFloat(c.qtdComprada)||0);
     });
   });
-  return Object.keys(grupos).map(function(k){return grupos[k];});
+  var out=Object.keys(grupos).map(function(k){return grupos[k];});
+  out._semNf=semNf;
+  return out;
 }
 function renderRecebimento(){
   var el=document.getElementById('receb-list'); if(!el) return;
   var grupos=_recebGrupos();
-  if(!grupos.length){ el.innerHTML='<div class="empty" style="padding:24px">Nenhuma compra aguardando recebimento.</div>'; return; }
+  // v159 — aviso das compras travadas aguardando NF (regra do dono: sem NF não recebe)
+  var _avisoNf=(grupos._semNf>0)?('<div class="panel" style="padding:10px 14px;margin-bottom:12px;border-left:3px solid var(--st-mid-bd)"><span style="font-size:12px;color:var(--st-mid-tx);font-weight:600">⚠ '+grupos._semNf+' compra(s) aguardando NF</span> <span style="font-size:12px;color:var(--text-secondary)">— preencha a NF pelo ✏ na Lista de Compra para liberar o recebimento.</span></div>'):'';
+  if(!grupos.length){ el.innerHTML=_avisoNf+'<div class="empty" style="padding:24px">Nenhuma compra aguardando recebimento.</div>'; return; }
   var th='padding:7px 9px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
   var td='padding:6px 9px;border-bottom:.5px solid var(--border);font-size:12px';
-  el.innerHTML=grupos.map(function(g, _gx){
+  el.innerHTML=_avisoNf+grupos.map(function(g, _gx){
     var rows=g.itens.map(function(gi){ var it=gi.it, c=it.compra;
       return '<tr><td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(it.codigo||'—')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(it.nome||'')+'</td>'+
@@ -13639,7 +13720,11 @@ function _refreshActivePage(){
     'orcamentos-crm':renderOrcamentosCrm,
     'usuarios':renderUsers,
     'inconsistencias':renderInconsistencias,
-    'importacoes':renderImportacoes
+    'importacoes':renderImportacoes,
+    // v159 — a tela de compras ficava FORA do ciclo: botões agiam sobre DOM defasado após sync.
+    // Repinta a sub-aba ativa (o modal da lista aberta acompanha via hook do renderListaCompra;
+    // os modais de cotação/compra têm inputs próprios e NÃO são re-renderizados — nada se perde).
+    'solicitacao-compra':function(){ try{ setSolCompraTab(_solTab||'ativo'); }catch(_e){} }
   };
   var fn=map[p];
   if(typeof fn==='function'){ try{ fn(); }catch(e){ console.warn('refreshActivePage '+p+':', e.message); } }
@@ -19524,7 +19609,10 @@ function cancelEditEnvioSalvo(i){
 // v111 — captura o que JÁ foi digitado no form de edição p/ o modelo, ANTES de re-renderizar (não zera os campos). transp já está no modelo (vem do autocomplete).
 function _esCaptura(i){
   const o=orders.find(x=>String(x.id)===String(_envioCtxId)); const e=o?.enviosHistorico?.[i]; if(!e) return;
-  const d=document.getElementById('es-data-'+i); if(d) e.data=d.value||'';
+  // v159 — data VAZIA não sobrescreve a existente: os botões de rastreio persistem antes da validação
+  // do salvar, e um envio sem data tirava o pedido parcial da lista de Trânsito E dos cards de alerta
+  // (extraviado/ocorrência) — a data efetiva do trânsito vem do histórico (v155).
+  const d=document.getElementById('es-data-'+i); if(d && d.value) e.data=d.value;
   const ob=document.getElementById('es-obs-'+i); if(ob) e.obs=(ob.value||'').trim();
   const rs=[...document.querySelectorAll('[id^="es-rast-'+i+'-"]')];
   if(rs.length){ e.rastreios=rs.map(x=>x.value); e.rastreio=e.rastreios[0]||''; }
@@ -19625,11 +19713,11 @@ function deleteEnvioSalvo(i){
   o.rastreio=allRts[0]||'';
   o.rastreios=allRts;
   o.transp=allTrs[0]||'';
-  if(o.enviosHistorico.length){
-    o.envioReal=o.enviosHistorico[o.enviosHistorico.length-1].data;
-  } else {
-    o.envioReal='';
-  }
+  // v159 — envioReal só é carimbado por envio TOTAL (invariante v155: parcial NÃO carimba; as métricas
+  // de prazo contam envioReal como envio completo). Antes, excluir um envio carimbava a data do
+  // parcial restante e o pedido parcial virava "enviado" nas métricas. Entrada sem 'tipo' = legado total.
+  var _totais=(o.enviosHistorico||[]).filter(function(e){ return e && e.data && e.tipo!=='parcial'; });
+  o.envioReal=_totais.length?_totais[_totais.length-1].data:'';
 
   const badge=document.getElementById('envio-salvos-badge');
   if(badge) badge.textContent=o.enviosHistorico.length;
@@ -26368,7 +26456,13 @@ function getOuCriarConversa(clienteId, telefone){
   if(!conv && !tk){ conv = conversas.find(c=>c.clienteId===clienteId && _doNum(c)); }
   if(conv){ _sincronizarDonoConversa(conv); return conv; }
   const dono = _resolverDonoConversa(cli);
-  conv = { id:'conv_'+Date.now()+Math.floor(Math.random()*1000), clienteId, telefone:tel||'', atendenteId:dono.atendenteId, equipeId:dono.equipeId, canal:'whatsapp', ultimaMsg:'', ultimaMsgEm:null, naoLidas:0, mensagens:[], status:'ativa', criadaEm:Date.now(), numeroLecare:(_numOut||_waNumPadrao()) };
+  // v159 — id DETERMINÍSTICO (cliente+telefone+número): duas abas abrindo o mesmo cliente na mesma
+  // janela geravam ids diferentes = DUAS conversas para o mesmo fio (só havia fusão manual). Com o id
+  // previsível, o upsert converge para a MESMA linha e a união entre abas junta tudo sozinha.
+  // Sem telefone (raro): mantém o id aleatório antigo.
+  const _numConv=(_numOut||_waNumPadrao()||'E');
+  const _idDet = tk ? ('conv_'+String(clienteId).replace(/\W/g,'')+'_'+tk+'_'+String(_numConv).replace(/\W/g,'')) : ('conv_'+Date.now()+Math.floor(Math.random()*1000));
+  conv = { id:_idDet, clienteId, telefone:tel||'', atendenteId:dono.atendenteId, equipeId:dono.equipeId, canal:'whatsapp', ultimaMsg:'', ultimaMsgEm:null, naoLidas:0, mensagens:[], status:'ativa', criadaEm:Date.now(), numeroLecare:(_numOut||_waNumPadrao()) };
   conversas.push(conv);
   return conv;
 }
@@ -26549,6 +26643,17 @@ function _convSetAtendente(conv, userId){
   if(!conv) return;
   conv.atendenteId=userId||null;
   conv.atendEm=Date.now();
+}
+// v159 — a conversa apontada por conversaAtivaId está mesmo VISÍVEL? (página Conversas em tela,
+// ou modal do card aberto, com a aba do navegador em foco). Usada pelo guard de não-lidas do merge.
+function _convVisivelEmTela(){
+  try{
+    if(document.hidden) return false;
+    if(document.getElementById('conv-modal-overlay')) return true;
+    var pg=document.getElementById('pg-conversas');
+    if(pg && pg.style.display!=='none') return true;
+  }catch(_e){}
+  return false;
 }
 // registro local de evento na conversa (mensagem de sistema no thread : NAO vai ao WhatsApp)
 function _convMsgSistemaLocal(conv, texto){
@@ -26876,6 +26981,7 @@ async function _convEnviarAnexos(){
   const files=_convAnexoFiles||[]; const containerId=_convAnexoCid;
   if(ov) ov.classList.remove('open');
   const conv=conversas.find(c=>c.id===conversaAtivaId); if(!conv||!files.length){ _convAnexoFiles=null; return; }
+  if(!(await _convGuardDonoServidor(conv, containerId))){ _convAnexoFiles=null; return; } // v159 — mesmo guard de dono do texto
   let enviados=0; const _fila=[];
   for(let fi=0; fi<files.length; fi++){
     let file=files[fi];
@@ -26902,6 +27008,29 @@ async function _convEnviarAnexos(){
     if(_fila.length){ _waUpsertConversa(conv).then(()=>{ _fila.forEach(e=>_waEnviarAnexo(conv, e.msg, e.file, e.path)); }); }
   }
 }
+// v159 — guard de DONO no SERVIDOR (extraído do envio de texto v143): confere se a conversa foi
+// transferida em outra tela ANTES de enviar qualquer coisa (texto/anexo/áudio/imagem colada) e
+// auto-assume, com carimbo, conversa sem dono. Retorna true quando pode enviar.
+async function _convGuardDonoServidor(conv, containerId){
+  if(_waModoDois() && _sb && currentUser){ // guard vale p/ TODOS (admin/diretora também não atropelam)
+    try{
+      const { data:_row } = await _sb.from('conversas').select('at:data->>atendenteId, em:data->>atendEm').eq('id', conv.id).maybeSingle();
+      const _atSrv=_row&&_row.at;
+      if(_atSrv && _atSrv!==currentUser.id && (Number(_row.em)||0) >= (conv.atendEm||0)){
+        _convSetAtendente(conv, _atSrv); conv.atendEm=Number(_row.em)||conv.atendEm;
+        const _u=users.find(x=>x.id===_atSrv);
+        alert('Esta conversa está em atendimento por '+((_u&&_u.name)||'outra pessoa')+' (atribuída em outra tela).\nAssuma ou peça a transferência para responder.');
+        try{ renderConversaTela(conv.id, containerId); renderConversasLista(); }catch(_e){}
+        return false;
+      }
+    }catch(_e){ /* sem conexão: segue o fluxo local */ }
+  }
+  if(_waModoDois() && !conv.atendenteId && currentUser && _waAtendAutorizadoNum(currentUser.id, conv)){
+    _convSetAtendente(conv, currentUser.id);
+    _convMsgSistemaLocal(conv, '👤 '+((currentUser&&currentUser.name)||'?')+' assumiu o atendimento (ao responder)');
+  }
+  return true;
+}
 // v95 — envia o anexo pro WhatsApp do cliente via Z-API (edge function wa-send-media).
 async function _waEnviarAnexo(conv, msg, file, path){
   try{
@@ -26917,23 +27046,34 @@ async function _waEnviarAnexo(conv, msg, file, path){
 // ── v154 : ÁUDIO DIRETO DO CAMPO (pedido do dono 14/07) — 🎤 clica = grava, clica de novo = ENVIA
 // (padrão WhatsApp); Esc cancela. Sai pela MESMA esteira do anexo (storage → wa-send-media, que roteia
 // audio/* para o send-audio do Z-API = chega como MENSAGEM DE VOZ no cliente). ──
-var _micRec=null, _micChunks=null, _micTimer=null, _micT0=0, _micCancelado=false;
+var _micRec=null, _micChunks=null, _micTimer=null, _micT0=0, _micCancelado=false, _micStarting=false, _micConvId=null;
 async function _convMicToggle(cid){
+  if(_micStarting) return; // v159 — duplo clique durante a permissão do microfone abria 2 streams (mic ficava preso)
   // 2º clique: parar e ENVIAR
-  if(_micRec && _micRec.state==='recording'){ _micCancelado=false; try{ _micRec.stop(); }catch(_e){} return; }
+  if(_micRec && _micRec.state==='recording'){
+    // v159 — 🎤 clicado em OUTRA conversa com gravação pendente: CANCELA a antiga (antes ENVIAVA o áudio
+    // esquecido para a conversa errada) e avisa.
+    if(_micConvId && conversaAtivaId!==_micConvId){
+      _micCancelado=true; try{ _micRec.stop(); }catch(_e){}
+      alert('Havia uma gravação em andamento em OUTRA conversa — ela foi cancelada.\nClique no 🎤 de novo para gravar aqui.');
+      return;
+    }
+    _micCancelado=false; try{ _micRec.stop(); }catch(_e){} return;
+  }
   const conv=conversas.find(c=>c.id===conversaAtivaId); if(!conv) return;
   if(conv.grupo){ alert('Envio de áudio em GRUPO ainda não é suportado — use o 📎 para mandar o arquivo.'); return; }
   if(window._authExpirada){ alert('⚠ Sua sessão expirou — recarregue a página (F5) e entre novamente.'); return; }
   if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de enviar áudio.\nUse "📥 Atribuir para mim".'); return; }
   if(!_sb || !_sbReady){ alert('Conexão com o servidor indisponível. Tente novamente em instantes.'); return; }
   if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia) || typeof MediaRecorder==='undefined'){ alert('Este navegador não suporta gravação de áudio.'); return; }
+  _micStarting=true; // v159 — trava até a gravação começar (ou falhar)
   let stream;
   try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
-  catch(_e){ alert('Não consegui acessar o microfone — verifique a permissão do navegador (cadeado na barra de endereço).'); return; }
+  catch(_e){ _micStarting=false; alert('Não consegui acessar o microfone — verifique a permissão do navegador (cadeado na barra de endereço).'); return; }
   const _mt=['audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/mp4'].find(function(m){ try{ return MediaRecorder.isTypeSupported(m); }catch(_e){ return false; } })||'';
   try{ _micRec=new MediaRecorder(stream, _mt?{mimeType:_mt}:undefined); }
-  catch(_e){ try{ stream.getTracks().forEach(function(t){t.stop();}); }catch(_e2){} alert('Não consegui iniciar a gravação neste navegador.'); return; }
-  _micChunks=[]; _micCancelado=false; _micT0=Date.now();
+  catch(_e){ _micStarting=false; try{ stream.getTracks().forEach(function(t){t.stop();}); }catch(_e2){} alert('Não consegui iniciar a gravação neste navegador.'); return; }
+  _micChunks=[]; _micCancelado=false; _micT0=Date.now(); _micConvId=conv.id;
   const _convRef=conv, _cidRef=cid;
   _micRec.ondataavailable=function(e){ if(e.data&&e.data.size) _micChunks.push(e.data); };
   _micRec.onstop=function(){
@@ -26941,7 +27081,7 @@ async function _convMicToggle(cid){
     _micUiParar(_cidRef);
     const durMs=Date.now()-_micT0;
     const tipoBlob=(_micRec&&_micRec.mimeType)||_mt||'audio/webm';
-    const chunks=_micChunks; _micChunks=null; _micRec=null;
+    const chunks=_micChunks; _micChunks=null; _micRec=null; _micConvId=null; _micStarting=false; // v159
     if(_micCancelado) return;
     if(durMs<800){ alert('Áudio muito curto — grave por pelo menos 1 segundo.'); return; }
     const blob=new Blob(chunks||[],{type:tipoBlob});
@@ -26953,6 +27093,7 @@ async function _convMicToggle(cid){
   };
   _micRec.start();
   _micUiGravar(cid);
+  _micStarting=false;
 }
 function _micUiGravar(cid){
   if(_micTimer) clearInterval(_micTimer);
@@ -26974,6 +27115,7 @@ document.addEventListener('keydown', function(e){
 });
 async function _convEnviarAudio(conv, file, containerId){
   if(file.size>50*1024*1024){ alert('O áudio excede 50MB e não será enviado.'); return; }
+  if(!(await _convGuardDonoServidor(conv, containerId))) return; // v159 — mesmo guard de dono do texto
   const safe=(file.name||'audio').replace(/[^\w.\-]+/g,'_');
   const path='conversa_'+conv.id+'/'+Date.now()+'_'+Math.floor(Math.random()*1000)+'_'+safe;
   try{
@@ -27030,7 +27172,7 @@ function registrarMensagem(clienteId, de, texto, anexo, telefone){
   if(de==='atendente' && currentUser && !conv.atendenteId){
     const podeAssumir = _usuarioPertenceEquipe(currentUser.id, conv.equipeId) || ['admin','diretor_comercial'].includes(currentUser.perfil);
     if(podeAssumir){
-      conv.atendenteId = currentUser.id;
+      _convSetAtendente(conv, currentUser.id); // v159 — carimbo atendEm (era atribuição direta SEM carimbo: outra aba com cópia antiga devolvia a conversa ao pool em silêncio — classe do bug v143)
       const _card = crmLeads.find(l=>l.clienteId===clienteId);
       if(_card){ _card.responsavelId=currentUser.id; _card.responsavel=currentUser.name||''; }
       const _ix = Math.max(0, conv.mensagens.length-1);
@@ -27124,7 +27266,9 @@ function _updateConvBadge(){
       const b=document.getElementById('nav-conv-badge-'+String(nu.id).toLowerCase()); if(!b) return;
       const autorizado=_podeVerNaoAtribuidas()||_waNumsDoUsuario().includes(nu.id);
       if(!autorizado){ b.style.display='none'; return; }
-      const n=conversas.filter(c=>_conversaSemDono(c)&&_waNumDaConv(c)===nu.id&&c.status!=='encerrada').length;
+      // v159 — mesmos critérios da LISTA: sem grupos (não têm dono por desenho) e sem conversas vazias
+      // (0 msgs e nada não lido) — o sino mostrava um número e a tela outro.
+      const n=conversas.filter(c=>_conversaSemDono(c)&&_waNumDaConv(c)===nu.id&&c.status!=='encerrada'&&!c.grupo&&(((c.mensagens||[]).length>0)||((c.naoLidas||0)>0))).length;
       if(n>0){ b.textContent=n; b.style.display=''; } else b.style.display='none';
     });
     const badge=document.getElementById('nav-conv-badge'); if(badge) badge.style.display='none';
@@ -27133,7 +27277,7 @@ function _updateConvBadge(){
   const badge = document.getElementById('nav-conv-badge');
   if(!badge) return;
   if(!_podeVerNaoAtribuidas()){ badge.style.display='none'; return; }
-  const n = conversas.filter(_conversaSemDono).length;
+  const n = conversas.filter(c=>_conversaSemDono(c)&&c.status!=='encerrada'&&!c.grupo&&(((c.mensagens||[]).length>0)||((c.naoLidas||0)>0))).length; // v159 — idem no modo um número
   if(n>0){ badge.textContent=n; badge.style.display=''; }
   else badge.style.display='none';
 }
@@ -27825,22 +27969,8 @@ async function enviarMensagemConversa(containerId){
   }
   // v143 : no pool do numero, confere o DONO no SERVIDOR antes de enviar (tela desatualizada nao atropela
   // uma transferencia feita em outra tela) e AUTO-ASSUME ao responder conversa sem atendente (\u00a78.4 do plano).
-  if(_waModoDois() && _sb && currentUser){ // v143 : guard vale p/ TODOS (admin/diretora tambem nao atropelam)
-    try{
-      const { data:_row } = await _sb.from('conversas').select('at:data->>atendenteId, em:data->>atendEm').eq('id', conv.id).maybeSingle();
-      const _atSrv=_row&&_row.at;
-      if(_atSrv && _atSrv!==currentUser.id && (Number(_row.em)||0) >= (conv.atendEm||0)){
-        _convSetAtendente(conv, _atSrv); conv.atendEm=Number(_row.em)||conv.atendEm;
-        const _u=users.find(x=>x.id===_atSrv);
-        alert('Esta conversa est\u00e1 em atendimento por '+((_u&&_u.name)||'outra pessoa')+' (atribu\u00edda em outra tela).\nAssuma ou pe\u00e7a a transfer\u00eancia para responder.');
-        renderConversaTela(conv.id, containerId); renderConversasLista(); return;
-      }
-    }catch(_e){ /* sem conexao: segue o fluxo local */ }
-  }
-  if(_waModoDois() && !conv.atendenteId && currentUser && _waAtendAutorizadoNum(currentUser.id, conv)){
-    _convSetAtendente(conv, currentUser.id);
-    _convMsgSistemaLocal(conv, '\uD83D\uDC64 '+((currentUser&&currentUser.name)||'?')+' assumiu o atendimento (ao responder)');
-  }
+  // v159 : extra\u00eddo p/ _convGuardDonoServidor \u2014 anexo/\u00e1udio/Ctrl+V passam pelo MESMO guard (antes s\u00f3 o texto).
+  if(!(await _convGuardDonoServidor(conv, containerId))) return;
   if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de responder.\nUse "📥 Atribuir para mim".'); return; }
   const _de = _msgDeAtual;
   const _r = registrarMensagem(conv.clienteId, _de, inp.value, undefined, conv.telefone);
@@ -27917,8 +28047,10 @@ function _convUniaoMsgs(base, other){
   // do servidor — sem isso, a aba desfazia as correções de vínculo re-salvando o id morto (caso Stefanelli 13/07,
   // conversa presa no título "Cliente" mesmo depois de re-apontada no banco).
   try{ if(other.clienteId && other.clienteId!==base.clienteId && (!base.clienteId || !(clients||[]).some(function(c){ return c&&c.id===base.clienteId; }))) base.clienteId=other.clienteId; }catch(_e){}
-  // v151 — conversa ABERTA nesta tela é lida por definição: o realtime não ressuscita o badge dela
-  try{ if(typeof conversaAtivaId!=='undefined' && conversaAtivaId===base.id) base.naoLidas=0; }catch(_e){}
+  // v151 — conversa ABERTA nesta tela é lida por definição: o realtime não ressuscita o badge dela.
+  // v159 — "aberta" agora exige estar DE FATO visível (página Conversas ou modal do card, aba em foco):
+  // o ponteiro fantasma pós-fechar-modal zerava não-lidas de mensagem nova para todos.
+  try{ if(typeof conversaAtivaId!=='undefined' && conversaAtivaId===base.id && _convVisivelEmTela()) base.naoLidas=0; }catch(_e){}
   // v143 : atendente com carimbo mais novo vence (assumir/transferir de outra tela nao e desfeito)
   if((other.atendEm||0) > (base.atendEm||0)){ base.atendenteId=other.atendenteId||null; base.atendEm=other.atendEm; if(other.equipeId) base.equipeId=other.equipeId; }
   // v143 : STATUS (encerrada/ativa) idem: carimbo mais novo vence (aba velha 'ativa' nao desfaz um encerramento)

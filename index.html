@@ -2056,7 +2056,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <h2>📈 Fluxo de Caixa projetado</h2>
               <div style="display:flex;gap:8px;align-items:center">
                 <label style="font-size:12px;color:var(--text-secondary)">Saldo inicial</label>
-                <input type="number" id="fin-fluxo-saldoini" step="0.01" placeholder="0,00" style="font-size:12px;padding:5px 8px;width:120px" oninput="renderFinFluxo()">
+                <input type="number" id="fin-fluxo-saldoini" step="0.01" placeholder="0,00" style="font-size:12px;padding:5px 8px;width:120px" oninput="renderFinFluxo()" onchange="_salvarFinConfig()">
                 <select id="fin-fluxo-meses" onchange="renderFinFluxo()" style="font-size:12px;padding:5px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-primary)">
                   <option value="3">Próximos 3 meses</option>
                   <option value="6" selected>Próximos 6 meses</option>
@@ -2097,7 +2097,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <div style="display:flex;gap:8px;align-items:center">
                 <span id="res-saldoini-wrap" style="display:none;align-items:center;gap:6px">
                   <label style="font-size:12px;color:var(--text-secondary)">Saldo inicial</label>
-                  <input type="number" id="fin-dfc-saldoini" step="0.01" placeholder="0,00" style="font-size:12px;padding:5px 8px;width:110px" oninput="renderFinResultado()">
+                  <input type="number" id="fin-dfc-saldoini" step="0.01" placeholder="0,00" style="font-size:12px;padding:5px 8px;width:110px" oninput="renderFinResultado()" onchange="_salvarFinConfig()">
                 </span>
                 <select id="fin-res-mes" onchange="renderFinResultado()" style="font-size:12px;padding:5px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-primary)"></select>
               </div>
@@ -4424,7 +4424,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v161';
+var APP_VERSION = 'v162';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -4819,7 +4819,8 @@ function loadData(){
     metasMensais     = data.metasMensais     || {};
     paresDescartados = data.paresDescartados  || [];
     pendencias       = data.pendencias        || {};
-    alertasFinConfig = Object.assign(_alertCfgDefaults(), data.alertasFinConfig||{}); _migrarControles();
+    _adotarFinConfig(data.alertasFinConfig||{}); // v162 — blob é só fallback; o registro dedicado (carimbo _ts) vence
+    try{ _carregarFinConfig(); }catch(_e){}
     if(data.feriadosManuais) FERIADOS_MANUAIS = new Set(data.feriadosManuais);
     if(data.feriadosManuaisData) feriadosManuaisData = data.feriadosManuaisData;
     creditosCliente  = data.creditosCliente  || {};
@@ -5409,6 +5410,35 @@ function _alertCfgDefaults(){ return {
   }
 }; }
 var alertasFinConfig = _alertCfgDefaults();
+// ═══════ v162 — CONFIG FINANCEIRA COM REGISTRO PRÓPRIO (caso 16/07 "parâmetros não salvam") ═══════
+// O blob compartilhado é último-que-salva-ganha: com 10 abas salvando o dia todo, qualquer aba com a
+// cópia velha em memória regravava a config por cima do que o usuário salvou no modal. Agora a config
+// vive na linha app_data 'lecare_fin_config', escrita SÓ pelos saves explícitos (modais de parâmetros
+// e saldo inicial), com carimbo _ts mais-novo-vence na leitura. O blob continua levando uma cópia
+// (fallback p/ carga antiga), mas quem manda é o registro dedicado.
+var FIN_CFG_KEY='lecare_fin_config';
+async function _salvarFinConfig(){
+  try{
+    if(!_sb) return;
+    alertasFinConfig._ts=Date.now();
+    alertasFinConfig._por=(currentUser&&currentUser.name)||'';
+    const { error }=await _sb.from('app_data').upsert({ key:FIN_CFG_KEY, value:alertasFinConfig, updated_at:new Date().toISOString() }, { onConflict:'key' });
+    if(error){ console.warn('fin_config save:', error.message); alert('⚠ Não consegui gravar os parâmetros no servidor ('+(error.message||'')+'). Tente de novo.'); }
+  }catch(e){ console.warn('fin_config save:', e); }
+}
+function _adotarFinConfig(cfg){ // mais-novo-vence pelo carimbo _ts
+  if(!cfg) return;
+  if((cfg._ts||0) >= (alertasFinConfig&&alertasFinConfig._ts||0)){
+    alertasFinConfig=Object.assign(_alertCfgDefaults(), cfg);
+  }
+}
+async function _carregarFinConfig(){
+  try{
+    if(!_sb) return;
+    const { data }=await _sb.from('app_data').select('value').eq('key',FIN_CFG_KEY).maybeSingle();
+    if(data && data.value) _adotarFinConfig(data.value);
+  }catch(e){ console.warn('fin_config load:', e); }
+}
 // v161 — DESATIVADA (caso 16/07): a "migração v118" re-INJETAVA os códigos antigos (4.05.x) a cada
 // carga — o dono trocava as contas no modal de Parâmetros e elas "voltavam sozinhas". Com o plano
 // RENUMERADO (receitas no ramo 3; despesas 4.01/4.02) esses códigos nem existem mais. O que o
@@ -13826,6 +13856,7 @@ function saveAlertConfig(){
   alertasFinConfig.formaPagPct=parseFloat(g('acfg-formaPagPct').value)||0;
   alertasFinConfig.vencidoReceberAlto=parseFloat(g('acfg-vencidoReceberAlto').value)||0;
   alertasFinConfig.saldoProjNegativo=g('acfg-saldoProjNegativo').checked;
+  _salvarFinConfig(); // v162 — registro dedicado
   document.getElementById('alertcfg-overlay').classList.remove('open');
   saveData(); renderFinAlertas();
 }
@@ -14021,6 +14052,7 @@ function saveControlesConfig(){
   c.consumiveis={pct:parseFloat(g('cc-cons-pct').value)||0, contas:parseCod(g('cc-cons-contas').value)};
   c.amostrasPct=parseFloat(g('cc-amostras-pct').value)||0;
   document.getElementById('alertcfg-overlay').classList.remove('open');
+  _salvarFinConfig(); // v162 — grava no registro dedicado (o blob é só cópia; era ele que revertia)
   saveData(); renderFinControles();
 }
 
@@ -25748,7 +25780,8 @@ async function _loadFromSupabase(skipSep){
     if(d.paresDescartados) paresDescartados = d.paresDescartados;
     // v117 — pendencias agora é tabela SEP (carregada no loop SEP acima); NÃO recarregar do blob aqui (era o caminho do clobber que fazia a pendência voltar)
     creditosCliente  = d.creditosCliente  || creditosCliente;
-    if(d.alertasFinConfig){ alertasFinConfig = Object.assign(_alertCfgDefaults(), d.alertasFinConfig); _migrarControles(); }
+    if(d.alertasFinConfig) _adotarFinConfig(d.alertasFinConfig); // v162 — carimbo _ts decide; registro dedicado vem a seguir
+    try{ _carregarFinConfig(); }catch(_e){}
     if(d.feriadosManuais) FERIADOS_MANUAIS = new Set(d.feriadosManuais);
     if(d.feriadosManuaisData) feriadosManuaisData = d.feriadosManuaisData;
     if(d.crmConfig && typeof CRM_CONFIG!=='undefined') CRM_CONFIG = d.crmConfig;

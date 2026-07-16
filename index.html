@@ -1404,7 +1404,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </div>
           <div class="form-group" style="margin-bottom:12px" id="cmp-nf-row"><label>Nº da Nota Fiscal <span style="font-size:10px;color:var(--text-tertiary)">(compra antiga sem pedido — a NF das compras novas é informada no PEDIDO DE COMPRA, no Recebimento)</span></label><input type="text" id="cmp-nf" placeholder="NF (se já tiver)"></div>
           <div id="cmp-total" style="font-size:12px;color:var(--text-secondary);margin-bottom:10px"></div>
-          <div class="modal-footer"><button onclick="closeComprarModal()">Cancelar</button><button class="btn-primary" onclick="saveCompraItem()">Marcar como comprado</button></div>
+          <div class="modal-footer"><button id="cmp-estornar-btn" onclick="estornarCompraItem()" style="display:none;color:var(--st-bad-tx);border-color:var(--st-bad-bd);margin-right:auto">↩ Estornar compra</button><button onclick="closeComprarModal()">Cancelar</button><button class="btn-primary" onclick="saveCompraItem()">Marcar como comprado</button></div>
         </div>
       </div>
       <!-- v130 — MODAL: receber compra (financeiro) — forma de pagamento + gera no Caixa -->
@@ -1418,7 +1418,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <button type="button" onclick="_peAddBloco()" style="font-size:12px;padding:5px 12px;margin-top:4px">+ Adicionar forma de pagamento</button>
             <div id="rcb-distrib" style="font-size:11px;margin:8px 0 2px"></div>
           </div>
-          <div class="form-group" style="margin-bottom:10px;margin-top:8px"><label>Plano de contas</label><select id="rcb-plano"><option value="">Sem plano</option></select></div>
+          <div class="form-group" style="margin-bottom:10px;margin-top:8px"><label>Plano de contas</label><div class="autocomplete-wrap"><input type="text" id="rcb-plano-busca" placeholder="Digite código ou nome da conta..." oninput="_planoAcSearch('rcb-plano')" onblur="_planoAcBlur('rcb-plano')" autocomplete="off"><div class="autocomplete-list" id="rcb-plano-ac"></div><input type="hidden" id="rcb-plano"></div></div>
           <div class="form-group" style="margin-bottom:10px"><label>Data de emissão (NF)</label><input type="date" id="rcb-dataemissao"></div>
           <div id="rcb-total" style="font-size:13px;font-weight:600;margin-bottom:10px"></div>
           <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Ao confirmar, o lançamento entra no <b>Caixa</b> (aguardando aprovação) e os pedidos que já receberam todos os itens ficam <b>"Produto entregue"</b>.</div>
@@ -3153,9 +3153,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         </div>
         <div class="form-group">
           <label>Plano de Contas *</label>
-          <select id="compra-plano">
-            <option value="">Selecione...</option>
-          </select>
+          <!-- v161 — busca com autocomplete (padrão do fornecedor); o hidden #compra-plano guarda o id -->
+          <div class="autocomplete-wrap"><input type="text" id="compra-plano-busca" placeholder="Digite código ou nome da conta..." oninput="_planoAcSearch('compra-plano')" onblur="_planoAcBlur('compra-plano')" autocomplete="off"><div class="autocomplete-list" id="compra-plano-ac"></div><input type="hidden" id="compra-plano"></div>
         </div>
       </div>
       <div class="form-row">
@@ -3199,7 +3198,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
     <div class="form-row">
       <div class="form-group"><label>Valor (R$) *</label><input type="number" id="cpm-valor" min="0" step="0.01" placeholder="0,00" oninput="_cpmDistrib()"></div>
       <div class="form-group"><label>Plano de Contas</label>
-        <select id="cpm-plano"><option value="">Sem plano</option></select>
+        <div class="autocomplete-wrap"><input type="text" id="cpm-plano-busca" placeholder="Digite código ou nome da conta..." oninput="_planoAcSearch('cpm-plano')" onblur="_planoAcBlur('cpm-plano')" autocomplete="off"><div class="autocomplete-list" id="cpm-plano-ac"></div><input type="hidden" id="cpm-plano"></div>
       </div>
     </div>
     <!-- v132 — pagamento padronizado em BLOCOS (modelo do Caixa): NSU só no cartão, boleto por parcela.
@@ -3232,7 +3231,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
     <div class="form-row">
       <div class="form-group"><label>Valor (R$) *</label><input type="number" id="crman-valor" min="0" step="0.01" placeholder="0,00" oninput="_crmanDistrib()"></div>
       <div class="form-group"><label>Conta do plano</label>
-        <select id="crman-plano"><option value="">Sem plano</option></select>
+        <div class="autocomplete-wrap"><input type="text" id="crman-plano-busca" placeholder="Digite código ou nome da conta..." oninput="_planoAcSearch('crman-plano')" onblur="_planoAcBlur('crman-plano')" autocomplete="off"><div class="autocomplete-list" id="crman-plano-ac"></div><input type="hidden" id="crman-plano"></div>
       </div>
     </div>
     <div class="form-group" style="margin-bottom:6px"><label>Formas de recebimento</label></div>
@@ -4425,7 +4424,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v160';
+var APP_VERSION = 'v161';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5410,13 +5409,11 @@ function _alertCfgDefaults(){ return {
   }
 }; }
 var alertasFinConfig = _alertCfgDefaults();
-// v118 — garante (idempotente) que o grupo Embalagem+MP inclua os códigos canônicos, mesmo em config persistida antiga (clobber-safe)
-function _migrarControles(){
-  try{
-    var c=alertasFinConfig&&alertasFinConfig.controles; if(!c) return;
-    if(c.embMP){ c.embMP.contas=c.embMP.contas||[]; ['4.05.01.003','4.05.01.004','4.05.01.005','4.04.07.003'].forEach(function(cod){ if(c.embMP.contas.indexOf(cod)<0) c.embMP.contas.push(cod); }); }
-  }catch(_e){}
-}
+// v161 — DESATIVADA (caso 16/07): a "migração v118" re-INJETAVA os códigos antigos (4.05.x) a cada
+// carga — o dono trocava as contas no modal de Parâmetros e elas "voltavam sozinhas". Com o plano
+// RENUMERADO (receitas no ramo 3; despesas 4.01/4.02) esses códigos nem existem mais. O que o
+// usuário salvar no modal agora PERSISTE. (Mantida como no-op p/ os 2 chamadores.)
+function _migrarControles(){ }
 const PROB_ETAPA={'Lead Novo':5,'Primeiro Contato':10,'Apresentação de Produtos':20,'Em Atendimento':30,'Aguardando Documentação':35,'Orçamento Enviado':50,'Follow-up':45,'Negociação':70,'Venda Fechada':100};  // {id, orderId, orderNum, orderCliente, diasAtraso, prazoAtual, prazoNovo, justificativa, solicitadoPor, solicitadoEm, status:'pendente'|'aprovada'|'recusada', decididoPor, decididoEm}
 var users=[{id:'admin',name:'Administrador',login:'admin',senha:'admin123',perfil:'admin',setores:SETOR_KEYS.slice()}];
 var clients=[];
@@ -10298,7 +10295,7 @@ function renderListaCompra(){
         '<td style="'+td+';text-align:right">'+nCot+'/'+its.length+'</td>'+
         '<td style="'+td+';text-align:right">'+(totalEsc>0?fmtMoney(totalEsc):'—')+'</td>'+
         '<td style="'+td+'">'+_lcStatusBadge(l.status)+'</td>'+
-        '<td style="'+td+';text-align:right;white-space:nowrap"><button onclick="gerarPdfListaCompra(\''+l.id+'\')" title="Gerar PDF com produtos e quantidades (para enviar ao fornecedor — sem preços)" style="font-size:12px;padding:4px 10px">📄 PDF</button> <button class="btn-primary" onclick="openListaCompraAberta(\''+l.id+'\')" style="font-size:12px;padding:4px 14px">Abrir</button></td>'+
+        '<td style="'+td+';text-align:right;white-space:nowrap"><button onclick="gerarPdfListaCompra(\''+l.id+'\')" title="Gerar PDF com produtos e quantidades (para enviar ao fornecedor — sem preços)" style="font-size:12px;padding:4px 10px">📄 PDF</button> <button class="btn-primary" onclick="openListaCompraAberta(\''+l.id+'\')" style="font-size:12px;padding:4px 14px">Abrir</button>'+((currentUser&&currentUser.perfil==='admin')?' <button onclick="excluirListaCompra(\''+l.id+'\')" title="Excluir a lista — as solicitações voltam como pendentes p/ a próxima lista (admin)" style="font-size:12px;padding:4px 9px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">×</button>':'')+'</td>'+
       '</tr>';
     }).join('')+'</tbody></table></div></div>';
   if(_lcAbertaId) _renderListaCompraAberta(); // cotar/comprar/não-comprar chamam renderListaCompra → o modal aberto acompanha
@@ -10329,6 +10326,44 @@ function _renderListaCompraAberta(){
     res.innerHTML='Cotados: <b>'+nCot+'/'+((l.itens||[]).length)+'</b>'+(totalEsc>0?' · Estimado <b>'+fmtMoney(totalEsc)+'</b>':'')+' · '+_lcStatusBadge(l.status)+' '+btnC;
   }
   var body=document.getElementById('lc-ab-body'); if(body) body.innerHTML=_lcItensTableHtml(l);
+}
+// v161 — EXCLUIR LISTA (admin; regras do dono 16/07): as solicitações voltam como PENDENTES (entram na
+// próxima lista gerada). Item já COMPRADO tem a compra ESTORNADA junto — mas se o pedido de compra do
+// item estiver FECHADO/faturado, precisa reabrir o pedido antes; e se ALGUM item já foi RECEBIDO, a
+// exclusão não faz sentido (use "✕ Não comprar" nos itens restantes).
+function excluirListaCompra(listaId){
+  if(!_soAdminApaga()) return;
+  var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return;
+  var itens=l.itens||[];
+  if(itens.some(function(it){ return it.compra&&it.compra.recebido; })){
+    alert('Esta lista tem item já RECEBIDO (lançado no Caixa) — excluir a lista não faz sentido.\n\nPara tirar os itens restantes, use "✕ Não comprar" neles (as quantidades voltam para a próxima lista).');
+    return;
+  }
+  var pcsFech={};
+  itens.forEach(function(it){ var c=it.compra;
+    if(c&&c.comprado&&c.pedidoCompraId){ var pc=(pedidosCompra||[]).find(function(p){ return p.id===c.pedidoCompraId; }); if(pc&&pc.status!=='aberto') pcsFech[pc.numero||pc.id]=1; }
+  });
+  var pcsF=Object.keys(pcsFech);
+  if(pcsF.length){
+    alert('Itens desta lista estão em pedido de compra FECHADO ('+pcsF.join(', ')+').\n\nEstorne o fechamento primeiro (Recebimento → Abrir o pedido → ↩ Reabrir) e tente de novo.');
+    return;
+  }
+  var nComp=itens.filter(function(it){ return it.compra&&it.compra.comprado; }).length;
+  var _codigoLista=_lcCodigo(l); // antes de remover (o código deriva da posição entre as listas vivas)
+  if(!confirm('EXCLUIR a lista '+_codigoLista+' ('+itens.length+' item(ns)'+(nComp?', '+nComp+' já comprado(s) — a(s) compra(s) será(ão) ESTORNADA(S)':'')+')?\n\nAs solicitações voltam como PENDENTES e entram na próxima lista gerada.')) return;
+  var now=Date.now();
+  (l.solicIds||[]).forEach(function(sid){
+    var s=(solicitacoesCompra||[]).find(function(x){ return x&&x.id===sid; });
+    if(s){ s.status='solicitado'; s.listaId=null; s.atualizadoEm=now; }
+  });
+  var ordersAfetados={};
+  itens.forEach(function(it){ (it.origem||[]).forEach(function(og){ ordersAfetados[og.orderId]=1; }); });
+  listasCompra=listasCompra.filter(function(x){ return x.id!==l.id; });
+  if(_lcAbertaId===l.id) closeListaCompraAberta();
+  Object.keys(ordersAfetados).forEach(function(oid){ try{ _reavaliarComprasPedido(oid); }catch(_e){} });
+  renderListaCompra(); try{ renderRecebimento(); }catch(_e){}
+  saveData();
+  alert('✓ Lista '+_codigoLista+' excluída. '+((l.solicIds||[]).length)+' solicitação(ões) voltaram como pendentes.');
 }
 // v155 — pode complementar: lista sem NENHUMA resolução ainda (sem comprado e sem "não comprado"; cotação pode ter)
 function _lcPodeComplementar(l){
@@ -10394,8 +10429,6 @@ function _lcItensTableHtml(l){
   var th='padding:6px 6px;background:var(--bg-secondary);font-size:10px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
   var td='padding:5px 6px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
   var rows=(l.itens||[]).map(function(it,ix){
-      var c=_cotItemEscolhida(it);
-      var cotTxt = c ? '<span style="color:var(--st-ok-tx);font-size:11px">'+escapeHtml(c.fornecedorNome||'')+' · '+fmtMoney(c.preco)+'</span>' : ((it.cotacoes&&it.cotacoes.length)? '<span style="color:var(--st-mid-tx);font-size:11px">'+it.cotacoes.length+' cot. — escolher</span>':'<span style="color:var(--text-tertiary)">—</span>');
       var origTxt=(it.origem||[]).map(function(o){ return o.orderNum; }).join(', ');
       // v138 — item NÃO COMPRADO: riscado/cinza, com motivo; as quantidades já voltaram como solicitação pendente
       if(it.naoComprado){
@@ -10407,47 +10440,46 @@ function _lcItensTableHtml(l){
           '<td style="'+_tdNc+';font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' ped.</td>'+
           '<td style="'+_tdNc+'" colspan="3"><span style="font-size:11px;color:var(--st-bad-tx);font-weight:600">✕ Não comprado</span>'+(it.naoCompradoMotivo?' <span style="font-size:11px;color:var(--text-tertiary)">· '+escapeHtml(it.naoCompradoMotivo)+'</span>':'')+' <span style="font-size:10px;color:var(--text-tertiary)">→ voltou p/ próxima lista</span></td></tr>';
       }
-      // v150 — histórico de fornecedores/preços do item (deriva das compras anteriores) — botão 📈 expande
-      var _hist=_histComprasItem(it.itemId, it.codigo);
-      var _cstIt=_hist.length?_custosItem(it.itemId, it.codigo):null;
-      var _hid='hist_'+l.id+'_'+ix;
-      var _histBtn=_hist.length?'<button onclick="_histItemToggle(this)" data-hid="'+_hid+'" title="Histórico de compras deste item ('+_hist.length+')" style="font-size:11px;padding:3px 8px">📈 '+_hist.length+'</button> ':'';
-      var _histRow=_hist.length?('<tr id="'+_hid+'" style="display:none"><td colspan="8" style="padding:6px 12px;background:var(--bg-secondary);border-bottom:.5px solid var(--border)">'+
-        '<div style="font-size:11px;margin-bottom:3px"><b>📈 Histórico de compras</b>'+(_cstIt?' <span style="color:var(--text-secondary)">— médio '+fmtMoney(_cstIt.medio)+' · última '+fmtMoney(_cstIt.ultimo)+' · <span style="color:var(--st-ok-tx)">menor '+fmtMoney(_cstIt.minimo)+'</span></span>':'')+'</div>'+
-        _hist.slice(0,8).map(function(hh){ return '<div style="font-size:11px;padding:2px 0;border-top:.5px dashed var(--border);color:var(--text-secondary)">'+(hh.em?fmtDate(_dtLocalStr(hh.em)):'—')+' · <b>'+escapeHtml(hh.fornecedor)+'</b> · '+fmtMoney(hh.preco)+(hh.qtd?' · '+hh.qtd.toLocaleString('pt-BR')+' un':'')+(hh.comprado?' · ✓ comprada':' · cotada')+'</div>'; }).join('')+
-        (_hist.length>8?'<div style="font-size:10px;color:var(--text-tertiary);padding-top:2px">+ '+(_hist.length-8)+' compra(s) mais antiga(s)</div>':'')+
-        '</td></tr>'):'';
       // v157 — colunas da COMPRA: qtd comprada (pode ser MAIOR que a solicitada), fornecedor · preço · NF
       var _c=it.compra||{};
       var _ref=(it.itemId!=null&&it.itemId!=='')?String(it.itemId):('#'+ix); // v159 — identidade do item p/ os botões (fallback raro: posição)
+      // v161 — histórico de compras do item abre em MODAL próprio (pedido do dono 16/07; antes expandia inline)
+      var _hist=_histComprasItem(it.itemId, it.codigo);
+      var _histBtn=_hist.length?'<button onclick="openHistItemModal(\''+l.id+'\',\''+_ref+'\')" title="Histórico de compras deste item ('+_hist.length+')" style="font-size:10.5px;padding:3px 7px">📈 '+_hist.length+'</button> ':'';
       var _qtdCmp = _c.comprado
         ? ('<span'+((parseFloat(_c.qtdComprada)||0)>(parseFloat(it.qtdTotal)||0)?' style="color:var(--text-info);font-weight:600" title="Comprado ACIMA do solicitado"':'')+'>'+(parseFloat(_c.qtdComprada)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</span>')
         : '<span style="color:var(--text-tertiary)">—</span>';
-      // v160 — item vinculado a PEDIDO DE COMPRA: a NF é DO PEDIDO (mostra o PC; sem "NF pendente" no item)
-      var _pcRef=_c.pedidoCompraId?(pedidosCompra||[]).find(function(p){ return p&&p.id===_c.pedidoCompraId; }):null;
-      var _nfTxt=_pcRef
-        ? '<span style="color:var(--text-info)">'+escapeHtml(_pcRef.numero||'PC')+(_pcRef.nf?' · NF '+escapeHtml(_pcRef.nf):'')+'</span>'
-        : (_c.nf?('NF '+escapeHtml(_c.nf)):'<span style="color:var(--st-bad-tx);font-weight:600">⚠ NF pendente</span>');
-      var _cmpInfo = _c.comprado
-        ? '<span style="font-size:11px">'+escapeHtml(_c.fornecedorNome||'—')+' · '+fmtMoney(_c.precoPago||0)+'/'+escapeHtml(it.unidade||'un')+' · '+_nfTxt+'</span>'
-        : '<span style="color:var(--text-tertiary)">—</span>';
+      // v161 — colunas enxutas (pedido do dono 16/07): fornecedor/NF/PC já aparecem dentro do Cotar e do
+      // Comprado — aqui fica só PREÇO UNIT. e TOTAL: da compra (qtd comprada) se comprado; senão da
+      // cotação ESCOLHIDA (é a que vale) ou, sem escolhida, da MAIS BARATA (× qtd solicitada).
+      var _precoU=null, _srcLbl='';
+      if(_c.comprado){ _precoU=parseFloat(_c.precoPago)||0; }
+      else if((it.cotacoes||[]).length){
+        var _esc2=_cotItemEscolhida(it);
+        if(_esc2){ _precoU=parseFloat(_esc2.preco)||0; _srcLbl='escolhida'; }
+        else { var _mn=Math.min.apply(null,(it.cotacoes||[]).map(function(cc){ var v=parseFloat(cc.preco); return isNaN(v)?Infinity:v; })); if(isFinite(_mn)){ _precoU=_mn; _srcLbl='menor cot.'; } }
+      }
+      var _qtdBase=_c.comprado?(parseFloat(_c.qtdComprada)||0):(parseFloat(it.qtdTotal)||0);
+      var _corPU=_c.comprado?'color:var(--st-ok-tx);font-weight:600':'';
+      var _puCell=(_precoU!=null)?('<span style="'+_corPU+'">'+fmtMoney(_precoU)+'</span>'+(_srcLbl?' <span style="font-size:9px;color:var(--text-tertiary)">'+_srcLbl+'</span>':'')):'<span style="color:var(--text-tertiary)">—</span>';
+      var _totCell=(_precoU!=null)?('<span style="'+_corPU+'">'+fmtMoney(_precoU*_qtdBase)+'</span>'):'<span style="color:var(--text-tertiary)">—</span>';
       return '<tr><td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(it.codigo||'—')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(it.nome||'')+'</td>'+
         '<td style="'+td+';text-align:right">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
         '<td style="'+td+';text-align:right">'+_qtdCmp+'</td>'+
         '<td style="'+td+';font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' ped.</td>'+
-        '<td style="'+td+'">'+cotTxt+'</td>'+
-        '<td style="'+td+'">'+_cmpInfo+'</td>'+
+        '<td style="'+td+';text-align:right;white-space:nowrap">'+_puCell+'</td>'+
+        '<td style="'+td+';text-align:right;white-space:nowrap">'+_totCell+'</td>'+
         // v159 — botões passam a IDENTIDADE do item (itemId), não a posição: a lista pode ser reordenada
         // por baixo (complementar em outra tela + re-sync) e a posição apontaria para o item ERRADO.
         '<td style="'+td+';text-align:right;white-space:nowrap">'+_histBtn+'<button onclick="openCotacaoModal(\''+l.id+'\',\''+_ref+'\')" style="font-size:10.5px;padding:3px 7px">Cotar</button> '+
           (_c.comprado
             ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(_c.recebido?' · recebido':'')+'</span>'+(_c.recebido?'':' <button onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" title="Editar a compra / preencher a NF" style="font-size:10.5px;padding:3px 7px">✏</button>')
             : '<button class="btn-primary" onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" style="font-size:10.5px;padding:3px 7px">Comprar</button> <button onclick="naoComprarItem(\''+l.id+'\',\''+_ref+'\')" title="Não comprar este item — as quantidades voltam para a próxima lista" style="font-size:10.5px;padding:3px 7px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">✕ Não comprar</button>')+
-        '</td></tr>'+_histRow;
+        '</td></tr>';
   }).join('');
   return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
-    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solic.</th><th style="'+th+';text-align:right">Qtd compr.</th><th style="'+th+'">Origem</th><th style="'+th+'">Cotação</th><th style="'+th+'">Compra (fornec. · preço · NF)</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solic.</th><th style="'+th+';text-align:right">Qtd compr.</th><th style="'+th+'">Origem</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 // ── Cotação ──
 // v159 — resolve o item pela IDENTIDADE (itemId); '#N' é fallback por posição (item legado sem itemId).
@@ -10458,7 +10490,7 @@ function _lcItemByRef(l, ref){
   if(s.charAt(0)==='#'){ return (l.itens||[])[parseInt(s.slice(1),10)]||null; }
   return (l.itens||[]).find(function(x){ return x && String(x.itemId)===s; })||null;
 }
-var _cotListaId=null, _cotItemIdx=null, _cotRows=[], _cotEscolhida=null, _cotViewOnly=false;
+var _cotListaId=null, _cotItemIdx=null, _cotRows=[], _cotEscolhida=null, _cotViewOnly=false, _cotUnidade='un';
 function openCotacaoModal(listaId, idx){
   _cotListaId=listaId; _cotItemIdx=idx; // v159 — idx agora carrega a REF (itemId ou '#pos')
   var l=(listasCompra||[]).find(function(x){return x.id===listaId;}); if(!l) return;
@@ -10469,6 +10501,7 @@ function openCotacaoModal(listaId, idx){
   _cotRows=(it.cotacoes||[]).map(function(c){ return {fornecedorId:c.fornecedorId, fornecedorNome:c.fornecedorNome, preco:c.preco}; });
   if(!_cotViewOnly){ while(_cotRows.length<3) _cotRows.push({fornecedorId:null,fornecedorNome:'',preco:''}); }
   _cotEscolhida = (it.escolhida!=null?it.escolhida:null);
+  _cotUnidade = it.unidade||'un'; // v161 — cabeçalho "Valor/un", "Valor/g" etc.
   document.getElementById('cot-item-info').textContent=(it.codigo?it.codigo+' — ':'')+(it.nome||'');
   document.getElementById('cot-sub-info').textContent='Qtd total: '+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' · '+((it.origem||[]).length)+' pedido(s)'+(_cotViewOnly?' · 🔒 somente leitura (item já comprado)':'');
   var _ab=document.getElementById('cot-add-btn'); if(_ab) _ab.style.display=_cotViewOnly?'none':'';
@@ -10478,6 +10511,24 @@ function openCotacaoModal(listaId, idx){
   document.getElementById('cotacao-modal').classList.add('open');
 }
 function closeCotacaoModal(){ document.getElementById('cotacao-modal').classList.remove('open'); _cotRows=[]; _cotListaId=null; _cotItemIdx=null; _cotEscolhida=null; _cotViewOnly=false; }
+// v161 — histórico de compras do item em MODAL próprio (era linha expandida dentro da tabela)
+function openHistItemModal(listaId, ref){
+  var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return;
+  var it=_lcItemByRef(l, ref); if(!it) return;
+  var hist=_histComprasItem(it.itemId, it.codigo);
+  var cst=hist.length?_custosItem(it.itemId, it.codigo):null;
+  var ov=document.getElementById('hist-item-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='hist-item-overlay'; ov.className='overlay'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:520px;max-height:80vh;overflow-y:auto">'+
+    '<h2 style="font-size:16px">📈 Histórico de compras</h2>'+
+    '<div style="font-size:13px;font-weight:600;margin-bottom:2px">'+escapeHtml((it.codigo?it.codigo+' — ':'')+(it.nome||''))+'</div>'+
+    (cst?('<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Preço médio <b>'+fmtMoney(cst.medio)+'</b> · última <b>'+fmtMoney(cst.ultimo)+'</b> · <span style="color:var(--st-ok-tx)">menor <b>'+fmtMoney(cst.minimo)+'</b></span></div>'):'')+
+    (hist.length?hist.slice(0,30).map(function(hh){ return '<div style="font-size:12px;padding:5px 0;border-top:.5px dashed var(--border);color:var(--text-secondary)">'+(hh.em?fmtDate(_dtLocalStr(hh.em)):'—')+' · <b>'+escapeHtml(hh.fornecedor)+'</b> · '+fmtMoney(hh.preco)+(hh.qtd?' · '+hh.qtd.toLocaleString('pt-BR')+' un':'')+(hh.comprado?' · <span style="color:var(--st-ok-tx)">✓ comprada</span>':' · cotada')+'</div>'; }).join(''):'<div style="font-size:12px;color:var(--text-tertiary)">Sem histórico.</div>')+
+    (hist.length>30?'<div style="font-size:10px;color:var(--text-tertiary);padding-top:4px">+ '+(hist.length-30)+' mais antiga(s)</div>':'')+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'hist-item-overlay\').classList.remove(\'open\')">Fechar</button></div>'+
+  '</div>';
+  ov.classList.add('open');
+}
 function _cotAddRow(){ _cotRows.push({fornecedorId:null,fornecedorNome:'',preco:''}); _renderCotRows(); }
 function _cotRemRow(i){ _cotRows.splice(i,1); if(_cotEscolhida===i)_cotEscolhida=null; else if(_cotEscolhida!=null&&_cotEscolhida>i)_cotEscolhida--; _renderCotRows(); }
 function _cotSetForn(i,val){ if(_cotRows[i]){ _cotRows[i].fornecedorNome=val; var f=(fornecedores||[]).find(function(x){return (x.nome||'').toLowerCase()===String(val).toLowerCase();}); _cotRows[i].fornecedorId=f?f.id:null; } }
@@ -10488,7 +10539,9 @@ function _renderCotRows(){
   var ro=_cotViewOnly; // v160 — somente leitura pós-compra: mostra as cotações, sem editar
   if(ro && !_cotRows.length){ c.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Este item foi comprado sem cotação registrada (regra anterior).</div>'; return; }
   var dl=ro?'':('<datalist id="cot-forn-dl">'+(fornecedores||[]).slice(0,400).map(function(f){return '<option value="'+escapeHtml(f.nome||'')+'">';}).join('')+'</datalist>');
-  c.innerHTML=dl+_cotRows.map(function(r,i){
+  // v161 — cabeçalho das colunas (pedido do dono 16/07): Fornecedor + Valor/<unidade do item>
+  var hdr='<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:10px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase"><span style="width:14px"></span><span style="flex:1">Fornecedor</span><span style="width:120px;text-align:right">Valor/'+escapeHtml(_cotUnidade||'un')+'</span><span style="width:'+(ro?'70':'22')+'px"></span></div>';
+  c.innerHTML=dl+hdr+_cotRows.map(function(r,i){
     return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px'+(ro&&_cotEscolhida===i?';background:var(--st-ok-bg);border-radius:6px;padding:2px 4px':'')+'">'+
       '<input type="radio" name="cot-esc" '+(_cotEscolhida===i?'checked':'')+(ro?' disabled':' onclick="_cotEscolher('+i+')"')+' title="'+(ro?'escolhido':'marcar como escolhido')+'" style="width:auto">'+
       '<input type="text" '+(ro?'disabled':'list="cot-forn-dl" oninput="_cotSetForn('+i+',this.value)"')+' value="'+escapeHtml(r.fornecedorNome||'')+'" placeholder="Fornecedor" style="flex:1;font-size:12px;padding:4px 7px">'+
@@ -10782,6 +10835,10 @@ function openComprarModal(listaId, idx){
   // Compra nova entra no PEDIDO DE COMPRA do fornecedor e a NF é informada lá.
   var _nfRow=document.getElementById('cmp-nf-row');
   if(_nfRow) _nfRow.style.display=(cmp.comprado && !cmp.pedidoCompraId)?'':'none';
+  // v161 — ESTORNAR COMPRA (pedido do dono 16/07): permitido enquanto o pedido de compra do item
+  // ainda estiver ABERTO (fechado → reabrir o pedido primeiro; recebido nunca chega aqui — guard acima).
+  var _estBtn=document.getElementById('cmp-estornar-btn');
+  if(_estBtn) _estBtn.style.display=(cmp.comprado && !cmp.recebido)?'':'none';
   document.getElementById('comprar-modal').classList.add('open');
 }
 function closeComprarModal(){ document.getElementById('comprar-modal').classList.remove('open'); _cmpListaId=null; _cmpItemIdx=null; }
@@ -10810,6 +10867,25 @@ function saveCompraItem(){
   _atualizaStatusLista(l); // v138 — finalizada automaticamente quando todos os itens estão comprados/não comprados
   (it.origem||[]).forEach(function(og){ _reavaliarComprasPedido(og.orderId); });
   closeComprarModal(); renderListaCompra(); saveData();
+}
+// v161 — ESTORNAR COMPRA de um item (pedido do dono 16/07): permitido enquanto o pedido de compra
+// do item estiver ABERTO (fechado/faturado → reabrir o pedido primeiro; recebido é barrado antes).
+// Desfaz a compra (a COTAÇÃO fica), o item volta a "Comprar" e sai do pedido do fornecedor.
+function estornarCompraItem(){
+  var l=(listasCompra||[]).find(function(x){ return x.id===_cmpListaId; }); if(!l) return;
+  var it=_lcItemByRef(l, _cmpItemIdx); if(!it||!it.compra||!it.compra.comprado) return;
+  if(it.compra.recebido){ alert('Compra já RECEBIDA (lançada no Caixa) — não dá para estornar aqui.'); return; }
+  var pc=it.compra.pedidoCompraId?(pedidosCompra||[]).find(function(p){ return p.id===it.compra.pedidoCompraId; }):null;
+  if(pc && pc.status!=='aberto'){
+    alert('O pedido de compra '+(pc.numero||'')+' está '+(_PC_ST_LBL[pc.status]||pc.status).toUpperCase()+'.\n\nEstorne o fechamento do pedido primeiro (Recebimento → Abrir o pedido → ↩ Reabrir) e tente de novo.');
+    return;
+  }
+  if(!confirm('↩ ESTORNAR a compra de "'+(it.nome||'')+'"?\n\nO item volta para "Comprar" (a cotação escolhida fica) e sai do pedido '+(pc?(pc.numero||''):'do fornecedor')+'.')) return;
+  delete it.compra; // cotações vivem em it.cotacoes — ficam intactas
+  _atualizaStatusLista(l);
+  (it.origem||[]).forEach(function(og){ try{ _reavaliarComprasPedido(og.orderId); }catch(_e){} });
+  closeComprarModal(); renderListaCompra(); renderRecebimento(); saveData();
+  alert('✓ Compra estornada — o item voltou para "Comprar".');
 }
 // ── Recebimento (financeiro) — agrupa por fornecedor+NF ──
 function _recebGrupos(){
@@ -10975,6 +11051,10 @@ function _renderPedidoCompraModal(){
     if(pc.status==='faturado' && t.pendentes>0) btns.push('<button class="btn-primary" onclick="openReceberPedido(\''+pc.id+'\')" style="font-size:12px;padding:5px 14px">📥 Receber mercadoria</button>');
     if(pc.status==='fechado') btns.push('<span style="font-size:11px;color:var(--text-tertiary)">o recebimento libera depois de informar a NF</span>');
     if(pc.status==='aberto') btns.push('<span style="font-size:11px;color:var(--text-tertiary)">compras deste fornecedor continuam entrando aqui até fechar</span>');
+    // v161 — estornar o FECHAMENTO (admin; só sem recebimento lançado): volta a 'aberto' — pré-requisito
+    // p/ estornar compra de item ou excluir a lista quando o pedido já estava fechado.
+    if((pc.status==='fechado'||pc.status==='faturado') && !(pc.recebimentos||[]).length && currentUser && currentUser.perfil==='admin')
+      btns.push('<button onclick="reabrirPedidoCompra(\''+pc.id+'\')" style="font-size:12px;padding:5px 12px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">↩ Reabrir pedido (admin)</button>');
     ac.innerHTML=btns.join(' ');
   }
 }
@@ -10983,6 +11063,17 @@ function fecharPedidoCompra(pcId){
   var t=_pcTotais(pc);
   if(!confirm('Fechar o pedido '+(pc.numero||'')+' de '+(pc.fornecedorNome||'')+' com '+t.n+' item(ns) ('+fmtMoney(t.total)+')?\n\nA composição trava — as próximas compras deste fornecedor abrem o pedido seguinte.')) return;
   pc.status='fechado'; pc.fechadoEm=Date.now(); pc.fechadoPor=(currentUser&&currentUser.name)||'';
+  _renderPedidoCompraModal(); renderRecebimento(); saveData();
+}
+// v161 — estorna o FECHAMENTO do pedido de compra (admin): volta a 'aberto'. Bloqueado se já houve
+// recebimento (leva lançada no Caixa). A NF informada fica guardada (ao refechar, o Informar NF vem preenchido).
+function reabrirPedidoCompra(pcId){
+  if(!currentUser||currentUser.perfil!=='admin'){ alert('Apenas o administrador pode reabrir um pedido fechado.'); return; }
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
+  if((pc.recebimentos||[]).length){ alert('Este pedido já tem recebimento lançado no Caixa — não pode ser reaberto.'); return; }
+  if(!(pc.status==='fechado'||pc.status==='faturado')) return;
+  if(!confirm('↩ Reabrir o pedido '+(pc.numero||'')+' de '+(pc.fornecedorNome||'')+'?\n\nEle volta a ACEITAR novas compras do fornecedor (e libera estorno de compra / exclusão de lista dos itens dele).')) return;
+  pc.status='aberto'; pc.reabertoEm=Date.now(); pc.reabertoPor=(currentUser&&currentUser.name)||'';
   _renderPedidoCompraModal(); renderRecebimento(); saveData();
 }
 function informarNfPedidoCompra(pcId){
@@ -11057,8 +11148,7 @@ function _pcRecebProsseguir(){
   _rcbBlocos=[{forma:'PIX',valor:total,nsu:'',parcelas:[{num:1,valor:total,vencimento:(typeof today==='function'?today():''),pago:false,boleto:''}]}];
   _peOpen(_rcbBlocos,'rcb-blocos',total,_rcbDistrib,'',_COMPRAS_PE_FORMAS_BON);
   _rcbDistrib();
-  var sel=document.getElementById('rcb-plano');
-  sel.innerHTML='<option value="">Sem plano</option>'+_planoOrdenado().filter(function(p){return p.analitica!==false;}).map(function(p){return '<option value="'+p.id+'">'+escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)+'</option>';}).join('');
+  _planoAcSet('rcb-plano',''); // v161 — busca com autocomplete
   document.getElementById('receber-modal').classList.add('open');
 }
 var _rcbKey=null;
@@ -11075,8 +11165,7 @@ function openReceberModal(idx){
   _rcbBlocos=[{forma:'PIX',valor:+(g.total).toFixed(2),nsu:'',parcelas:[{num:1,valor:+(g.total).toFixed(2),vencimento:(typeof today==='function'?today():''),pago:false,boleto:''}]}];
   _peOpen(_rcbBlocos,'rcb-blocos',+(g.total).toFixed(2),_rcbDistrib,'',_COMPRAS_PE_FORMAS_BON);
   _rcbDistrib();
-  var sel=document.getElementById('rcb-plano');
-  sel.innerHTML='<option value="">Sem plano</option>'+(planoContas||[]).filter(function(p){return p.analitica!==false;}).map(function(p){return '<option value="'+p.id+'">'+escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)+'</option>';}).join('');
+  _planoAcSet('rcb-plano',''); // v161 — busca com autocomplete
   document.getElementById('receber-modal').classList.add('open');
 }
 function closeReceberModal(){ document.getElementById('receber-modal').classList.remove('open'); _rcbKey=null; _rcbPedidoCtx=null; }
@@ -11789,7 +11878,7 @@ function openCompraModal(id){
   }
   // Plano
   populateCompraPlanoSelect();
-  document.getElementById('compra-plano').value=c?c.planoId||'':'';
+  _planoAcSet('compra-plano', c?(c.planoId||''):''); // v161 — autocomplete (hidden #compra-plano)
   document.getElementById('compra-data').value=c?c.data:today();
   document.getElementById('compra-valor').value=c?c.valor:'';
   document.getElementById('compra-dataemissao').value=c?c.dataEmissao||'':'';
@@ -11849,11 +11938,36 @@ function closeCompraModal(){document.getElementById('compra-overlay').classList.
 // v160 — plano de contas em ORDEM DE NUMERAÇÃO (pedido do dono 15/07): os dropdowns listavam na
 // ordem de inserção (conta nova caía no fim). A tela do plano já ordenava; agora os selects também.
 function _planoOrdenado(){ return [...(planoContas||[])].sort((a,b)=>String(a.codigo||'zzz').localeCompare(String(b.codigo||'zzz'))); }
+// ═══════ v161 — BUSCA de conta do plano (autocomplete, padrão do fornecedor — pedido do dono 16/07) ═══════
+// Estrutura: input visível `<base>-busca` + lista `<base>-ac` + input HIDDEN `<base>` (os saves existentes
+// continuam lendo o hidden — nada muda neles). Busca só contas ANALÍTICAS (lançamento não vai em sintética).
+function _planoAcSearch(baseId){
+  var inp=document.getElementById(baseId+'-busca'), ac=document.getElementById(baseId+'-ac'), hid=document.getElementById(baseId);
+  if(!inp||!ac||!hid) return;
+  if(hid.value) hid.value=''; // digitou de novo → desfaz a escolha anterior
+  var q=(inp.value||'').toLowerCase().trim();
+  if(q.length<1){ ac.classList.remove('open'); return; }
+  var m=_planoOrdenado().filter(function(p){ return p.analitica!==false && ((p.codigo||'')+' '+(p.nome||'')).toLowerCase().indexOf(q)>=0; }).slice(0,10);
+  if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nenhuma conta encontrada.</div>'; ac.classList.add('open'); return; }
+  ac.innerHTML=m.map(function(p){ return '<div class="autocomplete-item" onmousedown="_planoAcPick(\''+baseId+'\',\''+p.id+'\')"><div class="ac-name">'+escapeHtml(p.nome||'')+'</div><div class="ac-doc">'+escapeHtml(p.codigo||'')+'</div></div>'; }).join('');
+  ac.classList.add('open');
+}
+function _planoAcPick(baseId, id){
+  var p=(planoContas||[]).find(function(x){ return x.id===id; }); if(!p) return;
+  var hid=document.getElementById(baseId), inp=document.getElementById(baseId+'-busca'), ac=document.getElementById(baseId+'-ac');
+  if(hid) hid.value=id; if(inp) inp.value=(p.codigo?p.codigo+' — ':'')+(p.nome||''); if(ac) ac.classList.remove('open');
+}
+function _planoAcSet(baseId, id){
+  var hid=document.getElementById(baseId), inp=document.getElementById(baseId+'-busca'), ac=document.getElementById(baseId+'-ac');
+  if(ac) ac.classList.remove('open');
+  var p=id?(planoContas||[]).find(function(x){ return x.id===id; }):null;
+  if(hid) hid.value=p?id:'';
+  if(inp) inp.value=p?((p.codigo?p.codigo+' — ':'')+(p.nome||'')):'';
+}
+function _planoAcBlur(baseId){ setTimeout(function(){ var a=document.getElementById(baseId+'-ac'); if(a) a.classList.remove('open'); },200); }
 function populateCompraPlanoSelect(){
-  const sel=document.getElementById('compra-plano');if(!sel)return;
-  const prev=sel.value;
-  sel.innerHTML='<option value="">Selecione o plano de contas...</option>'+
-    _planoOrdenado().map(p=>`<option value="${p.id}" ${p.id===prev?'selected':''}>${p.codigo?p.codigo+' — ':''}${escapeHtml(p.nome)}</option>`).join('');
+  // v161 — o campo virou BUSCA com autocomplete (_planoAcSearch/_planoAcSet); não há mais <select> a popular.
+  // Mantida como no-op pelos chamadores antigos (savePlano/init).
 }
 
 function searchCompraFornec(){
@@ -12715,9 +12829,8 @@ function openContaPagarModal(id){
   window._editingCpId = id||null;
   document.getElementById('cpm-desc').value = c?c.descricao:'';
   document.getElementById('cpm-valor').value = c?c.valor:'';
-  // Plano
-  const planSel = document.getElementById('cpm-plano');
-  planSel.innerHTML = '<option value="">Sem plano</option>'+_planoOrdenado().map(p=>`<option value="${p.id}" ${c&&c.planoId===p.id?'selected':''}>${escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)}</option>`).join(''); // v160 — ordenado por código (+ código no rótulo)
+  // Plano — v161: busca com autocomplete
+  _planoAcSet('cpm-plano', c?(c.planoId||''):'');
   document.getElementById('cpm-fornec').value = c?c.fornecedorNome||'':'';
   document.getElementById('cpm-dataemissao').value = c?c.dataEmissao||'':'';
   { const _nf=document.getElementById('cpm-nf'); if(_nf) _nf.value = c?(c.notaFiscal||''):''; }
@@ -12860,11 +12973,7 @@ function openContaReceberModal(id){
   document.getElementById('crman-desc').value = c?c.descricao:'';
   document.getElementById('crman-valor').value = c?c.valor:'';
   document.getElementById('crman-cliente').value = c?c.clienteNome||'':'';
-  const planSel=document.getElementById('crman-plano');
-  if(planSel){
-    const sel = c?(c.contaPlanoId||''):(_planoVendaId()||'');
-    planSel.innerHTML='<option value="">Sem plano</option>'+_planoOrdenado().filter(p=>p.analitica!==false).map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)}</option>`).join(''); // v160 — ordenado por código
-  }
+  _planoAcSet('crman-plano', c?(c.contaPlanoId||''):(_planoVendaId()||'')); // v161 — busca com autocomplete (default = Venda de Mercadoria)
   document.getElementById('crman-dataemissao').value = c?c.dataEmissao||'':'';
   _crmanBlocos=c
     ? _compraBlocosFromParcelas({parcelas:c.parcelas, forma:c.formaPag, nsu:c.nsu, valor:c.valor})
@@ -13161,12 +13270,15 @@ function _finBaixarSelecionadas(tipo){
   const doPrinc=selInfo.filter(x=>x.chave===princ.chave);
   const fora=selInfo.filter(x=>x.chave!==princ.chave);
   if(fora.length){
-    const rotulo=tipo==='pagar'?'fornecedor':'cliente';
+    // v161 — RECEBER com clientes diferentes vai para a BAIXA EM LOTE (decisão do dono 16/07, volume de
+    // cartão): até 20 parcelas numa tacada, mesma data/forma/conta/taxa%. Pagar segue por fornecedor.
+    if(tipo!=='pagar'){ _finBaixarLote(selInfo); return; }
+    const rotulo='fornecedor';
     const outrosNomes=[...new Set(fora.map(x=>x.nome))];
     if(!confirm(
-      '⚠ ATENÇÃO — seleção com '+rotulo+'s diferentes\n\n'+
-      'Você marcou '+selInfo.length+' parcela(s) de '+(outrosNomes.length+1)+' '+rotulo+'s diferentes.\n'+
-      'A baixa é feita por '+rotulo+' (um '+(tipo==='pagar'?'pagamento':'recebimento')+' por '+rotulo+'), então NÃO dá para baixar todas de uma vez.\n\n'+
+      '⚠ ATENÇÃO — seleção com '+rotulo+'es diferentes\n\n'+
+      'Você marcou '+selInfo.length+' parcela(s) de '+(outrosNomes.length+1)+' '+rotulo+'es diferentes.\n'+
+      'A baixa é feita por '+rotulo+' (um pagamento por '+rotulo+'), então NÃO dá para baixar todas de uma vez.\n\n'+
       '➡ ENTRA agora: '+princ.nome+' — '+doPrinc.length+' parcela(s)\n'+
       '❌ NÃO entra ('+fora.length+' parcela[s]): '+outrosNomes.join(', ')+'\n\n'+
       'Faça a baixa deste '+rotulo+' e depois repita para '+(outrosNomes.length>1?'cada um dos outros':'o outro')+'.\n\nContinuar com '+princ.nome+'?'
@@ -13180,6 +13292,71 @@ function _finBaixarSelecionadas(tipo){
   }
 }
 
+// ═══════════ v161 — BAIXA EM LOTE (recebimentos, decisão do dono 16/07: volume de CARTÃO) ═══════════
+// Até 20 parcelas de clientes DIFERENTES numa tacada — mesma data/forma/conta destino; taxa de máquina
+// em % calculada POR PARCELA. Cada parcela recebe a PRÓPRIA baixa individual (sem grupo): o estorno
+// continua parcela a parcela e a DRE/DFC leem igual à baixa normal. Segurança: baixa é UPDATE em
+// contas_receber — a trava de exclusão em massa (orders, DELETE) não se aplica.
+var _loteState=null;
+function _finBaixarLote(selInfo){
+  if(selInfo.length>20){ alert('O lote aceita até 20 parcelas por vez (você marcou '+selInfo.length+').\nDesmarque algumas e repita o lote.'); return; }
+  var rows=selInfo.map(function(x){
+    var c=contasReceber.find(function(y){ return y.id===x.s.dataset.conta; }); if(!c) return null;
+    var pi=parseInt(x.s.dataset.parc,10); var p=c.parcelas&&c.parcelas[pi]; if(!p||p.pago) return null;
+    return { contaId:c.id, parcIdx:pi, cliente:c.clienteNome||'—', desc:c.descricao||'', valor:parseFloat(p.valor)||0, venc:p.vencimento||'' };
+  }).filter(Boolean);
+  if(!rows.length){ alert('Nenhuma parcela em aberto na seleção.'); return; }
+  _loteState={rows:rows};
+  var ov=document.getElementById('baixa-lote-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='baixa-lote-overlay'; ov.className='overlay'; document.body.appendChild(ov); }
+  var contasCx=(planoContas||[]).filter(function(p){ return p.atividadeDFC==='caixa'&&p.analitica!==false; });
+  ov.innerHTML='<div class="modal" style="width:660px;max-height:86vh;overflow-y:auto">'+
+    '<h2>💳 Baixa em lote — recebimentos</h2>'+
+    '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Até 20 parcelas por lote, de clientes diferentes. Cada parcela recebe a própria baixa (estorno continua parcela a parcela). A taxa de máquina em % é calculada sobre cada parcela.</div>'+
+    '<div style="max-height:220px;overflow:auto;border:.5px solid var(--border);border-radius:6px;margin-bottom:10px">'+rows.map(function(r){ return '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 10px;border-bottom:.5px solid var(--border);font-size:12px"><span>'+escapeHtml(r.cliente)+' <span style="color:var(--text-tertiary);font-size:10px">'+escapeHtml(r.desc)+'</span></span><span style="white-space:nowrap">'+fmtMoney(r.valor)+(r.venc?' <span style="color:var(--text-tertiary);font-size:10px">venc '+fmtDate(r.venc)+'</span>':'')+'</span></div>'; }).join('')+'</div>'+
+    '<div class="form-row">'+
+      '<div class="form-group"><label>Data da baixa</label><input type="date" id="lote-data" value="'+today()+'"></div>'+
+      '<div class="form-group"><label>Forma</label><select id="lote-forma">'+FORMAS_PAG.map(function(f){ return '<option '+(f==='Cartão de Crédito'?'selected':'')+'>'+f+'</option>'; }).join('')+'</select></div>'+
+    '</div>'+
+    '<div class="form-row">'+
+      '<div class="form-group"><label>Conta destino (caixa/banco)</label><select id="lote-conta"><option value="">—</option>'+contasCx.map(function(p){ return '<option value="'+p.id+'">'+escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)+'</option>'; }).join('')+'</select></div>'+
+      '<div class="form-group"><label>Taxa de máquina (%) <span style="font-size:10px;color:var(--text-tertiary)">por parcela</span></label><input type="number" id="lote-taxa" value="0" min="0" step="0.01" oninput="_loteRecalc()"></div>'+
+    '</div>'+
+    '<div class="form-group"><label>Observação</label><input type="text" id="lote-obs" placeholder="opcional"></div>'+
+    '<div id="lote-resumo" style="font-size:13px;font-weight:600;margin:8px 0"></div>'+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'baixa-lote-overlay\').classList.remove(\'open\')">Cancelar</button><button class="btn-primary" onclick="confirmarBaixaLote()">Confirmar '+rows.length+' baixa(s)</button></div>'+
+  '</div>';
+  ov.classList.add('open');
+  _loteRecalc();
+}
+function _loteRecalc(){
+  if(!_loteState) return;
+  var pct=parseFloat((document.getElementById('lote-taxa')||{}).value)||0;
+  var bruto=_loteState.rows.reduce(function(s,r){ return s+r.valor; },0);
+  var taxa=_loteState.rows.reduce(function(s,r){ return s+ +(r.valor*pct/100).toFixed(2); },0);
+  var el=document.getElementById('lote-resumo');
+  if(el) el.innerHTML='Bruto <b>'+fmtMoney(bruto)+'</b>'+(pct?' · taxa '+fmtMoney(taxa)+' · líquido <span style="color:var(--st-ok-tx)">'+fmtMoney(bruto-taxa)+'</span>':'');
+}
+function confirmarBaixaLote(){
+  if(!_loteState) return;
+  var data=(document.getElementById('lote-data')||{}).value||today();
+  var forma=(document.getElementById('lote-forma')||{}).value||'Cartão de Crédito';
+  var contaDest=(document.getElementById('lote-conta')||{}).value||null;
+  var pct=parseFloat((document.getElementById('lote-taxa')||{}).value)||0;
+  var obs=((document.getElementById('lote-obs')||{}).value||'').trim();
+  var n=0, liquido=0;
+  _loteState.rows.forEach(function(r){
+    var c=contasReceber.find(function(y){ return y.id===r.contaId; }); if(!c) return;
+    var p=c.parcelas&&c.parcelas[r.parcIdx]; if(!p||p.pago) return;
+    var taxa=+((parseFloat(p.valor)||0)*pct/100).toFixed(2);
+    p.pago=true;
+    p.baixa={ id:'bx'+Date.now()+'_'+n, data:data, valorBruto:(parseFloat(p.valor)||0), forma:forma, conta:contaDest, obs:(obs?obs+' ':'')+'[lote]', por:(currentUser&&currentUser.name)||'—', ts:Date.now(), desconto:0, taxa:taxa, juros:0, grupo:null };
+    liquido+=(parseFloat(p.valor)||0)-taxa; n++;
+  });
+  document.getElementById('baixa-lote-overlay').classList.remove('open'); _loteState=null;
+  saveData(); renderFinAReceber(); try{ renderFinPainel(); }catch(_e){}
+  alert('✓ Lote concluído: '+n+' recebimento(s) baixado(s).\nLíquido total: '+fmtMoney(liquido));
+}
 function getContaStatus(c){
   if(c.formaPag==='bonificacao') return 'bonificacao'; // v127 — bonificação: registrada, não paga, nunca vence
   const parc = c.parcelas||[];
@@ -13806,18 +13983,18 @@ function openControlesConfig(){
   const codStr=a=>(a&&a.contas?a.contas.join(', '):'');
   document.getElementById('alertcfg-overlay').innerHTML=`<div class="modal" style="width:560px">
     <h2>⚙ Parâmetros dos controles</h2>
-    <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">% = sobre a produção do mês. Contas = códigos do plano que somam o gasto (separados por vírgula).</div>
+    <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">% = sobre a produção do mês. Contas = códigos do plano que somam o gasto (separados por vírgula) — valem para Embalagem+MP e Consumíveis.</div>
     <div class="form-row">
       <div class="form-group"><label>Embalagem+MP — %</label><input type="number" id="cc-embMP-pct" value="${c.embMP.pct}"></div>
       <div class="form-group" style="flex:2"><label>Contas (códigos)</label><input type="text" id="cc-embMP-contas" value="${codStr(c.embMP)}"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Rótulos — %</label><input type="number" id="cc-rotulos-pct" value="${c.rotulos.pct}"></div>
-      <div class="form-group" style="flex:2"><label>Contas</label><input type="text" id="cc-rotulos-contas" value="${codStr(c.rotulos)}"></div>
+      <div class="form-group" style="flex:2"><label>Fonte do gasto</label><div style="font-size:11px;color:var(--text-tertiary);padding:7px 2px;line-height:1.5">📎 Somado automaticamente dos lançamentos do menu <b>Pagamentos</b> (tipo Impressão/Gráfica). Códigos do plano não são usados aqui.</div></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Frete interno — %</label><input type="number" id="cc-frete-pct" value="${c.freteInterno.pct}"></div>
-      <div class="form-group" style="flex:2"><label>Contas</label><input type="text" id="cc-frete-contas" value="${codStr(c.freteInterno)}"></div>
+      <div class="form-group" style="flex:2"><label>Fonte do gasto</label><div style="font-size:11px;color:var(--text-tertiary);padding:7px 2px;line-height:1.5">📎 Somado automaticamente dos lançamentos do menu <b>Pagamentos</b> (Frete de pedidos + Frete gráfica). Códigos do plano não são usados aqui.</div></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Consumíveis — %</label><input type="number" id="cc-cons-pct" value="${c.consumiveis.pct}"></div>
@@ -13837,8 +14014,10 @@ function saveControlesConfig(){
   if(!alertasFinConfig.controles) alertasFinConfig.controles=_alertCfgDefaults().controles;
   const c=alertasFinConfig.controles;
   c.embMP={pct:parseFloat(g('cc-embMP-pct').value)||0, contas:parseCod(g('cc-embMP-contas').value)};
-  c.rotulos={pct:parseFloat(g('cc-rotulos-pct').value)||0, contas:parseCod(g('cc-rotulos-contas').value)};
-  c.freteInterno={pct:parseFloat(g('cc-frete-pct').value)||0, contas:parseCod(g('cc-frete-contas').value)};
+  // v161 — Rótulos e Frete interno vêm dos lançamentos de PAGAMENTOS (o campo de contas saiu do modal);
+  // o pct segue editável e as contas antigas ficam preservadas no dado (sem uso).
+  c.rotulos={pct:parseFloat(g('cc-rotulos-pct').value)||0, contas:(c.rotulos&&c.rotulos.contas)||[]};
+  c.freteInterno={pct:parseFloat(g('cc-frete-pct').value)||0, contas:(c.freteInterno&&c.freteInterno.contas)||[]};
   c.consumiveis={pct:parseFloat(g('cc-cons-pct').value)||0, contas:parseCod(g('cc-cons-contas').value)};
   c.amostrasPct=parseFloat(g('cc-amostras-pct').value)||0;
   document.getElementById('alertcfg-overlay').classList.remove('open');

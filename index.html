@@ -1402,7 +1402,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="form-group"><label>Qtd comprada *</label><input type="number" id="cmp-qtd" min="0" step="any" placeholder="0"></div>
             <div class="form-group"><label>Preço unitário pago (R$) *</label><input type="number" id="cmp-preco" min="0" step="0.01" placeholder="0,00"></div>
           </div>
-          <div class="form-group" style="margin-bottom:12px"><label>Nº da Nota Fiscal <span style="font-size:10px;color:var(--text-tertiary)">(opcional — pode preencher depois pelo ✏ da lista)</span></label><input type="text" id="cmp-nf" placeholder="NF (se já tiver)"></div>
+          <div class="form-group" style="margin-bottom:12px" id="cmp-nf-row"><label>Nº da Nota Fiscal <span style="font-size:10px;color:var(--text-tertiary)">(compra antiga sem pedido — a NF das compras novas é informada no PEDIDO DE COMPRA, no Recebimento)</span></label><input type="text" id="cmp-nf" placeholder="NF (se já tiver)"></div>
           <div id="cmp-total" style="font-size:12px;color:var(--text-secondary);margin-bottom:10px"></div>
           <div class="modal-footer"><button onclick="closeComprarModal()">Cancelar</button><button class="btn-primary" onclick="saveCompraItem()">Marcar como comprado</button></div>
         </div>
@@ -1423,6 +1423,30 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div id="rcb-total" style="font-size:13px;font-weight:600;margin-bottom:10px"></div>
           <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Ao confirmar, o lançamento entra no <b>Caixa</b> (aguardando aprovação) e os pedidos que já receberam todos os itens ficam <b>"Produto entregue"</b>.</div>
           <div class="modal-footer"><button onclick="closeReceberModal()">Cancelar</button><button class="btn-primary" onclick="saveRecebimento()">Confirmar recebimento</button></div>
+        </div>
+      </div>
+      <!-- v160 — MODAL: PEDIDO DE COMPRA (detalhe: itens comprados do fornecedor, fechar/NF/receber) -->
+      <div class="overlay" id="pedido-compra-overlay">
+        <div class="modal" style="width:min(1000px,95vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+            <div>
+              <h2 id="pc-ab-titulo" style="margin:0 0 4px">Pedido de compra</h2>
+              <div id="pc-ab-sub" style="font-size:12px"></div>
+            </div>
+            <button onclick="closePedidoCompraModal()">Fechar</button>
+          </div>
+          <div id="pc-ab-body" style="flex:1;overflow:auto;margin-top:10px"></div>
+          <div id="pc-ab-acoes" style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"></div>
+        </div>
+      </div>
+      <!-- v160 — MODAL: CONFERÊNCIA do recebimento do pedido (conciliação com a NF; divergência avisa) -->
+      <div class="overlay" id="pc-receb-overlay">
+        <div class="modal" style="width:min(1000px,95vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
+          <h2 id="pcr-titulo" style="margin:0 0 4px">Receber pedido</h2>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Confira com a NOTA FISCAL: ajuste quantidade/preço se a nota vier diferente (ex.: embalagem faturada em componentes, ativo em outra fração) e desmarque o que não veio nesta leva (recebe depois). Divergência não trava — fica registrada para questionar o fornecedor.</div>
+          <div id="pcr-rows" style="flex:1;overflow:auto"></div>
+          <div id="pcr-total" style="font-size:13px;margin-top:10px"></div>
+          <div class="modal-footer" style="margin-top:10px"><button onclick="closeReceberPedido()">Cancelar</button><button class="btn-primary" onclick="_pcRecebProsseguir()">Prosseguir → pagamento</button></div>
         </div>
       </div>
       <!-- v130 — MODAL: cotação de um item da lista -->
@@ -1450,8 +1474,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div id="cot-sub-info" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px"></div>
           <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:6px">Fornecedores e preços (marque o escolhido)</div>
           <div id="cot-rows"></div>
-          <button onclick="_cotAddRow()" style="font-size:12px;padding:5px 12px;margin-top:6px">+ Adicionar fornecedor</button>
-          <div class="modal-footer" style="margin-top:14px"><button onclick="closeCotacaoModal()">Cancelar</button><button class="btn-primary" onclick="saveCotacao()">Salvar cotação</button></div>
+          <button onclick="_cotAddRow()" id="cot-add-btn" style="font-size:12px;padding:5px 12px;margin-top:6px">+ Adicionar fornecedor</button>
+          <div class="modal-footer" style="margin-top:14px"><button onclick="closeCotacaoModal()" id="cot-cancel-btn">Cancelar</button><button class="btn-primary" onclick="saveCotacao()" id="cot-save-btn">Salvar cotação</button></div>
         </div>
       </div>
       <!-- v130 — MODAL: solicitar compra (ativos/embalagens) por pedido -->
@@ -4060,7 +4084,8 @@ function _sepDefRow(){ return function(o){ return { id:String(o.id), data:o, upd
   ['freteRealLanc','frete_real_lanc'],
   ['insumos','insumos'], // v130 — catálogo de insumos (ativos) + embalagens p/ solicitação de compra
   ['solicitacoesCompra','solicitacoes_compra'], // v130 — solicitações de compra por pedido (ativos/embalagens)
-  ['listasCompra','listas_compra'] // v130 — listas de compra consolidadas (cotação/compra) por tipo
+  ['listasCompra','listas_compra'], // v130 — listas de compra consolidadas (cotação/compra) por tipo
+  ['pedidosCompra','pedidos_compra'] // v160 — PEDIDO DE COMPRA por fornecedor (espelho da NF; recebimento/conciliação)
 ].forEach(function(p){
   SEP_ENTITIES.push({
     key:p[0], table:p[1], idText:true,
@@ -4400,7 +4425,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v159';
+var APP_VERSION = 'v160';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5402,6 +5427,7 @@ var orcamentosCrm=[]; var catalogo=[];
 var insumos=[]; // v130 — insumos (ativos) + embalagens: [{id, codigo, nome, tipo:'insumo'|'embalagem', unidade, ativo, criadoEm}]
 var solicitacoesCompra=[]; // v130 — 1 por (pedido,tipo): [{id, orderId, orderNum, cliente, tipo:'ativo'|'embalagem', itens:[{itemId,codigo,nome,qtd,unidade}], status:'solicitado'|'em_lista'|'comprado', listaId, criadoPor, criadoEm, atualizadoEm}]
 var listasCompra=[]; // v130 — lista consolidada por tipo: [{id, tipo:'ativo'|'embalagem', criadoEm, criadoPor, solicIds:[], itens:[{itemId,codigo,nome,unidade,qtdTotal, origem:[{orderId,orderNum,qtd}], cotacoes:[{fornecedorId,fornecedorNome,preco}], escolhida:idx|null, compra:{}}], status:'cotacao'|'compra'|'finalizada'}]
+var pedidosCompra=[]; // v160 — PEDIDO DE COMPRA por fornecedor (espelho da NF): [{id, numero:'PC-001', fornecedorId, fornecedorNome, status:'aberto'|'fechado'|'faturado'|'recebido', criadoEm/Por, fechadoEm/Por, nf, nfEm/Por, recebimentos:[{em,por,valor,compraLancId,itens:[{listaId,itemId,nome,qtd,preco}]}]}]. Itens vinculados via it.compra.pedidoCompraId nas listasCompra.
 var equipes=[]; // [{id,nome,tipo:'vendas'|'sdr',coordenadorId,atendentesIds:[],ativa}]
 var conversas=[]; // [{id,clienteId,atendenteId,equipeId,canal,ultimaMsg,ultimaMsgEm,naoLidas,mensagens:[]}] // [{id,leadId,clienteId,clienteNome,empresa,tipoProduto,valor,frete,forma,prevPgto,validade,data,status,obs,responsavel,criadoPor,criadoEm}]
 let currentUser=null;
@@ -10364,11 +10390,12 @@ function gerarPdfListaCompra(listaId){
 }
 // v155 — tabela de ITENS de uma lista (o miolo que antes ficava solto na tela; agora vive no modal)
 function _lcItensTableHtml(l){
-  var th='padding:7px 9px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
-  var td='padding:6px 9px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
+  // v160 — colunas compactadas (pedido do dono 16/07): tudo numa tela, sem arrastar pro lado
+  var th='padding:6px 6px;background:var(--bg-secondary);font-size:10px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
+  var td='padding:5px 6px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
   var rows=(l.itens||[]).map(function(it,ix){
       var c=_cotItemEscolhida(it);
-      var cotTxt = c ? '<span style="color:var(--st-ok-tx)">'+escapeHtml(c.fornecedorNome||'')+' · '+fmtMoney(c.preco)+'</span>' : ((it.cotacoes&&it.cotacoes.length)? '<span style="color:var(--st-mid-tx)">'+it.cotacoes.length+' cotação(ões) — escolher</span>':'<span style="color:var(--text-tertiary)">— sem cotação</span>');
+      var cotTxt = c ? '<span style="color:var(--st-ok-tx);font-size:11px">'+escapeHtml(c.fornecedorNome||'')+' · '+fmtMoney(c.preco)+'</span>' : ((it.cotacoes&&it.cotacoes.length)? '<span style="color:var(--st-mid-tx);font-size:11px">'+it.cotacoes.length+' cot. — escolher</span>':'<span style="color:var(--text-tertiary)">—</span>');
       var origTxt=(it.origem||[]).map(function(o){ return o.orderNum; }).join(', ');
       // v138 — item NÃO COMPRADO: riscado/cinza, com motivo; as quantidades já voltaram como solicitação pendente
       if(it.naoComprado){
@@ -10377,7 +10404,7 @@ function _lcItensTableHtml(l){
           '<td style="'+_tdNc+';text-decoration:line-through">'+escapeHtml(it.nome||'')+'</td>'+
           '<td style="'+_tdNc+';text-align:right;text-decoration:line-through">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
           '<td style="'+_tdNc+';text-align:right;color:var(--text-tertiary)">—</td>'+
-          '<td style="'+_tdNc+';font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' pedido(s)</td>'+
+          '<td style="'+_tdNc+';font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' ped.</td>'+
           '<td style="'+_tdNc+'" colspan="3"><span style="font-size:11px;color:var(--st-bad-tx);font-weight:600">✕ Não comprado</span>'+(it.naoCompradoMotivo?' <span style="font-size:11px;color:var(--text-tertiary)">· '+escapeHtml(it.naoCompradoMotivo)+'</span>':'')+' <span style="font-size:10px;color:var(--text-tertiary)">→ voltou p/ próxima lista</span></td></tr>';
       }
       // v150 — histórico de fornecedores/preços do item (deriva das compras anteriores) — botão 📈 expande
@@ -10396,26 +10423,31 @@ function _lcItensTableHtml(l){
       var _qtdCmp = _c.comprado
         ? ('<span'+((parseFloat(_c.qtdComprada)||0)>(parseFloat(it.qtdTotal)||0)?' style="color:var(--text-info);font-weight:600" title="Comprado ACIMA do solicitado"':'')+'>'+(parseFloat(_c.qtdComprada)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</span>')
         : '<span style="color:var(--text-tertiary)">—</span>';
+      // v160 — item vinculado a PEDIDO DE COMPRA: a NF é DO PEDIDO (mostra o PC; sem "NF pendente" no item)
+      var _pcRef=_c.pedidoCompraId?(pedidosCompra||[]).find(function(p){ return p&&p.id===_c.pedidoCompraId; }):null;
+      var _nfTxt=_pcRef
+        ? '<span style="color:var(--text-info)">'+escapeHtml(_pcRef.numero||'PC')+(_pcRef.nf?' · NF '+escapeHtml(_pcRef.nf):'')+'</span>'
+        : (_c.nf?('NF '+escapeHtml(_c.nf)):'<span style="color:var(--st-bad-tx);font-weight:600">⚠ NF pendente</span>');
       var _cmpInfo = _c.comprado
-        ? '<span style="font-size:11px">'+escapeHtml(_c.fornecedorNome||'—')+' · '+fmtMoney(_c.precoPago||0)+'/'+escapeHtml(it.unidade||'un')+' · '+(_c.nf?('NF '+escapeHtml(_c.nf)):'<span style="color:var(--st-bad-tx);font-weight:600">⚠ NF pendente</span>')+'</span>'
+        ? '<span style="font-size:11px">'+escapeHtml(_c.fornecedorNome||'—')+' · '+fmtMoney(_c.precoPago||0)+'/'+escapeHtml(it.unidade||'un')+' · '+_nfTxt+'</span>'
         : '<span style="color:var(--text-tertiary)">—</span>';
       return '<tr><td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(it.codigo||'—')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(it.nome||'')+'</td>'+
         '<td style="'+td+';text-align:right">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
         '<td style="'+td+';text-align:right">'+_qtdCmp+'</td>'+
-        '<td style="'+td+';font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' pedido(s)</td>'+
+        '<td style="'+td+';font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' ped.</td>'+
         '<td style="'+td+'">'+cotTxt+'</td>'+
         '<td style="'+td+'">'+_cmpInfo+'</td>'+
         // v159 — botões passam a IDENTIDADE do item (itemId), não a posição: a lista pode ser reordenada
         // por baixo (complementar em outra tela + re-sync) e a posição apontaria para o item ERRADO.
-        '<td style="'+td+';text-align:right;white-space:nowrap">'+_histBtn+'<button onclick="openCotacaoModal(\''+l.id+'\',\''+_ref+'\')" style="font-size:11px;padding:3px 9px">Cotar</button> '+
+        '<td style="'+td+';text-align:right;white-space:nowrap">'+_histBtn+'<button onclick="openCotacaoModal(\''+l.id+'\',\''+_ref+'\')" style="font-size:10.5px;padding:3px 7px">Cotar</button> '+
           (_c.comprado
-            ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(_c.recebido?' · recebido':'')+'</span>'+(_c.recebido?'':' <button onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" title="Editar a compra / preencher a NF" style="font-size:11px;padding:3px 8px">✏</button>')
-            : '<button class="btn-primary" onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" style="font-size:11px;padding:3px 9px">Comprar</button> <button onclick="naoComprarItem(\''+l.id+'\',\''+_ref+'\')" title="Não comprar este item — as quantidades voltam para a próxima lista" style="font-size:11px;padding:3px 9px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">✕ Não comprar</button>')+
+            ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(_c.recebido?' · recebido':'')+'</span>'+(_c.recebido?'':' <button onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" title="Editar a compra / preencher a NF" style="font-size:10.5px;padding:3px 7px">✏</button>')
+            : '<button class="btn-primary" onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" style="font-size:10.5px;padding:3px 7px">Comprar</button> <button onclick="naoComprarItem(\''+l.id+'\',\''+_ref+'\')" title="Não comprar este item — as quantidades voltam para a próxima lista" style="font-size:10.5px;padding:3px 7px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">✕ Não comprar</button>')+
         '</td></tr>'+_histRow;
   }).join('');
-  return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:1050px"><thead><tr>'+
-    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solicitada</th><th style="'+th+';text-align:right">Qtd comprada</th><th style="'+th+'">Origem</th><th style="'+th+'">Cotação escolhida</th><th style="'+th+'">Compra (fornecedor · preço · NF)</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
+    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solic.</th><th style="'+th+';text-align:right">Qtd compr.</th><th style="'+th+'">Origem</th><th style="'+th+'">Cotação</th><th style="'+th+'">Compra (fornec. · preço · NF)</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 // ── Cotação ──
 // v159 — resolve o item pela IDENTIDADE (itemId); '#N' é fallback por posição (item legado sem itemId).
@@ -10426,21 +10458,26 @@ function _lcItemByRef(l, ref){
   if(s.charAt(0)==='#'){ return (l.itens||[])[parseInt(s.slice(1),10)]||null; }
   return (l.itens||[]).find(function(x){ return x && String(x.itemId)===s; })||null;
 }
-var _cotListaId=null, _cotItemIdx=null, _cotRows=[], _cotEscolhida=null;
+var _cotListaId=null, _cotItemIdx=null, _cotRows=[], _cotEscolhida=null, _cotViewOnly=false;
 function openCotacaoModal(listaId, idx){
   _cotListaId=listaId; _cotItemIdx=idx; // v159 — idx agora carrega a REF (itemId ou '#pos')
   var l=(listasCompra||[]).find(function(x){return x.id===listaId;}); if(!l) return;
-  if(l.status==='finalizada'){ alert('Lista finalizada — cotação travada.'); return; }
   var it=_lcItemByRef(l, idx); if(!it) return;
+  // v160 — item COMPRADO (ou lista finalizada): a cotação continua ABERTA para consulta, mas SOMENTE
+  // LEITURA (regra do dono 16/07: os preços cotados não somem, mas não se mexe mais neles).
+  _cotViewOnly = !!((it.compra&&it.compra.comprado) || l.status==='finalizada');
   _cotRows=(it.cotacoes||[]).map(function(c){ return {fornecedorId:c.fornecedorId, fornecedorNome:c.fornecedorNome, preco:c.preco}; });
-  while(_cotRows.length<3) _cotRows.push({fornecedorId:null,fornecedorNome:'',preco:''});
+  if(!_cotViewOnly){ while(_cotRows.length<3) _cotRows.push({fornecedorId:null,fornecedorNome:'',preco:''}); }
   _cotEscolhida = (it.escolhida!=null?it.escolhida:null);
   document.getElementById('cot-item-info').textContent=(it.codigo?it.codigo+' — ':'')+(it.nome||'');
-  document.getElementById('cot-sub-info').textContent='Qtd total: '+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' · '+((it.origem||[]).length)+' pedido(s)';
+  document.getElementById('cot-sub-info').textContent='Qtd total: '+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' · '+((it.origem||[]).length)+' pedido(s)'+(_cotViewOnly?' · 🔒 somente leitura (item já comprado)':'');
+  var _ab=document.getElementById('cot-add-btn'); if(_ab) _ab.style.display=_cotViewOnly?'none':'';
+  var _sb2=document.getElementById('cot-save-btn'); if(_sb2) _sb2.style.display=_cotViewOnly?'none':'';
+  var _cb=document.getElementById('cot-cancel-btn'); if(_cb) _cb.textContent=_cotViewOnly?'Fechar':'Cancelar';
   _renderCotRows();
   document.getElementById('cotacao-modal').classList.add('open');
 }
-function closeCotacaoModal(){ document.getElementById('cotacao-modal').classList.remove('open'); _cotRows=[]; _cotListaId=null; _cotItemIdx=null; _cotEscolhida=null; }
+function closeCotacaoModal(){ document.getElementById('cotacao-modal').classList.remove('open'); _cotRows=[]; _cotListaId=null; _cotItemIdx=null; _cotEscolhida=null; _cotViewOnly=false; }
 function _cotAddRow(){ _cotRows.push({fornecedorId:null,fornecedorNome:'',preco:''}); _renderCotRows(); }
 function _cotRemRow(i){ _cotRows.splice(i,1); if(_cotEscolhida===i)_cotEscolhida=null; else if(_cotEscolhida!=null&&_cotEscolhida>i)_cotEscolhida--; _renderCotRows(); }
 function _cotSetForn(i,val){ if(_cotRows[i]){ _cotRows[i].fornecedorNome=val; var f=(fornecedores||[]).find(function(x){return (x.nome||'').toLowerCase()===String(val).toLowerCase();}); _cotRows[i].fornecedorId=f?f.id:null; } }
@@ -10448,19 +10485,23 @@ function _cotSetPreco(i,val){ if(_cotRows[i]) _cotRows[i].preco=parseFloat(val)|
 function _cotEscolher(i){ _cotEscolhida=i; }
 function _renderCotRows(){
   var c=document.getElementById('cot-rows'); if(!c) return;
-  var dl='<datalist id="cot-forn-dl">'+(fornecedores||[]).slice(0,400).map(function(f){return '<option value="'+escapeHtml(f.nome||'')+'">';}).join('')+'</datalist>';
+  var ro=_cotViewOnly; // v160 — somente leitura pós-compra: mostra as cotações, sem editar
+  if(ro && !_cotRows.length){ c.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Este item foi comprado sem cotação registrada (regra anterior).</div>'; return; }
+  var dl=ro?'':('<datalist id="cot-forn-dl">'+(fornecedores||[]).slice(0,400).map(function(f){return '<option value="'+escapeHtml(f.nome||'')+'">';}).join('')+'</datalist>');
   c.innerHTML=dl+_cotRows.map(function(r,i){
-    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'+
-      '<input type="radio" name="cot-esc" '+(_cotEscolhida===i?'checked':'')+' onclick="_cotEscolher('+i+')" title="marcar como escolhido" style="width:auto">'+
-      '<input type="text" list="cot-forn-dl" value="'+escapeHtml(r.fornecedorNome||'')+'" oninput="_cotSetForn('+i+',this.value)" placeholder="Fornecedor" style="flex:1;font-size:12px;padding:4px 7px">'+
-      '<input type="number" min="0" step="0.01" value="'+(r.preco!==''&&r.preco!=null?r.preco:'')+'" oninput="_cotSetPreco('+i+',this.value)" placeholder="Preço unit." style="width:120px;font-size:12px;padding:4px 7px;text-align:right">'+
-      '<button onclick="_cotRemRow('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button></div>';
+    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px'+(ro&&_cotEscolhida===i?';background:var(--st-ok-bg);border-radius:6px;padding:2px 4px':'')+'">'+
+      '<input type="radio" name="cot-esc" '+(_cotEscolhida===i?'checked':'')+(ro?' disabled':' onclick="_cotEscolher('+i+')"')+' title="'+(ro?'escolhido':'marcar como escolhido')+'" style="width:auto">'+
+      '<input type="text" '+(ro?'disabled':'list="cot-forn-dl" oninput="_cotSetForn('+i+',this.value)"')+' value="'+escapeHtml(r.fornecedorNome||'')+'" placeholder="Fornecedor" style="flex:1;font-size:12px;padding:4px 7px">'+
+      '<input type="number" min="0" step="0.01" '+(ro?'disabled':'oninput="_cotSetPreco('+i+',this.value)"')+' value="'+(r.preco!==''&&r.preco!=null?r.preco:'')+'" placeholder="Preço unit." style="width:120px;font-size:12px;padding:4px 7px;text-align:right">'+
+      (ro?(_cotEscolhida===i?'<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600;white-space:nowrap">✓ escolhido</span>':'<span style="width:14px"></span>'):'<button onclick="_cotRemRow('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button>')+'</div>';
   }).join('');
 }
 function saveCotacao(){
+  if(_cotViewOnly){ closeCotacaoModal(); return; } // v160 — somente leitura pós-compra
   var l=(listasCompra||[]).find(function(x){return x.id===_cotListaId;}); if(!l) return;
   var it=_lcItemByRef(l, _cotItemIdx); // v159 — por identidade
   if(!it){ alert('Este item não está mais nesta lista (ela mudou em outra tela). Feche e reabra a lista.'); closeCotacaoModal(); return; }
+  if(it.compra && it.compra.comprado){ alert('Este item já foi comprado — a cotação não pode mais ser alterada.'); closeCotacaoModal(); return; } // v160 — compra pode ter acontecido em outra tela com o modal aberto
   // v159 — a escolhida é rastreada pela LINHA (referência), não pelo nome: duas cotações do MESMO
   // fornecedor (à vista × a prazo) apontavam sempre para a primeira.
   var escRow=(_cotEscolhida!=null)?_cotRows[_cotEscolhida]:null;
@@ -10718,15 +10759,29 @@ function openComprarModal(listaId, idx){
   var l=(listasCompra||[]).find(function(x){return x.id===listaId;}); if(!l) return;
   var it=_lcItemByRef(l, idx); if(!it) return; // v159 — por identidade (idx = itemId ou '#pos')
   if(it.compra && it.compra.recebido){ alert('Esta compra já foi RECEBIDA (lançamento enviado ao Caixa) — não pode mais ser editada aqui.\nSe precisar corrigir, fale com o financeiro/administrador.'); return; } // v159
+  // v160 — regra do dono 16/07: NÃO se compra sem cotação — a compra é sempre a cotação ESCOLHIDA.
+  // (Editar uma compra já feita [✏] segue liberado; a exigência é para a compra NOVA.)
+  if(!(it.compra&&it.compra.comprado) && !_cotItemEscolhida(it)){
+    alert('Cote este item antes de comprar.\n\nUse o botão "Cotar", lance os fornecedores/preços e MARQUE o escolhido — a compra é feita com o fornecedor escolhido na cotação.');
+    return;
+  }
   _cmpListaId=listaId; _cmpItemIdx=idx;
   var esc=_cotItemEscolhida(it), cmp=it.compra||{};
   document.getElementById('cmp-item-info').textContent=(it.codigo?it.codigo+' — ':'')+(it.nome||'');
   document.getElementById('cmp-sub-info').textContent='Qtd solicitada: '+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' · '+((it.origem||[]).length)+' pedido(s)';
   document.getElementById('cmp-forn-dl').innerHTML=(fornecedores||[]).slice(0,400).map(function(f){return '<option value="'+escapeHtml(f.nome||'')+'">';}).join('');
-  document.getElementById('cmp-fornec').value=cmp.fornecedorNome||(esc?esc.fornecedorNome:'')||'';
+  // v160 — o FORNECEDOR da compra é o ESCOLHIDO na cotação (regra do dono 16/07): campo travado.
+  // (Na edição ✏ fica travado no fornecedor já comprado; o preço pago segue editável — é o valor real da NF.)
+  var _fEl=document.getElementById('cmp-fornec');
+  _fEl.value=cmp.fornecedorNome||(esc?esc.fornecedorNome:'')||'';
+  _fEl.readOnly=true; _fEl.style.background='var(--bg-secondary)'; _fEl.title='Fornecedor definido pela cotação escolhida — para trocar, é preciso refazer a cotação antes da compra';
   document.getElementById('cmp-qtd').value=(cmp.qtdComprada!=null?cmp.qtdComprada:it.qtdTotal)||'';
   document.getElementById('cmp-preco').value=(cmp.precoPago!=null?cmp.precoPago:(esc?esc.preco:''))||'';
   document.getElementById('cmp-nf').value=cmp.nf||'';
+  // v160 — NF por item é LEGADO: só aparece editando compra antiga (sem pedido de compra vinculado).
+  // Compra nova entra no PEDIDO DE COMPRA do fornecedor e a NF é informada lá.
+  var _nfRow=document.getElementById('cmp-nf-row');
+  if(_nfRow) _nfRow.style.display=(cmp.comprado && !cmp.pedidoCompraId)?'':'none';
   document.getElementById('comprar-modal').classList.add('open');
 }
 function closeComprarModal(){ document.getElementById('comprar-modal').classList.remove('open'); _cmpListaId=null; _cmpItemIdx=null; }
@@ -10745,7 +10800,13 @@ function saveCompraItem(){
   // v157 — NF deixou de ser obrigatória na hora da compra (pedido do dono 15/07): pode comprar e
   // preencher a NF depois pelo ✏ da lista; a linha fica com aviso "NF pendente" até preencher.
   var f=(fornecedores||[]).find(function(x){return (x.nome||'').toLowerCase()===forn.toLowerCase();});
-  it.compra=Object.assign({}, it.compra||{}, { fornecedorId:f?f.id:null, fornecedorNome:forn, qtdComprada:qtd, precoPago:preco, nf:nf, comprado:true, compradoEm:Date.now(), compradoPor:(currentUser&&currentUser.name)||'' });
+  var _eraComprado=!!(it.compra&&it.compra.comprado);
+  it.compra=Object.assign({}, it.compra||{}, { fornecedorId:f?f.id:null, fornecedorNome:forn, qtdComprada:qtd, precoPago:preco, nf:nf, comprado:true, compradoEm:(_eraComprado&&it.compra.compradoEm)||Date.now(), compradoPor:(currentUser&&currentUser.name)||'' });
+  // v160 — compra NOVA entra no PEDIDO DE COMPRA aberto do fornecedor (cria se não houver).
+  // Edição (✏) NÃO troca de pedido (a compra já pertence ao PC dela).
+  if(!_eraComprado){
+    try{ var _pcv=_pcAbertoDoFornecedor(f?f.id:null, forn); it.compra.pedidoCompraId=_pcv.id; }catch(_e){}
+  }
   _atualizaStatusLista(l); // v138 — finalizada automaticamente quando todos os itens estão comprados/não comprados
   (it.origem||[]).forEach(function(og){ _reavaliarComprasPedido(og.orderId); });
   closeComprarModal(); renderListaCompra(); saveData();
@@ -10756,6 +10817,7 @@ function _recebGrupos(){
   (listasCompra||[]).forEach(function(l){
     (l.itens||[]).forEach(function(it,ix){
       var c=it.compra; if(!c || !c.comprado || c.recebido) return;
+      if(c.pedidoCompraId) return; // v160 — item de PEDIDO DE COMPRA é recebido pelo pedido (seção acima), não pelo grupo legado
       // v159 — regra do dono 15/07: compra SEM NF não libera para receber (o agrupamento é por
       // fornecedor+NF; sem NF, compras diferentes do mesmo fornecedor colapsariam num grupo só e
       // receber uma marcava as outras). Preenche a NF pelo ✏ da Lista de Compra e ela aparece aqui.
@@ -10770,15 +10832,43 @@ function _recebGrupos(){
   out._semNf=semNf;
   return out;
 }
+var _pcMostrarRecebidos=false;
+function _pcSecaoHtml(){
+  var lista=[...(pedidosCompra||[])].sort(function(a,b){ return String(b.numero||'').localeCompare(String(a.numero||'')); });
+  if(!_pcMostrarRecebidos) lista=lista.filter(function(p){ return p.status!=='recebido'; });
+  var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
+  var td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
+  var head='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;flex-wrap:wrap">'+
+    '<div style="font-size:12px"><b>📦 Pedidos de compra</b> <span style="color:var(--text-tertiary)">· 1 pedido por fornecedor; compras entram no pedido ABERTO até você fechá-lo; a NF é do pedido</span></div>'+
+    '<label style="font-size:11px;color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;gap:5px"><input type="checkbox" '+(_pcMostrarRecebidos?'checked':'')+' onchange="_pcMostrarRecebidos=this.checked;renderRecebimento()" style="width:13px;height:13px"> mostrar recebidos</label></div>';
+  if(!lista.length) return '<div class="panel" style="padding:0;margin-bottom:14px">'+head+'<div class="empty" style="padding:18px">Nenhum pedido de compra'+(_pcMostrarRecebidos?'':' em aberto')+' — o primeiro nasce sozinho na próxima compra.</div></div>';
+  var rows=lista.map(function(pc){
+    var t=_pcTotais(pc);
+    return '<tr>'+
+      '<td style="'+td+';font-weight:600;font-family:monospace">'+escapeHtml(pc.numero||'')+'</td>'+
+      '<td style="'+td+'">'+escapeHtml(pc.fornecedorNome||'—')+'</td>'+
+      '<td style="'+td+'">'+_pcStatusBadge(pc)+'</td>'+
+      '<td style="'+td+';text-align:right">'+t.n+(t.pendentes&&t.pendentes<t.n?' <span style="font-size:10px;color:var(--text-tertiary)">('+t.pendentes+' pend.)</span>':'')+'</td>'+
+      '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(t.total)+'</td>'+
+      '<td style="'+td+'">'+(pc.nf?('NF '+escapeHtml(pc.nf)):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+      '<td style="'+td+';text-align:right"><button class="btn-primary" onclick="openPedidoCompraModal(\''+pc.id+'\')" style="font-size:12px;padding:4px 14px">Abrir</button></td>'+
+    '</tr>';
+  }).join('');
+  return '<div class="panel" style="padding:0;margin-bottom:14px">'+head+
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
+    '<th style="'+th+'">Pedido</th><th style="'+th+'">Fornecedor</th><th style="'+th+'">Status</th><th style="'+th+';text-align:right">Itens</th><th style="'+th+';text-align:right">Total</th><th style="'+th+'">NF</th><th style="'+th+'"></th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+}
 function renderRecebimento(){
   var el=document.getElementById('receb-list'); if(!el) return;
   var grupos=_recebGrupos();
-  // v159 — aviso das compras travadas aguardando NF (regra do dono: sem NF não recebe)
-  var _avisoNf=(grupos._semNf>0)?('<div class="panel" style="padding:10px 14px;margin-bottom:12px;border-left:3px solid var(--st-mid-bd)"><span style="font-size:12px;color:var(--st-mid-tx);font-weight:600">⚠ '+grupos._semNf+' compra(s) aguardando NF</span> <span style="font-size:12px;color:var(--text-secondary)">— preencha a NF pelo ✏ na Lista de Compra para liberar o recebimento.</span></div>'):'';
-  if(!grupos.length){ el.innerHTML=_avisoNf+'<div class="empty" style="padding:24px">Nenhuma compra aguardando recebimento.</div>'; return; }
+  var _pcSec=_pcSecaoHtml(); // v160 — pedidos de compra em cima; grupos legados (compras antigas sem pedido) embaixo
+  // v159 — aviso das compras travadas aguardando NF (regra do dono: sem NF não recebe) — só LEGADO
+  var _avisoNf=(grupos._semNf>0)?('<div class="panel" style="padding:10px 14px;margin-bottom:12px;border-left:3px solid var(--st-mid-bd)"><span style="font-size:12px;color:var(--st-mid-tx);font-weight:600">⚠ '+grupos._semNf+' compra(s) ANTIGAS aguardando NF</span> <span style="font-size:12px;color:var(--text-secondary)">— compras de antes do pedido de compra: preencha a NF pelo ✏ na Lista de Compra para liberar o recebimento.</span></div>'):'';
+  if(!grupos.length){ el.innerHTML=_pcSec+_avisoNf; return; }
   var th='padding:7px 9px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
   var td='padding:6px 9px;border-bottom:.5px solid var(--border);font-size:12px';
-  el.innerHTML=_avisoNf+grupos.map(function(g, _gx){
+  el.innerHTML=_pcSec+_avisoNf+grupos.map(function(g, _gx){
     var rows=g.itens.map(function(gi){ var it=gi.it, c=it.compra;
       return '<tr><td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(it.codigo||'—')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(it.nome||'')+'</td>'+
@@ -10793,6 +10883,183 @@ function renderRecebimento(){
       '</div>'+
       '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd</th><th style="'+th+';text-align:right">Preço un.</th><th style="'+th+';text-align:right">Total</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
   }).join('');
+}
+// ═══════════ v160 — PEDIDO DE COMPRA por fornecedor (regras do dono 16/07) ═══════════
+// Comprou de um fornecedor → o item entra no pedido ABERTO dele (cria se não houver). "Fechar pedido"
+// trava a composição (compras seguintes abrem o PC seguinte). NF é informada NO PEDIDO (após fechar).
+// Recebimento = CONCILIAÇÃO com a NF (qtd/valor por item; divergência avisa e pergunta — não trava),
+// com recebimento PARCIAL; cada leva gera 1 lançamento no Caixa. Legado (compras sem pedido) segue
+// no fluxo antigo até esvaziar.
+function _pcNumero(){
+  var mx=0; (pedidosCompra||[]).forEach(function(p){ var m=/^PC-(\d+)$/.exec(p&&p.numero||''); if(m) mx=Math.max(mx,parseInt(m[1],10)); });
+  var n=String(mx+1); while(n.length<3) n='0'+n; return 'PC-'+n;
+}
+function _pcAbertoDoFornecedor(fornId, fornNome){
+  var key=String(fornId||'')||('nome:'+String(fornNome||'').toLowerCase().trim());
+  var pc=(pedidosCompra||[]).find(function(p){
+    if(!p || p.status!=='aberto') return false;
+    var k=String(p.fornecedorId||'')||('nome:'+String(p.fornecedorNome||'').toLowerCase().trim());
+    return k===key;
+  });
+  if(pc) return pc;
+  pc={ id:'pcomp'+Date.now()+Math.floor(Math.random()*1000), numero:_pcNumero(), fornecedorId:fornId||null, fornecedorNome:fornNome||'', status:'aberto', criadoEm:Date.now(), criadoPor:(currentUser&&currentUser.name)||'', nf:'', recebimentos:[] };
+  pedidosCompra.push(pc);
+  return pc;
+}
+// itens do pedido: varre as listas de compra pelos it.compra.pedidoCompraId
+function _pcItens(pc){
+  var out=[];
+  (listasCompra||[]).forEach(function(l){
+    (l.itens||[]).forEach(function(it){
+      if(it && it.compra && it.compra.comprado && it.compra.pedidoCompraId===pc.id)
+        out.push({ listaId:l.id, tipo:l.tipo, it:it, ref:(it.itemId!=null&&it.itemId!==''?String(it.itemId):null) });
+    });
+  });
+  return out;
+}
+function _pcTotais(pc){
+  var itens=_pcItens(pc), total=0, pend=0;
+  itens.forEach(function(x){ var c=x.it.compra; total+=(parseFloat(c.precoPago)||0)*(parseFloat(c.qtdComprada)||0); if(!c.recebido) pend++; });
+  return { n:itens.length, total:total, pendentes:pend };
+}
+var _PC_ST_LBL={aberto:'Aberto', fechado:'Fechado', faturado:'Faturado (NF)', recebido:'Recebido'};
+function _pcStatusBadge(pc){
+  var st=pc.status||'aberto';
+  var t=_pcTotais(pc);
+  var lbl=_PC_ST_LBL[st]||st;
+  if(st==='faturado' && (pc.recebimentos||[]).length && t.pendentes>0) lbl='Faturado · parcial';
+  var cfg = st==='recebido' ? ['var(--st-ok-bg)','var(--st-ok-tx)'] : st==='faturado' ? ['var(--st-inf-bg)','var(--st-inf-tx)'] : st==='fechado' ? ['var(--st-mid-bg)','var(--st-mid-tx)'] : ['var(--bg-secondary)','var(--text-secondary)'];
+  return '<span style="font-size:11px;padding:2px 10px;border-radius:20px;background:'+cfg[0]+';color:'+cfg[1]+';font-weight:500;white-space:nowrap">'+lbl+'</span>';
+}
+var _pcAbertoId=null;
+function openPedidoCompraModal(pcId){
+  _pcAbertoId=pcId; _renderPedidoCompraModal();
+  var ov=document.getElementById('pedido-compra-overlay'); if(ov) ov.classList.add('open');
+}
+function closePedidoCompraModal(){ _pcAbertoId=null; var ov=document.getElementById('pedido-compra-overlay'); if(ov) ov.classList.remove('open'); }
+function _renderPedidoCompraModal(){
+  if(!_pcAbertoId) return;
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcAbertoId; }); if(!pc){ closePedidoCompraModal(); return; }
+  var itens=_pcItens(pc), t=_pcTotais(pc);
+  var tt=document.getElementById('pc-ab-titulo'); if(tt) tt.textContent='Pedido de compra '+(pc.numero||'')+' — '+(pc.fornecedorNome||'—');
+  var sub=document.getElementById('pc-ab-sub'); if(sub) sub.innerHTML=_pcStatusBadge(pc)+' <span style="color:var(--text-secondary)">· criado '+(pc.criadoEm?new Date(pc.criadoEm).toLocaleDateString('pt-BR'):'—')+(pc.criadoPor?' por '+escapeHtml(pc.criadoPor):'')+(pc.nf?' · <b>NF '+escapeHtml(pc.nf)+'</b>':' · sem NF')+'</span>';
+  var th='padding:7px 8px;background:var(--bg-secondary);font-size:10px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
+  var td='padding:6px 8px;border-bottom:.5px solid var(--border);font-size:12px';
+  var rows=itens.map(function(x){ var c=x.it.compra;
+    var vt=(parseFloat(c.precoPago)||0)*(parseFloat(c.qtdComprada)||0);
+    return '<tr>'+
+      '<td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.it.codigo||'—')+'</td>'+
+      '<td style="'+td+'">'+escapeHtml(x.it.nome||'')+'</td>'+
+      '<td style="'+td+';font-size:10px;color:var(--text-tertiary)">'+(x.tipo==='ativo'?'Ativo':'Embalagem')+'</td>'+
+      '<td style="'+td+';text-align:right">'+(parseFloat(c.qtdComprada)||0).toLocaleString('pt-BR')+' '+escapeHtml(x.it.unidade||'')+'</td>'+
+      '<td style="'+td+';text-align:right">'+fmtMoney(c.precoPago||0)+'</td>'+
+      '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(vt)+'</td>'+
+      '<td style="'+td+';text-align:center">'+(c.recebido?'<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ recebido</span>':'<span style="font-size:11px;color:var(--text-tertiary)">pendente</span>')+'</td>'+
+    '</tr>';
+  }).join('');
+  var levas=(pc.recebimentos||[]).map(function(r,i){
+    return '<div style="font-size:11px;color:var(--text-secondary);padding:3px 0;border-top:.5px dashed var(--border)">📥 Leva '+(i+1)+' — '+new Date(r.em).toLocaleString('pt-BR')+(r.por?' por '+escapeHtml(r.por):'')+' · '+((r.itens||[]).length)+' item(ns) · <b>'+fmtMoney(r.valor||0)+'</b></div>';
+  }).join('');
+  var body=document.getElementById('pc-ab-body');
+  if(body) body.innerHTML=
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
+    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+'">Tipo</th><th style="'+th+';text-align:right">Qtd</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th><th style="'+th+';text-align:center">Recebimento</th>'+
+    '</tr></thead><tbody>'+(rows||'<tr><td colspan="7" style="'+td+';color:var(--text-tertiary)">Nenhum item ainda — os itens entram aqui automaticamente ao serem comprados deste fornecedor.</td></tr>')+'</tbody>'+
+    '<tfoot><tr><td colspan="5" style="padding:8px;text-align:right;font-weight:600;font-size:12px">Total do pedido</td><td style="padding:8px;text-align:right;font-weight:700;font-size:13px">'+fmtMoney(t.total)+'</td><td></td></tr></tfoot></table></div>'+
+    (levas?('<div style="margin-top:10px">'+levas+'</div>'):'');
+  var ac=document.getElementById('pc-ab-acoes');
+  if(ac){
+    var btns=[];
+    if(pc.status==='aberto') btns.push('<button class="btn-primary" onclick="fecharPedidoCompra(\''+pc.id+'\')" '+(itens.length?'':'disabled style="opacity:.5"')+' style="font-size:12px;padding:5px 14px">🔒 Fechar pedido</button>');
+    if(pc.status==='fechado') btns.push('<button class="btn-primary" onclick="informarNfPedidoCompra(\''+pc.id+'\')" style="font-size:12px;padding:5px 14px">🧾 Informar NF</button>');
+    if(pc.status==='faturado' && t.pendentes>0) btns.push('<button class="btn-primary" onclick="openReceberPedido(\''+pc.id+'\')" style="font-size:12px;padding:5px 14px">📥 Receber mercadoria</button>');
+    if(pc.status==='fechado') btns.push('<span style="font-size:11px;color:var(--text-tertiary)">o recebimento libera depois de informar a NF</span>');
+    if(pc.status==='aberto') btns.push('<span style="font-size:11px;color:var(--text-tertiary)">compras deste fornecedor continuam entrando aqui até fechar</span>');
+    ac.innerHTML=btns.join(' ');
+  }
+}
+function fecharPedidoCompra(pcId){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc||pc.status!=='aberto') return;
+  var t=_pcTotais(pc);
+  if(!confirm('Fechar o pedido '+(pc.numero||'')+' de '+(pc.fornecedorNome||'')+' com '+t.n+' item(ns) ('+fmtMoney(t.total)+')?\n\nA composição trava — as próximas compras deste fornecedor abrem o pedido seguinte.')) return;
+  pc.status='fechado'; pc.fechadoEm=Date.now(); pc.fechadoPor=(currentUser&&currentUser.name)||'';
+  _renderPedidoCompraModal(); renderRecebimento(); saveData();
+}
+function informarNfPedidoCompra(pcId){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc||pc.status!=='fechado') return;
+  var nf=prompt('Nº da Nota Fiscal do pedido '+(pc.numero||'')+' ('+(pc.fornecedorNome||'')+'):', pc.nf||'');
+  if(nf===null) return; nf=(nf||'').trim();
+  if(!nf){ alert('Informe o número da NF.'); return; }
+  pc.nf=nf; pc.nfEm=Date.now(); pc.nfPor=(currentUser&&currentUser.name)||''; pc.status='faturado';
+  _renderPedidoCompraModal(); renderRecebimento(); saveData();
+}
+// ── Conferência/recebimento do pedido (financeiro): concilia com a NF; divergência AVISA e pergunta ──
+var _pcRecebId=null, _pcRecebRows=[], _rcbPedidoCtx=null;
+function openReceberPedido(pcId){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
+  if(!(pc.nf||'').trim()){ alert('Informe a NF do pedido antes de receber.'); return; }
+  _pcRecebId=pcId;
+  _pcRecebRows=_pcItens(pc).filter(function(x){ return !x.it.compra.recebido; }).map(function(x){
+    return { listaId:x.listaId, ref:x.ref, nome:x.it.nome||'', codigo:x.it.codigo||'', unidade:x.it.unidade||'', tipo:x.tipo,
+             qtdPedido:(parseFloat(x.it.compra.qtdComprada)||0), precoPedido:(parseFloat(x.it.compra.precoPago)||0),
+             qtd:(parseFloat(x.it.compra.qtdComprada)||0), preco:(parseFloat(x.it.compra.precoPago)||0), incluir:true };
+  });
+  if(!_pcRecebRows.length){ alert('Todos os itens deste pedido já foram recebidos.'); return; }
+  var tt=document.getElementById('pcr-titulo'); if(tt) tt.textContent='Receber '+(pc.numero||'')+' — '+(pc.fornecedorNome||'')+' · NF '+(pc.nf||'');
+  _pcRecebRender();
+  var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.add('open');
+}
+function closeReceberPedido(){ _pcRecebId=null; _pcRecebRows=[]; var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.remove('open'); }
+function _pcRecebSet(i, campo, val){ if(_pcRecebRows[i]){ _pcRecebRows[i][campo]=(campo==='incluir')?!!val:(parseFloat(val)||0); _pcRecebTotais(); } }
+function _pcRecebTotais(){
+  var el=document.getElementById('pcr-total'); if(!el) return;
+  var tot=0, div=0;
+  _pcRecebRows.forEach(function(r){ if(!r.incluir) return; tot+=r.qtd*r.preco; if(Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009) div++; });
+  el.innerHTML='Total desta leva: <b>'+fmtMoney(tot)+'</b>'+(div?' · <span style="color:var(--st-mid-tx)">⚠ '+div+' item(ns) com divergência do pedido</span>':' · <span style="color:var(--st-ok-tx)">✓ tudo confere com o pedido</span>');
+}
+function _pcRecebRender(){
+  var c=document.getElementById('pcr-rows'); if(!c) return;
+  var th='padding:6px 7px;background:var(--bg-secondary);font-size:10px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
+  var td='padding:5px 7px;border-bottom:.5px solid var(--border);font-size:12px';
+  c.innerHTML='<table style="width:100%;border-collapse:collapse"><thead><tr>'+
+    '<th style="'+th+';text-align:center">Nesta leva</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd pedido</th><th style="'+th+';text-align:right">Qtd recebida</th><th style="'+th+';text-align:right">Preço pedido</th><th style="'+th+';text-align:right">Preço NF</th><th style="'+th+';text-align:right">Total</th>'+
+    '</tr></thead><tbody>'+_pcRecebRows.map(function(r,i){
+      var divQ=Math.abs(r.qtd-r.qtdPedido)>0.001, divP=Math.abs(r.preco-r.precoPedido)>0.009;
+      return '<tr'+((divQ||divP)&&r.incluir?' style="background:var(--st-mid-bg)"':'')+'>'+
+        '<td style="'+td+';text-align:center"><input type="checkbox" '+(r.incluir?'checked':'')+' onchange="_pcRecebSet('+i+',\'incluir\',this.checked);_pcRecebRender()" style="width:15px;height:15px"></td>'+
+        '<td style="'+td+'">'+escapeHtml(r.nome)+' <span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.codigo||'')+'</span></td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-secondary)">'+r.qtdPedido.toLocaleString('pt-BR')+' '+escapeHtml(r.unidade)+'</td>'+
+        '<td style="'+td+';text-align:right"><input type="number" min="0" step="any" value="'+r.qtd+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'qtd\',this.value)" style="width:80px;text-align:right;font-size:12px;padding:3px 5px'+(divQ?';border-color:var(--st-mid-bd)':'')+'"></td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-secondary)">'+fmtMoney(r.precoPedido)+'</td>'+
+        '<td style="'+td+';text-align:right"><input type="number" min="0" step="0.0001" value="'+r.preco+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'preco\',this.value)" style="width:95px;text-align:right;font-size:12px;padding:3px 5px'+(divP?';border-color:var(--st-mid-bd)':'')+'"></td>'+
+        '<td style="'+td+';text-align:right;font-weight:600">'+(r.incluir?fmtMoney(r.qtd*r.preco):'—')+'</td>'+
+      '</tr>';
+    }).join('')+'</tbody></table>';
+  _pcRecebTotais();
+}
+function _pcRecebProsseguir(){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
+  var leva=_pcRecebRows.filter(function(r){ return r.incluir && r.qtd>0; });
+  if(!leva.length){ alert('Marque ao menos um item (com quantidade) para receber nesta leva.'); return; }
+  var divergentes=leva.filter(function(r){ return Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009; });
+  if(divergentes.length){
+    var det=divergentes.slice(0,6).map(function(r){ return '• '+r.nome+': pedido '+r.qtdPedido.toLocaleString('pt-BR')+' × '+fmtMoney(r.precoPedido)+' → NF '+r.qtd.toLocaleString('pt-BR')+' × '+fmtMoney(r.preco); }).join('\n');
+    if(!confirm('⚠ '+divergentes.length+' item(ns) DIVERGEM do pedido:\n\n'+det+(divergentes.length>6?'\n…':'')+'\n\nReceber assim mesmo? (fica registrado para questionar o fornecedor)')) return;
+  }
+  var total=+(leva.reduce(function(s,r){ return s+r.qtd*r.preco; },0)).toFixed(2);
+  _rcbPedidoCtx={ pcId:pc.id, leva:leva, divergentes:divergentes.length, total:total };
+  // reusa o modal de pagamento do recebimento (blocos/plano/emissão) com o total da LEVA
+  document.getElementById('rcb-nf-title').textContent=pc.nf||'—';
+  document.getElementById('rcb-info').innerHTML='Pedido de compra <b>'+escapeHtml(pc.numero||'')+'</b> · Fornecedor <b>'+escapeHtml(pc.fornecedorNome||'')+'</b> · '+leva.length+' item(ns) nesta leva'+(divergentes.length?' · <span style="color:var(--st-mid-tx)">⚠ '+divergentes.length+' divergência(s)</span>':'');
+  document.getElementById('rcb-total').textContent='Total a lançar: '+fmtMoney(total);
+  document.getElementById('rcb-dataemissao').value='';
+  document.getElementById('rcb-blocos-wrap').style.display='';
+  _rcbBlocos=[{forma:'PIX',valor:total,nsu:'',parcelas:[{num:1,valor:total,vencimento:(typeof today==='function'?today():''),pago:false,boleto:''}]}];
+  _peOpen(_rcbBlocos,'rcb-blocos',total,_rcbDistrib,'',_COMPRAS_PE_FORMAS_BON);
+  _rcbDistrib();
+  var sel=document.getElementById('rcb-plano');
+  sel.innerHTML='<option value="">Sem plano</option>'+_planoOrdenado().filter(function(p){return p.analitica!==false;}).map(function(p){return '<option value="'+p.id+'">'+escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)+'</option>';}).join('');
+  document.getElementById('receber-modal').classList.add('open');
 }
 var _rcbKey=null;
 function openReceberModal(idx){
@@ -10812,7 +11079,7 @@ function openReceberModal(idx){
   sel.innerHTML='<option value="">Sem plano</option>'+(planoContas||[]).filter(function(p){return p.analitica!==false;}).map(function(p){return '<option value="'+p.id+'">'+escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)+'</option>';}).join('');
   document.getElementById('receber-modal').classList.add('open');
 }
-function closeReceberModal(){ document.getElementById('receber-modal').classList.remove('open'); _rcbKey=null; }
+function closeReceberModal(){ document.getElementById('receber-modal').classList.remove('open'); _rcbKey=null; _rcbPedidoCtx=null; }
 // v132 — helpers do pagamento em blocos do Recebimento
 var _rcbBlocos=[];
 function _rcbDistrib(){
@@ -10823,10 +11090,13 @@ function _rcbDistrib(){
   el.innerHTML='Configurado <b>'+fmtMoney(d)+'</b> / '+fmtMoney(total)+' — '+(ok?'<span style="color:var(--st-ok-tx)">✓ valor exato</span>':'<span style="color:var(--st-bad-tx)">⚠ tem que bater com o total da compra</span>');
 }
 function saveRecebimento(){
-  var g=_recebGrupos().find(function(x){return x.key===_rcbKey;}); if(!g) return;
+  // v160 — dois caminhos: PEDIDO DE COMPRA (leva conferida) ou grupo legado (fornecedor+NF)
+  var _pcx=_rcbPedidoCtx, g=null, pc=null;
+  if(_pcx){ pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcx.pcId; }); if(!pc){ alert('Pedido de compra não encontrado.'); closeReceberModal(); return; } }
+  else { g=_recebGrupos().find(function(x){return x.key===_rcbKey;}); if(!g) return; }
   var planoId=document.getElementById('rcb-plano').value||null;
   var dataEmissao=document.getElementById('rcb-dataemissao').value||'';
-  var now=Date.now(); var valor=+(g.total).toFixed(2);
+  var now=Date.now(); var valor=+((_pcx?_pcx.total:g.total)).toFixed(2);
   // v139 — Bonificação é uma FORMA nos blocos (checkbox aposentado); nota 100% bonificada → forma='bonificacao'
   var forma, parcelas, _nsu='';
   {
@@ -10846,6 +11116,27 @@ function saveRecebimento(){
     }
     var _fs=[]; parcelas.forEach(function(p){ if(p.forma&&_fs.indexOf(p.forma)<0) _fs.push(p.forma); });
     forma=_fs.length>1?'misto':(_fs[0]||'a_vista');
+  }
+  if(_pcx){
+    // ── v160: leva do PEDIDO DE COMPRA (conciliação já feita/confirmada no passo anterior) ──
+    var compra={ id:'compra'+now, fornecedorId:pc.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:pc.nf||'', nsu:_nsu, valor:valor, forma:forma, desc:'Pedido de compra '+(pc.numero||'')+' — NF '+(pc.nf||'')+((pc.recebimentos||[]).length?' (leva '+((pc.recebimentos||[]).length+1)+')':''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, pedidoCompraId:pc.id, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
+    compras.push(compra);
+    var orderIds={};
+    _pcx.leva.forEach(function(r){
+      var l=(listasCompra||[]).find(function(x){ return x.id===r.listaId; }); if(!l) return;
+      var it=r.ref?_lcItemByRef(l, r.ref):null; if(!it||!it.compra) return;
+      it.compra.recebido=true; it.compra.recebidoEm=now; it.compra.recebidoPor=(currentUser&&currentUser.name)||''; it.compra.compraLancId=compra.id; it.compra.formaPag=forma;
+      // divergência da NF fica registrada SEM sobrescrever o que o comprador comprou
+      if(Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009){ it.compra.recebidoQtd=r.qtd; it.compra.recebidoPreco=r.preco; it.compra.recebidoDivergente=true; }
+      (it.origem||[]).forEach(function(og){ orderIds[og.orderId]=1; });
+    });
+    (pc.recebimentos=pc.recebimentos||[]).push({ em:now, por:(currentUser&&currentUser.name)||'', valor:valor, compraLancId:compra.id, divergentes:_pcx.divergentes||0, itens:_pcx.leva.map(function(r){ return {listaId:r.listaId, itemId:r.ref, nome:r.nome, qtd:r.qtd, preco:r.preco}; }) });
+    if(_pcTotais(pc).pendentes===0){ pc.status='recebido'; pc.recebidoEm=now; pc.recebidoPor=(currentUser&&currentUser.name)||''; }
+    Object.keys(orderIds).forEach(function(oid){ _reavaliarComprasPedido(oid); });
+    try{ if(typeof sincronizarContasPagar==='function') sincronizarContasPagar(); }catch(_e){}
+    closeReceberModal(); closeReceberPedido(); _renderPedidoCompraModal(); renderRecebimento(); saveData();
+    alert('✓ Recebimento do '+(pc.numero||'pedido')+' confirmado ('+(pc.status==='recebido'?'pedido COMPLETO':'parcial')+').\nLançamento de '+fmtMoney(valor)+' enviado ao Caixa (aguardando aprovação).');
+    return;
   }
   var compra={ id:'compra'+now, fornecedorId:g.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:g.nf||'', nsu:_nsu, valor:valor, forma:forma, desc:'Compra '+(g.tipo==='ativo'?'de ativos':'de embalagens')+(g.nf?' — NF '+g.nf:''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
   compras.push(compra);
@@ -11313,13 +11604,21 @@ function _classificarConta(cod){
   } else if(c[0]==='2'){ tipo='passivo';
     if(c.startsWith('2.01.04')||c.startsWith('2.02.01')||c.startsWith('2.03')) atividadeDFC='financiamento';
     else atividadeDFC='operacional';
+  } else if(c[0]==='3'){
+    // v160 — NUMERAÇÃO NOVA do dono (15/07): receitas saíram do ramo 4 e viraram o ramo 3
+    // (3.01 operacionais, 3.02 financeiras/outras, 3.03 deduções). O classificador antigo não
+    // conhecia o 3.x → contas novas ficavam SEM grupoDRE e caíam FORA da DRE (caso VENDA DE
+    // MERCADORIA 3.01.02.001, a conta padrão de TODOS os pedidos).
+    if(c.startsWith('3.03')){ tipo='despesa'; grupoDRE='deducoes'; atividadeDFC='operacional'; }
+    else if(c.startsWith('3.02')){ tipo='receita'; grupoDRE='receita_financeira'; atividadeDFC='operacional'; }
+    else { tipo='receita'; grupoDRE='receita_bruta'; atividadeDFC='operacional'; }
   } else if(c[0]==='4'){
-    if(c.startsWith('4.01')){ tipo='receita'; grupoDRE='receita_bruta'; atividadeDFC='operacional'; }
-    else if(c.startsWith('4.02')){ tipo='receita'; grupoDRE='receita_financeira'; atividadeDFC='operacional'; }
-    else if(c.startsWith('4.03')){ tipo='despesa'; grupoDRE='deducoes'; atividadeDFC='operacional'; }
-    else if(c.startsWith('4.04.02')){ tipo='despesa'; grupoDRE='desp_fixa'; atividadeDFC='nao_caixa'; naoCaixa=true; }
-    else if(c.startsWith('4.04')){ tipo='despesa'; grupoDRE='desp_fixa'; atividadeDFC='operacional'; }
-    else if(c.startsWith('4.05')){ tipo='despesa'; grupoDRE='desp_variavel'; atividadeDFC='operacional'; }
+    // v160 — ramo 4 agora é SÓ despesa: 4.01 fixas (4.01.02 = depreciação, não-caixa), 4.02 variáveis.
+    // (No esquema antigo 4.01/4.02 eram RECEITAS — foi isso que etiquetou "DESPESA COM DEPRECIAÇÃO"
+    // como receita_bruta quando o dono renumerou; corrigido nos dados em 15/07.)
+    if(c.startsWith('4.01.02')){ tipo='despesa'; grupoDRE='desp_fixa'; atividadeDFC='nao_caixa'; naoCaixa=true; }
+    else if(c.startsWith('4.02')){ tipo='despesa'; grupoDRE='desp_variavel'; atividadeDFC='operacional'; }
+    else { tipo='despesa'; grupoDRE='desp_fixa'; atividadeDFC='operacional'; }
   }
   return {tipo,grupoDRE,atividadeDFC,naoCaixa};
 }
@@ -11547,11 +11846,14 @@ function _compraBlocosFromParcelas(c){
 }
 function closeCompraModal(){document.getElementById('compra-overlay').classList.remove('open');editingCompraId=null;selectedCompraFornecId=null;}
 
+// v160 — plano de contas em ORDEM DE NUMERAÇÃO (pedido do dono 15/07): os dropdowns listavam na
+// ordem de inserção (conta nova caía no fim). A tela do plano já ordenava; agora os selects também.
+function _planoOrdenado(){ return [...(planoContas||[])].sort((a,b)=>String(a.codigo||'zzz').localeCompare(String(b.codigo||'zzz'))); }
 function populateCompraPlanoSelect(){
   const sel=document.getElementById('compra-plano');if(!sel)return;
   const prev=sel.value;
   sel.innerHTML='<option value="">Selecione o plano de contas...</option>'+
-    planoContas.map(p=>`<option value="${p.id}" ${p.id===prev?'selected':''}>${p.codigo?p.codigo+' — ':''}${escapeHtml(p.nome)}</option>`).join('');
+    _planoOrdenado().map(p=>`<option value="${p.id}" ${p.id===prev?'selected':''}>${p.codigo?p.codigo+' — ':''}${escapeHtml(p.nome)}</option>`).join('');
 }
 
 function searchCompraFornec(){
@@ -12415,7 +12717,7 @@ function openContaPagarModal(id){
   document.getElementById('cpm-valor').value = c?c.valor:'';
   // Plano
   const planSel = document.getElementById('cpm-plano');
-  planSel.innerHTML = '<option value="">Sem plano</option>'+planoContas.map(p=>`<option value="${p.id}" ${c&&c.planoId===p.id?'selected':''}>${escapeHtml(p.nome)}</option>`).join('');
+  planSel.innerHTML = '<option value="">Sem plano</option>'+_planoOrdenado().map(p=>`<option value="${p.id}" ${c&&c.planoId===p.id?'selected':''}>${escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)}</option>`).join(''); // v160 — ordenado por código (+ código no rótulo)
   document.getElementById('cpm-fornec').value = c?c.fornecedorNome||'':'';
   document.getElementById('cpm-dataemissao').value = c?c.dataEmissao||'':'';
   { const _nf=document.getElementById('cpm-nf'); if(_nf) _nf.value = c?(c.notaFiscal||''):''; }
@@ -12561,7 +12863,7 @@ function openContaReceberModal(id){
   const planSel=document.getElementById('crman-plano');
   if(planSel){
     const sel = c?(c.contaPlanoId||''):(_planoVendaId()||'');
-    planSel.innerHTML='<option value="">Sem plano</option>'+(planoContas||[]).filter(p=>p.analitica!==false).map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)}</option>`).join('');
+    planSel.innerHTML='<option value="">Sem plano</option>'+_planoOrdenado().filter(p=>p.analitica!==false).map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)}</option>`).join(''); // v160 — ordenado por código
   }
   document.getElementById('crman-dataemissao').value = c?c.dataEmissao||'':'';
   _crmanBlocos=c
@@ -17460,7 +17762,9 @@ function _recalcExpedicaoEntrega(o){
 }
 function confirmarEntregaRastreio(orderId, key){
   var o=orders.find(function(x){ return String(x.id)===String(orderId); }); if(!o) return;
-  if((o.statuses&&o.statuses.expedicao)==='Envio Parcial'){ alert('Este pedido está em Envio Parcial (itens ainda não enviados). Conclua o envio antes de confirmar entregas.'); return; }
+  // v160 — pedido do dono 16/07: volume JÁ DESPACHADO pode ter a entrega confirmada mesmo com o pedido
+  // em Envio Parcial. O status do setor NÃO anda por isso (o _recalcExpedicaoEntrega ignora 'Envio Parcial'
+  // por desenho): Entregue/Entregue Parcial continuam só depois do envio total.
   // v132 — confirmação (evita clique sem querer)
   var _rts=_pedidoRastreios(o), _rot=key;
   for(var _ri=0;_ri<_rts.length;_ri++){ if(_rts[_ri].key===key){ _rot=_rts[_ri].rastreio; break; } }
@@ -17633,7 +17937,7 @@ function renderTransito(){
       let rastCell, entregaCell;
       if(rts.length<=1){ const r=rts[0];
         rastCell = r ? (escapeHtml(r.rastreio)+' '+_btnVerProd(o.id,r.key)) : '—';
-        entregaCell = (r && !isEnvioParcial) ? _btnConfirmEntrega(o.id,r.key,_rastEntregue(o,r.key)) : '—';
+        entregaCell = r ? _btnConfirmEntrega(o.id,r.key,_rastEntregue(o,r.key)) : '—'; // v160 — parcial também confirma volume despachado
       } else {
         rastCell = `<button onclick="_toggleExpRow('${o.id}')" style="font-size:10px;padding:1px 8px;border-radius:20px;font-family:inherit;cursor:pointer">${expandido?'▾':'▸'} ${rts.length} volumes</button>`;
         entregaCell = `<span style="font-size:10px;color:${nEnt>0?'var(--st-inf-tx)':'var(--text-tertiary)'};white-space:nowrap">${nEnt}/${rts.length} entregue</span>`;
@@ -17660,7 +17964,7 @@ function renderTransito(){
       if(rts.length>1 && expandido){
         subRows = rts.map(r=>{ const ent=_rastEntregue(o,r.key); const dt=(o.entregasRastreio&&o.entregasRastreio[r.key]&&o.entregasRastreio[r.key].data)?fmtDate(o.entregasRastreio[r.key].data):'';
           const ei=_rastreioEnvioInfo(o,r.key); // v132 — envio parcial: cada volume pode ter data/transportadora próprias
-          return `<tr style="background:var(--bg-secondary)"><td style="border-bottom:.5px solid var(--border)"></td><td colspan="2" style="padding:5px 12px;border-bottom:.5px solid var(--border);font-size:11px;color:var(--text-tertiary)">↳ volume${ei.transp?' · '+escapeHtml(ei.transp):''}</td><td style="padding:5px 12px;border-bottom:.5px solid var(--border);font-family:monospace;font-size:11px">${escapeHtml(r.rastreio)} ${_btnVerProd(o.id,r.key)}${ent?' <span style="color:var(--st-ok-tx);font-size:10px">✓ '+(dt||'entregue')+'</span>':''}</td><td style="padding:5px 12px;border-bottom:.5px solid var(--border);text-align:center;white-space:nowrap">${isEnvioParcial?'—':_btnConfirmEntrega(o.id,r.key,ent)}</td><td style="border-bottom:.5px solid var(--border)"></td><td style="padding:5px 12px;border-bottom:.5px solid var(--border);text-align:center;font-size:11px;color:var(--text-secondary)">${ei.data?fmtDate(ei.data):'—'}</td><td colspan="3" style="border-bottom:.5px solid var(--border)"></td><td style="border-bottom:.5px solid var(--border)"></td></tr>`;
+          return `<tr style="background:var(--bg-secondary)"><td style="border-bottom:.5px solid var(--border)"></td><td colspan="2" style="padding:5px 12px;border-bottom:.5px solid var(--border);font-size:11px;color:var(--text-tertiary)">↳ volume${ei.transp?' · '+escapeHtml(ei.transp):''}</td><td style="padding:5px 12px;border-bottom:.5px solid var(--border);font-family:monospace;font-size:11px">${escapeHtml(r.rastreio)} ${_btnVerProd(o.id,r.key)}${ent?' <span style="color:var(--st-ok-tx);font-size:10px">✓ '+(dt||'entregue')+'</span>':''}</td><td style="padding:5px 12px;border-bottom:.5px solid var(--border);text-align:center;white-space:nowrap">${_btnConfirmEntrega(o.id,r.key,ent)}</td><td style="border-bottom:.5px solid var(--border)"></td><td style="padding:5px 12px;border-bottom:.5px solid var(--border);text-align:center;font-size:11px;color:var(--text-secondary)">${ei.data?fmtDate(ei.data):'—'}</td><td colspan="3" style="border-bottom:.5px solid var(--border)"></td><td style="border-bottom:.5px solid var(--border)"></td></tr>`;
         }).join('');
       }
       return mainRow+subRows;

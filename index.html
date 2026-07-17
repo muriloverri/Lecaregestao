@@ -1757,6 +1757,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
                 <select id="fr-mes" onchange="renderFreteReal()" style="font-size:12px;padding:5px 10px;font-weight:500"></select>
                 <input type="text" id="fr-search" placeholder="Buscar rastreio, pedido ou transportadora..." oninput="renderFreteReal()" style="font-size:12px;padding:5px 10px;width:240px">
                 <label style="cursor:pointer;font-size:12px;padding:6px 12px;border-radius:var(--r-md);background:var(--bg-secondary);border:.5px solid var(--border);color:var(--text-primary)" title="Importar fretes de um PDF dos Correios (lê rastreio + valor e lança automático)">📄 Ler PDF (Correios)<input type="file" accept="application/pdf" style="display:none" onchange="lerPdfFreteCorreios(this)"></label>
+                <button onclick="openReversoModal(null)" style="font-size:12px;padding:6px 12px" title="Lançar cobrança de logística reversa (devolução/coleta) — sem pedido, com rastreio e fornecedor">↩ Logística Reversa</button>
                 <button class="btn-primary" onclick="openFreteRealModal(null)">+ Lançar Frete Real</button>
               </div>
             </div>
@@ -2868,9 +2869,13 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       <div class="modal-section">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div class="modal-section-title" style="margin:0">Rastreios pendentes</div>
-          <button onclick="ptSelecionarTodos()" style="font-size:11px;padding:3px 10px">Selecionar todos</button>
+          <div style="display:flex;gap:6px;align-items:center">
+            <label style="cursor:pointer;font-size:11px;padding:3px 10px;border:.5px solid var(--border);border-radius:var(--r-md);background:var(--bg-secondary);color:var(--text-primary)" title="Ler a fatura da transportadora (PDF ou fotos) com IA e marcar automaticamente os itens que batem">📄 Conferir fatura<input type="file" accept="application/pdf,image/*" multiple style="display:none" onchange="_ptLerFatura(this)"></label>
+            <button onclick="ptSelecionarTodos()" style="font-size:11px;padding:3px 10px">Selecionar todos</button>
+          </div>
         </div>
         <div id="pt-itens-list"></div>
+        <div id="pt-fatura-resumo" style="display:none"></div>
       </div>
       <div style="padding:12px 0;border-top:.5px solid var(--border);display:flex;justify-content:space-between;align-items:center">
         <div style="font-size:13px;color:var(--text-secondary)">Total selecionado:</div>
@@ -4424,7 +4429,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v162';
+var APP_VERSION = 'v163';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -17788,9 +17793,10 @@ function renderPagResumoFretes(){
       if(_mesRefRateio(r, lancMes)!==mesSel) return; // v124 — pelo D1 do pedido referenciado
       ensure(num,r.pedidoId)[p.tipo]+=r.valor; });
   });
+  const _cjm=_frConjMapa(); // v163 — envio conjunto (mesmo rastreio em 2+ pedidos) conta 1×
   (freteRealLanc||[]).forEach(x=>{ const num=(x.pedidoNum||'').trim(); if(!num) return;
     if(_mesRefPedido(x.pedidoId, num, (x.data||'').slice(0,7))!==mesSel) return; // v124 — pelo D1 do pedido
-    ensure(num,x.pedidoId).frete_real+=(parseFloat(x.valor)||0); });
+    ensure(num,x.pedidoId).frete_real+=_frValorEfetivo(x,_cjm); });
   let rows = Object.values(porPedido);
   if(q) rows = rows.filter(r=>r.pedidoNum.toLowerCase().includes(q)||(r.order?.cliente||'').toLowerCase().includes(q));
   rows.sort((a,b)=>a.pedidoNum.localeCompare(b.pedidoNum));
@@ -19217,8 +19223,19 @@ function deleteFreteReal(id){
   saveData(); renderFreteReal();
 }
 
+// v163 — ENVIO CONJUNTO: o MESMO objeto real (formato AA#########BR) lançado em MAIS de um pedido
+// (pedidos do mesmo cliente despachados na mesma caixa — caso 102469/102518 — ou par dividido a/l)
+// é UMA cobrança só da transportadora. As ANÁLISES (Prejuízo de Frete, ficha do pedido, totais)
+// contam o valor UMA vez: cada lançamento entra dividido pelo nº de lançamentos que compartilham
+// o rastreio. Os lançamentos em si ficam intactos (rastreabilidade por pedido); o pagamento não
+// muda (o Conferir fatura marca só 1). Rótulos internos (FININHO/EDUARDO/MAIO 05/…) NÃO agrupam
+// — não são rastreio real e cada lançamento deles é custo próprio.
+function _frRastReal(x){ const k=String((x&&x.rastreio)||'').toUpperCase().replace(/[^A-Z0-9]/g,''); return /^[A-Z]{2}\d{9}[A-Z]{2}$/.test(k)?k:null; }
+function _frConjMapa(){ const m={}; (freteRealLanc||[]).forEach(f=>{ const k=_frRastReal(f); if(k) m[k]=(m[k]||0)+1; }); return m; }
+function _frValorEfetivo(x,mapa){ const k=_frRastReal(x); const n=(k&&mapa&&mapa[k])||1; return (parseFloat(x.valor)||0)/(n>1?n:1); }
 function getFreteRealPedido(pedidoId){
-  return freteRealLanc.filter(x=>String(x.pedidoId)===String(pedidoId)).reduce((s,x)=>s+x.valor,0);
+  const _cjm=_frConjMapa(); // v163 — envio conjunto conta 1×
+  return freteRealLanc.filter(x=>String(x.pedidoId)===String(pedidoId)).reduce((s,x)=>s+_frValorEfetivo(x,_cjm),0);
 }
 
 // v114 — rastreios de um pedido que AINDA não têm frete real lançado (checa por rastreio, não pelo total do pedido)
@@ -19382,6 +19399,97 @@ function _confirmarPdfFrete(){
   try{ renderFreteReal&&renderFreteReal(); }catch(_){}
   alert('✅ '+n+' frete(s) lançado(s) automaticamente.');
 }
+// ══════════════════════════════════════════════════════════
+// v163 — LOGÍSTICA REVERSA: lançamento AVULSO no Frete Real (sem pedido).
+// Caso fatura Correios jun/26: devoluções (SEDEX Reverso/coleta) são cobradas na mesma fatura
+// mas não têm pedido de venda. Entram com pedidoId null + tipo 'reverso'; todas as rotinas por
+// pedido (rateio, religador, exclusão, prejuízo de frete) já ignoram registro sem pedidoNum.
+// ══════════════════════════════════════════════════════════
+let _rvEditId=null, _rvFornId=null, _rvFornNome='';
+function openReversoModal(editId){
+  _rvEditId=editId||null;
+  let fr=null;
+  if(editId){
+    fr=(freteRealLanc||[]).find(x=>String(x.id)===String(editId));
+    if(!fr) return;
+    if(fr.contaPagarId){ // mesma trava v134 do frete real comum
+      const _c=(contasPagar||[]).find(cp=>String(cp.id)===String(fr.contaPagarId));
+      if(_c && !['reprovada','rejeitada','recusada'].includes(_c.statusCaixa)){
+        alert('🔒 Esta reversa já está numa SOLICITAÇÃO DE PAGAMENTO ('+((_c.statusCaixa||'aprovada')==='pendente'?'aguardando aprovação no Caixa':'aprovada, no Financeiro')+').\n\nPara editar: rejeite a solicitação no Caixa primeiro.');
+        return;
+      }
+    }
+    if(fr.pago && !confirm('⚠ Esta reversa já está marcada como PAGA. Alterar aqui NÃO muda nada no Caixa/Financeiro. Editar mesmo assim?')) return;
+  }
+  const corr=(fornecedores||[]).find(f=>(f.apelido||'').toUpperCase()==='CORREIOS'||(f.nome||'').toUpperCase().includes('CORREIO'));
+  _rvFornId = fr? (fr.fornecedorId||null) : (corr? corr.id : null);
+  _rvFornNome = fr? (fr.fornecedorNome||'') : (corr? corr.nome : '');
+  let ov=document.getElementById('reverso-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='reverso-overlay'; ov.className='overlay'; ov.style.zIndex='465'; document.body.appendChild(ov); }
+  ov.innerHTML=`<div class="modal" style="width:460px;max-width:95vw">
+    <h2 style="font-size:16px">↩ ${editId?'Editar':'Lançar'} Logística Reversa</h2>
+    <div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">Cobrança de devolução/coleta da transportadora — sem vínculo a pedido. Entra PENDENTE e aparece na Solicitação de Pagamento do fornecedor.</div>
+    <div class="modal-section">
+      <label style="font-size:11px;color:var(--text-secondary)">Rastreio / código do objeto *</label>
+      <input type="text" id="rv-rastreio" value="${escapeHtml(fr?.rastreio||'')}" placeholder="ex.: DA587069864BR ou nº da coleta" style="width:100%;font-size:13px;padding:6px 10px;font-family:monospace;text-transform:uppercase">
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <div style="flex:1"><label style="font-size:11px;color:var(--text-secondary)">Valor (R$) *</label>
+          <input type="number" step="0.01" min="0" id="rv-valor" value="${fr?fr.valor:''}" style="width:100%;font-size:13px;padding:6px 10px"></div>
+        <div style="flex:1"><label style="font-size:11px;color:var(--text-secondary)">Data *</label>
+          <input type="date" id="rv-data" value="${fr?.data||today()}" style="width:100%;font-size:13px;padding:6px 10px"></div>
+      </div>
+      <div style="margin-top:8px;position:relative">
+        <label style="font-size:11px;color:var(--text-secondary)">Fornecedor (cadastrado) *</label>
+        <input type="text" id="rv-forn-input" value="${escapeHtml(_rvFornNome)}" autocomplete="off" oninput="_rvFornDigitou(this.value)" style="width:100%;font-size:13px;padding:6px 10px">
+        <div class="autocomplete-list" id="rv-forn-ac"></div>
+      </div>
+      <div style="margin-top:8px">
+        <label style="font-size:11px;color:var(--text-secondary)">Observação (origem/CDD, motivo)</label>
+        <input type="text" id="rv-obs" value="${escapeHtml(fr?.obs||'')}" placeholder="ex.: devolução — CDD Jardim América" style="width:100%;font-size:13px;padding:6px 10px">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button onclick="document.getElementById('reverso-overlay').classList.remove('open')">Cancelar</button>
+      <button class="btn-primary" onclick="_salvarReverso()">${editId?'Salvar':'Lançar reversa'}</button>
+    </div></div>`;
+  ov.classList.add('open');
+}
+function _rvFornDigitou(val){
+  _rvFornId=null; _rvFornNome=val;
+  renderFornecedorAc('rv-forn-ac','rv-forn-input','_rvSelForn');
+}
+function _rvSelForn(id,nome){
+  _rvFornId=id||null; _rvFornNome=nome;
+  const el=document.getElementById('rv-forn-input'); if(el) el.value=nome;
+  document.getElementById('rv-forn-ac')?.classList.remove('open');
+}
+function _salvarReverso(){
+  const rast=(document.getElementById('rv-rastreio')?.value||'').trim().toUpperCase();
+  const valor=parseFloat(document.getElementById('rv-valor')?.value||'');
+  const data=document.getElementById('rv-data')?.value||'';
+  const obs=(document.getElementById('rv-obs')?.value||'').trim();
+  if(!rast){ alert('Informe o rastreio/código do objeto.'); return; }
+  if(!(valor>0)){ alert('Informe o valor.'); return; }
+  if(!data){ alert('Informe a data.'); return; }
+  const _fornCad=_rvFornId?(fornecedores||[]).find(f=>String(f.id)===String(_rvFornId)):null;
+  if(!_fornCad){ alert('O fornecedor precisa estar CADASTRADO — digite e selecione da lista.'); return; }
+  const _rk=rast.replace(/[^A-Z0-9]/g,'');
+  if((freteRealLanc||[]).some(f=>String(f.rastreio||'').toUpperCase().replace(/[^A-Z0-9]/g,'')===_rk && String(f.id)!==String(_rvEditId||''))){
+    alert('Este rastreio JÁ TEM lançamento no Frete Real. Edite o existente (não lance duas vezes).'); return;
+  }
+  if(_rvEditId){
+    const idx=freteRealLanc.findIndex(x=>String(x.id)===String(_rvEditId));
+    if(idx<0) return;
+    freteRealLanc[idx]={...freteRealLanc[idx], rastreio:rast, valor:valor, data:data, obs:obs, fornecedorId:_fornCad.id, fornecedorNome:_fornCad.nome};
+  } else {
+    freteRealLanc.push({ id:'fr'+Date.now(), pedidoId:null, pedidoNum:'', tipo:'reverso', rastreio:rast,
+      fornecedorId:_fornCad.id, fornecedorNome:_fornCad.nome, valor:valor, data:data, obs:obs,
+      pago:false, por:currentUser?.name||'—', criadoEm:Date.now() });
+  }
+  document.getElementById('reverso-overlay').classList.remove('open');
+  _rvEditId=null;
+  saveData(); renderFreteReal();
+}
 function renderFreteReal(){
   const el=document.getElementById('fr-list');
   if(!el) return;
@@ -19410,9 +19518,11 @@ function renderFreteReal(){
   }
 
   if(!list.length){ el.innerHTML='<div class="empty">Nenhum frete real lançado neste mês.</div>'; return; }
-  const total=list.reduce((s,x)=>s+x.valor,0);
+  const _cjm=_frConjMapa(); // v163 — envio conjunto conta 1× no total
+  const totalBruto=list.reduce((s,x)=>s+(parseFloat(x.valor)||0),0);
+  const total=list.reduce((s,x)=>s+_frValorEfetivo(x,_cjm),0);
   el.innerHTML=`<div style="padding:8px 16px;background:var(--bg-secondary);border-bottom:.5px solid var(--border);font-size:12px;color:var(--text-secondary)">
-    Total do mês: <strong style="color:var(--text-primary)">${fmtMoney(total)}</strong>
+    Total do mês: <strong style="color:var(--text-primary)">${fmtMoney(total)}</strong>${Math.abs(totalBruto-total)>0.005?` <span style="font-size:11px;color:var(--st-mid-tx)" title="Lançamentos com o MESMO rastreio em mais de um pedido (envio conjunto / par dividido) contam uma vez só no total — a transportadora cobra 1×.">(envios conjuntos contados 1×)</span>`:''}
   </div>
   <table style="width:100%;border-collapse:collapse;font-size:12px">
     <thead><tr>
@@ -19428,7 +19538,7 @@ function renderFreteReal(){
       const o=orders.find(p=>String(p.id)===String(x.pedidoId));
       return`<tr>
         <td style="padding:8px 12px;border-bottom:.5px solid var(--border)">${fmtDate(x.data)}</td>
-        <td style="padding:8px 12px;border-bottom:.5px solid var(--border);font-weight:500">${x.pedidoNum}<br><span style="font-size:10px;color:var(--text-tertiary)">${escapeHtml(o?.cliente||'')}</span></td>
+        <td style="padding:8px 12px;border-bottom:.5px solid var(--border);font-weight:500">${x.pedidoNum||(x.tipo==='reverso'?'<span style="font-size:11px;color:var(--st-mid-tx)">↩ reversa</span>':'—')}<br><span style="font-size:10px;color:var(--text-tertiary)">${escapeHtml(o?.cliente||(x.tipo==='reverso'?(x.obs||''):''))}</span>${(()=>{const k=_frRastReal(x); if(!k||(_cjm[k]||0)<2) return ''; const outros=[...new Set(freteRealLanc.filter(f=>f.id!==x.id&&_frRastReal(f)===k).map(f=>String(f.pedidoNum||'').trim()).filter(Boolean))]; return '<br><span style="font-size:10px;color:var(--st-mid-tx)" title="Mesmo rastreio lançado em mais de um pedido — a cobrança é uma só; análises contam 1×.">📦 envio conjunto'+(outros.length?' c/ '+escapeHtml(outros.join(', ')):'')+'</span>';})()}</td>
         <td style="padding:8px 12px;border-bottom:.5px solid var(--border);font-family:monospace;font-size:11px">${escapeHtml(x.rastreio)}</td>
         <td style="padding:8px 12px;border-bottom:.5px solid var(--border)" title="${escapeHtml(x.fornecedorNome||'')}">${escapeHtml(_fornApelido(x.fornecedorNome)||'—')}</td>
         <td style="padding:8px 12px;border-bottom:.5px solid var(--border);text-align:right;font-weight:500">${fmtMoney(x.valor)}</td>
@@ -19459,6 +19569,7 @@ function openPagarTranspModal(){
   document.getElementById('pt-total').textContent='R$ 0,00';
   document.getElementById('pt-confirmar-btn').disabled=true;
   { const _l=document.getElementById('pt-itens-list'); if(_l) _l.innerHTML=''; } // v110 (A5) — não vaza checkboxes da seleção anterior
+  { const _fx=document.getElementById('pt-fatura-resumo'); if(_fx){ _fx.style.display='none'; _fx.innerHTML=''; } } // v163 — conferência de fatura não vaza entre aberturas
   document.getElementById('pagar-transp-overlay').classList.add('open');
 }
 
@@ -19502,6 +19613,7 @@ function _ptSomaIds(ids){
   return s;
 }
 function renderPtItens(fornNome){
+  { const _fx=document.getElementById('pt-fatura-resumo'); if(_fx){ _fx.style.display='none'; _fx.innerHTML=''; } } // v163 — troca de fornecedor invalida a conferência anterior
   const real=freteRealLanc.filter(x=>_transpStatus(x)==='pendente'&&(x.fornecedorNome||'').toLowerCase()===(fornNome||'').toLowerCase());
   const internos=_ptInternosFornecedor(fornNome);
   const section=document.getElementById('pt-itens-section');
@@ -19514,7 +19626,7 @@ function renderPtItens(fornNome){
   section.style.display=''; empty.style.display='none';
   const _rowReal=x=>{ const o=orders.find(p=>String(p.id)===String(x.pedidoId)); return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border)">
       <input type="checkbox" id="pt-chk-${x.id}" onchange="ptUpdateTotal()" style="width:16px;height:16px;cursor:pointer">
-      <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:500">${escapeHtml(x.rastreio||'—')} <span style="color:var(--text-secondary);font-weight:400">— ${escapeHtml(x.pedidoNum||'')} · ${escapeHtml(o?.cliente||'')}</span></div><div style="font-size:10px;color:var(--text-tertiary)">${fmtDate(x.data)}</div></div>
+      <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:500">${escapeHtml(x.rastreio||'—')} <span style="color:var(--text-secondary);font-weight:400">— ${escapeHtml(x.pedidoNum||(x.tipo==='reverso'?'log. reversa':''))} · ${escapeHtml(o?.cliente||(x.tipo==='reverso'?(x.obs||''):''))}</span></div><div style="font-size:10px;color:var(--text-tertiary)">${fmtDate(x.data)}</div></div>
       <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${fmtMoney(x.valor)}</div></div>`; };
   const _rowPag=p=>{ const _lbl=p.tipo==='frete_grafica'?'Frete interno gráfica':'Frete interno pedidos'; const _ref=(p.rateios&&p.rateios.length)?p.rateios.map(r=>r.pedidoNum).filter(Boolean).join(', '):(p.obs||''); return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border)">
       <input type="checkbox" id="pt-chk-${p.id}" onchange="ptUpdateTotal()" style="width:16px;height:16px;cursor:pointer">
@@ -19526,6 +19638,106 @@ function renderPtItens(fornNome){
 function ptSelecionarTodos(){
   document.querySelectorAll('[id^="pt-chk-"]').forEach(cb=>{cb.checked=true;});
   ptUpdateTotal();
+}
+// ══════════════════════════════════════════════════════════
+// v163 — CONFERIR FATURA: IA lê o PDF/fotos da fatura da transportadora,
+// marca automaticamente os pendentes que batem por rastreio e aponta:
+// cobranças sem lançamento, valores divergentes, rastreios cobrados 2× e
+// pendentes fora da fatura. Caso-origem: fatura Correios jun/26 (17/07).
+// ══════════════════════════════════════════════════════════
+async function _ptLerFatura(input){
+  const files=Array.from(input.files||[]); input.value='';
+  if(!files.length) return;
+  const fornNome=(document.getElementById('pt-fornecedor-input')?.value||'').trim();
+  if(!fornNome){ alert('Selecione primeiro o fornecedor.'); return; }
+  if(files.length>6){ alert('No máximo 6 arquivos por vez (páginas da fatura).'); return; }
+  const resumoEl=document.getElementById('pt-fatura-resumo');
+  if(resumoEl){ resumoEl.style.display='block'; resumoEl.innerHTML='<div style="padding:10px;font-size:12px;color:var(--text-info)">⟳ Lendo a fatura com IA… (pode levar ~1 min)</div>'; }
+  try{
+    if(!_sb) throw new Error('Sem conexão com o servidor.');
+    const fls=[];
+    for(const f of files){
+      if(f.size>9*1024*1024) throw new Error('O arquivo '+f.name+' passa de 9MB — tire uma foto menor ou divida o PDF.');
+      const b64=await _fileToBase64(f);
+      fls.push({ media_type: f.type==='application/pdf'?'application/pdf':(f.type||'image/jpeg'), data: b64 });
+    }
+    const { data:res, error:err }=await _sb.functions.invoke('fatura-transp-ia',{ body:{ files: fls } });
+    if(err) throw err;
+    if(res && res.error) throw new Error(res.error);
+    if(!res || !res.ok || !res.fatura || !Array.isArray(res.fatura.itens)) throw new Error('A IA não retornou os itens da fatura.');
+    _ptAplicarFatura(res.fatura, fornNome);
+  }catch(e){
+    if(resumoEl) resumoEl.innerHTML='<div style="padding:10px;font-size:12px;color:var(--st-bad-tx)">✕ Falha ao ler a fatura: '+escapeHtml((e&&e.message)||String(e))+'</div>';
+  }
+}
+function _ptAplicarFatura(fat, fornNome){
+  const N=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  // agrupa itens da fatura por rastreio (detecta o MESMO objeto cobrado em mais de uma linha)
+  const cont={};
+  (fat.itens||[]).forEach(it=>{ const k=N(it.rastreio); if(!k||k.length<6) return; (cont[k]=cont[k]||[]).push(parseFloat(it.valor)||0); });
+  const dups=Object.entries(cont).filter(([k,v])=>v.length>1);
+  // pendentes atuais (mesmos filtros do renderPtItens)
+  const real=freteRealLanc.filter(x=>_transpStatus(x)==='pendente'&&(x.fornecedorNome||'').toLowerCase()===fornNome.toLowerCase());
+  const internos=_ptInternosFornecedor(fornNome);
+  const naoSistema=[], foraFatura=[], divergentes=[], dupSistema=[]; let marcados=0, somaMarcados=0;
+  document.querySelectorAll('[id^="pt-chk-"]').forEach(cb=>{cb.checked=false;});
+  const usados=new Set();
+  real.forEach(x=>{
+    const k=N(x.rastreio);
+    if(k && cont[k]){
+      // fatura cobra o objeto N vezes; marca no MÁXIMO N lançamentos do sistema com esse rastreio
+      // (par dividido a/l tem 2 lançamentos p/ 1 cobrança — o 2º fica desmarcado e avisado)
+      cont[k]._marc=cont[k]._marc||0;
+      if(cont[k]._marc>=cont[k].length){ dupSistema.push(x); return; }
+      cont[k]._marc++;
+      const cb=document.getElementById('pt-chk-'+x.id);
+      if(cb){ cb.checked=true; marcados++; somaMarcados+=parseFloat(x.valor)||0; }
+      usados.add(k);
+      const vf=cont[k][0];
+      if(vf>0 && Math.abs((parseFloat(x.valor)||0)-vf)>0.01) divergentes.push({rast:x.rastreio, sis:parseFloat(x.valor)||0, fat:vf});
+    } else foraFatura.push(x);
+  });
+  internos.forEach(p=>{
+    // lançamento interno (ex.: logística reversa lançada no Pagamentos): casa pelo rastreio citado na OBS
+    const obsN=N(p.obs||'');
+    const hits=Object.keys(cont).filter(k=>k.length>=8 && obsN.includes(k));
+    if(hits.length){
+      const cb=document.getElementById('pt-chk-'+p.id);
+      if(cb){ cb.checked=true; marcados++; somaMarcados+=parseFloat(p.valor)||0; }
+      hits.forEach(k=>usados.add(k));
+    } else foraFatura.push(p);
+  });
+  Object.keys(cont).forEach(k=>{ if(!usados.has(k)) naoSistema.push({rast:k, valor:cont[k].reduce((s,v)=>s+v,0), n:cont[k].length}); });
+  try{ ptUpdateTotal(); }catch(_){}
+  const totalFat=parseFloat(fat.total)||null;
+  const resumoEl=document.getElementById('pt-fatura-resumo');
+  if(!resumoEl) return;
+  const li=(t,c)=>'<div style="padding:2px 0;font-size:11px;color:'+c+'">'+t+'</div>';
+  let html='<div style="margin-top:10px;padding:10px 12px;border:.5px solid var(--border);border-radius:var(--r-md);background:var(--bg-secondary)">';
+  html+='<div style="font-size:12px;font-weight:600;margin-bottom:6px">📄 Conferência da fatura ('+(fat.itens||[]).length+' linha(s) lida(s))</div>';
+  html+=li('✓ '+marcados+' item(ns) marcados automaticamente — '+fmtMoney(somaMarcados),'var(--st-ok-tx)');
+  if(naoSistema.length){
+    html+=li('⚠ '+naoSistema.length+' cobrança(s) da fatura SEM lançamento no sistema — lançar (frete real ou reversa) antes de prosseguir:','var(--st-bad-tx)');
+    html+='<div style="max-height:110px;overflow:auto;margin:4px 0">'+naoSistema.map(s=>'<div style="font-size:11px;font-family:monospace;padding:1px 0">'+escapeHtml(s.rast)+' · '+fmtMoney(s.valor)+(s.n>1?' ('+s.n+' linhas)':'')+'</div>').join('')+'</div>';
+  }
+  if(divergentes.length){
+    html+=li('≠ valor DIFERENTE entre sistema e fatura (marcado mesmo assim — conferir): '+divergentes.map(d=>escapeHtml(d.rast)+' (sist. '+fmtMoney(d.sis)+' × fat. '+fmtMoney(d.fat)+')').join(', '),'var(--st-mid-tx)');
+  }
+  if(dups.length){
+    html+=li('🔁 objeto(s) cobrados MAIS DE UMA VEZ na fatura (possível erro da transportadora — contestar): '+dups.map(([k,v])=>escapeHtml(k)+' ('+v.length+'×)').join(', '),'var(--st-mid-tx)');
+  }
+  if(dupSistema.length){
+    html+=li('⚠ '+dupSistema.length+' lançamento(s) do sistema com o MESMO rastreio de outro já marcado (par dividido a/l?) — deixados desmarcados p/ não cobrar em dobro: '+dupSistema.map(x=>escapeHtml(x.rastreio||'')+(x.pedidoNum?' ('+escapeHtml(x.pedidoNum)+')':'')).join(', '),'var(--st-mid-tx)');
+  }
+  if(foraFatura.length){
+    html+=li('▷ '+foraFatura.length+' pendente(s) do fornecedor FORA desta fatura — deixados desmarcados (outra fatura/período)','var(--text-tertiary)');
+  }
+  if(totalFat!=null){
+    const dif=totalFat-somaMarcados;
+    html+=li('Total da fatura: '+fmtMoney(totalFat)+' · marcado no sistema: '+fmtMoney(somaMarcados)+(Math.abs(dif)>0.01?' · <b>diferença: '+fmtMoney(dif)+'</b>':' · ✓ bate ao centavo'), Math.abs(dif)>0.01?'var(--st-mid-tx)':'var(--st-ok-tx)');
+  }
+  html+='</div>';
+  resumoEl.style.display='block'; resumoEl.innerHTML=html;
 }
 
 function ptUpdateTotal(){
@@ -20275,6 +20487,8 @@ function transpCellHtml(o){
 let _frRows = []; // [{pedidoId,pedidoNum,rastreio,fornecedorId,fornecedorNome,valor,data,obs}]
 
 function openFreteRealModal(editId){
+  // v163 — lançamento de logística reversa (sem pedido) edita no modal próprio
+  if(editId){ const _fr0=(freteRealLanc||[]).find(x=>String(x.id)===String(editId)); if(_fr0 && (_fr0.tipo==='reverso' || (!_fr0.pedidoId && !_fr0.pedidoNum))){ openReversoModal(editId); return; } }
   // If editId provided, load single row for edit
   _frRows = [];
   if(editId){
@@ -28218,6 +28432,17 @@ function _convVerMais(convId){
   _convJanelaMsgs[convId]=(_convJanelaMsgs[convId]||150)+300;
   try{ renderConversaMsgs(convId); }catch(_e){ try{ renderConversaTela(convId); }catch(_e2){} }
 }
+// v163 — rótulo do dia p/ o separador de datas do chat (Hoje / Ontem / dia da semana + data)
+function _waDiaLabel(ts){
+  if(!ts) return '';
+  const d=new Date(ts); if(isNaN(d.getTime())) return '';
+  const hoje=new Date();
+  if(d.toDateString()===hoje.toDateString()) return 'Hoje';
+  const ontem=new Date(hoje.getTime()-86400000);
+  if(d.toDateString()===ontem.toDateString()) return 'Ontem';
+  const wd=['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'][d.getDay()];
+  return wd+', '+String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+}
 function _convMsgsHtml(conv){
   const _now=Date.now();
   const nome=_tituloConversa(conv);
@@ -28229,12 +28454,15 @@ function _convMsgsHtml(conv){
   // v111 — dedup de EXIBIÇÃO da duplicata: esconde a OTIMISTA (de=atendente, status 'fila', SEM id de provedor) quando já existe a CONFIRMAÇÃO (mesmo texto, ~30s). NÃO altera o dado; mensagem distinta/recebida/falha nunca é tocada (sem risco de sumiço).
   const _pidD=m=>m&&(m.provedorMsgId||m.zapiMessageId||m.providerMsgId);
   const _confmD=_msgs.filter(m=>m&&m.de==='atendente'&&_pidD(m));
+  let _diaAnt=null; // v163 — separador de DATA entre os dias da conversa
   return _verMaisHtml + _msgs.map(m=>{
     if(m&&m.de==='atendente'&&m.status==='fila'&&!_pidD(m)&&_confmD.some(c=>String(c.texto||'')===String(m.texto||'')&&Math.abs((c.em||0)-(m.em||0))<30000)) return '';
     // v112 — esconde mensagem SEM conteúdo (ex.: evento de reação ❤️ virou "mensagem vazia"). A reação já aparece na bolha alvo. Mensagem apagada/sistema/mídia não é tocada.
     if(m && m.de!=='sistema' && !m.apagada && !(m.texto&&String(m.texto).trim()) && !m.anexo) return '';
+    const _dia=_waDiaLabel(m.em);
+    const _diaChip=(_dia&&_dia!==_diaAnt)?(_diaAnt=_dia,`<div class="wa-sys wa-dia"><span style="font-weight:600">${_dia}</span></div>`):'';
     if(m.de==='sistema'){
-      return `<div class="wa-sys"><span>${escapeHtml(m.texto)} · ${fmtTs(m.em)}</span></div>`;
+      return _diaChip+`<div class="wa-sys"><span>${escapeHtml(m.texto)} · ${fmtTs(m.em)}</span></div>`;
     }
     const mine = m.de==='atendente';
     // v142 — nome do usuário em TODA mensagem de atendente; sem autorId = digitada no CELULAR (não dá pra saber quem)
@@ -28248,7 +28476,7 @@ function _convMsgsHtml(conv){
         else { _q={ aut:'', txt:'mensagem citada', mid:'' }; }
       } else if(m.replyTo){ _q={ aut:(m.replyTo.mine?'Você':(nome||'Cliente')), txt:(m.replyTo.texto||''), mid:'' }; }
     }
-    return `<div class="wa-row ${mine?'mine':''}">
+    return _diaChip+`<div class="wa-row ${mine?'mine':''}">
       <div class="wa-bubble ${mine?'out':'in'}" data-mid="${m.id||''}">
         ${autor?`<div class="wa-author${mine?'':' in'}">${escapeHtml(autor)}</div>`:''}
         ${m.apagada?`<span class="wa-txt" style="font-style:italic;color:#8696a0">🚫 mensagem apagada</span>`:''}

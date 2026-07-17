@@ -1335,6 +1335,19 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div class="crm-tab" id="sol-tab-lista" onclick="setSolCompraTab('lista')">Lista de Compra</div>
           <div class="crm-tab" id="sol-tab-recebimento" onclick="setSolCompraTab('recebimento')">Recebimento</div>
           <div class="crm-tab" id="sol-tab-acomp" onclick="setSolCompraTab('acomp')">Acompanhamento</div>
+          <div class="crm-tab" id="sol-tab-gastos" onclick="setSolCompraTab('gastos')">Gastos</div>
+        </div>
+        <!-- v164 — Seção: GASTOS (por pedido / por mês) -->
+        <div id="sol-sec-gastos" style="display:none">
+          <div class="panel" style="margin-bottom:12px"><div style="padding:10px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <div class="des-tabs" style="gap:4px">
+              <div class="des-tab active" id="gst-sub-pedido" onclick="setSolGastosSub('pedido')">Por pedido</div>
+              <div class="des-tab" id="gst-sub-mes" onclick="setSolGastosSub('mes')">Por mês</div>
+            </div>
+            <select id="gst-mes" onchange="renderSolGastos()" style="font-size:12px;padding:5px 10px;font-weight:500"></select>
+            <span id="gst-info" style="margin-left:auto;font-size:12px;color:var(--text-secondary)"></span>
+          </div></div>
+          <div id="gst-list"></div>
         </div>
         <!-- Seção: solicitar por pedido (ativo/embalagem) -->
         <div id="sol-sec-solicitar">
@@ -1559,10 +1572,24 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <!-- Tabs -->
         <div class="panel" style="margin-bottom:0;border-radius:var(--r-lg) var(--r-lg) 0 0;border-bottom:none">
           <div class="compras-tabs">
+            <div class="compras-tab" id="comp-tab-painel" onclick="setComprasTab('painel')">Painel</div>
             <div class="compras-tab active" id="comp-tab-lancamentos" onclick="setComprasTab('lancamentos')">Lançamentos</div>
             <div class="compras-tab" id="comp-tab-despesas" onclick="setComprasTab('despesas')">Despesas</div>
             <div class="compras-tab" id="comp-tab-contasfixas" onclick="setComprasTab('contasfixas')">Contas Fixas</div>
             <div class="compras-tab" id="comp-tab-plano" onclick="setComprasTab('plano')">Plano de Contas</div>
+          </div>
+        </div>
+        <!-- v164 — ABA Painel (de COMPRAS): gastos por plano de contas pela DATA DE EMISSÃO.
+             Ids internos comp-painel-* / renderComprasPainel — NÃO confundir com o Painel do
+             Financeiro (fin-p-* / renderFinPainel, que agrupa contas a pagar por VENCIMENTO). -->
+        <div id="comp-pg-painelcompras" style="display:none">
+          <div class="panel" style="border-radius:0 0 var(--r-lg) var(--r-lg)">
+            <div class="panel-header"><h2>Gastos por Plano de Contas — por data de emissão</h2>
+              <select id="comp-painel-mes" onchange="renderComprasPainel()" style="font-size:12px;padding:5px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-primary)">
+                <option value="">Todos os períodos</option>
+              </select>
+            </div>
+            <div id="comp-painel-list" style="padding:16px"></div>
           </div>
         </div>
         <!-- ABA Lançamentos -->
@@ -2874,6 +2901,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <button onclick="ptSelecionarTodos()" style="font-size:11px;padding:3px 10px">Selecionar todos</button>
           </div>
         </div>
+        <input type="text" id="pt-busca" placeholder="🔍 Buscar por rastreio, pedido ou cliente..." oninput="_ptFiltrar(this.value)" autocomplete="off" style="width:100%;font-size:12px;padding:6px 10px;margin-bottom:8px">
         <div id="pt-itens-list"></div>
         <div id="pt-fatura-resumo" style="display:none"></div>
       </div>
@@ -4429,7 +4457,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v163';
+var APP_VERSION = 'v164';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -10011,16 +10039,153 @@ function _solGetSolic(orderId, tab){
 }
 function setSolCompraTab(tab){
   _solTab=tab;
-  ['ativo','embalagem','lista','recebimento','acomp'].forEach(function(t){ var b=document.getElementById('sol-tab-'+t); if(b) b.classList.toggle('active', t===tab); });
-  var ehLista=tab==='lista', ehReceb=tab==='recebimento', ehAcomp=tab==='acomp', ehSolic=(tab==='ativo'||tab==='embalagem');
+  ['ativo','embalagem','lista','recebimento','acomp','gastos'].forEach(function(t){ var b=document.getElementById('sol-tab-'+t); if(b) b.classList.toggle('active', t===tab); });
+  var ehLista=tab==='lista', ehReceb=tab==='recebimento', ehAcomp=tab==='acomp', ehGastos=tab==='gastos', ehSolic=(tab==='ativo'||tab==='embalagem');
   var s1=document.getElementById('sol-sec-solicitar'); if(s1) s1.style.display=ehSolic?'':'none';
   var s2=document.getElementById('sol-sec-lista'); if(s2) s2.style.display=ehLista?'':'none';
   var s3=document.getElementById('sol-sec-recebimento'); if(s3) s3.style.display=ehReceb?'':'none';
   var s4=document.getElementById('sol-sec-acomp'); if(s4) s4.style.display=ehAcomp?'':'none';
+  var s5=document.getElementById('sol-sec-gastos'); if(s5) s5.style.display=ehGastos?'':'none';
   if(ehLista) setListaSub(_listaTipo||'ativo');
   else if(ehReceb) renderRecebimento();
   else if(ehAcomp) renderSolAcomp();
+  else if(ehGastos) renderSolGastos();
   else renderSolCompra(tab);
+}
+// ══════════════════════════════════════════════════════════
+// v164 — GASTOS da Solicitação de Compra (pedido do dono 17/07).
+// Fonte: itens COMPRADOS das listas de compra (listasCompra → it.compra).
+// Rateio: it.origem[] diz quanto de cada compra é de cada pedido; origem '__geral__'
+// (avulsa) e o EXCEDENTE comprado acima do solicitado contam como ESTOQUE.
+// Compra parcial (comprou menos que o solicitado) rateia proporcional — a soma
+// das alocações + estoque = exatamente o total pago.
+// ══════════════════════════════════════════════════════════
+var _gstSub='pedido';
+function setSolGastosSub(s){
+  _gstSub=s;
+  ['pedido','mes'].forEach(function(t){ var b=document.getElementById('gst-sub-'+t); if(b) b.classList.toggle('active', t===s); });
+  var sel=document.getElementById('gst-mes'); if(sel) sel.innerHTML='';
+  renderSolGastos();
+}
+function _gstMesDe(ts){ if(!ts) return ''; var d=new Date(ts); if(isNaN(d.getTime())) return ''; return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); }
+function _gstDataDe(ts){ if(!ts) return ''; var d=new Date(ts); if(isNaN(d.getTime())) return ''; return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+function _solGastosColeta(){
+  var out=[];
+  (listasCompra||[]).forEach(function(l){ (l.itens||[]).forEach(function(it){
+    var c=it.compra; if(!c||!c.comprado) return;
+    var qtd=parseFloat(c.qtdComprada)||0, pu=parseFloat(c.precoPago)||0;
+    var org=Array.isArray(it.origem)?it.origem:[];
+    var somaO=org.reduce(function(s,o){ return s+(parseFloat(o.qtd)||0); },0);
+    var fator=somaO>0?Math.min(1,qtd/somaO):0;
+    var aloc=[]; var estoqueQtd=0;
+    org.forEach(function(o){ var q=(parseFloat(o.qtd)||0)*fator;
+      if(!o.orderId||String(o.orderId)==='__geral__'){ estoqueQtd+=q; }
+      else aloc.push({ orderId:o.orderId, orderNum:o.orderNum, qtd:q, val:q*pu });
+    });
+    if(qtd>somaO) estoqueQtd+=qtd-somaO; // excedente comprado a mais → estoque
+    out.push({ tipo:l.tipo, nome:it.nome||'—', codigo:it.codigo||'', unidade:it.unidade||'', qtd:qtd, pu:pu, total:qtd*pu,
+               nf:c.nf||'', em:c.compradoEm||l.criadoEm||0, aloc:aloc, estoqueQtd:estoqueQtd, estoqueVal:estoqueQtd*pu });
+  }); });
+  return out;
+}
+function renderSolGastos(){
+  var el=document.getElementById('gst-list'); if(!el) return;
+  var dados=_solGastosColeta();
+  var sel=document.getElementById('gst-mes');
+  var th='padding:8px 12px;background:var(--bg-secondary);text-align:left;font-size:11px;font-weight:500;color:var(--text-secondary)';
+  var td='padding:7px 12px;border-bottom:.5px solid var(--border);font-size:12px';
+  var info=document.getElementById('gst-info');
+  var mesAtual=_gstMesDe(Date.now());
+  if(_gstSub==='pedido'){
+    // meses: D1 dos pedidos com gasto + mês da compra dos itens de estoque
+    var ordById={}; (orders||[]).forEach(function(o){ if(o) ordById[String(o.id)]=o; });
+    var mesesSet={};
+    dados.forEach(function(d){
+      d.aloc.forEach(function(a){ var o=ordById[String(a.orderId)]; var m=(o&&o.d1||'').slice(0,7); if(m) mesesSet[m]=1; });
+      if(d.estoqueVal>0){ var m2=_gstMesDe(d.em); if(m2) mesesSet[m2]=1; }
+    });
+    var meses=Object.keys(mesesSet).sort().reverse();
+    if(sel&&!sel.options.length){ sel.innerHTML='<option value="">Todos os meses</option>'+meses.map(function(m){ return '<option value="'+m+'"'+(m===mesAtual?' selected':'')+'>'+monthLabel(m)+'</option>'; }).join(''); }
+    var mes=sel?sel.value:'';
+    // agrega por pedido (mês = D1 do pedido)
+    var porPed={};
+    dados.forEach(function(d){ d.aloc.forEach(function(a){
+      var o=ordById[String(a.orderId)]; var m=(o&&o.d1||'').slice(0,7);
+      if(mes && m!==mes) return;
+      var k=String(a.orderId);
+      if(!porPed[k]) porPed[k]={ num:(o&&o.num)||a.orderNum||'?', cliente:(o&&o.cliente)||'', valor:parseFloat(o&&o.valor)||0, emb:0, atv:0 };
+      if(d.tipo==='embalagem') porPed[k].emb+=a.val; else porPed[k].atv+=a.val;
+    }); });
+    // estoque (mês = mês da COMPRA, já que não tem pedido/D1)
+    var estq={emb:0,atv:0,qtdItens:0};
+    dados.forEach(function(d){ if(d.estoqueVal<=0) return; if(mes && _gstMesDe(d.em)!==mes) return;
+      if(d.tipo==='embalagem') estq.emb+=d.estoqueVal; else estq.atv+=d.estoqueVal; estq.qtdItens++; });
+    var rows=Object.values(porPed).sort(function(a,b){ return (b.emb+b.atv)-(a.emb+a.atv); });
+    var pc=function(v,base){ return base>0?((v/base*100).toFixed(1).replace('.',','))+'%':'—'; };
+    var tEmb=rows.reduce(function(s,r){return s+r.emb;},0)+estq.emb, tAtv=rows.reduce(function(s,r){return s+r.atv;},0)+estq.atv;
+    if(info) info.textContent=rows.length+' pedido(s) · gasto embalagem '+fmtMoney(tEmb)+' · gasto ativos '+fmtMoney(tAtv);
+    if(!rows.length && estq.emb+estq.atv<=0){ el.innerHTML='<div class="empty" style="padding:28px">Nenhum gasto de compra no período (mês = D1 do pedido; estoque = mês da compra).</div>'; return; }
+    el.innerHTML='<div class="panel"><div style="padding:8px 16px;font-size:11px;color:var(--text-secondary);border-bottom:.5px solid var(--border)">Mês pela <b>D1 do pedido</b> · % sobre o valor do pedido · linha ESTOQUE = compras sem vínculo (avulsas + excedentes), no mês da compra</div>'+
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:760px"><thead><tr>'+
+      '<th style="'+th+'">Pedido</th><th style="'+th+'">Cliente</th><th style="'+th+';text-align:right">Valor pedido</th>'+
+      '<th style="'+th+';text-align:right">Embalagem</th><th style="'+th+';text-align:right">%</th>'+
+      '<th style="'+th+';text-align:right">Ativos</th><th style="'+th+';text-align:right">%</th>'+
+      '<th style="'+th+';text-align:right">Total gasto</th><th style="'+th+';text-align:right">%</th></tr></thead><tbody>'+
+      rows.map(function(r){ var t=r.emb+r.atv; return '<tr>'+
+        '<td style="'+td+';font-weight:600">'+escapeHtml(String(r.num))+'</td>'+
+        '<td style="'+td+'">'+escapeHtml(r.cliente)+'</td>'+
+        '<td style="'+td+';text-align:right">'+fmtMoney(r.valor)+'</td>'+
+        '<td style="'+td+';text-align:right">'+fmtMoney(r.emb)+'</td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-secondary)">'+pc(r.emb,r.valor)+'</td>'+
+        '<td style="'+td+';text-align:right">'+fmtMoney(r.atv)+'</td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-secondary)">'+pc(r.atv,r.valor)+'</td>'+
+        '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(t)+'</td>'+
+        '<td style="'+td+';text-align:right;font-weight:600;color:'+(r.valor>0&&t/r.valor>0.3?'var(--st-bad-tx)':'var(--st-ok-tx)')+'">'+pc(t,r.valor)+'</td></tr>'; }).join('')+
+      (estq.emb+estq.atv>0?('<tr style="background:var(--bg-secondary)">'+
+        '<td style="'+td+';font-weight:600">🏪 ESTOQUE</td>'+
+        '<td style="'+td+';color:var(--text-secondary)">compras sem vínculo ('+estq.qtdItens+' item/ns)</td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
+        '<td style="'+td+';text-align:right">'+fmtMoney(estq.emb)+'</td><td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
+        '<td style="'+td+';text-align:right">'+fmtMoney(estq.atv)+'</td><td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
+        '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(estq.emb+estq.atv)+'</td><td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td></tr>'):'')+
+      '</tbody></table></div></div>';
+  } else {
+    // POR MÊS — referência: data da COMPRA (registro no sistema); uma linha por compra de item
+    var mesesSet2={}; dados.forEach(function(d){ var m=_gstMesDe(d.em); if(m) mesesSet2[m]=1; });
+    var meses2=Object.keys(mesesSet2).sort().reverse();
+    if(sel&&!sel.options.length){ sel.innerHTML='<option value="">Todos os meses</option>'+meses2.map(function(m){ return '<option value="'+m+'"'+(m===mesAtual?' selected':'')+'>'+monthLabel(m)+'</option>'; }).join(''); }
+    var mes2=sel?sel.value:'';
+    var lst=dados.filter(function(d){ return !mes2 || _gstMesDe(d.em)===mes2; });
+    lst.sort(function(a,b){ return String(a.nome).localeCompare(String(b.nome)) || (a.em-b.em); });
+    var tot=lst.reduce(function(s,d){ return s+d.total; },0);
+    if(info) info.textContent=lst.length+' compra(s) · total '+fmtMoney(tot);
+    if(!lst.length){ el.innerHTML='<div class="empty" style="padding:28px">Nenhuma compra no mês selecionado (referência: data da compra).</div>'; return; }
+    el.innerHTML='<div class="panel"><div style="padding:8px 16px;font-size:11px;color:var(--text-secondary);border-bottom:.5px solid var(--border)">Mês pela <b>data da compra</b> (registro no sistema; NF na coluna) · quantidades separadas entre pedidos e estoque mesmo quando compradas juntas</div>'+
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:820px"><thead><tr>'+
+      '<th style="'+th+'">Produto</th><th style="'+th+'">Tipo</th>'+
+      '<th style="'+th+';text-align:right">Qtd comprada</th>'+
+      '<th style="'+th+';text-align:right">→ Pedidos</th>'+
+      '<th style="'+th+';text-align:right">→ Estoque</th>'+
+      '<th style="'+th+'">Data compra</th><th style="'+th+'">NF</th>'+
+      '<th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th></tr></thead><tbody>'+
+      lst.map(function(d){
+        var qPed=d.aloc.reduce(function(s,a){ return s+a.qtd; },0);
+        var nums=d.aloc.map(function(a){ return a.orderNum||a.orderId; }).filter(Boolean).join(', ');
+        var fq=function(v){ return (Math.round(v*100)/100).toLocaleString('pt-BR'); };
+        return '<tr>'+
+          '<td style="'+td+'">'+(d.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(d.codigo)+'</span> ':'')+escapeHtml(d.nome)+'</td>'+
+          '<td style="'+td+'">'+(d.tipo==='embalagem'?'📦 Emb.':'⚗ Ativo')+'</td>'+
+          '<td style="'+td+';text-align:right;font-weight:600">'+fq(d.qtd)+' '+escapeHtml(d.unidade)+'</td>'+
+          '<td style="'+td+';text-align:right" title="'+escapeHtml(nums)+'">'+(qPed>0?(fq(qPed)+(nums?' <span style="font-size:10px;color:var(--text-tertiary)">('+escapeHtml(nums.length>28?nums.slice(0,28)+'…':nums)+')</span>':'')):'—')+'</td>'+
+          '<td style="'+td+';text-align:right">'+(d.estoqueQtd>0.001?('<b>'+fq(d.estoqueQtd)+'</b>'):'—')+'</td>'+
+          '<td style="'+td+'">'+(_gstDataDe(d.em)?fmtDate(_gstDataDe(d.em)):'—')+'</td>'+
+          '<td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(d.nf||'—')+'</td>'+
+          '<td style="'+td+';text-align:right">'+fmtMoney(d.pu)+'</td>'+
+          '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(d.total)+'</td></tr>';
+      }).join('')+
+      '<tr style="background:var(--bg-secondary)"><td style="'+td+';font-weight:600" colspan="8">Total do período</td><td style="'+td+';text-align:right;font-weight:700">'+fmtMoney(tot)+'</td></tr>'+
+      '</tbody></table></div></div>';
+  }
 }
 function _solPedidosLinha(){
   // pedidos de LINHA personalizada que geram produção e ainda NÃO saíram (não precisa comprar p/ quem já enviou)
@@ -11885,10 +12050,12 @@ const _COMP_TIPO_LABEL={
 };
 function setComprasTab(tab){
   activeComprasTab=tab;
-  ['lancamentos','despesas','contasfixas','plano'].forEach(t=>{ document.getElementById('comp-tab-'+t)?.classList.toggle('active',t===tab); });
+  ['painel','lancamentos','despesas','contasfixas','plano'].forEach(t=>{ document.getElementById('comp-tab-'+t)?.classList.toggle('active',t===tab); });
   const _ehLanc = Object.prototype.hasOwnProperty.call(_COMP_TAB_TIPO, tab);
   document.getElementById('comp-pg-lancamentos').style.display = _ehLanc?'':'none';
   document.getElementById('comp-pg-plano').style.display = (tab==='plano')?'':'none';
+  { const _pp=document.getElementById('comp-pg-painelcompras'); if(_pp) _pp.style.display=(tab==='painel')?'':'none'; } // v164
+  if(tab==='painel') renderComprasPainel();
   if(_ehLanc){
     _compTipoLanc=_COMP_TAB_TIPO[tab];
     const _l=_COMP_TIPO_LABEL[_compTipoLanc]||_COMP_TIPO_LABEL.compra;
@@ -11897,6 +12064,48 @@ function setComprasTab(tab){
     renderCompras();
   }
   if(tab==='plano') renderPlanoContas();
+}
+
+// v164 — PAINEL DE COMPRAS (pedido do dono 17/07): gastos por plano de contas no mesmo visual do
+// Painel do Financeiro, mas sobre os LANÇAMENTOS de Compras (compras + despesas + contas fixas) e
+// com referência na DATA DE EMISSÃO da nota (sem emissão → data do lançamento). Compra 100%
+// bonificada (forma='bonificacao') fica FORA — não é gasto de caixa (espelha a regra v127 do
+// Financeiro). Nomes internos comp-painel-* p/ não colidir com fin-p-*/renderFinPainel.
+function renderComprasPainel(){
+  const sel=document.getElementById('comp-painel-mes');
+  const list=document.getElementById('comp-painel-list');
+  if(!sel||!list) return;
+  const ref=c=>String(c.dataEmissao||c.data||'').slice(0,7);
+  const base=(compras||[]).filter(c=>c&&c.forma!=='bonificacao');
+  const meses=[...new Set(base.map(ref).filter(Boolean))].sort().reverse();
+  const prev=sel.value;
+  sel.innerHTML='<option value="">Todos os períodos</option>'+meses.map(m=>`<option value="${m}" ${m===prev?'selected':''}>${monthLabel(m)}</option>`).join('');
+  if(prev && meses.indexOf(prev)>=0) sel.value=prev;
+  const mes=sel.value||'';
+  const filt=mes?base.filter(c=>ref(c)===mes):base;
+  const porPlano={};
+  filt.forEach(c=>{
+    const k=c.planoId||'__sem';
+    if(!porPlano[k]){ const p=(planoContas||[]).find(x=>x.id===k); porPlano[k]={nome:p?.nome||'Sem plano', cor:p?.cor||'#888', total:0, n:0}; }
+    porPlano[k].total+=parseFloat(c.valor)||0; porPlano[k].n++;
+  });
+  const entries=Object.values(porPlano).sort((a,b)=>b.total-a.total);
+  if(!entries.length){ list.innerHTML='<div class="empty">Nenhum lançamento no período.</div>'; return; }
+  const totalD=entries.reduce((s,e)=>s+e.total,0);
+  list.innerHTML=
+    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">Total do período: <b style="color:var(--text-primary);font-size:13px">'+fmtMoney(totalD)+'</b> · '+filt.length+' lançamento(s) · referência: <b>data de emissão</b> da nota (sem emissão = data do lançamento) · compras 100% bonificadas não entram</div>'+
+    entries.map(p=>{
+      const pct=totalD>0?((p.total/totalD)*100).toFixed(1):0;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border)">
+        <span style="width:10px;height:10px;border-radius:50%;background:${p.cor};flex-shrink:0"></span>
+        <span style="flex:1;font-size:12px">${escapeHtml(p.nome)} <span style="font-size:10px;color:var(--text-tertiary)">(${p.n})</span></span>
+        <div style="width:100px;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${p.cor};border-radius:3px"></div>
+        </div>
+        <span style="font-size:11px;color:var(--text-tertiary);width:34px;text-align:right">${pct}%</span>
+        <span style="font-size:12px;font-weight:600;width:90px;text-align:right;color:var(--st-bad-tx)">${fmtMoney(p.total)}</span>
+      </div>`;
+    }).join('');
 }
 
 function openCompraModal(id){
@@ -13960,6 +14169,8 @@ function renderFinControles(){
   const prod=_producaoMes(mk);
   const mediaCaixa=(_faturamentoCaixaMes(_mesAnterior(mk,1))+_faturamentoCaixaMes(_mesAnterior(mk,2))+_faturamentoCaixaMes(_mesAnterior(mk,3)))/3;
   const emitidoEspeciais=orders.filter(o=>(o.d1||'').slice(0,7)===mk && ['amostra','bonificacao','avaria','pnd'].includes(o.tipo)).reduce((s,o)=>s+(parseFloat(o.valor)||0),0);
+  // v164 — informativo (pedido do dono 17/07): receitas do mês = vendas que GERAM CAIXA (venda, venda mãe, embaixador)
+  const receitasMes=orders.filter(o=>(o.d1||'').slice(0,7)===mk && ['venda','venda_mae','embaixador'].includes(o.tipo||'venda')).reduce((s,o)=>s+(parseFloat(o.valor)||0),0);
   const barra=(label, gasto, limite, sub, clickFn)=>{
     const pct=limite>0?(gasto/limite*100):0; const estourado=gasto>limite && limite>0;
     const cor=estourado?'var(--st-bad-tx)':'var(--st-ok-tx)'; const wpct=Math.min(100,pct);
@@ -13973,8 +14184,9 @@ function renderFinControles(){
     </div>`;
   };
   cont.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding:0 16px 8px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:0 16px 8px">
       <div class="s-card"><div class="lbl">Produção do mês (base dos limites)</div><div class="val" style="font-size:15px">${fmtMoney(prod)}</div></div>
+      <div class="s-card"><div class="lbl">Receitas do mês <span title="Vendas que geram caixa: venda + venda mãe + embaixador. Somente informativo — não entra nos limites.">(venda + venda mãe + embaixador)</span></div><div class="val" style="font-size:15px">${fmtMoney(receitasMes)}</div></div>
       <div class="s-card"><div class="lbl">Faturamento caixa — média 3 meses</div><div class="val" style="font-size:15px">${fmtMoney(mediaCaixa)}</div></div>
     </div>
     <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;padding:8px 16px 2px">Limites sobre a produção do mês</div>
@@ -19570,6 +19782,7 @@ function openPagarTranspModal(){
   document.getElementById('pt-confirmar-btn').disabled=true;
   { const _l=document.getElementById('pt-itens-list'); if(_l) _l.innerHTML=''; } // v110 (A5) — não vaza checkboxes da seleção anterior
   { const _fx=document.getElementById('pt-fatura-resumo'); if(_fx){ _fx.style.display='none'; _fx.innerHTML=''; } } // v163 — conferência de fatura não vaza entre aberturas
+  { const _fb=document.getElementById('pt-busca'); if(_fb) _fb.value=''; } // v164 — busca limpa a cada abertura
   document.getElementById('pagar-transp-overlay').classList.add('open');
 }
 
@@ -19624,20 +19837,33 @@ function renderPtItens(fornNome){
     return;
   }
   section.style.display=''; empty.style.display='none';
-  const _rowReal=x=>{ const o=orders.find(p=>String(p.id)===String(x.pedidoId)); return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border)">
+  const _rowReal=x=>{ const o=orders.find(p=>String(p.id)===String(x.pedidoId)); return `<div data-busca="${escapeHtml(String((x.rastreio||'')+' '+(x.pedidoNum||'')+' '+(o?.cliente||'')+' '+(x.tipo==='reverso'?('reversa '+(x.obs||'')):'')).toUpperCase().replace(/\s+/g,' '))}" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border)">
       <input type="checkbox" id="pt-chk-${x.id}" onchange="ptUpdateTotal()" style="width:16px;height:16px;cursor:pointer">
       <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:500">${escapeHtml(x.rastreio||'—')} <span style="color:var(--text-secondary);font-weight:400">— ${escapeHtml(x.pedidoNum||(x.tipo==='reverso'?'log. reversa':''))} · ${escapeHtml(o?.cliente||(x.tipo==='reverso'?(x.obs||''):''))}</span></div><div style="font-size:10px;color:var(--text-tertiary)">${fmtDate(x.data)}</div></div>
       <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${fmtMoney(x.valor)}</div></div>`; };
-  const _rowPag=p=>{ const _lbl=p.tipo==='frete_grafica'?'Frete interno gráfica':'Frete interno pedidos'; const _ref=(p.rateios&&p.rateios.length)?p.rateios.map(r=>r.pedidoNum).filter(Boolean).join(', '):(p.obs||''); return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border)">
+  const _rowPag=p=>{ const _lbl=p.tipo==='frete_grafica'?'Frete interno gráfica':'Frete interno pedidos'; const _ref=(p.rateios&&p.rateios.length)?p.rateios.map(r=>r.pedidoNum).filter(Boolean).join(', '):(p.obs||''); return `<div data-busca="${escapeHtml(String(_lbl+' '+_ref+' '+(p.obs||'')).toUpperCase().replace(/\s+/g,' '))}" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:.5px solid var(--border)">
       <input type="checkbox" id="pt-chk-${p.id}" onchange="ptUpdateTotal()" style="width:16px;height:16px;cursor:pointer">
       <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:500"><span style="background:var(--bg-secondary);border-radius:10px;padding:1px 7px;font-size:11px">${_lbl}</span>${_ref?` <span style="color:var(--text-secondary);font-weight:400">— ${escapeHtml(_ref)}</span>`:''}</div><div style="font-size:10px;color:var(--text-tertiary)">${fmtDate(p.data)}</div></div>
       <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${fmtMoney(p.valor)}</div></div>`; };
   document.getElementById('pt-itens-list').innerHTML=real.map(_rowReal).join('')+internos.map(_rowPag).join('');
+  { const _fb=document.getElementById('pt-busca'); if(_fb&&_fb.value) _ptFiltrar(_fb.value); } // v164 — reaplica a busca após re-render
 }
 
 function ptSelecionarTodos(){
-  document.querySelectorAll('[id^="pt-chk-"]').forEach(cb=>{cb.checked=true;});
+  // v164 — com busca ativa, seleciona só os itens VISÍVEIS (filtrados)
+  document.querySelectorAll('#pt-itens-list [data-busca]').forEach(row=>{
+    if(row.style.display==='none') return;
+    const cb=row.querySelector('[id^="pt-chk-"]'); if(cb) cb.checked=true;
+  });
   ptUpdateTotal();
+}
+// v164 — busca por rastreio/pedido/cliente no modal: só esconde/mostra as linhas (NÃO re-renderiza,
+// preserva o que já está marcado; itens marcados e escondidos continuam contando no total)
+function _ptFiltrar(q){
+  const qn=String(q||'').toUpperCase().replace(/\s+/g,' ').trim();
+  document.querySelectorAll('#pt-itens-list [data-busca]').forEach(row=>{
+    row.style.display=(!qn || (row.getAttribute('data-busca')||'').indexOf(qn)>=0)?'':'none';
+  });
 }
 // ══════════════════════════════════════════════════════════
 // v163 — CONFERIR FATURA: IA lê o PDF/fotos da fatura da transportadora,
@@ -19652,23 +19878,65 @@ async function _ptLerFatura(input){
   if(!fornNome){ alert('Selecione primeiro o fornecedor.'); return; }
   if(files.length>6){ alert('No máximo 6 arquivos por vez (páginas da fatura).'); return; }
   const resumoEl=document.getElementById('pt-fatura-resumo');
-  if(resumoEl){ resumoEl.style.display='block'; resumoEl.innerHTML='<div style="padding:10px;font-size:12px;color:var(--text-info)">⟳ Lendo a fatura com IA… (pode levar ~1 min)</div>'; }
+  if(resumoEl){ resumoEl.style.display='block'; resumoEl.innerHTML='<div style="padding:10px;font-size:12px;color:var(--text-info)">⟳ Lendo a fatura… (PDF com texto é imediato; fotos levam ~1 min)</div>'; }
   try{
     if(!_sb) throw new Error('Sem conexão com o servidor.');
-    const fls=[];
+    // v164 — PDF com camada de TEXTO lê LOCAL (exato, sem IA); foto/PDF-imagem vai p/ a IA (1 chamada por página)
+    const itensLocais=[]; const paraIA=[];
     for(const f of files){
       if(f.size>9*1024*1024) throw new Error('O arquivo '+f.name+' passa de 9MB — tire uma foto menor ou divida o PDF.');
+      if(f.type==='application/pdf'){
+        try{
+          const its=await _ptPdfLocal(f);
+          if(its.length>=5){ its.forEach(x=>itensLocais.push(x)); continue; } // texto legível — dispensa IA
+        }catch(_e){}
+      }
       const b64=await _fileToBase64(f);
-      fls.push({ media_type: f.type==='application/pdf'?'application/pdf':(f.type||'image/jpeg'), data: b64 });
+      paraIA.push({ media_type: f.type==='application/pdf'?'application/pdf':(f.type||'image/jpeg'), data: b64 });
     }
-    const { data:res, error:err }=await _sb.functions.invoke('fatura-transp-ia',{ body:{ files: fls } });
-    if(err) throw err;
-    if(res && res.error) throw new Error(res.error);
-    if(!res || !res.ok || !res.fatura || !Array.isArray(res.fatura.itens)) throw new Error('A IA não retornou os itens da fatura.');
-    _ptAplicarFatura(res.fatura, fornNome);
+    const fat={ itens:itensLocais.slice(), total:null };
+    if(paraIA.length){
+      const { data:res, error:err }=await _sb.functions.invoke('fatura-transp-ia',{ body:{ files: paraIA } });
+      if(err) throw err;
+      if(res && res.error) throw new Error(res.error);
+      if(!res || !res.ok || !res.fatura || !Array.isArray(res.fatura.itens)) throw new Error('A IA não retornou os itens da fatura.');
+      res.fatura.itens.forEach(x=>fat.itens.push(x));
+      if(res.fatura.total!=null) fat.total=res.fatura.total;
+      fat.observacao=res.fatura.observacao;
+    }
+    if(!fat.itens.length) throw new Error('Não encontrei linhas de cobrança nos arquivos enviados.');
+    _ptAplicarFatura(fat, fornNome);
   }catch(e){
     if(resumoEl) resumoEl.innerHTML='<div style="padding:10px;font-size:12px;color:var(--st-bad-tx)">✕ Falha ao ler a fatura: '+escapeHtml((e&&e.message)||String(e))+'</div>';
   }
+}
+// v164 — extrai as linhas de cobrança de um PDF COM TEXTO (fatura/demonstrativo dos Correios):
+// mesmo pipeline do lerPdfFreteCorreios (linhas por Y), regex rastreio AA#########BR + último valor
+// monetário da linha; linhas de COLETA usam o nº do documento. Determinístico — zero erro de leitura.
+async function _ptPdfLocal(file){
+  const lib=await _ensurePdfJs();
+  const buf=await file.arrayBuffer();
+  const pdf=await lib.getDocument({data:buf}).promise;
+  const linhas=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const tc=await page.getTextContent();
+    const byY={};
+    tc.items.forEach(it=>{ const y=Math.round(it.transform[5]/2)*2; (byY[y]=byY[y]||[]).push({x:it.transform[4],s:it.str}); });
+    Object.keys(byY).map(Number).sort((a,b)=>b-a).forEach(y=>{ linhas.push(byY[y].sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ')); });
+  }
+  const itens=[];
+  linhas.forEach(line=>{
+    const mr=line.match(/[A-Z]{2}\d{9}BR/);
+    let rast=mr?mr[0]:null;
+    if(!rast && /COLETA/i.test(line)){ const md=line.match(/\b\d{10,13}\b/); if(md) rast=md[0]; }
+    if(!rast) return;
+    const vals=line.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g);
+    const valor=vals?parseFloat(vals[vals.length-1].replace(/\./g,'').replace(',','.')):null;
+    const mdt=line.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    itens.push({ rastreio:rast, valor:valor, data:mdt?(mdt[3]+'-'+mdt[2]+'-'+mdt[1]):'' });
+  });
+  return itens;
 }
 function _ptAplicarFatura(fat, fornNome){
   const N=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
@@ -19731,6 +19999,9 @@ function _ptAplicarFatura(fat, fornNome){
   }
   if(foraFatura.length){
     html+=li('▷ '+foraFatura.length+' pendente(s) do fornecedor FORA desta fatura — deixados desmarcados (outra fatura/período)','var(--text-tertiary)');
+  }
+  if(fat.observacao){
+    html+=li('📝 Avisos da leitura: '+escapeHtml(String(fat.observacao)),'var(--text-tertiary)');
   }
   if(totalFat!=null){
     const dif=totalFat-somaMarcados;
@@ -23633,6 +23904,38 @@ function renderAgVendas(){
   var catById={}; (catalogo||[]).forEach(function(p){catById[p.id]=p;});
   var itemsOf=function(o){return Array.isArray(o.itens)?o.itens:[];};
   var H=[];
+  // v164 — PRODUÇÃO POR LINHA × TIPO (pedido do dono 17/07): abre a aba com o retrato gerencial
+  // Anestésico × Linha Personalizada, cada um separado por tipo de pedido (venda, venda mãe, filho,
+  // bonificação, amostra, avaria, P&D, embaixador). Usa SÓ o período selecionado — ignora os filtros
+  // de tipo/linha abaixo (é o resumo geral). Receita canônica = Venda + Venda Mãe (regra do Dashboard);
+  // Venda Filho abate crédito da mãe e por isso NÃO soma na receita (informativo).
+  var base0=orders.filter(function(o){ if(!o.d1) return false; var d=new Date(o.d1); return !isNaN(d)&&d>=cutoff&&d<=fim; });
+  var TIPO_ORD=['venda','venda_mae','venda_filho','bonificacao','amostra','avaria','pnd','embaixador'];
+  var _linSec=function(lKey,titulo,icone){
+    var ped=base0.filter(function(o){return (o.linha||'personalizada')===lKey;});
+    var porT={}; ped.forEach(function(o){var t=o.tipo||'venda'; if(!porT[t])porT[t]={v:0,n:0}; porT[t].v+=parseFloat(o.valor)||0; porT[t].n++;});
+    var rec=(porT.venda?porT.venda.v:0)+(porT.venda_mae?porT.venda_mae.v:0);
+    var tipos=TIPO_ORD.filter(function(t){return porT[t];});
+    var rows=tipos.map(function(t){
+      var lbl=(TIPOS_PEDIDO[t]||{}).label||t; var x=porT[t];
+      var ehRec=(t==='venda'||t==='venda_mae');
+      var pct=rec>0?(x.v/rec*100):0;
+      return '<tr><td style="padding:5px 10px;border-bottom:.5px solid var(--border)">'+escapeHtml(lbl)+'</td>'+
+        '<td style="padding:5px 10px;border-bottom:.5px solid var(--border);text-align:right;font-weight:600">'+fmt(x.v)+'</td>'+
+        '<td style="padding:5px 10px;border-bottom:.5px solid var(--border);text-align:right;color:var(--text-secondary)">'+x.n+'</td>'+
+        '<td style="padding:5px 10px;border-bottom:.5px solid var(--border);text-align:right;color:'+(ehRec?'var(--st-ok-tx)':'var(--text-tertiary)')+'">'+(rec>0?pct.toFixed(1).replace('.',',')+'%':'—')+'</td></tr>';
+    }).join('');
+    if(!ped.length) rows='<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--text-tertiary)">Nenhum pedido no período.</td></tr>';
+    return '<div style="border:.5px solid var(--border);border-radius:var(--r-md);overflow:hidden">'+
+      '<div style="padding:10px 12px;background:var(--bg-secondary);display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">'+
+        '<span style="font-size:13px;font-weight:600">'+icone+' '+titulo+'</span>'+
+        '<span style="font-size:12px">Receita: <b>'+fmt(rec)+'</b> <span style="font-size:10px;color:var(--text-tertiary)">(venda + venda mãe)</span></span></div>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="font-size:10px;text-transform:uppercase;color:var(--text-tertiary)">'+
+      '<th style="text-align:left;padding:5px 10px">Tipo</th><th style="text-align:right;padding:5px 10px">Valor</th><th style="text-align:right;padding:5px 10px">Pedidos</th><th style="text-align:right;padding:5px 10px">% s/ receita</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  };
+  H.push('<div style="margin-bottom:22px"><div style="font-size:13px;font-weight:600;margin-bottom:10px">Produção por linha e tipo de pedido <span style="font-weight:400;font-size:11px;color:var(--text-tertiary)">(período selecionado · independe dos filtros abaixo)</span></div>'+
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px">'+
+    _linSec('anestesico','Anestésico','💉')+_linSec('personalizada','Linha Personalizada','🧴')+'</div></div>');
   var receita=base.reduce(function(s,o){return s+(parseFloat(o.valor)||0);},0);
   var nped=base.length, ticket=nped?receita/nped:0;
   var itensVend=base.reduce(function(s,o){return s+itemsOf(o).reduce(function(a,it){return a+(parseFloat(it.qtd)||0);},0);},0);

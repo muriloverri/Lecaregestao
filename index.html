@@ -1417,7 +1417,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </div>
           <div class="form-group" style="margin-bottom:12px" id="cmp-nf-row"><label>Nº da Nota Fiscal <span style="font-size:10px;color:var(--text-tertiary)">(compra antiga sem pedido — a NF das compras novas é informada no PEDIDO DE COMPRA, no Recebimento)</span></label><input type="text" id="cmp-nf" placeholder="NF (se já tiver)"></div>
           <div id="cmp-total" style="font-size:12px;color:var(--text-secondary);margin-bottom:10px"></div>
-          <div class="modal-footer"><button id="cmp-estornar-btn" onclick="estornarCompraItem()" style="display:none;color:var(--st-bad-tx);border-color:var(--st-bad-bd);margin-right:auto">↩ Estornar compra</button><button onclick="closeComprarModal()">Cancelar</button><button class="btn-primary" onclick="saveCompraItem()">Marcar como comprado</button></div>
+          <div class="modal-footer"><button id="cmp-estornar-btn" onclick="estornarCompraItem()" style="display:none;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">↩ Estornar compra</button><button id="cmp-corrigir-btn" onclick="_cmpCorrigir()" title="Destrava quantidade e preço para correção, MANTENDO a data original da compra (só admin)" style="display:none;color:var(--text-info);border-color:var(--border-info);margin-right:auto">🔓 Corrigir</button><button onclick="closeComprarModal()">Cancelar</button><button class="btn-primary" onclick="saveCompraItem()">Marcar como comprado</button></div>
         </div>
       </div>
       <!-- v130 — MODAL: receber compra (financeiro) — forma de pagamento + gera no Caixa -->
@@ -4457,7 +4457,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v164';
+var APP_VERSION = 'v165';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -10238,13 +10238,15 @@ function renderSolCompra(tab){
         stTxt='<span style="font-size:11px;color:var(--text-tertiary)">— a solicitar</span>';
       }
       var bloq = s && (s.status==='em_lista'||s.status==='comprado');
+      // v165 — 👁 Ver o que foi solicitado (somente leitura), disponível sempre que houver solicitação
+      var btnVer=todas.length?'<button onclick="_solVerPedido(\''+o.id+'\',\''+tab+'\')" title="Ver o que foi solicitado neste pedido (somente leitura, com o status de compra de cada item)" style="font-size:11px;padding:4px 10px">👁 Ver</button> ':'';
       var btn;
       if(bloq){
         // v155 — a original está presa na lista: Editar trava, mas dá pra abrir uma solicitação COMPLEMENTAR
-        btn='<button disabled style="font-size:11px;padding:4px 10px;opacity:.5;cursor:not-allowed">Editar</button> '+
+        btn=btnVer+'<button disabled style="font-size:11px;padding:4px 10px;opacity:.5;cursor:not-allowed">Editar</button> '+
             '<button class="btn-primary" onclick="openSolicitarModal(\''+o.id+'\')" title="Solicitar itens esquecidos — entra na próxima lista de compra (ou numa lista aberta via Complementar lista)" style="font-size:11px;padding:4px 10px">＋ Complementar</button>';
       } else if(s){
-        btn='<button class="btn-primary" onclick="openSolicitarModal(\''+o.id+'\')" style="font-size:11px;padding:4px 10px">Editar</button>';
+        btn=btnVer+'<button class="btn-primary" onclick="openSolicitarModal(\''+o.id+'\')" style="font-size:11px;padding:4px 10px">Editar</button>';
       } else if(nn){
         btn='<button onclick="desfazerCompraNaoNec(\''+o.id+'\')" style="font-size:11px;padding:4px 10px">Desfazer</button> '+
             '<button class="btn-primary" onclick="openSolicitarModal(\''+o.id+'\')" style="font-size:11px;padding:4px 10px">Solicitar compra</button>';
@@ -10259,6 +10261,38 @@ function renderSolCompra(tab){
         '<td style="'+td+'">'+stTxt+'</td>'+
         '<td style="'+td+';white-space:nowrap;text-align:right">'+btn+'</td></tr>';
     }).join('')+'</tbody></table></div></div>';
+}
+// v165 — 👁 VER solicitação (pedido do dono 20/07): modal SOMENTE LEITURA com tudo que foi
+// solicitado no pedido (todas as solicitações do tipo: original + complementares), item a item,
+// mostrando a lista onde cada uma está e, quando já comprado, fornecedor + preço pago.
+function _solVerPedido(orderId, tipo){
+  var todas=_solTodasSolic(orderId, tipo);
+  if(!todas.length){ alert('Nenhuma solicitação deste pedido.'); return; }
+  var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); })||{};
+  var linhas='';
+  todas.forEach(function(s){
+    var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
+    linhas+='<div style="margin:12px 0 4px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase">'+
+      (_statLbl[s.status]||s.status)+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
+      (s.criadoEm?' · '+fmtDate(_gstDataDe(s.criadoEm)):'')+(s.por?' · por '+escapeHtml(s.por):'')+'</div>';
+    (s.itens||[]).forEach(function(it){
+      var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
+      var c=(li&&li.compra&&li.compra.comprado)?li.compra:null;
+      linhas+='<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:.5px solid var(--border);font-size:12px">'+
+        '<span>'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</span>'+
+        '<span style="white-space:nowrap;text-align:right">'+(parseFloat(it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+
+        (c?' · <span style="color:var(--st-ok-tx)">✔ comprado'+(c.fornecedorNome?' — '+escapeHtml(c.fornecedorNome):'')+((parseFloat(c.precoPago)||0)>0?' · '+fmtMoney(c.precoPago)+'/un':'')+'</span>':'')+
+        '</span></div>';
+    });
+  });
+  var ov=document.getElementById('sol-ver-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='sol-ver-overlay'; ov.className='overlay'; ov.style.zIndex='465'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:560px;max-width:95vw;max-height:85vh;overflow:auto">'+
+    '<h2 style="font-size:16px">👁 Itens solicitados — '+(tipo==='ativo'?'Ativos':'Embalagem')+'</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary)">Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+' <span style="color:var(--text-tertiary)">· somente leitura</span></div>'+
+    linhas+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
+  ov.classList.add('open');
 }
 function openSolicitarModal(orderId){
   var ehGeral = String(orderId)==='__geral__'; // v138 — compra avulsa (Produtos gerais)
@@ -11031,6 +11065,19 @@ function openComprarModal(listaId, idx){
   document.getElementById('cmp-qtd').value=(cmp.qtdComprada!=null?cmp.qtdComprada:it.qtdTotal)||'';
   document.getElementById('cmp-preco').value=(cmp.precoPago!=null?cmp.precoPago:(esc?esc.preco:''))||'';
   document.getElementById('cmp-nf').value=cmp.nf||'';
+  // v165 — decisão do dono 20/07: COMPRADO NÃO SE EDITA — qtd e preço travados na edição ✏.
+  // Correção: 🔓 Corrigir (SÓ ADMIN) destrava mantendo a DATA ORIGINAL da compra (estornar+recomprar
+  // carimbaria data nova — pedido do dono 20/07). NF segue preenchível (propósito do ✏ desde a v157).
+  var _lockQP=!!cmp.comprado;
+  _cmpModoCorrecao=false;
+  ['cmp-qtd','cmp-preco'].forEach(function(fid){ var e=document.getElementById(fid); if(!e) return;
+    e.readOnly=_lockQP; e.style.background=_lockQP?'var(--bg-secondary)':'';
+    e.title=_lockQP?'Compra já registrada — corrija pelo botão 🔓 Corrigir (admin) ou ↩ Estornar compra':''; });
+  var _corBtn=document.getElementById('cmp-corrigir-btn');
+  if(_corBtn){
+    _corBtn.style.display=(cmp.comprado && !cmp.recebido && currentUser && currentUser.perfil==='admin')?'':'none';
+    _corBtn.disabled=false; _corBtn.textContent='🔓 Corrigir';
+  }
   // v160 — NF por item é LEGADO: só aparece editando compra antiga (sem pedido de compra vinculado).
   // Compra nova entra no PEDIDO DE COMPRA do fornecedor e a NF é informada lá.
   var _nfRow=document.getElementById('cmp-nf-row');
@@ -11041,7 +11088,26 @@ function openComprarModal(listaId, idx){
   if(_estBtn) _estBtn.style.display=(cmp.comprado && !cmp.recebido)?'':'none';
   document.getElementById('comprar-modal').classList.add('open');
 }
-function closeComprarModal(){ document.getElementById('comprar-modal').classList.remove('open'); _cmpListaId=null; _cmpItemIdx=null; }
+function closeComprarModal(){ document.getElementById('comprar-modal').classList.remove('open'); _cmpListaId=null; _cmpItemIdx=null; _cmpModoCorrecao=false; }
+// v165 — 🔓 CORRIGIR compra registrada (SÓ ADMIN, pedido do dono 20/07): destrava qtd/preço para
+// correção SEM alterar a data da compra (compradoEm original preservado — estornar+recomprar geraria
+// data errada). Espelha a regra do estorno: pedido de compra do item precisa estar ABERTO.
+var _cmpModoCorrecao=false;
+function _cmpCorrigir(){
+  if(!(currentUser && currentUser.perfil==='admin')){ alert('Só o administrador pode corrigir uma compra registrada.'); return; }
+  var l=(listasCompra||[]).find(function(x){ return x.id===_cmpListaId; }); if(!l) return;
+  var it=_lcItemByRef(l, _cmpItemIdx); if(!it||!it.compra||!it.compra.comprado) return;
+  if(it.compra.recebido){ alert('Compra já RECEBIDA (lançada no Caixa) — não dá para corrigir aqui.'); return; }
+  var pc=it.compra.pedidoCompraId?(pedidosCompra||[]).find(function(p){ return p.id===it.compra.pedidoCompraId; }):null;
+  if(pc && pc.status!=='aberto'){
+    alert('O pedido de compra '+(pc.numero||'')+' está '+(_PC_ST_LBL[pc.status]||pc.status).toUpperCase()+'.\n\nReabra o pedido primeiro (Recebimento → Abrir o pedido → ↩ Reabrir) e corrija depois.');
+    return;
+  }
+  _cmpModoCorrecao=true;
+  ['cmp-qtd','cmp-preco'].forEach(function(fid){ var e=document.getElementById(fid); if(!e) return;
+    e.readOnly=false; e.style.background=''; e.title='Modo correção (admin) — a data original da compra será mantida'; });
+  var b=document.getElementById('cmp-corrigir-btn'); if(b){ b.disabled=true; b.textContent='🔓 corrigindo…'; }
+}
 function saveCompraItem(){
   var l=(listasCompra||[]).find(function(x){return x.id===_cmpListaId;}); if(!l) return;
   var it=_lcItemByRef(l, _cmpItemIdx); // v159 — por identidade
@@ -11058,7 +11124,15 @@ function saveCompraItem(){
   // preencher a NF depois pelo ✏ da lista; a linha fica com aviso "NF pendente" até preencher.
   var f=(fornecedores||[]).find(function(x){return (x.nome||'').toLowerCase()===forn.toLowerCase();});
   var _eraComprado=!!(it.compra&&it.compra.comprado);
-  it.compra=Object.assign({}, it.compra||{}, { fornecedorId:f?f.id:null, fornecedorNome:forn, qtdComprada:qtd, precoPago:preco, nf:nf, comprado:true, compradoEm:(_eraComprado&&it.compra.compradoEm)||Date.now(), compradoPor:(currentUser&&currentUser.name)||'' });
+  // v165 — decisão do dono 20/07: compra registrada NÃO muda qtd/preço pelo ✏ (o save força os
+  // valores originais mesmo que o campo tenha sido alterado — cinto e suspensório). EXCEÇÃO:
+  // modo 🔓 CORRIGIR (só admin) aceita os novos valores MANTENDO a data original da compra.
+  var _corrigindo=_eraComprado && _cmpModoCorrecao && currentUser && currentUser.perfil==='admin';
+  if(_eraComprado && !_corrigindo){ qtd=parseFloat(it.compra.qtdComprada)||qtd; preco=parseFloat(it.compra.precoPago)||preco; }
+  var _mudou=_corrigindo && (Math.abs(qtd-(parseFloat(it.compra.qtdComprada)||0))>0.0001 || Math.abs(preco-(parseFloat(it.compra.precoPago)||0))>0.0001);
+  it.compra=Object.assign({}, it.compra||{}, { fornecedorId:f?f.id:null, fornecedorNome:forn, qtdComprada:qtd, precoPago:preco, nf:nf, comprado:true, compradoEm:(_eraComprado&&it.compra.compradoEm)||Date.now(), compradoPor:_eraComprado?(it.compra.compradoPor||''):((currentUser&&currentUser.name)||'') });
+  if(_mudou){ it.compra.corrigidoEm=Date.now(); it.compra.corrigidoPor=(currentUser&&currentUser.name)||''; }
+  _cmpModoCorrecao=false;
   // v160 — compra NOVA entra no PEDIDO DE COMPRA aberto do fornecedor (cria se não houver).
   // Edição (✏) NÃO troca de pedido (a compra já pertence ao PC dela).
   if(!_eraComprado){
@@ -18999,7 +19073,7 @@ async function renderImportacoes(){
     html+='<div class="panel" style="margin-bottom:12px">';
     html+='<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center"><div><strong>'+quando+'</strong>'+(r.rodada?' <span style="color:var(--text-tertiary);font-size:12px">— rodada '+esc(r.rodada)+'</span>':'')+'</div><div style="font-size:12px;color:var(--text-secondary)">'+resumoLinha+'</div></div>';
     if(R.obs) html+='<div style="font-size:12px;color:var(--text-tertiary);margin-top:4px">'+esc(R.obs)+'</div>';
-    html+=lista('✅ Inseridos', ins, x=>'<div style="font-size:13px;border-left:3px solid #1E8E4E;padding-left:8px">'+esc(x.num)+' — '+esc(x.cliente||'')+' <span style="color:var(--text-tertiary)">'+esc(x.tipo||'')+(x.valor!=null?' · '+money(x.valor):'')+'</span></div>', '#1E8E4E');
+    html+=lista('✅ Inseridos', ins, x=>'<div style="font-size:13px;border-left:3px solid #1E8E4E;padding-left:8px">'+esc(x.num)+' — '+esc(x.cliente||'')+' <span style="color:var(--text-tertiary)">'+esc(x.tipo||'')+(x.valor!=null?' · '+money(x.valor):'')+'</span>'+(x.d1?' <b style="font-size:12px" title="D1 gravado — confira se bate com a pasta do dia">· D1 '+esc(fmtDate(x.d1))+'</b>':'')+'</div>', '#1E8E4E');
     html+=lista('⏳ Aguardando cadastro do cliente', aguard, x=>'<div style="font-size:13px;border-left:3px solid #BF8F00;padding-left:8px">'+esc(x.num)+' — '+esc(x.cliente||'')+' <span style="color:var(--text-tertiary)">'+esc(x.doc||'sem CPF/CNPJ')+'</span></div>', '#BF8F00');
     html+=lista('⚠ Pendências e avisos da importação', pend, x=>'<div style="font-size:13px;border-left:3px solid #C0392B;padding-left:8px">'+esc(x.arquivo||x.num||'?')+' — <span style="color:var(--st-bad-tx)">'+esc(x.motivo||'')+'</span></div>', '#C0392B');
     html+=lista('↺ Já constavam no sistema', ja, x=>'<div style="font-size:13px;color:var(--text-tertiary);padding-left:8px">'+esc((x&&x.num)||x)+'</div>');
@@ -19926,13 +20000,27 @@ async function _ptPdfLocal(file){
     Object.keys(byY).map(Number).sort((a,b)=>b-a).forEach(y=>{ linhas.push(byY[y].sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ')); });
   }
   const itens=[];
+  // v165 — COLUNA CERTA por layout (caso 17/07: leu o "Vlr. Declarado" no lugar do "Líquido"):
+  // FATURA/extrato: objeto no FIM da linha, valores antes → o ÚLTIMO valor é o Vlr. Declarado; o
+  // Líquido é o PENÚLTIMO. DEMONSTRATIVO: objeto no MEIO, valores depois → o valor da linha é o ÚLTIMO.
+  const _num=v=>parseFloat(v.replace(/\./g,'').replace(',','.'));
   linhas.forEach(line=>{
     const mr=line.match(/[A-Z]{2}\d{9}BR/);
-    let rast=mr?mr[0]:null;
-    if(!rast && /COLETA/i.test(line)){ const md=line.match(/\b\d{10,13}\b/); if(md) rast=md[0]; }
+    let rast=mr?mr[0]:null, rIdx=mr?mr.index:-1;
+    if(!rast && /COLETA/i.test(line)){ const md=line.match(/\b\d{10,13}\b/); if(md){ rast=md[0]; rIdx=md.index; } }
     if(!rast) return;
-    const vals=line.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g);
-    const valor=vals?parseFloat(vals[vals.length-1].replace(/\./g,'').replace(',','.')):null;
+    const re=/\d{1,3}(?:\.\d{3})*,\d{2}/g; const vals=[]; let m;
+    while((m=re.exec(line))!==null){ vals.push({v:_num(m[0]), i:m.index}); }
+    let valor=null;
+    if(vals.length){
+      const depois=vals.filter(x=>x.i>rIdx+rast.length-1);
+      if(depois.length){
+        let dv=depois[depois.length-1].v;                              // demonstrativo: último valor após o objeto
+        if(dv===0&&depois.length>=2) dv=depois[depois.length-2].v;     // coleta na fatura (docto no meio, Declarado 0,00 no fim) → penúltimo = Líquido
+        valor=dv;
+      }
+      else valor=(vals.length>=2?vals[vals.length-2]:vals[vals.length-1]).v; // fatura: penúltimo = Líquido (último = Vlr. Declarado)
+    }
     const mdt=line.match(/(\d{2})\/(\d{2})\/(\d{4})/);
     itens.push({ rastreio:rast, valor:valor, data:mdt?(mdt[3]+'-'+mdt[2]+'-'+mdt[1]):'' });
   });
@@ -23914,11 +24002,11 @@ function renderAgVendas(){
   var _linSec=function(lKey,titulo,icone){
     var ped=base0.filter(function(o){return (o.linha||'personalizada')===lKey;});
     var porT={}; ped.forEach(function(o){var t=o.tipo||'venda'; if(!porT[t])porT[t]={v:0,n:0}; porT[t].v+=parseFloat(o.valor)||0; porT[t].n++;});
-    var rec=(porT.venda?porT.venda.v:0)+(porT.venda_mae?porT.venda_mae.v:0);
+    var rec=(porT.venda?porT.venda.v:0)+(porT.venda_mae?porT.venda_mae.v:0)+(porT.embaixador?porT.embaixador.v:0); // v165 — embaixador também é receita (mesma regra do card Receitas do mês dos Controles)
     var tipos=TIPO_ORD.filter(function(t){return porT[t];});
     var rows=tipos.map(function(t){
       var lbl=(TIPOS_PEDIDO[t]||{}).label||t; var x=porT[t];
-      var ehRec=(t==='venda'||t==='venda_mae');
+      var ehRec=(t==='venda'||t==='venda_mae'||t==='embaixador');
       var pct=rec>0?(x.v/rec*100):0;
       return '<tr><td style="padding:5px 10px;border-bottom:.5px solid var(--border)">'+escapeHtml(lbl)+'</td>'+
         '<td style="padding:5px 10px;border-bottom:.5px solid var(--border);text-align:right;font-weight:600">'+fmt(x.v)+'</td>'+
@@ -23929,7 +24017,7 @@ function renderAgVendas(){
     return '<div style="border:.5px solid var(--border);border-radius:var(--r-md);overflow:hidden">'+
       '<div style="padding:10px 12px;background:var(--bg-secondary);display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">'+
         '<span style="font-size:13px;font-weight:600">'+icone+' '+titulo+'</span>'+
-        '<span style="font-size:12px">Receita: <b>'+fmt(rec)+'</b> <span style="font-size:10px;color:var(--text-tertiary)">(venda + venda mãe)</span></span></div>'+
+        '<span style="font-size:12px">Receita: <b>'+fmt(rec)+'</b> <span style="font-size:10px;color:var(--text-tertiary)">(venda + venda mãe + embaixador)</span></span></div>'+
       '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="font-size:10px;text-transform:uppercase;color:var(--text-tertiary)">'+
       '<th style="text-align:left;padding:5px 10px">Tipo</th><th style="text-align:right;padding:5px 10px">Valor</th><th style="text-align:right;padding:5px 10px">Pedidos</th><th style="text-align:right;padding:5px 10px">% s/ receita</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
   };

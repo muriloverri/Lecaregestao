@@ -2897,7 +2897,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div class="modal-section-title" style="margin:0">Rastreios pendentes</div>
           <div style="display:flex;gap:6px;align-items:center">
-            <label style="cursor:pointer;font-size:11px;padding:3px 10px;border:.5px solid var(--border);border-radius:var(--r-md);background:var(--bg-secondary);color:var(--text-primary)" title="Ler a fatura da transportadora (PDF ou fotos) com IA e marcar automaticamente os itens que batem">📄 Conferir fatura<input type="file" accept="application/pdf,image/*" multiple style="display:none" onchange="_ptLerFatura(this)"></label>
+            <label style="cursor:pointer;font-size:11px;padding:3px 10px;border:.5px solid var(--border);border-radius:var(--r-md);background:var(--bg-secondary);color:var(--text-primary)" title="Ler a fatura da transportadora e marcar automaticamente os itens que batem. MELHOR: CSV 'Extrato analítico' dos Correios Empresas (leitura exata); PDF com texto também é exato; foto usa IA">📄 Conferir fatura<input type="file" accept="application/pdf,image/*,.csv,text/csv" multiple style="display:none" onchange="_ptLerFatura(this)"></label>
             <button onclick="ptSelecionarTodos()" style="font-size:11px;padding:3px 10px">Selecionar todos</button>
           </div>
         </div>
@@ -4457,7 +4457,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v165';
+var APP_VERSION = 'v166';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -10269,11 +10269,12 @@ function _solVerPedido(orderId, tipo){
   var todas=_solTodasSolic(orderId, tipo);
   if(!todas.length){ alert('Nenhuma solicitação deste pedido.'); return; }
   var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); })||{};
+  var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado'}; // v166 — _statLbl era local do renderSolCompra (botão morria em ReferenceError)
   var linhas='';
   todas.forEach(function(s){
     var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
     linhas+='<div style="margin:12px 0 4px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase">'+
-      (_statLbl[s.status]||s.status)+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
+      (_lbl[s.status]||s.status)+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
       (s.criadoEm?' · '+fmtDate(_gstDataDe(s.criadoEm)):'')+(s.por?' · por '+escapeHtml(s.por):'')+'</div>';
     (s.itens||[]).forEach(function(it){
       var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
@@ -19956,19 +19957,41 @@ async function _ptLerFatura(input){
   try{
     if(!_sb) throw new Error('Sem conexão com o servidor.');
     // v164 — PDF com camada de TEXTO lê LOCAL (exato, sem IA); foto/PDF-imagem vai p/ a IA (1 chamada por página)
-    const itensLocais=[]; const paraIA=[];
+    // v166 — CSV "Extrato analítico de fatura" (Correios Empresas) = leitura DETERMINÍSTICA, o formato preferido
+    const itensLocais=[]; const paraIA=[]; let totalLocal=null;
     for(const f of files){
       if(f.size>9*1024*1024) throw new Error('O arquivo '+f.name+' passa de 9MB — tire uma foto menor ou divida o PDF.');
+      if(/\.csv$/i.test(f.name||'') || (f.type||'').indexOf('csv')>=0){
+        const r=await _ptCsvCorreios(f);
+        if(!r.itens.length) throw new Error('Não achei linhas de cobrança no CSV — confira se é o "Extrato analítico de fatura" dos Correios Empresas.');
+        r.itens.forEach(x=>itensLocais.push(x));
+        if(r.total!=null) totalLocal=r.total;
+        continue;
+      }
       if(f.type==='application/pdf'){
         try{
           const its=await _ptPdfLocal(f);
           if(its.length>=5){ its.forEach(x=>itensLocais.push(x)); continue; } // texto legível — dispensa IA
         }catch(_e){}
+        const b64=await _fileToBase64(f);
+        paraIA.push({ media_type:'application/pdf', data: b64 });
+        continue;
       }
-      const b64=await _fileToBase64(f);
-      paraIA.push({ media_type: f.type==='application/pdf'?'application/pdf':(f.type||'image/jpeg'), data: b64 });
+      // v166 — FOTO ALTA é FATIADA em faixas ampliadas (mais resolução por linha = menos dígito
+      // trocado e menos deslocamento de linha). Sem overlap: linha cortada ao meio é pulada pela IA
+      // e aparece na composição como "não lida" — melhor que leitura errada.
+      let _fatiou=false;
+      try{
+        const st=await _ptImgStrips(f);
+        if(st&&st.length){ st.forEach(x=>paraIA.push(x)); _fatiou=true; }
+      }catch(_e){}
+      if(!_fatiou){
+        const b64=await _fileToBase64(f);
+        paraIA.push({ media_type: f.type||'image/jpeg', data: b64 });
+      }
     }
-    const fat={ itens:itensLocais.slice(), total:null };
+    if(paraIA.length>12) throw new Error('Muitas páginas/faixas de uma vez ('+paraIA.length+') — envie menos fotos por rodada (máx. ~4).');
+    const fat={ itens:itensLocais.slice(), total:totalLocal };
     if(paraIA.length){
       const { data:res, error:err }=await _sb.functions.invoke('fatura-transp-ia',{ body:{ files: paraIA } });
       if(err) throw err;
@@ -19983,6 +20006,59 @@ async function _ptLerFatura(input){
   }catch(e){
     if(resumoEl) resumoEl.innerHTML='<div style="padding:10px;font-size:12px;color:var(--st-bad-tx)">✕ Falha ao ler a fatura: '+escapeHtml((e&&e.message)||String(e))+'</div>';
   }
+}
+// v166 — CSV "Extrato analítico de fatura" (Correios Empresas): leitura DETERMINÍSTICA — o formato
+// PREFERIDO (pedido do dono 20/07). Seção do cartão tem colunas por nome (ETIQUETA = rastreio exato,
+// VALOR LIQUIDO separado do VALOR DECLARADO, DATA POSTAGEM ISO); total da seção TOTALIZACAO FATURA.
+async function _ptCsvCorreios(file){
+  const buf=await file.arrayBuffer();
+  let txt=new TextDecoder('utf-8').decode(buf);
+  if(txt.indexOf('�')>=0) txt=new TextDecoder('iso-8859-1').decode(buf);
+  const linhas=txt.split(/\r?\n/);
+  const num=s=>{ s=String(s||'').trim().replace(/\./g,'').replace(',','.'); const v=parseFloat(s); return isFinite(v)?v:null; };
+  let cols=null, iEtq=-1, iVal=-1, iDt=-1, iSrv=-1;
+  const itens=[]; let total=null;
+  for(let li=0; li<linhas.length; li++){
+    const ln=linhas[li];
+    if(!ln||!ln.trim()){ cols=null; continue; }
+    const parts=ln.split(';');
+    const up=ln.toUpperCase();
+    if(up.indexOf('ETIQUETA')>=0 && up.indexOf('VALOR LIQUIDO')>=0){
+      cols=parts.map(c=>c.trim().toUpperCase());
+      iEtq=cols.indexOf('ETIQUETA'); iVal=cols.indexOf('VALOR LIQUIDO'); iDt=cols.indexOf('DATA POSTAGEM'); iSrv=cols.indexOf('SERVICO');
+      continue;
+    }
+    if(up.indexOf('TOTAL DA FATURA')>=0){ const v=num(parts[parts.length-1]); if(v!=null) total=v; continue; }
+    if(cols && iEtq>=0 && iVal>=0 && parts.length>Math.max(iEtq,iVal)){
+      const rast=(parts[iEtq]||'').trim();
+      if(!/^[A-Z]{2}\d{9}BR$/i.test(rast) && !/^\d{10,13}$/.test(rast)) continue;
+      itens.push({ rastreio:rast, valor:num(parts[iVal]), data:(iDt>=0?(parts[iDt]||'').trim():''), servico:(iSrv>=0?(parts[iSrv]||'').trim():'') });
+    }
+  }
+  return { itens:itens, total:total };
+}
+// v166 — FOTO ALTA → FAIXAS ampliadas (nitidez p/ a IA). Foto ≤1500px de altura vai inteira.
+async function _ptImgStrips(file){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; });
+    const H=img.naturalHeight, W=img.naturalWidth;
+    if(!H||!W||H<=1500) return null;
+    const n=Math.min(4, Math.ceil(H/1100));
+    const sh=Math.ceil(H/n);
+    const scale=Math.min(2, 1800/W)>1?Math.min(2, 1800/W):1;
+    const out=[];
+    for(let s=0;s<n;s++){
+      const h=Math.min(sh, H-s*sh); if(h<=0) break;
+      const c=document.createElement('canvas');
+      c.width=Math.round(W*scale); c.height=Math.round(h*scale);
+      const ctx=c.getContext('2d');
+      ctx.imageSmoothingEnabled=true; try{ ctx.imageSmoothingQuality='high'; }catch(_e){}
+      ctx.drawImage(img, 0, s*sh, W, h, 0, 0, c.width, c.height);
+      out.push({ media_type:'image/jpeg', data:c.toDataURL('image/jpeg',0.92).split(',')[1] });
+    }
+    return out.length?out:null;
+  } finally { try{ URL.revokeObjectURL(url); }catch(_e){} }
 }
 // v164 — extrai as linhas de cobrança de um PDF COM TEXTO (fatura/demonstrativo dos Correios):
 // mesmo pipeline do lerPdfFreteCorreios (linhas por Y), regex rastreio AA#########BR + último valor
@@ -20030,11 +20106,36 @@ function _ptAplicarFatura(fat, fornNome){
   const N=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
   // agrupa itens da fatura por rastreio (detecta o MESMO objeto cobrado em mais de uma linha)
   const cont={};
-  (fat.itens||[]).forEach(it=>{ const k=N(it.rastreio); if(!k||k.length<6) return; (cont[k]=cont[k]||[]).push(parseFloat(it.valor)||0); });
-  const dups=Object.entries(cont).filter(([k,v])=>v.length>1);
+  // v166 — valor null preservado (IA sem certeza / linha ilegível) para a composição da diferença
+  (fat.itens||[]).forEach(it=>{ const k=N(it.rastreio); if(!k||k.length<6) return; const pv=parseFloat(it.valor); (cont[k]=cont[k]||[]).push(isFinite(pv)&&pv>0?pv:null); });
+  let somaLida=0; const semValor=[];
+  Object.keys(cont).forEach(k=>cont[k].forEach(v=>{ if(v==null) semValor.push(k); else somaLida+=v; }));
   // pendentes atuais (mesmos filtros do renderPtItens)
   const real=freteRealLanc.filter(x=>_transpStatus(x)==='pendente'&&(x.fornecedorNome||'').toLowerCase()===fornNome.toLowerCase());
   const internos=_ptInternosFornecedor(fornNome);
+  // v166 — CORRETOR POR APROXIMAÇÃO (foto): rastreio lido que NÃO existe nos pendentes mas difere
+  // em 1–2 dígitos de UM ÚNICO pendente = dígito trocado pela leitura da foto → casa com o real
+  // (caso 20/07: AD549273046 lido p/ AD549273048 etc. — 41 falsos "sem lançamento"). Ambíguo (2+
+  // candidatos na mesma distância) NÃO corrige.
+  const pendKeys=new Set();
+  real.forEach(x=>{ const k=N(x.rastreio); if(k) pendKeys.add(k); });
+  const fuzzyNotas=[];
+  Object.keys(cont).forEach(k=>{
+    if(pendKeys.has(k) || k.length!==13) return;
+    let best=null, bestD=3;
+    pendKeys.forEach(pk=>{
+      if(pk.length!==13) return;
+      let d=0; for(let i=0;i<13&&d<3;i++){ if(pk[i]!==k[i]) d++; }
+      if(d<bestD){ bestD=d; best=pk; }
+      else if(d===bestD && d<3 && best!==pk){ best='__multi__'; }
+    });
+    if(best && best!=='__multi__' && bestD<=2){
+      cont[best]=(cont[best]||[]).concat(cont[k]);
+      delete cont[k];
+      fuzzyNotas.push(k+'→'+best);
+    }
+  });
+  const dups=Object.entries(cont).filter(([k,v])=>v.length>1);
   const naoSistema=[], foraFatura=[], divergentes=[], dupSistema=[]; let marcados=0, somaMarcados=0;
   document.querySelectorAll('[id^="pt-chk-"]').forEach(cb=>{cb.checked=false;});
   const usados=new Set();
@@ -20049,7 +20150,7 @@ function _ptAplicarFatura(fat, fornNome){
       const cb=document.getElementById('pt-chk-'+x.id);
       if(cb){ cb.checked=true; marcados++; somaMarcados+=parseFloat(x.valor)||0; }
       usados.add(k);
-      const vf=cont[k][0];
+      let vf=null; for(let _vi=0;_vi<cont[k].length;_vi++){ if(cont[k][_vi]!=null){ vf=cont[k][_vi]; break; } } // v166 — 1º valor LIDO (pula null)
       if(vf>0 && Math.abs((parseFloat(x.valor)||0)-vf)>0.01) divergentes.push({rast:x.rastreio, sis:parseFloat(x.valor)||0, fat:vf});
     } else foraFatura.push(x);
   });
@@ -20063,7 +20164,7 @@ function _ptAplicarFatura(fat, fornNome){
       hits.forEach(k=>usados.add(k));
     } else foraFatura.push(p);
   });
-  Object.keys(cont).forEach(k=>{ if(!usados.has(k)) naoSistema.push({rast:k, valor:cont[k].reduce((s,v)=>s+v,0), n:cont[k].length}); });
+  Object.keys(cont).forEach(k=>{ if(!usados.has(k)) naoSistema.push({rast:k, valor:cont[k].reduce((s,v)=>s+(v||0),0), n:cont[k].length}); });
   try{ ptUpdateTotal(); }catch(_){}
   const totalFat=parseFloat(fat.total)||null;
   const resumoEl=document.getElementById('pt-fatura-resumo');
@@ -20072,6 +20173,9 @@ function _ptAplicarFatura(fat, fornNome){
   let html='<div style="margin-top:10px;padding:10px 12px;border:.5px solid var(--border);border-radius:var(--r-md);background:var(--bg-secondary)">';
   html+='<div style="font-size:12px;font-weight:600;margin-bottom:6px">📄 Conferência da fatura ('+(fat.itens||[]).length+' linha(s) lida(s))</div>';
   html+=li('✓ '+marcados+' item(ns) marcados automaticamente — '+fmtMoney(somaMarcados),'var(--st-ok-tx)');
+  if(fuzzyNotas.length){
+    html+=li('≈ '+fuzzyNotas.length+' rastreio(s) da FOTO corrigidos por aproximação (1–2 dígitos trocados na leitura): '+fuzzyNotas.slice(0,8).map(escapeHtml).join(', ')+(fuzzyNotas.length>8?' +'+(fuzzyNotas.length-8):''),'var(--text-info)');
+  }
   if(naoSistema.length){
     html+=li('⚠ '+naoSistema.length+' cobrança(s) da fatura SEM lançamento no sistema — lançar (frete real ou reversa) antes de prosseguir:','var(--st-bad-tx)');
     html+='<div style="max-height:110px;overflow:auto;margin:4px 0">'+naoSistema.map(s=>'<div style="font-size:11px;font-family:monospace;padding:1px 0">'+escapeHtml(s.rast)+' · '+fmtMoney(s.valor)+(s.n>1?' ('+s.n+' linhas)':'')+'</div>').join('')+'</div>';
@@ -20094,6 +20198,22 @@ function _ptAplicarFatura(fat, fornNome){
   if(totalFat!=null){
     const dif=totalFat-somaMarcados;
     html+=li('Total da fatura: '+fmtMoney(totalFat)+' · marcado no sistema: '+fmtMoney(somaMarcados)+(Math.abs(dif)>0.01?' · <b>diferença: '+fmtMoney(dif)+'</b>':' · ✓ bate ao centavo'), Math.abs(dif)>0.01?'var(--st-mid-tx)':'var(--st-ok-tx)');
+    if(Math.abs(dif)>0.005){
+      // v166 — COMPOSIÇÃO DA DIFERENÇA (pedido do dono 20/07): de onde vem cada centavo
+      const vNao=naoSistema.reduce((s,x)=>s+x.valor,0);
+      let vDup=0; dups.forEach(d=>{ const nn=d[1].filter(x=>x!=null); for(let _i2=1;_i2<nn.length;_i2++) vDup+=nn[_i2]; });
+      const vDiv=divergentes.reduce((s,d)=>s+(d.fat-d.sis),0);
+      const vLeitura=totalFat-somaLida;
+      const partes=[];
+      if(Math.abs(vNao)>0.005) partes.push('na fatura SEM lançamento (lista acima): '+fmtMoney(vNao));
+      if(Math.abs(vDup)>0.005) partes.push('cobranças repetidas na fatura: '+fmtMoney(vDup));
+      if(Math.abs(vDiv)>0.005) partes.push('valores divergentes (fatura − sistema, lista acima): '+fmtMoney(vDiv));
+      if(semValor.length) partes.push(semValor.length+' linha(s) com valor NÃO LIDO (conferir na fatura): '+[...new Set(semValor)].slice(0,6).map(escapeHtml).join(', '));
+      if(Math.abs(vLeitura)>0.005) partes.push('linhas puladas/não lidas da fatura (total impresso − soma das linhas lidas): '+fmtMoney(vLeitura));
+      const vResto=dif-vNao-vDup-vDiv-vLeitura;
+      if(Math.abs(vResto)>0.005) partes.push('resto sem origem identificada: '+fmtMoney(vResto));
+      if(partes.length) html+=li('🔎 Composição da diferença → '+partes.join(' · '),'var(--st-mid-tx)');
+    }
   }
   html+='</div>';
   resumoEl.style.display='block'; resumoEl.innerHTML=html;

@@ -4457,7 +4457,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v166';
+var APP_VERSION = 'v167';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6686,8 +6686,10 @@ function openStatusModal(oid,setor){
     let lockReason = '';
 
     const noLockSetores = ['compras'];
+    // v167 (decisão do dono 20/07): estoque SAIU das exceções — "Separação completa" agora EXIGE ter
+    // passado por "Solicitado compra" (que é automático, via menu Solicitação de Compra: solicitar
+    // embalagem carimba; "Não necessário" nos 2 lados avança sozinho p/ Separação completa).
     const skipLockForStatus = {
-      estoque:   ['Separação completa'],  // can have stock without buying
       expedicao: ['Enviado'],             // can send total without partial envio first
       designer:  ['Rótulo Interno']       // v95.1 — atalho: marca o Designer como concluído sem o passo a passo
     };
@@ -6705,6 +6707,20 @@ function openStatusModal(oid,setor){
         locked = true;
         lockReason = `Selecione "${statuses[si-1]}" antes`;
       }
+    }
+    // v167 (decisão do dono 20/07): 'Solicitado compra' é AUTOMÁTICO — quem carimba é o menu
+    // Solicitação de Compra (solicitar embalagem → _autoEstoqueSolicitado). Seleção MANUAL bloqueada.
+    if(setor==='estoque' && s==='Solicitado compra' && linha==='personalizada'){
+      locked = true;
+      lockReason = 'Automático — carimbado pelo menu Solicitação de Compra';
+    }
+    // v167 (decisão do dono 20/07): COMPRAS (linha personalizada) — os degraus do MOTOR são
+    // automáticos (a movimentação da Solicitação de Compra carimba: cotar → Orçamento feito;
+    // comprar lado → Compra ativo/embalagem finalizado; legado → Compra finalizada). Seleção
+    // MANUAL bloqueada; sobram 'Não iniciado' (regressão) e 'Produto entregue' (trava própria).
+    if(setor==='compras' && linha==='personalizada' && ['Orçamento feito','Compra finalizada','Compra ativo finalizado','Compra embalagem finalizado'].includes(s)){
+      locked = true;
+      lockReason = 'Automático — movimentado pela Solicitação de Compra';
     }
 
     const lockStyle = locked
@@ -10275,7 +10291,7 @@ function _solVerPedido(orderId, tipo){
     var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
     linhas+='<div style="margin:12px 0 4px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase">'+
       (_lbl[s.status]||s.status)+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
-      (s.criadoEm?' · '+fmtDate(_gstDataDe(s.criadoEm)):'')+(s.por?' · por '+escapeHtml(s.por):'')+'</div>';
+      (s.criadoEm?' · '+fmtDate(_gstDataDe(s.criadoEm)):'')+(s.criadoPor?' · solicitado por <b>'+escapeHtml(s.criadoPor)+'</b>':'')+'</div>';
     (s.itens||[]).forEach(function(it){
       var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
       var c=(li&&li.compra&&li.compra.comprado)?li.compra:null;
@@ -12487,11 +12503,12 @@ function getCompraStatus(c){
 }
 
 // v124 — filtro de Compras (fornecedor, nº NF, data de emissão, status)
-var _compFiltro = {fornecedorId:'', nf:'', emiDe:'', emiAte:'', status:''};
-function _compFiltroAtivo(){ const f=_compFiltro; return !!(f.fornecedorId||f.nf||f.emiDe||f.emiAte||f.status); }
+var _compFiltro = {fornecedorId:'', nf:'', emiDe:'', emiAte:'', status:'', planoId:''};
+function _compFiltroAtivo(){ const f=_compFiltro; return !!(f.fornecedorId||f.nf||f.emiDe||f.emiAte||f.status||f.planoId); }
 function _compAplicaFiltro(c){
   const f=_compFiltro;
   if(f.fornecedorId && String(c.fornecedorId)!==String(f.fornecedorId)) return false;
+  if(f.planoId && String(c.planoId)!==String(f.planoId)) return false; // v167 — filtro por conta do plano
   if(f.nf && !((c.nf||'').toLowerCase().includes(f.nf.toLowerCase()))) return false;
   if(f.status && getCompraStatus(c)!==f.status) return false;
   const emi=(c.dataEmissao||'').slice(0,10);
@@ -12508,6 +12525,7 @@ function _openComprasFiltro(){
   ov.innerHTML='<div class="modal" style="width:520px;max-width:94vw">'
     +'<h2 style="font-size:16px">🔎 Filtrar Compras</h2>'
     +'<div class="form-group"><label>Fornecedor</label><select id="cf-fornec" style="width:100%;padding:7px">'+fornOpts+'</select></div>'
+    +'<div class="form-group"><label>Plano de Contas</label><div style="position:relative"><input type="text" id="cf-plano-busca" placeholder="digite código ou nome e clique para selecionar..." autocomplete="off" oninput="_planoAcSearch(\'cf-plano\')" onblur="_planoAcBlur(\'cf-plano\')" style="width:100%"><input type="hidden" id="cf-plano"><div class="autocomplete-list" id="cf-plano-ac"></div></div></div>'
     +'<div class="form-row"><div class="form-group"><label>Nº da Nota Fiscal</label><input type="text" id="cf-nf" value="'+escapeHtml(f.nf)+'" placeholder="parte do número"></div>'
     +'<div class="form-group"><label>Status</label><select id="cf-status" style="width:100%;padding:7px">'+stOpts+'</select></div></div>'
     +'<div class="form-row"><div class="form-group"><label>Emissão — de</label><input type="date" id="cf-emide" value="'+f.emiDe+'"></div>'
@@ -12515,13 +12533,14 @@ function _openComprasFiltro(){
     +'<div class="modal-footer" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center"><button onclick="_limparComprasFiltro()">Limpar filtro</button><span style="display:flex;gap:8px"><button onclick="document.getElementById(\'comp-filtro-overlay\').classList.remove(\'open\')">Fechar</button><button class="btn-primary" onclick="_aplicarComprasFiltro()">Aplicar</button></span></div>'
     +'</div>';
   ov.classList.add('open');
+  try{ _planoAcSet('cf-plano', f.planoId||''); }catch(_e){} // v167 — pré-preenche a conta escolhida
 }
 function _aplicarComprasFiltro(){
-  _compFiltro={ fornecedorId:document.getElementById('cf-fornec')?.value||'', nf:(document.getElementById('cf-nf')?.value||'').trim(), emiDe:document.getElementById('cf-emide')?.value||'', emiAte:document.getElementById('cf-emiate')?.value||'', status:document.getElementById('cf-status')?.value||'' };
+  _compFiltro={ fornecedorId:document.getElementById('cf-fornec')?.value||'', nf:(document.getElementById('cf-nf')?.value||'').trim(), emiDe:document.getElementById('cf-emide')?.value||'', emiAte:document.getElementById('cf-emiate')?.value||'', status:document.getElementById('cf-status')?.value||'', planoId:document.getElementById('cf-plano')?.value||'' };
   document.getElementById('comp-filtro-overlay')?.classList.remove('open');
   renderCompras();
 }
-function _limparComprasFiltro(){ _compFiltro={fornecedorId:'',nf:'',emiDe:'',emiAte:'',status:''}; document.getElementById('comp-filtro-overlay')?.classList.remove('open'); renderCompras(); }
+function _limparComprasFiltro(){ _compFiltro={fornecedorId:'',nf:'',emiDe:'',emiAte:'',status:'',planoId:''}; document.getElementById('comp-filtro-overlay')?.classList.remove('open'); renderCompras(); }
 function renderCompras(){
   const container=document.getElementById('comp-lancamentos-list');if(!container)return;
   const _fbtn=document.getElementById('comp-filtro-btn');

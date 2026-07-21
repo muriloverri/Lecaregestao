@@ -1354,7 +1354,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div class="panel" style="margin-bottom:12px"><div style="padding:10px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
             <input type="text" id="sol-busca" placeholder="Buscar pedido ou cliente..." oninput="renderSolCompra(_solTab)" style="min-width:220px">
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--text-secondary)"><input type="checkbox" id="sol-so-pendentes" onchange="renderSolCompra(_solTab)" style="width:14px;height:14px"> Só pedidos sem solicitação</label>
-            <button class="btn-primary" onclick="openSolicitarAvulsa()" style="font-size:12px" title="Uso e consumo da farmácia / matéria-prima para estoque geral (sem vínculo com pedido)">＋ Solicitar compra avulsa</button>
+            <button class="btn-primary" onclick="openSolicitarAvulsa()" style="font-size:12px" title="Uso e consumo da farmácia / matéria-prima para estoque geral (sem vínculo com pedido). Cada clique abre um lançamento NOVO.">＋ Solicitar compra avulsa</button>
+            <button class="btn-primary" onclick="openSolicitarAnestesico()" style="font-size:12px" title="Ativos/embalagens para a produção de anestésico (sem vínculo com pedido). Cada clique abre um lançamento NOVO.">＋ Solicitação para anestésico</button>
             <span id="sol-info" style="margin-left:auto;font-size:12px;color:var(--text-secondary)"></span>
           </div></div>
           <div id="sol-list"></div>
@@ -4457,7 +4458,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v167';
+var APP_VERSION = 'v168';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6714,6 +6715,9 @@ function openStatusModal(oid,setor){
       locked = true;
       lockReason = 'Automático — carimbado pelo menu Solicitação de Compra';
     }
+    // v168 — caso 102741 (21/07, regra do dono): embalagem "não necessário" CARIMBA 'Solicitado
+    // compra' de verdade (marcarCompraNaoNec + _healEstoqueNaoNec p/ os antigos) — a sequência
+    // libera 'Separação completa' sozinha; aqui não precisa de exceção.
     // v167 (decisão do dono 20/07): COMPRAS (linha personalizada) — os degraus do MOTOR são
     // automáticos (a movimentação da Solicitação de Compra carimba: cotar → Orçamento feito;
     // comprar lado → Compra ativo/embalagem finalizado; legado → Compra finalizada). Seleção
@@ -6736,7 +6740,15 @@ function openStatusModal(oid,setor){
 
     // v158 — data em que o status foi selecionado (pequena, dentro da própria linha)
     const selTs=_selDates[s];
-    const selStr=selTs?`<span style="font-size:10px;color:var(--st-ok-tx);white-space:nowrap;flex-shrink:0" title="Selecionado em ${new Date(selTs).toLocaleString('pt-BR')}">✓ ${new Date(selTs).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit'})}</span>`:'';
+    let selStr=selTs?`<span style="font-size:10px;color:var(--st-ok-tx);white-space:nowrap;flex-shrink:0" title="Selecionado em ${new Date(selTs).toLocaleString('pt-BR')}">✓ ${new Date(selTs).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit'})}</span>`:'';
+    // v168 — caso 102741 (regra do dono 21/07: "se já foi até comprado, o orçamento era para estar
+    // marcado"): 'Orçamento feito' só ganha carimbo próprio pela cotação das EMBALAGENS (v156) —
+    // quando a compra avançou além dele sem carimbo (ex.: embalagem "não necessário", cotação foi
+    // dos ativos), o degrau aparece CONCLUÍDO, herdando a data do primeiro degrau posterior.
+    if(!selTs && setor==='compras' && linha==='personalizada' && s==='Orçamento feito' && curIdx>si){
+      const _dHerd=[_selDates['Compra ativo finalizado'],_selDates['Compra embalagem finalizado'],_selDates['Compra finalizada'],_selDates['Produto entregue']].filter(Boolean).sort((a,b)=>a-b)[0];
+      selStr=`<span style="font-size:10px;color:var(--st-ok-tx);white-space:nowrap;flex-shrink:0" title="Concluído junto com a compra — não se compra sem cotação; embalagem sem itens a cotar não gera carimbo próprio">✓ ${_dHerd?new Date(_dHerd).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit'}):'feito'}</span>`;
+    }
     return`<button class="status-opt ${(s===selectedStatus||s===_effStatus)?'selected':''}"
       onclick="${locked?'void(0)':"pickStatus('" + s + "')"}"
       ${locked?'disabled':''}
@@ -10040,6 +10052,33 @@ function deleteInsumo(id){
 var _solTab='ativo';          // 'ativo' | 'embalagem'
 var _solRows=[];              // itens em edição no modal
 var _solOrderId=null;
+var _solEditId=null; // v168 — id do lançamento avulso/anestésico sendo EDITADO (null = novo)
+// v168 — ids "sem pedido": '__geral__' (avulsa/estoque, v138) e '__anestesico__' (produção de anestésico)
+function _solEhPseudo(id){ var s=String(id); return s==='__geral__'||s==='__anestesico__'; }
+function _solPseudoInfo(id){
+  return String(id)==='__anestesico__'
+    ? {num:'Anestésico', cliente:'Produção de anestésico', rotulo:'💉 Anestésico', sigla:'AN'}
+    : {num:'Produtos gerais', cliente:'Uso e consumo / estoque', rotulo:'🏪 Avulsa', sigla:'SA'};
+}
+// v168 — numeração sequencial dos lançamentos sem pedido (regra do dono 21/07): SA-N (Solicitação
+// Avulsa) e AN-N (Anestésico) — SEQUÊNCIAS SEPARADAS, uma por tipo. Atribuída na criação; os
+// antigos ganham número pelo criadoEm (heal determinístico e idempotente, roda antes de tudo).
+function _solCodSeq(s){ return s&&s.numSeq?(_solPseudoInfo(s.orderId).sigla+'-'+s.numSeq):''; }
+function _solProxSA(orderId){
+  var mx=0; (solicitacoesCompra||[]).forEach(function(s){ var n=(s&&String(s.orderId)===String(orderId))?(parseInt(s.numSeq,10)||0):0; if(n>mx) mx=n; });
+  return mx+1;
+}
+function _healSolNumSA(){
+  try{
+    ['__geral__','__anestesico__'].forEach(function(oid){
+      var sem=(solicitacoesCompra||[]).filter(function(s){ return s && String(s.orderId)===oid && !s.numSeq; })
+        .sort(function(a,b){ return (a.criadoEm||0)-(b.criadoEm||0); });
+      if(!sem.length) return;
+      var n=_solProxSA(oid);
+      sem.forEach(function(s){ s.numSeq=n++; });
+    });
+  }catch(_e){}
+}
 function _solTipoInsumo(tab){ return tab==='ativo'?'insumo':'embalagem'; }
 // v138 — '__geral__' (compra avulsa / Produtos gerais) pode ter VÁRIAS solicitações ao longo do tempo:
 // aqui devolve só a ABERTA (status 'solicitado'); pedidos continuam 1 por (pedido,tipo).
@@ -10047,7 +10086,7 @@ function _solTodasSolic(orderId, tab){
   return (solicitacoesCompra||[]).filter(function(s){ return s && String(s.orderId)===String(orderId) && s.tipo===tab; });
 }
 function _solGetSolic(orderId, tab){
-  if(String(orderId)==='__geral__') return (solicitacoesCompra||[]).find(function(s){ return s && s.orderId==='__geral__' && s.tipo===tab && s.status==='solicitado'; });
+  if(_solEhPseudo(orderId)) return (solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(orderId) && s.tipo===tab && s.status==='solicitado'; }); // v168 — vale p/ avulsa e anestésico
   // v155 — um pedido pode ter MAIS de uma solicitação por tipo (complementar / devolução do "✕ Não comprar"):
   // devolve a ABERTA ('solicitado') primeiro — é ela que se edita; sem aberta, a mais recente (p/ status)
   var all=_solTodasSolic(orderId, tab);
@@ -10093,14 +10132,16 @@ function _solGastosColeta(){
     var org=Array.isArray(it.origem)?it.origem:[];
     var somaO=org.reduce(function(s,o){ return s+(parseFloat(o.qtd)||0); },0);
     var fator=somaO>0?Math.min(1,qtd/somaO):0;
-    var aloc=[]; var estoqueQtd=0;
+    var aloc=[]; var estoqueQtd=0; var anestQtd=0; // v168 — anestésico é bucket próprio (≠ estoque)
     org.forEach(function(o){ var q=(parseFloat(o.qtd)||0)*fator;
-      if(!o.orderId||String(o.orderId)==='__geral__'){ estoqueQtd+=q; }
+      if(String(o.orderId)==='__anestesico__'){ anestQtd+=q; }
+      else if(!o.orderId||String(o.orderId)==='__geral__'){ estoqueQtd+=q; }
       else aloc.push({ orderId:o.orderId, orderNum:o.orderNum, qtd:q, val:q*pu });
     });
     if(qtd>somaO) estoqueQtd+=qtd-somaO; // excedente comprado a mais → estoque
     out.push({ tipo:l.tipo, nome:it.nome||'—', codigo:it.codigo||'', unidade:it.unidade||'', qtd:qtd, pu:pu, total:qtd*pu,
-               nf:c.nf||'', em:c.compradoEm||l.criadoEm||0, aloc:aloc, estoqueQtd:estoqueQtd, estoqueVal:estoqueQtd*pu });
+               nf:c.nf||'', em:c.compradoEm||l.criadoEm||0, aloc:aloc, estoqueQtd:estoqueQtd, estoqueVal:estoqueQtd*pu,
+               anestQtd:anestQtd, anestVal:anestQtd*pu });
   }); });
   return out;
 }
@@ -10118,7 +10159,7 @@ function renderSolGastos(){
     var mesesSet={};
     dados.forEach(function(d){
       d.aloc.forEach(function(a){ var o=ordById[String(a.orderId)]; var m=(o&&o.d1||'').slice(0,7); if(m) mesesSet[m]=1; });
-      if(d.estoqueVal>0){ var m2=_gstMesDe(d.em); if(m2) mesesSet[m2]=1; }
+      if(d.estoqueVal>0 || (d.anestVal||0)>0){ var m2=_gstMesDe(d.em); if(m2) mesesSet[m2]=1; }
     });
     var meses=Object.keys(mesesSet).sort().reverse();
     if(sel&&!sel.options.length){ sel.innerHTML='<option value="">Todos os meses</option>'+meses.map(function(m){ return '<option value="'+m+'"'+(m===mesAtual?' selected':'')+'>'+monthLabel(m)+'</option>'; }).join(''); }
@@ -10136,12 +10177,16 @@ function renderSolGastos(){
     var estq={emb:0,atv:0,qtdItens:0};
     dados.forEach(function(d){ if(d.estoqueVal<=0) return; if(mes && _gstMesDe(d.em)!==mes) return;
       if(d.tipo==='embalagem') estq.emb+=d.estoqueVal; else estq.atv+=d.estoqueVal; estq.qtdItens++; });
+    // v168 — ANESTÉSICO: lançamentos da "Solicitação para anestésico" (mês = mês da compra, como estoque)
+    var anq={emb:0,atv:0,qtdItens:0};
+    dados.forEach(function(d){ if((d.anestVal||0)<=0) return; if(mes && _gstMesDe(d.em)!==mes) return;
+      if(d.tipo==='embalagem') anq.emb+=d.anestVal; else anq.atv+=d.anestVal; anq.qtdItens++; });
     var rows=Object.values(porPed).sort(function(a,b){ return (b.emb+b.atv)-(a.emb+a.atv); });
     var pc=function(v,base){ return base>0?((v/base*100).toFixed(1).replace('.',','))+'%':'—'; };
-    var tEmb=rows.reduce(function(s,r){return s+r.emb;},0)+estq.emb, tAtv=rows.reduce(function(s,r){return s+r.atv;},0)+estq.atv;
+    var tEmb=rows.reduce(function(s,r){return s+r.emb;},0)+estq.emb+anq.emb, tAtv=rows.reduce(function(s,r){return s+r.atv;},0)+estq.atv+anq.atv;
     if(info) info.textContent=rows.length+' pedido(s) · gasto embalagem '+fmtMoney(tEmb)+' · gasto ativos '+fmtMoney(tAtv);
-    if(!rows.length && estq.emb+estq.atv<=0){ el.innerHTML='<div class="empty" style="padding:28px">Nenhum gasto de compra no período (mês = D1 do pedido; estoque = mês da compra).</div>'; return; }
-    el.innerHTML='<div class="panel"><div style="padding:8px 16px;font-size:11px;color:var(--text-secondary);border-bottom:.5px solid var(--border)">Mês pela <b>D1 do pedido</b> · % sobre o valor do pedido · linha ESTOQUE = compras sem vínculo (avulsas + excedentes), no mês da compra</div>'+
+    if(!rows.length && estq.emb+estq.atv+anq.emb+anq.atv<=0){ el.innerHTML='<div class="empty" style="padding:28px">Nenhum gasto de compra no período (mês = D1 do pedido; estoque/anestésico = mês da compra).</div>'; return; }
+    el.innerHTML='<div class="panel"><div style="padding:8px 16px;font-size:11px;color:var(--text-secondary);border-bottom:.5px solid var(--border)">Mês pela <b>D1 do pedido</b> · % sobre o valor do pedido · linhas ESTOQUE (avulsas + excedentes) e ANESTÉSICO no mês da compra</div>'+
       '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:760px"><thead><tr>'+
       '<th style="'+th+'">Pedido</th><th style="'+th+'">Cliente</th><th style="'+th+';text-align:right">Valor pedido</th>'+
       '<th style="'+th+';text-align:right">Embalagem</th><th style="'+th+';text-align:right">%</th>'+
@@ -10164,6 +10209,13 @@ function renderSolGastos(){
         '<td style="'+td+';text-align:right">'+fmtMoney(estq.emb)+'</td><td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
         '<td style="'+td+';text-align:right">'+fmtMoney(estq.atv)+'</td><td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
         '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(estq.emb+estq.atv)+'</td><td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td></tr>'):'')+
+      (anq.emb+anq.atv>0?('<tr style="background:var(--bg-secondary)">'+
+        '<td style="'+td+';font-weight:600">💉 ANESTÉSICO</td>'+
+        '<td style="'+td+';color:var(--text-secondary)">produção de anestésico ('+anq.qtdItens+' item/ns)</td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
+        '<td style="'+td+';text-align:right">'+fmtMoney(anq.emb)+'</td><td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
+        '<td style="'+td+';text-align:right">'+fmtMoney(anq.atv)+'</td><td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
+        '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(anq.emb+anq.atv)+'</td><td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td></tr>'):'')+
       '</tbody></table></div></div>';
   } else {
     // POR MÊS — referência: data da COMPRA (registro no sistema); uma linha por compra de item
@@ -10193,7 +10245,7 @@ function renderSolGastos(){
           '<td style="'+td+'">'+(d.tipo==='embalagem'?'📦 Emb.':'⚗ Ativo')+'</td>'+
           '<td style="'+td+';text-align:right;font-weight:600">'+fq(d.qtd)+' '+escapeHtml(d.unidade)+'</td>'+
           '<td style="'+td+';text-align:right" title="'+escapeHtml(nums)+'">'+(qPed>0?(fq(qPed)+(nums?' <span style="font-size:10px;color:var(--text-tertiary)">('+escapeHtml(nums.length>28?nums.slice(0,28)+'…':nums)+')</span>':'')):'—')+'</td>'+
-          '<td style="'+td+';text-align:right">'+(d.estoqueQtd>0.001?('<b>'+fq(d.estoqueQtd)+'</b>'):'—')+'</td>'+
+          '<td style="'+td+';text-align:right">'+(d.estoqueQtd>0.001?('<b>'+fq(d.estoqueQtd)+'</b>'):'—')+((d.anestQtd||0)>0.001?' <span style="font-size:10px;color:var(--text-secondary)" title="Quantidade para a produção de anestésico">💉 '+fq(d.anestQtd)+'</span>':'')+'</td>'+
           '<td style="'+td+'">'+(_gstDataDe(d.em)?fmtDate(_gstDataDe(d.em)):'—')+'</td>'+
           '<td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(d.nf||'—')+'</td>'+
           '<td style="'+td+';text-align:right">'+fmtMoney(d.pu)+'</td>'+
@@ -10212,6 +10264,25 @@ function _solPedidosLinha(){
     return true;
   });
 }
+// v168 — status EFETIVO da solicitação (caso 102741, 21/07: item já comprado mas a tabela mostrava
+// "Em lista"): nada no fluxo carimba 'comprado' na solicitação — o fato mora nos itens da lista.
+// Deriva na leitura: em lista + todos os itens comprados (os "não comprado" devolvidos não seguram,
+// mas também não bastam sozinhos) = Comprado.
+function _solStatusEfetivo(s){
+  if(!s) return '';
+  if(s.status!=='em_lista' || !s.listaId) return s.status;
+  var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; });
+  if(!l) return s.status;
+  var algum=false;
+  for(var j=0;j<(s.itens||[]).length;j++){
+    var li=(l.itens||[]).find(function(x){ return x.itemId===s.itens[j].itemId; });
+    if(!li) return s.status;
+    if(li.naoComprado) continue;
+    if(!(li.compra&&li.compra.comprado)) return s.status;
+    algum=true;
+  }
+  return algum?'comprado':s.status;
+}
 function renderSolCompra(tab){
   var el=document.getElementById('sol-list'); if(!el) return;
   var busca=(document.getElementById('sol-busca')?.value||'').toLowerCase().trim();
@@ -10225,18 +10296,35 @@ function renderSolCompra(tab){
   // v155 — "só sem solicitação" também esconde os marcados "não necessário" (já estão resolvidos)
   lista.forEach(function(o){ var s=_solGetSolic(o.id, tab); var nn=o.compraNaoNec&&o.compraNaoNec[tab]; if(soPend && (s||nn)) return; rows.push({o:o, s:s}); });
   var info=document.getElementById('sol-info'); if(info) info.textContent=rows.length+' pedido(s) · '+(tab==='ativo'?'Ativos':'Embalagem');
-  // v138 — solicitação AVULSA aberta (Produtos gerais) aparece destacada acima da tabela de pedidos
-  var _av=_solGetSolic('__geral__', tab), _avBanner='';
-  if(_av){
-    _avBanner='<div class="panel" style="padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;border-left:3px solid var(--text-info)">'+
-      '<div style="font-size:12px"><b>🏪 Produtos gerais</b> — solicitação avulsa aberta com <b>'+(_av.itens||[]).length+' item(ns)</b> <span style="color:var(--text-tertiary)">· entra na próxima lista de compra</span></div>'+
-      '<button onclick="openSolicitarAvulsa()" style="font-size:11px;padding:4px 10px">Editar</button></div>';
-  }
-  if(!rows.length){ el.innerHTML=_avBanner+'<div class="empty" style="padding:24px">Nenhum pedido de linha personalizada'+(soPend?' sem solicitação':'')+'.</div>'; return; }
+  // v168 — lançamentos SEM pedido (🏪 avulsa e 💉 anestésico) entram na TABELA como linhas próprias
+  // (regra do dono 21/07 — o banner v138 saiu; cada lançamento salvo vira uma linha "como pedido").
+  _healSolNumSA(); // v168 — garante SA-N em todos antes de renderizar
+  var _pseudo=(solicitacoesCompra||[]).filter(function(s){ return s && _solEhPseudo(s.orderId) && s.tipo===tab && (s.itens||[]).length; })
+    .sort(function(a,b){ return (b.criadoEm||0)-(a.criadoEm||0); });
+  if(busca) _pseudo=_pseudo.filter(function(s){ var lbl=(_solPseudoInfo(s.orderId).rotulo+' '+_solPseudoInfo(s.orderId).num+' '+_solCodSeq(s)+' '+(s.cliente||'')+' anestesico avulsa').toLowerCase(); return lbl.indexOf(busca)>=0; });
+  if(soPend) _pseudo=[];
   var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
   var td='padding:8px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
-  el.innerHTML=_avBanner+'<div class="panel" style="padding:0"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+
+  // v168 — linhas dos lançamentos sem pedido (avulsa/anestésico), acima dos pedidos
+  var pseudoHtml=_pseudo.map(function(s){
+    var pi=_solPseudoInfo(s.orderId);
+    var stEf=_solStatusEfetivo(s);
+    var stTxt='<span style="font-size:11px;font-weight:600;color:'+(_statCor[stEf]||'')+'">'+(_statLbl[stEf]||stEf)+'</span>';
+    var podeEd=s.status==='solicitado';
+    var btns='<button onclick="_solVerPedido(\''+s.orderId+'\',\''+tab+'\',\''+s.id+'\')" title="Ver este lançamento (somente leitura)" style="font-size:11px;padding:4px 10px">👁 Ver</button> '+
+      (podeEd?'<button onclick="openSolicitarModal(\''+s.orderId+'\',\''+s.id+'\')" style="font-size:11px;padding:4px 10px">Editar</button>':'<button disabled title="Já entrou numa lista de compra" style="font-size:11px;padding:4px 10px;opacity:.5;cursor:not-allowed">Editar</button>');
+    return '<tr style="background:var(--bg-secondary)">'+
+      '<td style="'+td+';font-weight:600;white-space:nowrap">'+pi.rotulo+(s.numSeq?' <span style="font-family:monospace;font-size:11px;color:var(--text-secondary)">'+_solCodSeq(s)+'</span>':'')+'</td>'+
+      '<td style="'+td+';color:var(--text-secondary)">'+escapeHtml(s.cliente||pi.cliente)+'</td>'+
+      '<td style="'+td+'">'+(s.criadoEm?fmtDate(_gstDataDe(s.criadoEm)):'—')+'</td>'+
+      '<td style="'+td+'">'+(s.itens||[]).length+' item(ns)</td>'+
+      '<td style="'+td+'">'+stTxt+'</td>'+
+      '<td style="'+td+';white-space:nowrap;text-align:right">'+btns+'</td></tr>';
+  }).join('');
+  if(!rows.length && !_pseudo.length){ el.innerHTML='<div class="empty" style="padding:24px">Nenhum pedido de linha personalizada'+(soPend?' sem solicitação':'')+'.</div>'; return; }
+  el.innerHTML='<div class="panel" style="padding:0"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+
     '<thead><tr><th style="'+th+'">Pedido</th><th style="'+th+'">Cliente</th><th style="'+th+'">D1</th><th style="'+th+'">Itens</th><th style="'+th+'">Status</th><th style="'+th+'"></th></tr></thead><tbody>'+
+    pseudoHtml+
     rows.map(function(r){
       var o=r.o, s=r.s;
       // v155 — pode haver várias solicitações (original em lista + complementar aberta): itens = soma de todas
@@ -10246,7 +10334,8 @@ function renderSolCompra(tab){
       var nn=o.compraNaoNec&&o.compraNaoNec[tab];
       var stTxt;
       if(s){
-        stTxt='<span style="font-size:11px;font-weight:600;color:'+(_statCor[s.status]||'')+'">'+(_statLbl[s.status]||s.status)+'</span>';
+        var _stEf=_solStatusEfetivo(s); // v168 — comprado derivado dos itens da lista
+        stTxt='<span style="font-size:11px;font-weight:600;color:'+(_statCor[_stEf]||'')+'">'+(_statLbl[_stEf]||_stEf)+'</span>';
         if(s.status==='solicitado' && temTravada) stTxt='<span style="font-size:11px;font-weight:600;color:var(--st-mid-tx)">Em lista</span> <span style="font-size:11px;font-weight:600;color:var(--text-info)">+ complementar aberta</span>';
       } else if(nn){
         stTxt='<span style="font-size:11px;font-weight:600;color:var(--st-ok-tx)" title="Marcado por '+escapeHtml(nn.por||'')+'">✓ Não necessário</span>';
@@ -10281,16 +10370,18 @@ function renderSolCompra(tab){
 // v165 — 👁 VER solicitação (pedido do dono 20/07): modal SOMENTE LEITURA com tudo que foi
 // solicitado no pedido (todas as solicitações do tipo: original + complementares), item a item,
 // mostrando a lista onde cada uma está e, quando já comprado, fornecedor + preço pago.
-function _solVerPedido(orderId, tipo){
+function _solVerPedido(orderId, tipo, solicId){
   var todas=_solTodasSolic(orderId, tipo);
+  if(solicId) todas=todas.filter(function(s){ return s.id===solicId; }); // v168 — ver UM lançamento avulso/anestésico
   if(!todas.length){ alert('Nenhuma solicitação deste pedido.'); return; }
   var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); })||{};
+  if(_solEhPseudo(orderId)){ var _pi=_solPseudoInfo(orderId); var _sa1=(solicId&&todas[0]&&todas[0].numSeq)?' · '+_solCodSeq(todas[0]):''; o={num:_pi.num+_sa1, cliente:_pi.cliente}; } // v168
   var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado'}; // v166 — _statLbl era local do renderSolCompra (botão morria em ReferenceError)
   var linhas='';
   todas.forEach(function(s){
     var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
     linhas+='<div style="margin:12px 0 4px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase">'+
-      (_lbl[s.status]||s.status)+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
+      (_lbl[_solStatusEfetivo(s)]||s.status)+(s.numSeq?' · '+_solCodSeq(s):'')+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
       (s.criadoEm?' · '+fmtDate(_gstDataDe(s.criadoEm)):'')+(s.criadoPor?' · solicitado por <b>'+escapeHtml(s.criadoPor)+'</b>':'')+'</div>';
     (s.itens||[]).forEach(function(it){
       var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
@@ -10311,30 +10402,43 @@ function _solVerPedido(orderId, tipo){
     '<div class="modal-footer"><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
   ov.classList.add('open');
 }
-function openSolicitarModal(orderId){
-  var ehGeral = String(orderId)==='__geral__'; // v138 — compra avulsa (Produtos gerais)
+function openSolicitarModal(orderId, solicId){
+  var ehPseudo=_solEhPseudo(orderId); // v168 — avulsa ('__geral__') e anestésico ('__anestesico__')
   var o=null;
-  if(!ehGeral){ o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); }); if(!o) return; }
-  var s=_solGetSolic(orderId, _solTab);
+  if(!ehPseudo){ o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); }); if(!o) return; }
+  var s=null; _solEditId=null;
+  if(ehPseudo){
+    // v168 — regra do dono 21/07: o botão SEMPRE abre ZERADO (lançamento novo). Editar um
+    // lançamento específico só pelo botão Editar da linha (solicId), enquanto está 'solicitado'.
+    if(solicId){
+      s=(solicitacoesCompra||[]).find(function(x){ return x && x.id===solicId; });
+      if(!s || s.status!=='solicitado'){ alert('Este lançamento já entrou numa lista de compra — não dá mais para editar aqui.'); return; }
+      _solEditId=solicId;
+    }
+  } else {
+    s=_solGetSolic(orderId, _solTab);
+  }
   // v155 — original presa em lista e SEM aberta: não trava mais — abre em modo COMPLEMENTAR (cria nova solicitação)
-  var complementar = !!(s && (s.status==='em_lista'||s.status==='comprado'));
+  var complementar = !ehPseudo && !!(s && (s.status==='em_lista'||s.status==='comprado'));
   if(complementar) s=null;
   _solOrderId=orderId;
   _solRows = s ? (s.itens||[]).map(function(it){ return {itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:it.qtd, unidade:it.unidade}; }) : [];
   var ehAtivo=_solTab==='ativo';
-  document.getElementById('solicitar-modal-title').textContent=(complementar?'Solicitação COMPLEMENTAR de ':(s?'Editar solicitação de ':'Solicitar '))+(ehAtivo?'ativos':'embalagens')+(ehGeral?' — avulsa':'');
+  var _pi=ehPseudo?_solPseudoInfo(orderId):null;
+  document.getElementById('solicitar-modal-title').textContent=(complementar?'Solicitação COMPLEMENTAR de ':(s?'Editar solicitação de ':'Solicitar '))+(ehAtivo?'ativos':'embalagens')+(ehPseudo?(String(orderId)==='__anestesico__'?' — anestésico':' — avulsa'):'');
   document.getElementById('solicitar-item-label').textContent=ehAtivo?'Buscar insumo (ativo) do catálogo':'Buscar embalagem do catálogo';
-  document.getElementById('solicitar-pedido-info').innerHTML=ehGeral
-    ? '<b>🏪 Produtos gerais</b> — uso e consumo da farmácia / estoque (sem vínculo com pedido)'
+  document.getElementById('solicitar-pedido-info').innerHTML=ehPseudo
+    ? '<b>'+_pi.rotulo+'</b>'+(_solEditId&&s&&s.numSeq?' <b>'+_solCodSeq(s)+'</b>':'')+' — '+escapeHtml(_pi.cliente)+' (sem vínculo com pedido)'+(_solEditId?'':'<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">Lançamento novo — ao salvar, entra na tela como uma linha própria (ganha um número '+_pi.sigla+'-N).</div>')
     : 'Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+(complementar?'<div style="font-size:11px;color:var(--st-mid-tx);margin-top:2px">⚠ A solicitação original já está numa lista de compra (fica como está). Estes itens entram como solicitação NOVA — na próxima lista gerada, ou numa lista aberta via "Complementar lista".</div>':'');
   document.getElementById('sol-item-busca').value='';
   document.getElementById('sol-item-ac').classList.remove('open');
   _renderSolItens();
   document.getElementById('solicitar-modal').classList.add('open');
 }
-// v138 — botão "Solicitar compra avulsa": edita a avulsa aberta do tipo atual ou cria uma nova
+// v138/v168 — botões sem pedido: SEMPRE abrem um lançamento novo (zerado)
 function openSolicitarAvulsa(){ openSolicitarModal('__geral__'); }
-function closeSolicitarModal(){ document.getElementById('solicitar-modal').classList.remove('open'); _solRows=[]; _solOrderId=null; }
+function openSolicitarAnestesico(){ openSolicitarModal('__anestesico__'); }
+function closeSolicitarModal(){ document.getElementById('solicitar-modal').classList.remove('open'); _solRows=[]; _solOrderId=null; _solEditId=null; }
 function _solSearchItem(){
   var q=(document.getElementById('sol-item-busca').value||'').toLowerCase().trim();
   var ac=document.getElementById('sol-item-ac'); var tipo=_solTipoInsumo(_solTab);
@@ -10368,14 +10472,24 @@ function saveSolicitacao(){
   if(!_solOrderId) return;
   var itens=_solRows.filter(function(r){ return r.itemId && (parseFloat(r.qtd)||0)>0; });
   if(!itens.length){ alert('Adicione ao menos um item com quantidade.'); return; }
-  var ehGeral=String(_solOrderId)==='__geral__'; // v138 — compra avulsa
-  var o=ehGeral?null:(orders||[]).find(function(x){ return String(x.id)===String(_solOrderId); });
-  var s=_solGetSolic(_solOrderId, _solTab); var now=Date.now();
-  if(s && (s.status==='em_lista'||s.status==='comprado')) s=null; // v155 — original presa: cria COMPLEMENTAR em vez de travar
+  var ehPseudo=_solEhPseudo(_solOrderId); // v168 — avulsa/anestésico
+  var o=ehPseudo?null:(orders||[]).find(function(x){ return String(x.id)===String(_solOrderId); });
+  var s=null; var now=Date.now();
+  if(ehPseudo){
+    // v168 — regra do dono 21/07: sem edição explícita, CADA salvar é um lançamento NOVO
+    if(_solEditId){ s=(solicitacoesCompra||[]).find(function(x){ return x && x.id===_solEditId && x.status==='solicitado'; })||null; }
+  } else {
+    s=_solGetSolic(_solOrderId, _solTab);
+    if(s && (s.status==='em_lista'||s.status==='comprado')) s=null; // v155 — original presa: cria COMPLEMENTAR em vez de travar
+  }
   if(s){
     s.itens=itens; s.atualizadoEm=now; s.status='solicitado';
   } else {
-    s={ id:'solc'+now, orderId:_solOrderId, orderNum:ehGeral?'Produtos gerais':((o&&o.num)||''), cliente:ehGeral?'Uso e consumo / estoque':((o&&o.cliente)||''), tipo:_solTab, itens:itens, status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
+    var _pi=ehPseudo?_solPseudoInfo(_solOrderId):null;
+    if(ehPseudo) _healSolNumSA(); // v168 — numera os antigos ANTES, para a sequência ficar cronológica
+    var _sa=ehPseudo?_solProxSA(_solOrderId):0;
+    s={ id:'solc'+now, orderId:_solOrderId, orderNum:ehPseudo?(_pi.num+' '+_pi.sigla+'-'+_sa):((o&&o.num)||''), cliente:ehPseudo?_pi.cliente:((o&&o.cliente)||''), tipo:_solTab, itens:itens, status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
+    if(ehPseudo) s.numSeq=_sa; // v168 — SA-N (avulsa) / AN-N (anestésico)
     solicitacoesCompra.push(s);
   }
   if(o && o.compraNaoNec && o.compraNaoNec[_solTab]) delete o.compraNaoNec[_solTab]; // v155 — solicitar desfaz o "não necessário" do tipo
@@ -10383,14 +10497,26 @@ function saveSolicitacao(){
   closeSolicitarModal(); renderSolCompra(_solTab); saveData();
 }
 // auto-status: só AVANÇA a partir de 'Não iniciado' (não regride quem já passou)
-function _autoEstoqueSolicitado(o){
+function _autoEstoqueSolicitado(o, motivo){
   if(!o) return; if(!o.statuses) o.statuses={};
   if((o.statuses.estoque||'Não iniciado')!=='Não iniciado') return;
   var prev=o.statuses.estoque||'Não iniciado';
   o.statuses.estoque='Solicitado compra';
   if(!o.statusDates) o.statusDates={};
   o.statusDates.estoque={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:prev,to:'Solicitado compra'};
-  try{ addAudit(o,'estoque','status',prev,'Solicitado compra (automático — solicitação de embalagem)'); }catch(_e){}
+  try{ addAudit(o,'estoque','status',prev,'Solicitado compra (automático — '+(motivo||'solicitação de embalagem')+')'); }catch(_e){}
+}
+// v168 — regra do dono 21/07 (caso 102741): embalagem "não necessário" JÁ CONSIDERA 'Solicitado
+// compra' marcado no estoque — e a sequência libera 'Separação completa' sozinha. Auto-corrige os
+// pedidos que já estavam nessa situação (idempotente; roda no refreshAll, persiste no próximo save).
+function _healEstoqueNaoNec(){
+  try{
+    (orders||[]).forEach(function(o){
+      if(!o || (o.linha||'personalizada')!=='personalizada') return;
+      if(!(o.compraNaoNec && o.compraNaoNec.embalagem)) return;
+      _autoEstoqueSolicitado(o,'embalagem não necessária');
+    });
+  }catch(_e){}
 }
 // ═══════════ v155 — "NÃO NECESSÁRIO" (tem estoque; pedido não precisa comprar) ═══════════
 // Marcado POR TIPO em o.compraNaoNec={ativo:{em,por}, embalagem:{em,por}}. Quando os DOIS tipos estão
@@ -10404,6 +10530,7 @@ function marcarCompraNaoNec(orderId){
   if(!o.compraNaoNec) o.compraNaoNec={};
   o.compraNaoNec[tab]={ em:Date.now(), por:(currentUser&&currentUser.name)||'' };
   _aplicarNaoNecStatus(o);
+  if(tab==='embalagem') _autoEstoqueSolicitado(o,'embalagem não necessária'); // v168 — regra do dono 21/07: "não necessário" de embalagem = 'Solicitado compra' marcado
   try{ _reavaliarComprasPedido(o.id); }catch(_e){} // v156 — motor novo: "não necessário" fecha o LADO (selo + status)
   renderSolCompra(tab); saveData(); try{ refreshAll(); }catch(_e){}
 }
@@ -10458,6 +10585,14 @@ function desfazerCompraNaoNec(orderId){
       try{ addAudit(o,'compras','status','Produto entregue',_alvoVolta+' (automático — desfeito o "não necessário")'); }catch(_e){}
     }
     delete o.compraNaoNec._jump;
+  }
+  // v168 — desfazer o "não necessário" de EMBALAGEM reverte o carimbo automático do estoque,
+  // desde que ninguém tenha avançado e não exista solicitação real de embalagem.
+  if(tab==='embalagem' && o.statuses && o.statuses.estoque==='Solicitado compra' && !_solTodasSolic(o.id,'embalagem').length){
+    o.statuses.estoque='Não iniciado';
+    if(!o.statusDates) o.statusDates={};
+    o.statusDates.estoque={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:'Solicitado compra',to:'Não iniciado'};
+    try{ addAudit(o,'estoque','status','Solicitado compra','Não iniciado (automático — desfeito o "não necessário" de embalagem)'); }catch(_e){}
   }
   try{ _reavaliarComprasPedido(o.id); }catch(_e){} // v156 — motor novo: desfazer reabre o lado (selo apaga; campo não regride)
   renderSolCompra(tab); saveData(); try{ refreshAll(); }catch(_e){}
@@ -10858,9 +10993,10 @@ function naoComprarItem(listaId, idx){
     var qtd=parseFloat(og.qtd)||0; if(qtd<=0) return;
     var alvo=(solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(og.orderId) && s.tipo===l.tipo && s.status==='solicitado'; });
     if(!alvo){
-      var ehGeral=String(og.orderId)==='__geral__';
-      var o=ehGeral?null:(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
-      alvo={ id:'solc'+now+'r'+oi, orderId:og.orderId, orderNum:ehGeral?'Produtos gerais':((o&&o.num)||og.orderNum||''), cliente:ehGeral?'Uso e consumo / estoque':((o&&o.cliente)||''), tipo:l.tipo, itens:[], status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
+      var ehPseudoOg=_solEhPseudo(og.orderId); // v168 — vale p/ avulsa e anestésico
+      var o=ehPseudoOg?null:(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+      var _piOg=ehPseudoOg?_solPseudoInfo(og.orderId):null;
+      alvo={ id:'solc'+now+'r'+oi, orderId:og.orderId, orderNum:ehPseudoOg?_piOg.num:((o&&o.num)||og.orderNum||''), cliente:ehPseudoOg?_piOg.cliente:((o&&o.cliente)||''), tipo:l.tipo, itens:[], status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
       solicitacoesCompra.push(alvo);
     }
     var ex=(alvo.itens||[]).find(function(x){ return x.itemId===it.itemId; });
@@ -14107,10 +14243,10 @@ function _calcAlertasFin(){
     if(ct){
       const prod=_producaoMes(mk);
       const chk=(nome,gasto,lim)=>{ if(lim>0&&gasto>lim) out.push({sev:'danger',titulo:'Limite estourado: '+nome,detalhe:`${fmtMoney(gasto)} vs limite ${fmtMoney(lim)} em ${monthLabel(mk)}`}); };
-      chk('Embalagem+MP', _gastoContasMes(mk,ct.embMP.contas), prod*ct.embMP.pct/100);
-      chk('Rótulos', _gastoContasMes(mk,ct.rotulos.contas), prod*ct.rotulos.pct/100);
-      chk('Frete interno', _gastoContasMes(mk,ct.freteInterno.contas), prod*ct.freteInterno.pct/100);
-      chk('Consumíveis', _gastoContasMes(mk,ct.consumiveis.contas), prod*ct.consumiveis.pct/100);
+      chk('Embalagem+MP', _gastoLimiteMes(mk,ct.embMP.contas), prod*ct.embMP.pct/100);
+      chk('Rótulos', _gastoLimiteMes(mk,ct.rotulos.contas), prod*ct.rotulos.pct/100);
+      chk('Frete interno', _gastoLimiteMes(mk,ct.freteInterno.contas), prod*ct.freteInterno.pct/100);
+      chk('Consumíveis', _gastoLimiteMes(mk,ct.consumiveis.contas), prod*ct.consumiveis.pct/100);
       const mediaCx=(_faturamentoCaixaMes(_mesAnterior(mk,1))+_faturamentoCaixaMes(_mesAnterior(mk,2))+_faturamentoCaixaMes(_mesAnterior(mk,3)))/3;
       const emit=orders.filter(o=>(o.d1||'').slice(0,7)===mk && ['amostra','bonificacao','avaria','pnd'].includes(o.tipo)).reduce((s,o)=>s+(parseFloat(o.valor)||0),0);
       chk('Amostras/Bonif/Avaria/P&D', emit, mediaCx*ct.amostrasPct/100);
@@ -14184,7 +14320,26 @@ function _producaoMesRotulo(mk){
 // v111 — produção do mês considerando SÓ pedidos cuja compra JÁ foi realizada (status Compras = "Compra finalizada" ou "Produto entregue").
 // Referência p/ o limite de Embalagem+MP que anda no ritmo da compra real, sem o delay do pedido (~10 dias até comprar/lançar).
 function _producaoMesComprada(mk){
-  return orders.filter(o=>(o.d1||'').slice(0,7)===mk && _geraProducao(o.tipo) && (['Compra finalizada','Produto entregue'].includes((o.statuses&&o.statuses.compras)||'') || (o.comprasLados&&o.comprasLados.ativo&&o.comprasLados.embalagem))).reduce((s,o)=>s+(parseFloat(o.valor)||0),0); // v156 — motor novo: os DOIS lados fechados = compra realizada
+  return orders.filter(o=>{
+    if((o.d1||'').slice(0,7)!==mk || !_geraProducao(o.tipo)) return false;
+    const st=(o.statuses&&o.statuses.compras)||'';
+    if(['Compra finalizada','Produto entregue'].includes(st)) return true;
+    if(o.comprasLados&&o.comprasLados.ativo&&o.comprasLados.embalagem) return true; // v156 — motor novo: os DOIS lados fechados = compra realizada
+    // v168 — regras do dono 21/07: "não necessário" resolve o lado IGUAL a comprado (ativo nn +
+    // embalagem nn ✓; ativo nn + embalagem comprada ✓). Deriva do estado VIVO dos lados, sem
+    // depender de o selo ter sido carimbado à época.
+    if(typeof _pedidoNovoCompras==='function' && _pedidoNovoCompras(o)){
+      try{
+        var _ea=_ladoComprasEstado(o,'ativo'), _ee=_ladoComprasEstado(o,'embalagem');
+        if(_ea.compradoOk && _ee.compradoOk) return true;
+      }catch(_e){}
+    }
+    // v168 (caso jun/26, dono 21/07: referência ficava R$82k abaixo com "tudo comprado") — a linha
+    // ANESTÉSICO produz do estoque contínuo e não passa pelo setor Compras (status fica vazio/Não
+    // iniciado): conta como compra realizada, EXCETO se houver uma compra do pedido em andamento.
+    if((o.linha||'')==='anestesico' && !['Solicitado compra','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado'].includes(st)) return true;
+    return false;
+  }).reduce((s,o)=>s+(parseFloat(o.valor)||0),0);
 }
 function _faturamentoCaixaMes(mk){
   return orders.filter(o=>(o.d1||'').slice(0,7)===mk && _geraCaixa(o.tipo)).reduce((s,o)=>s+(parseFloat(o.valor)||0),0);
@@ -14193,7 +14348,9 @@ function _mesAnterior(mk,n){ const [y,m]=mk.split('-').map(Number); const d=new 
 function _gastoContasMes(mk, codigos){
   const setCod={}; (codigos||[]).forEach(c=>setCod[c]=1); let tot=0;
   contasPagar.filter(_contaAprovada).forEach(c=>{
-    if(c.formaPag==='bonificacao') return; // v127 — bonificação não consome limite de compra (recebida sem custo)
+    // v168 — regra do dono 21/07: bonificação CONTA nos controles de limite (mercadoria ganha =
+    // mercadoria que não precisou ser comprada). A exclusão v127 saiu DAQUI (só limites); caixa,
+    // DRE, fluxo e alertas de contas a pagar continuam excluindo bonificação (não é saída de dinheiro).
     const pid=c.contaPlanoId||c.planoId; if(!pid) return;
     const acc=planoContas.find(p=>p.id===pid); if(!acc||!setCod[acc.codigo]) return;
     // v118 — é LIMITE DE COMPRA: conta pelo DIA DA COMPRA (data de lançamento da compra), não pelo vencimento
@@ -14206,6 +14363,30 @@ function _gastoContasMes(mk, codigos){
   });
   return tot;
 }
+// v168 — parte BONIFICADA das compras (regra do dono 21/07): a parcela/nota bonificada nunca vira
+// conta a pagar (espelho só leva as parcelas reais), então o controle de limites soma direto da
+// tabela de compras: nota 100% bonificada (forma='bonificacao') inteira + parcelas bonificadas das
+// notas mistas. Mês pelo DIA DA COMPRA (mesmo critério do _gastoContasMes). Ex. do dono: comprou
+// 30 mil e ganhou 2 mil de bonificação → gasto do controle = 32 mil.
+function _bonifComprasMes(mk, codigos){
+  const setCod={}; (codigos||[]).forEach(c=>setCod[c]=1); let tot=0;
+  (compras||[]).forEach(c=>{
+    if(!c) return;
+    const pid=c.planoId; if(!pid) return;
+    const acc=planoContas.find(p=>p.id===pid); if(!acc||!setCod[acc.codigo]) return;
+    const dRef=String(c.data||c.dataEmissao||'').slice(0,7);
+    if(dRef!==mk) return;
+    if(c.forma==='bonificacao'){
+      const ps=c.parcelas||[];
+      tot += ps.length ? ps.reduce((s,p)=>s+(parseFloat(p.valor)||0),0) : (parseFloat(c.valor)||0);
+    } else {
+      (c.parcelas||[]).forEach(p=>{ if(String(p.forma||'').toLowerCase()==='bonificacao') tot+=parseFloat(p.valor)||0; });
+    }
+  });
+  return tot;
+}
+// v168 — gasto que vale para os CONTROLES DE LIMITE = contas do plano + bonificações recebidas
+function _gastoLimiteMes(mk, codigos){ return _gastoContasMes(mk,codigos)+_bonifComprasMes(mk,codigos); }
 // v124 — mês de referência de um rateio/lançamento de frete/rótulo = mês do D1 do PEDIDO que ele referencia.
 // Se o rateio não aponta pedido (ou o pedido não é achado), usa a data do lançamento (fallbackMes).
 function _mesRefPedido(pedidoId, pedidoNum, fallbackMes){
@@ -14284,11 +14465,11 @@ function renderFinControles(){
       <div class="s-card"><div class="lbl">Faturamento caixa — média 3 meses</div><div class="val" style="font-size:15px">${fmtMoney(mediaCaixa)}</div></div>
     </div>
     <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;padding:8px 16px 2px">Limites sobre a produção do mês</div>
-    ${barra('Embalagem + Matéria-prima', _gastoContasMes(mk,cfg.embMP.contas), prod*cfg.embMP.pct/100, '('+cfg.embMP.pct+'% da produção)')}
-    ${barra('↳ referência: compras já realizadas', _gastoContasMes(mk,cfg.embMP.contas), _producaoMesComprada(mk)*cfg.embMP.pct/100, '('+cfg.embMP.pct+'% só dos pedidos com Compra finalizada/Produto entregue)')}
+    ${(()=>{ const _bonifEmb=_bonifComprasMes(mk,cfg.embMP.contas); const _subB=_bonifEmb>0?' · inclui '+fmtMoney(_bonifEmb)+' de bonificação recebida':''; return barra('Embalagem + Matéria-prima', _gastoLimiteMes(mk,cfg.embMP.contas), prod*cfg.embMP.pct/100, '('+cfg.embMP.pct+'% da produção'+_subB+')')
+    + barra('↳ referência: compras já realizadas', _gastoLimiteMes(mk,cfg.embMP.contas), _producaoMesComprada(mk)*cfg.embMP.pct/100, '('+cfg.embMP.pct+'% só dos pedidos com a compra realizada — 2 lados fechados no motor novo, Compra finalizada/Produto entregue nos antigos; anestésico conta direto (produz do estoque)'+_subB+')'); })()}
     ${barra('Rótulos e etiquetas', _gastoPagamentosMes(mk,['impressao']), _producaoMesRotulo(mk)*cfg.rotulos.pct/100, '('+cfg.rotulos.pct+'% · exclui produção anestésico · só lançamentos de Pagamentos)')}
     ${barra('Frete interno', _gastoPagamentosMes(mk,['frete_pedidos','frete_grafica']), prod*cfg.freteInterno.pct/100, '('+cfg.freteInterno.pct+'% · só lançamentos de Pagamentos)')}
-    ${barra('Consumíveis internos', _gastoContasMes(mk,cfg.consumiveis.contas), prod*cfg.consumiveis.pct/100, '('+cfg.consumiveis.pct+'%)')}
+    ${barra('Consumíveis internos', _gastoLimiteMes(mk,cfg.consumiveis.contas), prod*cfg.consumiveis.pct/100, '('+cfg.consumiveis.pct+'%)')}
     <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;padding:12px 16px 2px">Amostras / Bonificação / Avaria / P&D emitidos</div>
     ${barra('Emitido no mês', emitidoEspeciais, mediaCaixa*cfg.amostrasPct/100, '(limite '+cfg.amostrasPct+'% da média caixa 3 meses)', "_ctrlVerEspeciais('"+mk+"')")}
   `;
@@ -14511,6 +14692,7 @@ function _renderDFC(mk){
 // ═══════════════ RENDER ═══════════════
 function refreshAll(){
   _rebuildCreditosFromOrders(); // v112 — crédito SEMPRE derivado dos pedidos (mata o clobber do blob)
+  if(typeof _healEstoqueNaoNec==='function') _healEstoqueNaoNec(); // v168 — embalagem "não necessário" = estoque 'Solicitado compra' (auto-corrige antigos)
   if(typeof _updateConvBadge==='function') _updateConvBadge();
   if(typeof renderNotifBadge==='function') renderNotifBadge(); // v102 — badge do sino acende em realtime (chega notificação → refreshAll → badge)
   // v89 — só re-renderiza as telas pesadas que estão VISÍVEIS (showPage já as re-renderiza ao navegar).
@@ -19096,7 +19278,12 @@ async function renderImportacoes(){
     html+=lista('✅ Inseridos', ins, x=>'<div style="font-size:13px;border-left:3px solid #1E8E4E;padding-left:8px">'+esc(x.num)+' — '+esc(x.cliente||'')+' <span style="color:var(--text-tertiary)">'+esc(x.tipo||'')+(x.valor!=null?' · '+money(x.valor):'')+'</span>'+(x.d1?' <b style="font-size:12px" title="D1 gravado — confira se bate com a pasta do dia">· D1 '+esc(fmtDate(x.d1))+'</b>':'')+'</div>', '#1E8E4E');
     html+=lista('⏳ Aguardando cadastro do cliente', aguard, x=>'<div style="font-size:13px;border-left:3px solid #BF8F00;padding-left:8px">'+esc(x.num)+' — '+esc(x.cliente||'')+' <span style="color:var(--text-tertiary)">'+esc(x.doc||'sem CPF/CNPJ')+'</span></div>', '#BF8F00');
     html+=lista('⚠ Pendências e avisos da importação', pend, x=>'<div style="font-size:13px;border-left:3px solid #C0392B;padding-left:8px">'+esc(x.arquivo||x.num||'?')+' — <span style="color:var(--st-bad-tx)">'+esc(x.motivo||'')+'</span></div>', '#C0392B');
-    html+=lista('↺ Já constavam no sistema', ja, x=>'<div style="font-size:13px;color:var(--text-tertiary);padding-left:8px">'+esc((x&&x.num)||x)+'</div>');
+    // v168 — "já constavam" em linha corrida separada por "; " (pedido do dono 20/07 — 107 linhas viravam um rolo)
+    if(ja.length){
+      html+='<div style="margin-top:8px"><div style="font-weight:600;font-size:13px;color:var(--text-secondary)">↺ Já constavam no sistema ('+ja.length+')</div>'
+        +'<div style="font-size:12px;color:var(--text-tertiary);padding-left:8px;margin-top:4px;line-height:1.7;word-break:break-word">'
+        +ja.map(x=>esc((x&&x.num)||x)).join('; ')+'</div></div>';
+    }
     html+='</div>';
   });
   el.innerHTML=html;
@@ -23604,8 +23791,27 @@ function renderCaixaAbertos(){
         const _cps=contasReceber.filter(c=>c.origem==='pedido'&&String(c.origemId)===String(om.id));
         const _curPlano=(_cps[0]&&_cps[0].contaPlanoId)||om.contaPlanoId||_planoVendaId()||'';
         const _btnPgto=`<button onclick="openCaixaEditPgtoModal('${om.id}')" style="font-size:11px;padding:3px 10px;margin-right:4px;color:var(--text-info);border-color:var(--text-info)"${_ehPar?' title="Pagamento único do pedido dividido — o rateio entre as partes é automático"':''}>✏ Pgto</button>`; // v138 — par: UM botão só (pagamento unificado)
+        // v168 — barreira do Caixa (caso 102736/102762): o pedido tem que FECHAR antes de aprovar.
+        // Equações: valor líquido = soma dos produtos (por parte); cobrança = líquido + frete (do par inteiro).
+        let _alertaFecha='';
+        try{
+          const _difs=[];
+          _par.forEach(x=>{
+            const its=Array.isArray(x.itens)?x.itens:[];
+            if(!its.length) return;
+            const soma=its.reduce((s,it)=>s+(it.total!=null&&it.total!==''?(parseFloat(it.total)||0):(parseFloat(it.qtd)||0)*(parseFloat(it.precoUnit)||0)),0);
+            const v=parseFloat(x.valor||0);
+            if(Math.abs(v-soma)>0.05) _difs.push(`${escapeHtml(x.num)}: líquido ${fmtMoney(v)} ≠ soma dos produtos ${fmtMoney(soma)}`);
+          });
+          const _blocos=_ehPar?(typeof _combinarPgtosPar==='function'?_combinarPgtosPar(_par):[]):(o.pgtosBlocos||[]);
+          if(Array.isArray(_blocos)&&_blocos.length){
+            const cob=_blocos.reduce((s,b)=>s+(parseFloat(b.valor)||0),0);
+            if(Math.abs(cob-total)>0.05) _difs.push(`cobrança ${fmtMoney(cob)} ≠ líquido+frete ${fmtMoney(total)}`);
+          }
+          if(_difs.length) _alertaFecha=`<div style="font-size:10px;color:#C0392B;font-weight:600;margin-top:3px;max-width:260px;white-space:normal">⚠ NÃO FECHA — ${_difs.join(' · ')}</div>`;
+        }catch(_e){}
         return`<tr>
-          <td style="${td}font-weight:600">${numCell}</td>
+          <td style="${td}font-weight:600">${numCell}${_alertaFecha}</td>
           <td style="${td}">${escapeHtml(om.cliente)}</td>
           <td style="${td}">${tipoBadgeHtml(om.tipo||'venda')}</td>
           <td style="${td}text-align:center;color:var(--text-secondary)">${fmtDate(om.d1)}</td>

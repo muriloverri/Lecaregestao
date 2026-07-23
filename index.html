@@ -1399,7 +1399,10 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <option value="Orçado">Orçado</option>
               <option value="Comprado">Comprado</option>
               <option value="Recebido">Recebido</option>
-              <option value="Não comprado">Não comprado</option>
+              <option value="Não comprado">Não comprado (legado)</option>
+              <option value="Sem estoque">Sem estoque</option>
+              <option value="Ajustado">Ajustado</option>
+              <option value="Tinha estoque">Tinha estoque</option>
             </select>
             <input type="text" id="acomp-busca" placeholder="Buscar item, pedido ou fornecedor..." oninput="renderSolAcomp()" style="min-width:220px;font-size:12px;padding:5px 10px">
             <span id="acomp-info" style="margin-left:auto;font-size:12px;color:var(--text-secondary)"></span>
@@ -3517,6 +3520,11 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <span>⚠ Registrar / Ver pendência</span>
         <span id="sm-pend-status" style="font-size:11px;font-weight:500"></span>
       </button>
+      <!-- v171 — só no setor COMPRAS: abre o 👁 com ativos+embalagens solicitados do pedido; inativo sem solicitação -->
+      <button id="sm-listacompra-btn" onclick="verListaCompraPedido(statusCtx&&statusCtx.oid)" style="display:none;width:100%;margin-top:8px;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:var(--r-md);border:.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:13px;font-family:inherit;cursor:pointer">
+        <span>📋 Lista de compra</span>
+        <span id="sm-listacompra-info" style="font-size:11px;font-weight:500;color:var(--text-tertiary)"></span>
+      </button>
       <!-- Botão de atraso de aprovação: só renderizado para coord. designer e setor designer -->
       <div id="sm-atraso-wrap" style="display:none;margin-top:8px">
         <button id="sm-atraso-btn" onclick="openAtrasoModal()" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:var(--r-md);border:.5px solid #EF9F27;background:#FAEEDA;color:#633806;font-size:13px;font-family:inherit;cursor:pointer;transition:opacity .15s">
@@ -4492,7 +4500,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v171';
+var APP_VERSION = 'v172';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6715,6 +6723,23 @@ function openStatusModal(oid,setor){
       statuses=statuses.filter(s=>s!=='Compra ativo finalizado'&&s!=='Compra embalagem finalizado');
     }
   }
+  // v171 — botão "📋 Lista de compra" (pedido do dono 23/07): só no setor COMPRAS; abre o 👁 com
+  // ativos+embalagens solicitados do pedido; fica INATIVO enquanto nada foi solicitado.
+  try{
+    const _lcBtn=document.getElementById('sm-listacompra-btn');
+    if(_lcBtn){
+      if(setor==='compras'){
+        const _nSol=_solTodasSolic(o.id,'ativo').length+_solTodasSolic(o.id,'embalagem').length;
+        _lcBtn.style.display='flex';
+        _lcBtn.disabled=!_nSol;
+        _lcBtn.style.opacity=_nSol?'1':'.5';
+        _lcBtn.style.cursor=_nSol?'pointer':'not-allowed';
+        _lcBtn.title=_nSol?'Ver todos os ativos e embalagens solicitados deste pedido':'Nada foi solicitado para este pedido ainda';
+        const _lcInf=document.getElementById('sm-listacompra-info');
+        if(_lcInf) _lcInf.textContent=_nSol?(_nSol+' solicitação(ões)'):'nada solicitado';
+      } else _lcBtn.style.display='none';
+    }
+  }catch(_e){}
   // v91 — status legado/avançado fora da lista atual (ex.: financeiro 'Emitido NF' ou
   // 'Concluído (caixa)' já passaram do 'Concluído' — sequência: conclui -> emite).
   // Considera 'Concluído' como JÁ marcado: destrava e mostra selecionado, SEM alterar o
@@ -10439,6 +10464,47 @@ function renderSolCompra(tab){
         '<td style="'+td+';white-space:nowrap;text-align:right">'+btn+'</td></tr>';
     }).join('')+'</tbody></table></div></div>';
 }
+// v171 — bloco de UMA solicitação no modal 👁 (extraído do _solVerPedido p/ reusar no botão
+// "Lista de compra" do status de Compras). _lbl era o _statLbl local (nota v166).
+function _solVerBlocoSolic(s){
+  var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado'};
+  var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
+  var h='<div style="margin:12px 0 4px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase">'+
+    (_lbl[_solStatusEfetivo(s)]||s.status)+(s.numSeq?' · '+_solCodSeq(s):'')+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
+    (s.criadoEm?' · '+fmtDate(_gstDataDe(s.criadoEm)):'')+(s.criadoPor?' · solicitado por <b>'+escapeHtml(s.criadoPor)+'</b>':'')+'</div>';
+  (s.itens||[]).forEach(function(it){
+    var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
+    var c=(li&&li.compra&&li.compra.comprado)?li.compra:null;
+    h+='<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:.5px solid var(--border);font-size:12px">'+
+      '<span>'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</span>'+
+      '<span style="white-space:nowrap;text-align:right">'+(parseFloat(it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+
+      (c?' · <span style="color:var(--st-ok-tx)">✔ comprado'+(c.fornecedorNome?' — '+escapeHtml(c.fornecedorNome):'')+((parseFloat(c.precoPago)||0)>0?' · '+fmtMoney(c.precoPago)+'/un':'')+'</span>'+(li&&li.compraParcial?' <span style="color:var(--st-bad-tx);font-weight:600" title="Solicitado subiu acima do comprado — estornar e comprar o total">⚠ parcial</span>':''):'')+
+      '</span></div>';
+  });
+  return h;
+}
+// v171 — botão "Lista de compra" no STATUS de Compras (pedido do dono 23/07): mesmo modal 👁 do menu
+// Solicitação de Compra, mas com ATIVOS e EMBALAGENS juntos — tudo que foi solicitado no pedido.
+function verListaCompraPedido(orderId){
+  if(orderId==null) return;
+  var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); })||{};
+  var secoes='';
+  [['ativo','🧪 Ativos'],['embalagem','📦 Embalagens']].forEach(function(p){
+    var todas=_solTodasSolic(orderId, p[0]);
+    if(!todas.length) return;
+    secoes+='<div style="margin-top:16px;padding-bottom:2px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700">'+p[1]+'</div>';
+    todas.forEach(function(s){ secoes+=_solVerBlocoSolic(s); });
+  });
+  if(!secoes){ alert('Nada foi solicitado para este pedido ainda.'); return; }
+  var ov=document.getElementById('sol-ver-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='sol-ver-overlay'; ov.className='overlay'; ov.style.zIndex='465'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:560px;max-width:95vw;max-height:85vh;overflow:auto">'+
+    '<h2 style="font-size:16px">📋 Lista de compra — itens solicitados</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary)">Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+' <span style="color:var(--text-tertiary)">· somente leitura</span></div>'+
+    secoes+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
+  ov.classList.add('open');
+}
 // v165 — 👁 VER solicitação (pedido do dono 20/07): modal SOMENTE LEITURA com tudo que foi
 // solicitado no pedido (todas as solicitações do tipo: original + complementares), item a item,
 // mostrando a lista onde cada uma está e, quando já comprado, fornecedor + preço pago.
@@ -10448,23 +10514,8 @@ function _solVerPedido(orderId, tipo, solicId){
   if(!todas.length){ alert('Nenhuma solicitação deste pedido.'); return; }
   var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); })||{};
   if(_solEhPseudo(orderId)){ var _pi=_solPseudoInfo(orderId); var _sa1=(solicId&&todas[0]&&todas[0].numSeq)?' · '+_solCodSeq(todas[0]):''; o={num:_pi.num+_sa1, cliente:_pi.cliente}; } // v168
-  var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado'}; // v166 — _statLbl era local do renderSolCompra (botão morria em ReferenceError)
   var linhas='';
-  todas.forEach(function(s){
-    var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
-    linhas+='<div style="margin:12px 0 4px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase">'+
-      (_lbl[_solStatusEfetivo(s)]||s.status)+(s.numSeq?' · '+_solCodSeq(s):'')+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
-      (s.criadoEm?' · '+fmtDate(_gstDataDe(s.criadoEm)):'')+(s.criadoPor?' · solicitado por <b>'+escapeHtml(s.criadoPor)+'</b>':'')+'</div>';
-    (s.itens||[]).forEach(function(it){
-      var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
-      var c=(li&&li.compra&&li.compra.comprado)?li.compra:null;
-      linhas+='<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:.5px solid var(--border);font-size:12px">'+
-        '<span>'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</span>'+
-        '<span style="white-space:nowrap;text-align:right">'+(parseFloat(it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+
-        (c?' · <span style="color:var(--st-ok-tx)">✔ comprado'+(c.fornecedorNome?' — '+escapeHtml(c.fornecedorNome):'')+((parseFloat(c.precoPago)||0)>0?' · '+fmtMoney(c.precoPago)+'/un':'')+'</span>'+(li&&li.compraParcial?' <span style="color:var(--st-bad-tx);font-weight:600" title="Solicitado subiu acima do comprado — estornar e comprar o total">⚠ parcial</span>':''):'')+
-        '</span></div>';
-    });
-  });
+  todas.forEach(function(s){ linhas+=_solVerBlocoSolic(s); });
   var ov=document.getElementById('sol-ver-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='sol-ver-overlay'; ov.className='overlay'; ov.style.zIndex='465'; document.body.appendChild(ov); }
   ov.innerHTML='<div class="modal" style="width:560px;max-width:95vw;max-height:85vh;overflow:auto">'+
@@ -10854,7 +10905,7 @@ function complementarLista(listaId){
         // v169 — item estava "não comprado" (devolvido): reativa do zero com a quantidade nova
         // (as qtds antigas já viraram a própria pendência que está entrando agora)
         if(ex.naoComprado){
-          delete ex.naoComprado; delete ex.naoCompradoMotivo; delete ex.naoCompradoEm; delete ex.naoCompradoPor;
+          delete ex.naoComprado; delete ex.naoCompradoMotivo; delete ex.naoCompradoEm; delete ex.naoCompradoPor; delete ex.ncResolucao; // v171 — limpa a resolução junto
           ex.qtdTotal=q; ex.origem=[{orderId:s.orderId, orderNum:s.orderNum, qtd:q}]; somados++;
           avisos.push('↩ '+(ex.nome||'')+': estava "NÃO COMPRADO" — reativado com '+q+' '+(ex.unidade||''));
           return;
@@ -10929,7 +10980,15 @@ function _lcItensTableHtml(l){
           '<td style="'+_tdNc+';text-align:right;text-decoration:line-through">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
           '<td style="'+_tdNc+';text-align:right;color:var(--text-tertiary)">—</td>'+
           '<td style="'+_tdNc+';font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' ped.</td>'+
-          '<td style="'+_tdNc+'" colspan="3"><span style="font-size:11px;color:var(--st-bad-tx);font-weight:600">✕ Não comprado</span>'+(it.naoCompradoMotivo?' <span style="font-size:11px;color:var(--text-tertiary)">· '+escapeHtml(it.naoCompradoMotivo)+'</span>':'')+' <span style="font-size:10px;color:var(--text-tertiary)">→ voltou p/ próxima lista</span></td></tr>';
+          '<td style="'+_tdNc+'" colspan="3">'+(function(){ // v171 — rótulo por resolução (ajustado/sem estoque/tinha estoque; sem resolucao = legado v138)
+            var r=it.ncResolucao;
+            var lbl = r==='ajustado' ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">🔧 Ajustado</span>'
+                    : r==='tinha_estoque' ? '<span style="font-size:11px;color:var(--st-inf-tx);font-weight:600">📦 Tinha estoque</span>'
+                    : '<span style="font-size:11px;color:var(--st-bad-tx);font-weight:600">'+(r==='sem_estoque'?'🚫 Sem estoque':'✕ Não comprado')+'</span>';
+            var cauda = (r==='ajustado'||r==='tinha_estoque') ? ' <span style="font-size:10px;color:var(--text-tertiary)">→ conta como entregue no status</span>'
+                      : ' <span style="font-size:10px;color:var(--text-tertiary)">→ voltou p/ próxima lista</span>';
+            return lbl+(it.naoCompradoMotivo?' <span style="font-size:11px;color:var(--text-tertiary)">· '+escapeHtml(it.naoCompradoMotivo)+'</span>':'')+cauda;
+          })()+'</td></tr>';
       }
       // v157 — colunas da COMPRA: qtd comprada (pode ser MAIOR que a solicitada), fornecedor · preço · NF
       var _c=it.compra||{};
@@ -11104,39 +11163,94 @@ function _atualizaStatusLista(l){
   var algum=l.itens.some(function(it){ return (it.compra&&it.compra.comprado) || it.naoComprado; });
   l.status = todos ? 'finalizada' : (algum ? 'compra' : (l.status==='compra'?'compra':'cotacao'));
 }
-// v138 — "✕ Não comprar": marca o item (com motivo) e DEVOLVE as quantidades como solicitação pendente
-// (por pedido de origem ou Produtos gerais) — entram automaticamente na PRÓXIMA lista gerada.
+// v138 — "✕ Não comprar" devolvia as quantidades p/ a próxima lista (com motivo em prompt).
+// v171 — agora abre modal de RESOLUÇÃO por item (regra do dono 23/07):
+//   • AJUSTADO: foi resolvido de outra forma (descrever é OBRIGATÓRIO) — sai da lista e conta como
+//     COMPRADO e ENTREGUE no status do pedido (não devolve nada);
+//   • SEM ESTOQUE: fornecedor não tinha — sai desta lista e a quantidade VOLTA p/ a próxima (fluxo v138);
+//   • TINHA ESTOQUE: solicitação equivocada (já tínhamos) — sai da lista e conta como ENTREGUE (não devolve).
+// Os motores de status (novo _ladoComprasEstado e antigo _pedidoTudoNoEstado) PULAM item naoComprado,
+// então ajustado/tinha_estoque satisfazem comprado+recebido sem código extra; sem_estoque mantém o lado
+// aberto pela solicitação devolvida (status 'solicitado' sem listaId).
+var _ncCtx=null;
 function naoComprarItem(listaId, idx){
   var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return;
   var it=_lcItemByRef(l, idx); if(!it) return; // v159 — por identidade (idx = itemId ou '#pos')
   if(it.compra && it.compra.comprado){ alert('Este item já foi comprado.'); return; }
   if(it.naoComprado) return;
-  var motivo=prompt('Não comprar "'+(it.nome||'')+'"?\n\nMotivo (falta no fornecedor, preço, etc.):');
-  if(motivo===null) return;
+  _ncCtx={listaId:listaId, ref:idx, op:null};
+  var ov=document.getElementById('nc-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='nc-overlay'; ov.className='overlay'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:500px">'+
+    '<h2 style="font-size:16px">✕ Não comprar — o que aconteceu com este item?</h2>'+
+    '<div style="font-size:13px;font-weight:600;margin-bottom:10px">'+escapeHtml((it.codigo?it.codigo+' — ':'')+(it.nome||''))+'</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">'+
+      _ncOpHtml('ajustado','🔧 Ajustado','Foi resolvido de outra forma — descreva abaixo o que foi feito. O item sai da lista e conta como COMPRADO e ENTREGUE no status do pedido.')+
+      _ncOpHtml('sem_estoque','🚫 Sem estoque','O fornecedor não tinha o produto. O item sai desta lista e a quantidade VOLTA para a próxima lista de compra.')+
+      _ncOpHtml('tinha_estoque','📦 Tinha estoque','A solicitação foi equivocada — já tínhamos o item, não precisava comprar. Conta como ENTREGUE no status do pedido.')+
+    '</div>'+
+    '<div class="form-group" id="nc-obs-wrap" style="display:none;margin-bottom:10px"><label id="nc-obs-label">O que foi feito? *</label><textarea id="nc-obs" rows="2" style="width:100%;font-size:12px"></textarea></div>'+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'nc-overlay\').classList.remove(\'open\')">Cancelar</button><button class="btn-primary" onclick="_ncConfirmar()">Confirmar</button></div>'+
+  '</div>';
+  ov.classList.add('open');
+}
+function _ncOpHtml(op,titulo,desc){
+  return '<label style="display:flex;gap:8px;align-items:flex-start;border:.5px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer">'+
+    '<input type="radio" name="nc-op" value="'+op+'" onclick="_ncEscolher(\''+op+'\')" style="width:auto;margin-top:2px">'+
+    '<span><b style="font-size:13px">'+titulo+'</b><br><span style="font-size:11.5px;color:var(--text-secondary)">'+desc+'</span></span></label>';
+}
+function _ncEscolher(op){
+  if(_ncCtx) _ncCtx.op=op;
+  var w=document.getElementById('nc-obs-wrap'), lb=document.getElementById('nc-obs-label');
+  if(w) w.style.display='';
+  if(lb) lb.textContent = op==='ajustado' ? 'O que foi feito? *' : 'Observação (opcional)';
+}
+function _ncConfirmar(){
+  if(!_ncCtx || !_ncCtx.op){ alert('Escolha uma das opções.'); return; }
+  var op=_ncCtx.op, obs=(document.getElementById('nc-obs')?.value||'').trim();
+  if(op==='ajustado' && !obs){ alert('Descreva o que foi feito — é obrigatório no "Ajustado".'); return; }
+  var l=(listasCompra||[]).find(function(x){ return x.id===_ncCtx.listaId; }); if(!l) return;
+  var it=_lcItemByRef(l, _ncCtx.ref);
+  var _fecha=function(){ document.getElementById('nc-overlay').classList.remove('open'); _ncCtx=null; };
+  if(!it){ alert('Este item não está mais nesta lista (ela mudou em outra tela). Feche e reabra a lista.'); _fecha(); return; }
+  if(it.compra && it.compra.comprado){ alert('Este item já foi comprado (em outra tela).'); _fecha(); return; }
+  if(it.naoComprado){ _fecha(); return; }
   it.naoComprado=true;
-  it.naoCompradoMotivo=(motivo||'').trim();
+  it.ncResolucao=op; // v171 — 'ajustado' | 'sem_estoque' | 'tinha_estoque' (ausente = legado v138)
+  it.naoCompradoMotivo=obs;
   it.naoCompradoEm=Date.now();
   it.naoCompradoPor=(currentUser&&currentUser.name)||'';
-  // devolve as quantidades às origens (agrupa na solicitação ABERTA de cada origem, ou cria uma nova)
-  var now=Date.now(), devolvidos=0;
-  (it.origem||[]).forEach(function(og,oi){
-    var qtd=parseFloat(og.qtd)||0; if(qtd<=0) return;
-    var alvo=(solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(og.orderId) && s.tipo===l.tipo && s.status==='solicitado'; });
-    if(!alvo){
-      var ehPseudoOg=_solEhPseudo(og.orderId); // v168 — vale p/ avulsa e anestésico
-      var o=ehPseudoOg?null:(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
-      var _piOg=ehPseudoOg?_solPseudoInfo(og.orderId):null;
-      alvo={ id:'solc'+now+'r'+oi, orderId:og.orderId, orderNum:ehPseudoOg?_piOg.num:((o&&o.num)||og.orderNum||''), cliente:ehPseudoOg?_piOg.cliente:((o&&o.cliente)||''), tipo:l.tipo, itens:[], status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
-      solicitacoesCompra.push(alvo);
-    }
-    var ex=(alvo.itens||[]).find(function(x){ return x.itemId===it.itemId; });
-    if(ex) ex.qtd=(parseFloat(ex.qtd)||0)+qtd;
-    else alvo.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:qtd, unidade:it.unidade||'UN' });
-    alvo.atualizadoEm=now; devolvidos++;
-  });
+  var msg;
+  if(op==='sem_estoque'){
+    // devolve as quantidades às origens (agrupa na solicitação ABERTA de cada origem, ou cria uma nova)
+    var now=Date.now(), devolvidos=0;
+    (it.origem||[]).forEach(function(og,oi){
+      var qtd=parseFloat(og.qtd)||0; if(qtd<=0) return;
+      var alvo=(solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(og.orderId) && s.tipo===l.tipo && s.status==='solicitado'; });
+      if(!alvo){
+        var ehPseudoOg=_solEhPseudo(og.orderId); // v168 — vale p/ avulsa e anestésico
+        var o=ehPseudoOg?null:(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+        var _piOg=ehPseudoOg?_solPseudoInfo(og.orderId):null;
+        alvo={ id:'solc'+now+'r'+oi, orderId:og.orderId, orderNum:ehPseudoOg?_piOg.num:((o&&o.num)||og.orderNum||''), cliente:ehPseudoOg?_piOg.cliente:((o&&o.cliente)||''), tipo:l.tipo, itens:[], status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
+        solicitacoesCompra.push(alvo);
+      }
+      var ex=(alvo.itens||[]).find(function(x){ return x.itemId===it.itemId; });
+      if(ex) ex.qtd=(parseFloat(ex.qtd)||0)+qtd;
+      else alvo.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:qtd, unidade:it.unidade||'UN' });
+      alvo.atualizadoEm=now; devolvidos++;
+    });
+    msg='🚫 Item marcado SEM ESTOQUE.\n↩ Quantidades devolvidas ('+devolvidos+' origem(ns)) — entram na próxima lista de compra gerada.';
+  } else {
+    // ajustado / tinha_estoque: NÃO devolve — o item conta como resolvido; reavalia o status dos pedidos de origem
+    (it.origem||[]).forEach(function(og){ try{ _reavaliarComprasPedido(og.orderId); }catch(_e){} });
+    msg = op==='ajustado'
+      ? '🔧 Item marcado como AJUSTADO.\nConta como comprado e entregue no status do pedido.'
+      : '📦 Item marcado como TINHA ESTOQUE.\nA solicitação foi considerada equivocada — conta como entregue no status do pedido.';
+  }
   _atualizaStatusLista(l);
+  _fecha();
   renderListaCompra(); saveData();
-  alert('✕ Item marcado como NÃO COMPRADO.\n↩ Quantidades devolvidas ('+devolvidos+' origem(ns)) — entram na próxima lista de compra gerada.');
+  alert(msg);
 }
 // ═══════════ v138 — ACOMPANHAMENTO: todos os itens solicitados (por mês) ═══════════
 function _acompStatusItem(s, it){
@@ -11144,7 +11258,7 @@ function _acompStatusItem(s, it){
   var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; });
   var li=l?(l.itens||[]).find(function(x){ return x.itemId===it.itemId; }):null;
   if(!li) return {st:'Em lista', li:null};
-  if(li.naoComprado) return {st:'Não comprado', li:li};
+  if(li.naoComprado) return {st: li.ncResolucao==='ajustado'?'Ajustado':li.ncResolucao==='tinha_estoque'?'Tinha estoque':li.ncResolucao==='sem_estoque'?'Sem estoque':'Não comprado', li:li}; // v171 — resolução por item
   if(li.compraParcial && li.compra && li.compra.comprado) return {st:'Compra parcial', li:li}; // v169 — solicitado subiu acima do comprado
   if(li.compra && li.compra.recebido) return {st:'Recebido', li:li};
   if(li.compra && li.compra.comprado) return {st:'Comprado', li:li};
@@ -11193,7 +11307,7 @@ function renderSolAcomp(){
   var info=document.getElementById('acomp-info');
   if(info) info.innerHTML=linhas.length+' item(ns)'+(totComprado>0?' · comprado: <b>'+fmtMoney(totComprado)+'</b>':'');
   if(!linhas.length){ el.innerHTML='<div class="empty" style="padding:24px">Nenhum item solicitado'+(fMes?' neste mês':'')+'.</div>'; return; }
-  var _cor={ 'Solicitado':'var(--text-info)', 'Em lista':'var(--st-mid-tx)', 'Orçado':'var(--st-mid-tx)', 'Comprado':'var(--st-ok-tx)', 'Recebido':'var(--st-ok-tx)', 'Não comprado':'var(--st-bad-tx)' };
+  var _cor={ 'Solicitado':'var(--text-info)', 'Em lista':'var(--st-mid-tx)', 'Orçado':'var(--st-mid-tx)', 'Comprado':'var(--st-ok-tx)', 'Recebido':'var(--st-ok-tx)', 'Não comprado':'var(--st-bad-tx)', 'Sem estoque':'var(--st-bad-tx)', 'Ajustado':'var(--st-ok-tx)', 'Tinha estoque':'var(--st-inf-tx)' };
   var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
   var td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
   el.innerHTML='<div class="panel" style="padding:0"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:1000px">'+

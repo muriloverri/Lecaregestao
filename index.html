@@ -3092,11 +3092,9 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       </div>
       <div class="form-row">
         <div class="form-group"><label>Site / Instagram</label><input type="text" id="fn-site" placeholder="https://..."></div>
-        <div class="form-group"><label>Marcas / empresas do grupo <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(a busca acha por qualquer uma)</span></label><input type="text" id="fn-marcas" placeholder="ex: Florien, Sovita, Infinity, Fagron"></div>
+        <div class="form-group"><label>CNPJs adicionais <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(quando fatura por mais de um CNPJ — separe por vírgula)</span></label><input type="text" id="fn-docs2" placeholder="ex: 00.000.000/0002-00, 11.111.111/0001-11"></div>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label>CNPJs adicionais <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(quando o grupo fatura por mais de um CNPJ — separe por vírgula)</span></label><input type="text" id="fn-docs2" placeholder="ex: 00.000.000/0002-00, 11.111.111/0001-11"></div>
-      </div>
+      <div style="font-size:11px;color:var(--text-tertiary);margin:-4px 0 10px">💡 Empresas de um GRUPO que faturam pelo mesmo CNPJ (ex.: Fagron/Florien/Sovitá/Infinity) são cadastros SEPARADOS — cadastre cada uma com o CNPJ compartilhado; o sistema pergunta e vincula como grupo.</div>
     </div>
     <div class="modal-section">
       <div class="modal-section-title">Contato</div>
@@ -4494,7 +4492,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v170';
+var APP_VERSION = 'v171';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -9737,7 +9735,7 @@ function openFornecedorModal(id){
   const f=id?fornecedores.find(x=>x.id===id):null;
   document.getElementById('fornec-modal-title').textContent=f?'Editar Fornecedor':'Novo Fornecedor';
   [['fn-nome','nome'],['fn-apelido','apelido'],['fn-doc','doc'],['fn-categoria','categoria'],['fn-site','site'],
-   ['fn-marcas','marcas'],['fn-docs2','docsExtras'], // v171 — grupo: marcas + CNPJs adicionais
+   ['fn-docs2','docsExtras'], // v171 — CNPJs adicionais (empresa que fatura por mais de um CNPJ)
    ['fn-responsavel','responsavel'],['fn-tel','tel'],['fn-email','email'],['fn-cond-pag','condPag'],
    ['fn-cep','cep'],['fn-uf','uf'],['fn-cidade','cidade'],['fn-bairro','bairro'],
    ['fn-rua','rua'],['fn-numero','numero'],['fn-comp','comp'],['fn-obs','obs']
@@ -9756,10 +9754,12 @@ function saveFornecedor(){
   const meusDocs=[doc,...docs2].map(d=>d.replace(/\D/g,'')).filter(Boolean);
   if(meusDocs.length){
     const dup=fornecedores.find(f=>f.id!==editingFornecedorId&&_fornDocs(f).some(d=>meusDocs.includes(d.replace(/\D/g,''))));
-    if(dup){alert(`CNPJ/CPF já cadastrado para: ${dup.nome}`);return;}
+    // v171 — GRUPO (regra do dono 23/07, caso Fagron/Florien/Sovitá/Infinity): empresas DIFERENTES podem
+    // compartilhar o mesmo CNPJ — cada uma é um cadastro próprio (compras separadas por empresa).
+    // O mesmo CNPJ em outro cadastro deixa de ser bloqueio: vira confirmação de grupo.
+    if(dup && !confirm('⚠ Este CNPJ já está no cadastro de: '+dup.nome+'.\n\n"'+nome+'" é OUTRA EMPRESA do mesmo grupo (faturam pelo mesmo CNPJ — ex.: Fagron/Florien/Sovitá)?\n\nOK = salvar como empresa do grupo (compras e histórico ficam SEPARADOS por empresa; a trava de NF repetida vale para o grupo todo).\nCancelar = não salvar.')) return;
   }
   const dados={nome,apelido:document.getElementById('fn-apelido').value.trim(),doc,categoria:document.getElementById('fn-categoria').value.trim(),
-    marcas:(document.getElementById('fn-marcas')?.value||'').split(/[,;\n]/).map(s=>s.trim()).filter(Boolean).join(', '),
     docsExtras:docs2.join(', '),
     site:document.getElementById('fn-site').value.trim(),responsavel:document.getElementById('fn-responsavel').value.trim(),
     tel:document.getElementById('fn-tel').value.trim(),email:document.getElementById('fn-email').value.trim(),
@@ -11023,23 +11023,21 @@ function openHistItemModal(listaId, ref){
 function _cotAddRow(){ _cotRows.push({fornecedorId:null,fornecedorNome:'',preco:''}); _renderCotRows(); }
 function _cotRemRow(i){ _cotRows.splice(i,1); if(_cotEscolhida===i)_cotEscolhida=null; else if(_cotEscolhida!=null&&_cotEscolhida>i)_cotEscolhida--; _renderCotRows(); }
 function _cotSetForn(i,val){ if(!_cotRows[i]) return;
-  // v171 — regra do dono 23/07: na cotação o NOME DE TRABALHO é o apelido/marca que o comprador usa
-  // (Florien, Sovita...); o vínculo (fornecedorId) aponta p/ o cadastro do grupo. O CNPJ faturado
-  // só é definido depois, no RECEBIMENTO da mercadoria.
+  // v171 — regra do dono 23/07: empresas do grupo (Florien/Sovitá/Fagron) são CADASTROS SEPARADOS que
+  // podem compartilhar CNPJ; a cotação registra a EMPRESA escolhida. Digitar só o CNPJ compartilhado
+  // NÃO adota nenhuma sozinho (ambíguo — a cotação pode ser Florien OU Sovitá com preços diferentes):
+  // o dropdown lista todas as empresas daquele CNPJ e o comprador escolhe pelo nome.
   _cotRows[i].fornecedorNome=val;
   var v=String(val).trim(), lv=v.toLowerCase();
   var f=(fornecedores||[]).find(function(x){return (x.nome||'').toLowerCase()===lv;});
   if(!f && v) f=(fornecedores||[]).find(function(x){return (x.apelido||'').toLowerCase()===lv;}); // apelido exato — mantém o apelido digitado
-  if(!f && v){ // marca do grupo exata (Florien→Fagron) — mantém a marca digitada
-    f=(fornecedores||[]).find(function(x){ return String(x.marcas||'').toLowerCase().split(/[,;]/).map(function(s){return s.trim();}).indexOf(lv)>=0; });
-  }
   var porDoc=false;
-  if(!f && v){ // CNPJ/CPF (com ou sem pontos/traços; qualquer CNPJ do grupo); só adota com match ÚNICO
+  if(!f && v){ // CNPJ/CPF (com ou sem pontos/traços): só adota se identificar UMA empresa
     var ms=(fornecedores||[]).filter(function(x){return _fornDocMatch(x, lv);});
     if(ms.length===1){ f=ms[0]; porDoc=true; }
   }
   _cotRows[i].fornecedorId=f?f.id:null;
-  if(f && porDoc) _cotRows[i].fornecedorNome=f.apelido||f.nome; // digitou número → vira o apelido (nome de trabalho)
+  if(f && porDoc) _cotRows[i].fornecedorNome=f.apelido||f.nome; // digitou número e é ÚNICA → vira o apelido
 }
 // v171 — ao sair do campo, sincroniza o input com o nome de trabalho resolvido (só muda visivelmente quando digitou CNPJ)
 function _cotFornBlur(i,el){ var r=_cotRows[i]; if(r&&r.fornecedorId&&r.fornecedorNome&&el.value!==r.fornecedorNome) el.value=r.fornecedorNome; }
@@ -11050,9 +11048,11 @@ function _renderCotRows(){
   var ro=_cotViewOnly; // v160 — somente leitura pós-compra: mostra as cotações, sem editar
   if(ro && !_cotRows.length){ c.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Este item foi comprado sem cotação registrada (regra anterior).</div>'; return; }
   var dl=ro?'':('<datalist id="cot-forn-dl">'+(fornecedores||[]).slice(0,400).map(function(f){
-    var o='<option value="'+escapeHtml(f.nome||'')+'"'+(f.doc?' label="'+escapeHtml(f.doc)+'"':'')+'>'; // v171 — CNPJ no label: digitar o documento também sugere
-    if((f.apelido||'').trim()&&f.apelido.toLowerCase()!==String(f.nome||'').toLowerCase()) o+='<option value="'+escapeHtml(f.apelido.trim())+'" label="'+escapeHtml(f.nome||'')+'">'; // v171 — apelido é nome de trabalho na cotação
-    String(f.marcas||'').split(/[,;]/).forEach(function(m){ m=m.trim(); if(m&&m.toLowerCase()!==String(f.nome||'').toLowerCase()) o+='<option value="'+escapeHtml(m)+'" label="'+escapeHtml(f.nome||'')+'">'; }); // v171 — marcas do grupo sugerem também (a cotação fica com a marca digitada)
+    // v171 — label carrega o CNPJ formatado E só-dígitos: digitar o CNPJ de qualquer jeito lista TODAS as
+    // empresas do grupo (mesmo CNPJ = várias opções, uma por empresa) e o comprador ESCOLHE em qual cota.
+    var lbl=(f.doc?f.doc+' · '+f.doc.replace(/\D/g,''):'');
+    var o='<option value="'+escapeHtml(f.nome||'')+'"'+(lbl?' label="'+escapeHtml(lbl)+'"':'')+'>';
+    if((f.apelido||'').trim()&&f.apelido.toLowerCase()!==String(f.nome||'').toLowerCase()) o+='<option value="'+escapeHtml(f.apelido.trim())+'" label="'+escapeHtml(f.nome||'')+'">'; // apelido é nome de trabalho na cotação
     return o;
   }).join('')+'</datalist>');
   // v161 — cabeçalho das colunas (pedido do dono 16/07): Fornecedor + Valor/<unidade do item>
@@ -11699,8 +11699,8 @@ function _pcXmlAplicar(txt){
   var nfDig=String(pc.nf||'').replace(/\D/g,'').replace(/^0+/,''), nNFdig=String(nNF||'').replace(/^0+/,'');
   if(nfDig && nNFdig && nfDig!==nNFdig) avisos.push('nº da NF do XML ('+nNF+') DIFERE do informado no pedido ('+pc.nf+')');
   if(emitCnpj){ var _ff=(fornecedores||[]).find(function(x){ return x.id===pc.fornecedorId; });
-    if(_ff && _fornDocs(_ff).length && !_fornDocs(_ff).some(function(d){ return d.replace(/\D/g,'')===emitCnpj.replace(/\D/g,''); }))
-      avisos.push('CNPJ do emitente ('+emitCnpj+') não está no cadastro do fornecedor — se for um CNPJ novo do grupo, adicione em Fornecedores › CNPJs adicionais'); }
+    if(_ff && _fornGrupoDocs(_ff).length && !_fornGrupoDocs(_ff).some(function(d){ return d.replace(/\D/g,'')===emitCnpj.replace(/\D/g,''); }))
+      avisos.push('CNPJ do emitente ('+emitCnpj+') não está no cadastro do fornecedor nem do grupo — se for um CNPJ novo, adicione em Fornecedores › CNPJs adicionais'); }
   var dets=Array.prototype.slice.call(doc.getElementsByTagName('det'));
   var xitens=dets.map(function(d){ var p=d.getElementsByTagName('prod')[0]; if(!p) return null;
     return { nome:tag(p,'xProd'), cod:tag(p,'cProd'), qtd:parseFloat(tag(p,'qCom'))||0, unit:parseFloat(tag(p,'vUnCom'))||0, total:parseFloat(tag(p,'vProd'))||0, un:tag(p,'uCom'), _usado:false };
@@ -11822,7 +11822,7 @@ function _rcbCnpjSetup(fornecedorId, sugerido){
   var wrap=document.getElementById('rcb-cnpj-wrap'), sel=document.getElementById('rcb-cnpj');
   if(!wrap||!sel) return;
   var f=(fornecedores||[]).find(function(x){ return x.id===fornecedorId; });
-  var docs=f?_fornDocs(f):[];
+  var docs=f?_fornGrupoDocs(f):[]; // v171 — união dos CNPJs do GRUPO (empresas que compartilham CNPJ)
   if(!docs.length && !sugerido){ wrap.style.display='none'; sel.innerHTML=''; return; }
   var sugDig=String(sugerido||'').replace(/\D/g,'');
   sel.innerHTML=docs.map(function(d,i){ var hit=sugDig&&d.replace(/\D/g,'')===sugDig; return '<option value="'+escapeHtml(d)+'"'+(hit?' selected':'')+'>'+escapeHtml(d)+(i===0?' (principal)':'')+'</option>'; }).join('');
@@ -12134,21 +12134,32 @@ function _docMatch(doc,q){
   return qd.length>0 && d.replace(/\D/g,'').includes(qd);
 }
 // v171 — GRUPO num cadastro só (caso Fagron: Florien/Sovita/Infinity, faturando ora por um CNPJ ora por
-// outro): todos os docs do fornecedor (principal + docsExtras) e as marcas contam nas buscas.
+// outro): todos os docs do fornecedor (principal + docsExtras) contam nas buscas.
 function _fornDocs(f){
   const ds=[(f&&f.doc)||''];
   String((f&&f.docsExtras)||'').split(/[,;\n]/).forEach(x=>{ x=x.trim(); if(x) ds.push(x); });
   return ds.filter(Boolean);
 }
 function _fornDocMatch(f,q){ return _fornDocs(f).some(d=>_docMatch(d,q)); }
-function _fornMarcaMatch(f,q){ return !!q && String((f&&f.marcas)||'').toLowerCase().includes(q); }
+// v171 — GRUPO derivado do CNPJ compartilhado (Fagron/Florien/Sovitá/Infinity = cadastros separados, mesmo CNPJ)
+function _fornMesmoDoc(a,b){
+  const da=_fornDocs(a).map(d=>d.replace(/\D/g,'')).filter(Boolean);
+  const db=_fornDocs(b).map(d=>d.replace(/\D/g,'')).filter(Boolean);
+  return da.some(d=>db.indexOf(d)>=0);
+}
+function _fornGrupo(f){ if(!f) return []; return (fornecedores||[]).filter(x=>x.id!==f.id&&_fornMesmoDoc(f,x)); }
+function _fornGrupoDocs(f){ // união dos CNPJs do grupo (os do próprio cadastro primeiro)
+  const docs=[], vist={};
+  [f].concat(_fornGrupo(f)).forEach(x=>{ _fornDocs(x).forEach(d=>{ const k=d.replace(/\D/g,''); if(k&&!vist[k]){ vist[k]=1; docs.push(d); } }); });
+  return docs;
+}
 function renderFornecedores(){
   { const nb=document.getElementById('fornec-novo-btn'); if(nb) nb.style.display=_podeGerenciarFornecedor()?'':'none'; } // v111 — só coordenador vê "+ Novo Fornecedor"
   const q=(document.getElementById('fornec-search')?.value||'').toLowerCase();
   const grid=document.getElementById('fornec-grid');
   const empty=document.getElementById('fornec-empty');
   if(!grid)return;
-  const filtered=fornecedores.filter(f=>!q||f.nome.toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||_fornDocMatch(f,q)||_fornMarcaMatch(f,q)||(f.categoria||'').toLowerCase().includes(q));
+  const filtered=fornecedores.filter(f=>!q||f.nome.toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||_fornDocMatch(f,q)||(f.categoria||'').toLowerCase().includes(q));
   if(!filtered.length){grid.innerHTML='';if(empty)empty.style.display='';return;}
   if(empty)empty.style.display='none';
   const colors=['#993C1D','#378ADD','#1D9E75','#BA7517','#533AB7','#3B6D11','#D4537E'];
@@ -12162,7 +12173,7 @@ function renderFornecedores(){
         <div>
           <div style="font-weight:500;font-size:14px">${escapeHtml(f.nome)}</div>
           <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${escapeHtml(f.categoria||'Fornecedor')}${f.doc?' · '+f.doc:''}</div>
-          ${f.marcas?`<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">🏷 ${escapeHtml(f.marcas)}</div>`:''}
+          ${(g=>g.length?`<div style="font-size:11px;color:var(--text-secondary);margin-top:2px" title="Empresas diferentes que faturam pelo mesmo CNPJ">🔗 Grupo: ${escapeHtml(g.map(x=>x.apelido||x.nome).slice(0,4).join(', '))}${g.length>4?'…':''}</div>`:'')(_fornGrupo(f))}
           ${f.docsExtras?`<div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">+ CNPJs: ${escapeHtml(f.docsExtras)}</div>`:''}
         </div>
       </div>
@@ -12755,7 +12766,7 @@ function searchCompraFornec(){
   const ac=document.getElementById('compra-fornec-ac');
   selectedCompraFornecId=null;document.getElementById('compra-fornec-info').style.display='none';
   if(q.length<1){ac.classList.remove('open');return;}
-  const m=fornecedores.filter(f=>f.nome.toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||_fornDocMatch(f,q)||_fornMarcaMatch(f,q)||(f.categoria||'').toLowerCase().includes(q)).slice(0,6);
+  const m=fornecedores.filter(f=>f.nome.toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||_fornDocMatch(f,q)||(f.categoria||'').toLowerCase().includes(q)).slice(0,6);
   if(!m.length){ac.classList.remove('open');return;}
   ac.innerHTML=m.map(f=>`<div class="autocomplete-item" onclick="selectCompraFornec('${f.id}')">
     <div class="ac-name">${escapeHtml(f.nome)}</div><div class="ac-doc">${f.categoria||''}${f.doc?' · '+f.doc:''}</div></div>`).join('');
@@ -12892,9 +12903,21 @@ function saveCompra(){
     }
   }
   // v118 — NÃO permite duas notas iguais do mesmo fornecedor (mesma NF + mesmo fornecedor)
+  // v171 — GRUPO: a trava vale para TODAS as empresas que compartilham o CNPJ (a mesma NF lançada
+  // na Florien não pode entrar de novo pela Sovitá — o emitente é o mesmo CNPJ).
   if(nf){
-    const dup=(compras||[]).find(x=>x.id!==editingCompraId && String(x.fornecedorId)===String(selectedCompraFornecId) && (x.nf||'').trim()===nf);
-    if(dup){ alert('🚫 Já existe uma compra com a NF "'+nf+'" desse fornecedor.\n\nNão é permitido lançar a mesma nota duas vezes. Edite a compra existente se precisar ajustar.'); return; }
+    const _fSel=(fornecedores||[]).find(f=>String(f.id)===String(selectedCompraFornecId));
+    const dup=(compras||[]).find(x=>{
+      if(x.id===editingCompraId || (x.nf||'').trim()!==nf) return false;
+      if(String(x.fornecedorId)===String(selectedCompraFornecId)) return true;
+      const fx=(fornecedores||[]).find(f=>String(f.id)===String(x.fornecedorId));
+      return !!(_fSel&&fx&&_fornMesmoDoc(_fSel,fx));
+    });
+    if(dup){
+      const _fDup=(fornecedores||[]).find(f=>String(f.id)===String(dup.fornecedorId));
+      const outra=String(dup.fornecedorId)!==String(selectedCompraFornecId)&&_fDup?('\n\n(Ela está lançada em OUTRA empresa do mesmo grupo/CNPJ: '+_fDup.nome+'.)'):'';
+      alert('🚫 Já existe uma compra com a NF "'+nf+'" desse fornecedor.'+outra+'\n\nNão é permitido lançar a mesma nota duas vezes. Edite a compra existente se precisar ajustar.'); return;
+    }
   }
   const dados={fornecedorId:selectedCompraFornecId,planoId,data,
     dataEmissao:document.getElementById('compra-dataemissao')?.value||'',
@@ -14280,7 +14303,7 @@ function _mlAutoc(pref, arr, label){
   const inf=document.getElementById('ml-'+pref+'-info'); if(inf) inf.style.display='none';
   if(q.length<2){ ac.classList.remove('open'); return; }
   const qd=q.replace(/\D/g,'');
-  const m=(arr||[]).filter(x=>(x.nome||'').toLowerCase().includes(q)||(x.apelido||'').toLowerCase().includes(q)||(x.marcas||'').toLowerCase().includes(q)||(qd.length>1&&_fornDocs(x).some(d=>d.replace(/\D/g,'').includes(qd)))).slice(0,8);
+  const m=(arr||[]).filter(x=>(x.nome||'').toLowerCase().includes(q)||(x.apelido||'').toLowerCase().includes(q)||(qd.length>1&&_fornDocs(x).some(d=>d.replace(/\D/g,'').includes(qd)))).slice(0,8);
   if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nenhum '+label+' encontrado no cadastro.</div>'; ac.classList.add('open'); return; }
   ac.innerHTML=m.map(x=>`<div class="autocomplete-item" onclick="_mlSelEnt2('${pref}','${x.id}')"><div class="ac-name">${escapeHtml(x.nome)}</div><div class="ac-doc">${escapeHtml(x.doc||x.categoria||'')}</div></div>`).join('');
   ac.classList.add('open');
@@ -20018,7 +20041,7 @@ function renderCalendario(){
 function getFornecedorSuggestions(q){
   const ql=(q||'').toLowerCase();
   const qd=(q||'').replace(/\D/g,''); // v113 — dígitos p/ buscar por CNPJ/CPF
-  return fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(ql) || (f.apelido||'').toLowerCase().includes(ql) || _fornMarcaMatch(f,ql) || (qd.length>=2 && _fornDocs(f).some(d=>d.replace(/\D/g,'').includes(qd)))).slice(0,8);
+  return fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(ql) || (f.apelido||'').toLowerCase().includes(ql) || (qd.length>=2 && _fornDocs(f).some(d=>d.replace(/\D/g,'').includes(qd)))).slice(0,8);
 }
 
 function renderFornecedorAc(acId,inputId,onSelect){
@@ -20516,7 +20539,7 @@ function onPtFornecedorInput(val){
   if(q.length<1){ac.classList.remove('open');return;}
   // Combine registered fornecedores + unique names from freteRealLanc
   const _qd=q.replace(/\D/g,''); // v113 — também por CNPJ/CPF
-  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||_fornMarcaMatch(f,q)||(_qd.length>=2&&_fornDocs(f).some(d=>d.replace(/\D/g,'').includes(_qd))));
+  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||(_qd.length>=2&&_fornDocs(f).some(d=>d.replace(/\D/g,'').includes(_qd))));
   const fromFr=[...new Set(freteRealLanc.map(x=>x.fornecedorNome).filter(n=>n&&n.toLowerCase().includes(q)))]
     .filter(n=>!fromForn.find(f=>f.nome.toLowerCase()===n.toLowerCase()))
     .map(n=>({id:null,nome:n}));
@@ -21101,7 +21124,7 @@ function onPgFornecedorInput(val){
   if(q.length<1){ ac.classList.remove('open'); return; }
   // nomes de gráfica vindos dos lançamentos impressao + fornecedores cadastrados
   const _qd=q.replace(/\D/g,''); // v113 — também por CNPJ/CPF
-  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||_fornMarcaMatch(f,q)||(_qd.length>=2&&_fornDocs(f).some(d=>d.replace(/\D/g,'').includes(_qd)))).map(f=>f.nome);
+  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||(_qd.length>=2&&_fornDocs(f).some(d=>d.replace(/\D/g,'').includes(_qd)))).map(f=>f.nome);
   const fromPag=[...new Set((pagamentos||[]).filter(p=>p.tipo==='impressao').map(p=>p.fornecedor).filter(n=>n&&n.toLowerCase().includes(q)))];
   const all=[...new Set([...fromPag,...fromForn])].slice(0,8);
   if(all.length){

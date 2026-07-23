@@ -1309,6 +1309,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
             <input type="text" id="emb-busca" placeholder="Buscar embalagem..." oninput="renderCatSimples('embalagem')" style="min-width:220px">
             <button class="btn-primary" id="emb-novo-btn" onclick="openInsumoModal('embalagem')">+ Cadastrar embalagem</button>
+            <label class="btn-primary" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (embalagens) exportado do Opery, mostra as que ainda NÃO estão no catálogo e cadastra com a sua confirmação — nada é gravado sem confirmar.">📥 Importar embalagens<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarEmbalagensPDF(this)"></label><!-- v170 -->
           </div>
           <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Embalagem</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Média ponderada do histórico de compras">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço da compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
@@ -1437,6 +1438,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </div>
           <div class="form-group" style="margin-bottom:10px;margin-top:8px"><label>Plano de contas</label><div class="autocomplete-wrap"><input type="text" id="rcb-plano-busca" placeholder="Digite código ou nome da conta..." oninput="_planoAcSearch('rcb-plano')" onblur="_planoAcBlur('rcb-plano')" autocomplete="off"><div class="autocomplete-list" id="rcb-plano-ac"></div><input type="hidden" id="rcb-plano"></div></div>
           <div class="form-group" style="margin-bottom:10px"><label>Data de emissão (NF)</label><input type="date" id="rcb-dataemissao"></div>
+          <!-- v171 — grupos que faturam por mais de um CNPJ: o CNPJ FATURADO é definido aqui, no recebimento -->
+          <div class="form-group" id="rcb-cnpj-wrap" style="margin-bottom:10px;display:none"><label>CNPJ faturado <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(qual CNPJ do grupo emitiu esta NF)</span></label><select id="rcb-cnpj"></select></div>
           <div id="rcb-total" style="font-size:13px;font-weight:600;margin-bottom:10px"></div>
           <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Ao confirmar, o lançamento entra no <b>Caixa</b> (aguardando aprovação) e os pedidos que já receberam todos os itens ficam <b>"Produto entregue"</b>.</div>
           <div class="modal-footer"><button onclick="closeReceberModal()">Cancelar</button><button class="btn-primary" onclick="saveRecebimento()">Confirmar recebimento</button></div>
@@ -3089,6 +3092,10 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       </div>
       <div class="form-row">
         <div class="form-group"><label>Site / Instagram</label><input type="text" id="fn-site" placeholder="https://..."></div>
+        <div class="form-group"><label>Marcas / empresas do grupo <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(a busca acha por qualquer uma)</span></label><input type="text" id="fn-marcas" placeholder="ex: Florien, Sovita, Infinity, Fagron"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>CNPJs adicionais <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(quando o grupo fatura por mais de um CNPJ — separe por vírgula)</span></label><input type="text" id="fn-docs2" placeholder="ex: 00.000.000/0002-00, 11.111.111/0001-11"></div>
       </div>
     </div>
     <div class="modal-section">
@@ -4487,7 +4494,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v169';
+var APP_VERSION = 'v170';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -8190,7 +8197,7 @@ function searchLeadClient(){
   const list=document.getElementById('lead-ac-list');
   const notFound=document.getElementById('lead-client-not-found');
   if(q.length<2){list.classList.remove('open');if(notFound)notFound.style.display='none';return;}
-  const m=clients.filter(c=>(c.nome||'').toLowerCase().includes(q)||(c.doc||'').includes(q));
+  const m=clients.filter(c=>(c.nome||'').toLowerCase().includes(q)||_docMatch(c.doc,q));
   if(!m.length){
     list.classList.remove('open');
     if(notFound)notFound.style.display='block';
@@ -9292,7 +9299,7 @@ function renderVendaProg(){
   // Build per-client credit summary
   const clientesComMovs=clients.filter(c=>(creditosCliente[c.id]||[]).length>0);
   // Apply search
-  let filtered=clientesComMovs.filter(c=>!q||(c.nome||'').toLowerCase().includes(q)||(c.doc||'').includes(q));
+  let filtered=clientesComMovs.filter(c=>!q||(c.nome||'').toLowerCase().includes(q)||_docMatch(c.doc,q));
   // Apply filter
   filtered=filtered.filter(c=>{
     const saldo=getCreditoSaldo(c.id);
@@ -9730,6 +9737,7 @@ function openFornecedorModal(id){
   const f=id?fornecedores.find(x=>x.id===id):null;
   document.getElementById('fornec-modal-title').textContent=f?'Editar Fornecedor':'Novo Fornecedor';
   [['fn-nome','nome'],['fn-apelido','apelido'],['fn-doc','doc'],['fn-categoria','categoria'],['fn-site','site'],
+   ['fn-marcas','marcas'],['fn-docs2','docsExtras'], // v171 — grupo: marcas + CNPJs adicionais
    ['fn-responsavel','responsavel'],['fn-tel','tel'],['fn-email','email'],['fn-cond-pag','condPag'],
    ['fn-cep','cep'],['fn-uf','uf'],['fn-cidade','cidade'],['fn-bairro','bairro'],
    ['fn-rua','rua'],['fn-numero','numero'],['fn-comp','comp'],['fn-obs','obs']
@@ -9743,12 +9751,16 @@ function saveFornecedor(){
   const nome=document.getElementById('fn-nome').value.trim();
   if(!nome){alert('Informe o nome do fornecedor.');return;}
   const doc=document.getElementById('fn-doc').value.trim();
-  // Checar duplicidade de doc
-  if(doc){
-    const dup=fornecedores.find(f=>f.doc&&f.doc.replace(/\D/g,'')===doc.replace(/\D/g,'')&&f.id!==editingFornecedorId);
+  // v171 — CNPJs adicionais do grupo (faturam ora por um, ora por outro): dedupe considera TODOS os docs
+  const docs2=(document.getElementById('fn-docs2')?.value||'').split(/[,;\n]/).map(s=>s.trim()).filter(Boolean);
+  const meusDocs=[doc,...docs2].map(d=>d.replace(/\D/g,'')).filter(Boolean);
+  if(meusDocs.length){
+    const dup=fornecedores.find(f=>f.id!==editingFornecedorId&&_fornDocs(f).some(d=>meusDocs.includes(d.replace(/\D/g,''))));
     if(dup){alert(`CNPJ/CPF já cadastrado para: ${dup.nome}`);return;}
   }
   const dados={nome,apelido:document.getElementById('fn-apelido').value.trim(),doc,categoria:document.getElementById('fn-categoria').value.trim(),
+    marcas:(document.getElementById('fn-marcas')?.value||'').split(/[,;\n]/).map(s=>s.trim()).filter(Boolean).join(', '),
+    docsExtras:docs2.join(', '),
     site:document.getElementById('fn-site').value.trim(),responsavel:document.getElementById('fn-responsavel').value.trim(),
     tel:document.getElementById('fn-tel').value.trim(),email:document.getElementById('fn-email').value.trim(),
     condPag:document.getElementById('fn-cond-pag').value.trim(),
@@ -10515,6 +10527,9 @@ function _solAddItem(itemId){
   _renderSolItens();
 }
 function _solSetQtd(i, val){ if(_solRows[i]) _solRows[i].qtd=parseFloat(val)||0; }
+// v171 — unidade editável por item na solicitação (pedido do dono 23/07): o catálogo dá o padrão, a solicitação pode ajustar
+var _SOL_UNIDS=['UN','g','Kg','L','ml'];
+function _solSetUnid(i, val){ if(_solRows[i]) _solRows[i].unidade=val; }
 function _solRemItem(i){ _solRows.splice(i,1); _renderSolItens(); }
 function _renderSolItens(){
   var tb=document.getElementById('sol-itens-tbody'); if(!tb) return;
@@ -10524,7 +10539,11 @@ function _renderSolItens(){
       '<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(r.codigo||'—')+'</td>'+
       '<td style="padding:5px 8px">'+escapeHtml(r.nome||'')+'</td>'+
       '<td style="padding:5px 8px;text-align:center"><input type="number" min="0" step="any" value="'+(r.qtd||'')+'" oninput="_solSetQtd('+i+',this.value)" style="width:80px;text-align:right"></td>'+
-      '<td style="padding:5px 8px">'+escapeHtml(r.unidade||'UN')+'</td>'+
+      '<td style="padding:5px 8px">'+(function(){ // v171 — select de unidade (UN/g/Kg/L/ml; mantém a do catálogo se for outra)
+        var cur=r.unidade||'UN', us=_SOL_UNIDS.slice();
+        if(!us.some(function(u){return u.toLowerCase()===String(cur).toLowerCase();})) us.unshift(cur);
+        return '<select onchange="_solSetUnid('+i+',this.value)" style="font-size:12px;padding:3px 6px;width:64px">'+us.map(function(u){ return '<option value="'+escapeHtml(u)+'"'+(u.toLowerCase()===String(cur).toLowerCase()?' selected':'')+'>'+escapeHtml(u)+'</option>'; }).join('')+'</select>';
+      })()+'</td>'+
       '<td style="padding:5px 8px;text-align:right"><button onclick="_solRemItem('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button></td></tr>';
   }).join('');
 }
@@ -11003,20 +11022,45 @@ function openHistItemModal(listaId, ref){
 }
 function _cotAddRow(){ _cotRows.push({fornecedorId:null,fornecedorNome:'',preco:''}); _renderCotRows(); }
 function _cotRemRow(i){ _cotRows.splice(i,1); if(_cotEscolhida===i)_cotEscolhida=null; else if(_cotEscolhida!=null&&_cotEscolhida>i)_cotEscolhida--; _renderCotRows(); }
-function _cotSetForn(i,val){ if(_cotRows[i]){ _cotRows[i].fornecedorNome=val; var f=(fornecedores||[]).find(function(x){return (x.nome||'').toLowerCase()===String(val).toLowerCase();}); _cotRows[i].fornecedorId=f?f.id:null; } }
+function _cotSetForn(i,val){ if(!_cotRows[i]) return;
+  // v171 — regra do dono 23/07: na cotação o NOME DE TRABALHO é o apelido/marca que o comprador usa
+  // (Florien, Sovita...); o vínculo (fornecedorId) aponta p/ o cadastro do grupo. O CNPJ faturado
+  // só é definido depois, no RECEBIMENTO da mercadoria.
+  _cotRows[i].fornecedorNome=val;
+  var v=String(val).trim(), lv=v.toLowerCase();
+  var f=(fornecedores||[]).find(function(x){return (x.nome||'').toLowerCase()===lv;});
+  if(!f && v) f=(fornecedores||[]).find(function(x){return (x.apelido||'').toLowerCase()===lv;}); // apelido exato — mantém o apelido digitado
+  if(!f && v){ // marca do grupo exata (Florien→Fagron) — mantém a marca digitada
+    f=(fornecedores||[]).find(function(x){ return String(x.marcas||'').toLowerCase().split(/[,;]/).map(function(s){return s.trim();}).indexOf(lv)>=0; });
+  }
+  var porDoc=false;
+  if(!f && v){ // CNPJ/CPF (com ou sem pontos/traços; qualquer CNPJ do grupo); só adota com match ÚNICO
+    var ms=(fornecedores||[]).filter(function(x){return _fornDocMatch(x, lv);});
+    if(ms.length===1){ f=ms[0]; porDoc=true; }
+  }
+  _cotRows[i].fornecedorId=f?f.id:null;
+  if(f && porDoc) _cotRows[i].fornecedorNome=f.apelido||f.nome; // digitou número → vira o apelido (nome de trabalho)
+}
+// v171 — ao sair do campo, sincroniza o input com o nome de trabalho resolvido (só muda visivelmente quando digitou CNPJ)
+function _cotFornBlur(i,el){ var r=_cotRows[i]; if(r&&r.fornecedorId&&r.fornecedorNome&&el.value!==r.fornecedorNome) el.value=r.fornecedorNome; }
 function _cotSetPreco(i,val){ if(_cotRows[i]) _cotRows[i].preco=parseFloat(val)||0; }
 function _cotEscolher(i){ _cotEscolhida=i; }
 function _renderCotRows(){
   var c=document.getElementById('cot-rows'); if(!c) return;
   var ro=_cotViewOnly; // v160 — somente leitura pós-compra: mostra as cotações, sem editar
   if(ro && !_cotRows.length){ c.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Este item foi comprado sem cotação registrada (regra anterior).</div>'; return; }
-  var dl=ro?'':('<datalist id="cot-forn-dl">'+(fornecedores||[]).slice(0,400).map(function(f){return '<option value="'+escapeHtml(f.nome||'')+'">';}).join('')+'</datalist>');
+  var dl=ro?'':('<datalist id="cot-forn-dl">'+(fornecedores||[]).slice(0,400).map(function(f){
+    var o='<option value="'+escapeHtml(f.nome||'')+'"'+(f.doc?' label="'+escapeHtml(f.doc)+'"':'')+'>'; // v171 — CNPJ no label: digitar o documento também sugere
+    if((f.apelido||'').trim()&&f.apelido.toLowerCase()!==String(f.nome||'').toLowerCase()) o+='<option value="'+escapeHtml(f.apelido.trim())+'" label="'+escapeHtml(f.nome||'')+'">'; // v171 — apelido é nome de trabalho na cotação
+    String(f.marcas||'').split(/[,;]/).forEach(function(m){ m=m.trim(); if(m&&m.toLowerCase()!==String(f.nome||'').toLowerCase()) o+='<option value="'+escapeHtml(m)+'" label="'+escapeHtml(f.nome||'')+'">'; }); // v171 — marcas do grupo sugerem também (a cotação fica com a marca digitada)
+    return o;
+  }).join('')+'</datalist>');
   // v161 — cabeçalho das colunas (pedido do dono 16/07): Fornecedor + Valor/<unidade do item>
   var hdr='<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:10px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase"><span style="width:14px"></span><span style="flex:1">Fornecedor</span><span style="width:120px;text-align:right">Valor/'+escapeHtml(_cotUnidade||'un')+'</span><span style="width:'+(ro?'70':'22')+'px"></span></div>';
   c.innerHTML=dl+hdr+_cotRows.map(function(r,i){
     return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px'+(ro&&_cotEscolhida===i?';background:var(--st-ok-bg);border-radius:6px;padding:2px 4px':'')+'">'+
       '<input type="radio" name="cot-esc" '+(_cotEscolhida===i?'checked':'')+(ro?' disabled':' onclick="_cotEscolher('+i+')"')+' title="'+(ro?'escolhido':'marcar como escolhido')+'" style="width:auto">'+
-      '<input type="text" '+(ro?'disabled':'list="cot-forn-dl" oninput="_cotSetForn('+i+',this.value)"')+' value="'+escapeHtml(r.fornecedorNome||'')+'" placeholder="Fornecedor" style="flex:1;font-size:12px;padding:4px 7px">'+
+      '<input type="text" '+(ro?'disabled':'list="cot-forn-dl" oninput="_cotSetForn('+i+',this.value)" onchange="_cotFornBlur('+i+',this)"')+' value="'+escapeHtml(r.fornecedorNome||'')+'" placeholder="Fornecedor ou CNPJ" style="flex:1;font-size:12px;padding:4px 7px">'+
       '<input type="number" min="0" step="0.01" '+(ro?'disabled':'oninput="_cotSetPreco('+i+',this.value)"')+' value="'+(r.preco!==''&&r.preco!=null?r.preco:'')+'" placeholder="Preço unit." style="width:120px;font-size:12px;padding:4px 7px;text-align:right">'+
       (ro?(_cotEscolhida===i?'<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600;white-space:nowrap">✓ escolhido</span>':'<span style="width:14px"></span>'):'<button onclick="_cotRemRow('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button>')+'</div>';
   }).join('');
@@ -11649,9 +11693,14 @@ function _pcXmlAplicar(txt){
   var chave=String(inf.getAttribute('Id')||'').replace(/^NFe/i,'');
   var tag=function(el,name){ var x=el?el.getElementsByTagName(name)[0]:null; return x?(x.textContent||'').trim():''; };
   var nNF=tag(doc.getElementsByTagName('ide')[0],'nNF');
+  var _emit=doc.getElementsByTagName('emit')[0];
+  var emitCnpj=tag(_emit,'CNPJ')||tag(_emit,'CPF'); // v171 — CNPJ que FATUROU (grupos com mais de um CNPJ)
   var avisos=[];
   var nfDig=String(pc.nf||'').replace(/\D/g,'').replace(/^0+/,''), nNFdig=String(nNF||'').replace(/^0+/,'');
   if(nfDig && nNFdig && nfDig!==nNFdig) avisos.push('nº da NF do XML ('+nNF+') DIFERE do informado no pedido ('+pc.nf+')');
+  if(emitCnpj){ var _ff=(fornecedores||[]).find(function(x){ return x.id===pc.fornecedorId; });
+    if(_ff && _fornDocs(_ff).length && !_fornDocs(_ff).some(function(d){ return d.replace(/\D/g,'')===emitCnpj.replace(/\D/g,''); }))
+      avisos.push('CNPJ do emitente ('+emitCnpj+') não está no cadastro do fornecedor — se for um CNPJ novo do grupo, adicione em Fornecedores › CNPJs adicionais'); }
   var dets=Array.prototype.slice.call(doc.getElementsByTagName('det'));
   var xitens=dets.map(function(d){ var p=d.getElementsByTagName('prod')[0]; if(!p) return null;
     return { nome:tag(p,'xProd'), cod:tag(p,'cProd'), qtd:parseFloat(tag(p,'qCom'))||0, unit:parseFloat(tag(p,'vUnCom'))||0, total:parseFloat(tag(p,'vProd'))||0, un:tag(p,'uCom'), _usado:false };
@@ -11670,9 +11719,9 @@ function _pcXmlAplicar(txt){
   var tot0=doc.getElementsByTagName('ICMSTot')[0];
   var tot={ vProd:parseFloat(tag(tot0,'vProd'))||0, vFrete:parseFloat(tag(tot0,'vFrete'))||0, vDesc:parseFloat(tag(tot0,'vDesc'))||0, vNF:parseFloat(tag(tot0,'vNF'))||0 };
   var dups=Array.prototype.slice.call(doc.getElementsByTagName('dup')).map(function(d){ return { venc:tag(d,'dVenc'), valor:parseFloat(tag(d,'vDup'))||0 }; }).filter(function(d){ return d.valor>0; });
-  _pcXml={ chave:chave, nNF:nNF, tot:tot, dups:dups };
+  _pcXml={ chave:chave, nNF:nNF, tot:tot, dups:dups, emitCnpj:emitCnpj };
   // vínculo auditável no PC (resumo do XML)
-  pc.nfXml={ chave:chave, nNF:nNF, vNF:tot.vNF, vProd:tot.vProd, vFrete:tot.vFrete, vDesc:tot.vDesc, dups:dups.length, em:Date.now(), por:(currentUser&&currentUser.name)||'' };
+  pc.nfXml={ chave:chave, nNF:nNF, emitCnpj:emitCnpj, vNF:tot.vNF, vProd:tot.vProd, vFrete:tot.vFrete, vDesc:tot.vDesc, dups:dups.length, em:Date.now(), por:(currentUser&&currentUser.name)||'' };
   _pcRecebRender();
   var el=document.getElementById('pcr-xml-info');
   if(el) el.innerHTML='<div style="font-size:12px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px">'+
@@ -11763,7 +11812,23 @@ function _pcRecebProsseguir(){
   _peOpen(_rcbBlocos,'rcb-blocos',total,_rcbDistrib,'',_COMPRAS_PE_FORMAS_BON);
   _rcbDistrib();
   _planoAcSet('rcb-plano',''); // v161 — busca com autocomplete
+  _rcbCnpjSetup(pc.fornecedorId, (_pcXml&&_pcXml.emitCnpj)||(pc.nfXml&&pc.nfXml.emitCnpj)||''); // v171 — CNPJ faturado
   document.getElementById('receber-modal').classList.add('open');
+}
+// v171 — o CNPJ FATURADO é definido no RECEBIMENTO: select com todos os CNPJs do grupo (principal +
+// adicionais). Com XML, o CNPJ do emitente vem pré-selecionado; emitente fora do cadastro entra como
+// opção extra sinalizada. Com um CNPJ só e sem XML, o campo fica oculto (grava o principal).
+function _rcbCnpjSetup(fornecedorId, sugerido){
+  var wrap=document.getElementById('rcb-cnpj-wrap'), sel=document.getElementById('rcb-cnpj');
+  if(!wrap||!sel) return;
+  var f=(fornecedores||[]).find(function(x){ return x.id===fornecedorId; });
+  var docs=f?_fornDocs(f):[];
+  if(!docs.length && !sugerido){ wrap.style.display='none'; sel.innerHTML=''; return; }
+  var sugDig=String(sugerido||'').replace(/\D/g,'');
+  sel.innerHTML=docs.map(function(d,i){ var hit=sugDig&&d.replace(/\D/g,'')===sugDig; return '<option value="'+escapeHtml(d)+'"'+(hit?' selected':'')+'>'+escapeHtml(d)+(i===0?' (principal)':'')+'</option>'; }).join('');
+  if(sugDig && !docs.some(function(d){ return d.replace(/\D/g,'')===sugDig; }))
+    sel.innerHTML='<option value="'+escapeHtml(sugerido)+'" selected>'+escapeHtml(sugerido)+' ⚠ (do XML — fora do cadastro)</option>'+sel.innerHTML;
+  wrap.style.display=(docs.length>1||sugDig)?'':'none';
 }
 var _rcbKey=null;
 function openReceberModal(idx){
@@ -11780,6 +11845,7 @@ function openReceberModal(idx){
   _peOpen(_rcbBlocos,'rcb-blocos',+(g.total).toFixed(2),_rcbDistrib,'',_COMPRAS_PE_FORMAS_BON);
   _rcbDistrib();
   _planoAcSet('rcb-plano',''); // v161 — busca com autocomplete
+  _rcbCnpjSetup(g.fornecedorId,''); // v171 — CNPJ faturado (fluxo legado fornecedor+NF)
   document.getElementById('receber-modal').classList.add('open');
 }
 function closeReceberModal(){ document.getElementById('receber-modal').classList.remove('open'); _rcbKey=null; _rcbPedidoCtx=null; }
@@ -11799,6 +11865,7 @@ function saveRecebimento(){
   else { g=_recebGrupos().find(function(x){return x.key===_rcbKey;}); if(!g) return; }
   var planoId=document.getElementById('rcb-plano').value||null;
   var dataEmissao=document.getElementById('rcb-dataemissao').value||'';
+  var docFaturado=(document.getElementById('rcb-cnpj')||{}).value||''; // v171 — CNPJ do grupo que faturou esta NF
   var now=Date.now(); var valor=+((_pcx?_pcx.total:g.total)).toFixed(2);
   // v139 — Bonificação é uma FORMA nos blocos (checkbox aposentado); nota 100% bonificada → forma='bonificacao'
   var forma, parcelas, _nsu='';
@@ -11822,7 +11889,7 @@ function saveRecebimento(){
   }
   if(_pcx){
     // ── v160: leva do PEDIDO DE COMPRA (conciliação já feita/confirmada no passo anterior) ──
-    var compra={ id:'compra'+now, fornecedorId:pc.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:pc.nf||'', nsu:_nsu, valor:valor, forma:forma, desc:'Pedido de compra '+(pc.numero||'')+' — NF '+(pc.nf||'')+((pc.recebimentos||[]).length?' (leva '+((pc.recebimentos||[]).length+1)+')':''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, pedidoCompraId:pc.id, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
+    var compra={ id:'compra'+now, fornecedorId:pc.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:pc.nf||'', docFaturado:docFaturado, nsu:_nsu, valor:valor, forma:forma, desc:'Pedido de compra '+(pc.numero||'')+' — NF '+(pc.nf||'')+((pc.recebimentos||[]).length?' (leva '+((pc.recebimentos||[]).length+1)+')':''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, pedidoCompraId:pc.id, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
     compras.push(compra);
     var orderIds={};
     _pcx.leva.forEach(function(r){
@@ -11842,7 +11909,7 @@ function saveRecebimento(){
     alert('✓ Recebimento do '+(pc.numero||'pedido')+' confirmado ('+(pc.status==='recebido'?'pedido COMPLETO':'parcial')+').\nLançamento de '+fmtMoney(valor)+' enviado ao Caixa (aguardando aprovação).');
     return;
   }
-  var compra={ id:'compra'+now, fornecedorId:g.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:g.nf||'', nsu:_nsu, valor:valor, forma:forma, desc:'Compra '+(g.tipo==='ativo'?'de ativos':'de embalagens')+(g.nf?' — NF '+g.nf:''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
+  var compra={ id:'compra'+now, fornecedorId:g.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:g.nf||'', docFaturado:docFaturado, nsu:_nsu, valor:valor, forma:forma, desc:'Compra '+(g.tipo==='ativo'?'de ativos':'de embalagens')+(g.nf?' — NF '+g.nf:''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
   compras.push(compra);
   var orderIds={};
   g.itens.forEach(function(gi){ var it=gi.it; if(!it.compra) it.compra={};
@@ -12058,13 +12125,30 @@ function deleteProduto(id){
   catalogo=catalogo.filter(y=>y.id!==id);
   renderCatalogo(); saveData();
 }
+// v171 — busca por documento ignora pontuação: "44015477" acha "44.015.477/0008-92" (e vice-versa)
+function _docMatch(doc,q){
+  const d=String(doc||'');
+  if(!q) return false;
+  if(d.includes(q)) return true;
+  const qd=q.replace(/\D/g,'');
+  return qd.length>0 && d.replace(/\D/g,'').includes(qd);
+}
+// v171 — GRUPO num cadastro só (caso Fagron: Florien/Sovita/Infinity, faturando ora por um CNPJ ora por
+// outro): todos os docs do fornecedor (principal + docsExtras) e as marcas contam nas buscas.
+function _fornDocs(f){
+  const ds=[(f&&f.doc)||''];
+  String((f&&f.docsExtras)||'').split(/[,;\n]/).forEach(x=>{ x=x.trim(); if(x) ds.push(x); });
+  return ds.filter(Boolean);
+}
+function _fornDocMatch(f,q){ return _fornDocs(f).some(d=>_docMatch(d,q)); }
+function _fornMarcaMatch(f,q){ return !!q && String((f&&f.marcas)||'').toLowerCase().includes(q); }
 function renderFornecedores(){
   { const nb=document.getElementById('fornec-novo-btn'); if(nb) nb.style.display=_podeGerenciarFornecedor()?'':'none'; } // v111 — só coordenador vê "+ Novo Fornecedor"
   const q=(document.getElementById('fornec-search')?.value||'').toLowerCase();
   const grid=document.getElementById('fornec-grid');
   const empty=document.getElementById('fornec-empty');
   if(!grid)return;
-  const filtered=fornecedores.filter(f=>!q||f.nome.toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||(f.doc||'').includes(q)||(f.categoria||'').toLowerCase().includes(q));
+  const filtered=fornecedores.filter(f=>!q||f.nome.toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||_fornDocMatch(f,q)||_fornMarcaMatch(f,q)||(f.categoria||'').toLowerCase().includes(q));
   if(!filtered.length){grid.innerHTML='';if(empty)empty.style.display='';return;}
   if(empty)empty.style.display='none';
   const colors=['#993C1D','#378ADD','#1D9E75','#BA7517','#533AB7','#3B6D11','#D4537E'];
@@ -12078,6 +12162,8 @@ function renderFornecedores(){
         <div>
           <div style="font-weight:500;font-size:14px">${escapeHtml(f.nome)}</div>
           <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">${escapeHtml(f.categoria||'Fornecedor')}${f.doc?' · '+f.doc:''}</div>
+          ${f.marcas?`<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">🏷 ${escapeHtml(f.marcas)}</div>`:''}
+          ${f.docsExtras?`<div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">+ CNPJs: ${escapeHtml(f.docsExtras)}</div>`:''}
         </div>
       </div>
       ${f.responsavel?`<div class="info-row"><span class="info-label">Responsável</span><span>${escapeHtml(f.responsavel)}</span></div>`:''}
@@ -12669,7 +12755,7 @@ function searchCompraFornec(){
   const ac=document.getElementById('compra-fornec-ac');
   selectedCompraFornecId=null;document.getElementById('compra-fornec-info').style.display='none';
   if(q.length<1){ac.classList.remove('open');return;}
-  const m=fornecedores.filter(f=>f.nome.toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||(f.doc||'').includes(q)||(f.categoria||'').toLowerCase().includes(q)).slice(0,6);
+  const m=fornecedores.filter(f=>f.nome.toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||_fornDocMatch(f,q)||_fornMarcaMatch(f,q)||(f.categoria||'').toLowerCase().includes(q)).slice(0,6);
   if(!m.length){ac.classList.remove('open');return;}
   ac.innerHTML=m.map(f=>`<div class="autocomplete-item" onclick="selectCompraFornec('${f.id}')">
     <div class="ac-name">${escapeHtml(f.nome)}</div><div class="ac-doc">${f.categoria||''}${f.doc?' · '+f.doc:''}</div></div>`).join('');
@@ -12834,11 +12920,41 @@ function deleteCompra(id){
   // v131 — só pode excluir enquanto a conta ainda está PENDENTE no Caixa. Se já foi APROVADA (passou pelo
   // Caixa e está no Financeiro), bloqueia: estorne no Caixa → Finalizados (volta a pendente) e então exclua.
   if(_cp && (_cp.statusCaixa||'aprovada')==='aprovada'){ alert('🔒 Esta compra já foi APROVADA no Caixa (a conta está no Financeiro) — não pode ser excluída direto.\n\nPara excluir: estorne no Caixa → Finalizados (a conta volta a PENDENTE no Caixa) e então exclua aqui.'); return; }
-  if(!confirm('Excluir este lançamento de compra?'))return;
+  // v171 — excluir o lançamento ESTORNA o recebimento que o criou: os itens da leva voltam a "aguardando
+  // recebimento" e o pedido de compra volta para a fila do Recebimento de Pedido (nova conciliação).
+  // Só chega aqui com a conta ainda PENDENTE no Caixa (baixada/aprovada foi bloqueada acima) — o Caixa não é pulado.
+  const _c=compras.find(x=>x.id===id);
+  const _pcRec=(typeof pedidosCompra!=='undefined'?(pedidosCompra||[]):[]).find(p=>(p.recebimentos||[]).some(r=>r&&r.compraLancId===id)) ||
+               ((_c&&_c.pedidoCompraId)?(pedidosCompra||[]).find(p=>p.id===_c.pedidoCompraId):null);
+  const _temLeva=_pcRec||(listasCompra||[]).some(l=>(l.itens||[]).some(it=>it&&it.compra&&it.compra.compraLancId===id));
+  let _msg='Excluir este lançamento de compra?';
+  if(_temLeva) _msg='Este lançamento veio de um RECEBIMENTO'+(_pcRec?' do pedido '+(_pcRec.numero||''):'')+'.\n\nExcluir o lançamento ESTORNA o recebimento: os itens da leva voltam a "aguardando recebimento"'+(_pcRec?' e o pedido volta para Compras › Recebimento de Pedido para nova conciliação':'')+'.\n\nExcluir e estornar?';
+  if(!confirm(_msg))return;
   compras=compras.filter(x=>x.id!==id);
   // remove a conta a pagar órfã dessa compra (garantidamente NÃO baixada — baixada foi bloqueada acima)
   contasPagar=contasPagar.filter(p=>!(p.origem==='compra'&&String(p.origemId)===String(id)));
-  renderCompras(); saveData();
+  // desfaz a marcação de recebido nos itens desta leva (cobre pedido de compra E fluxo legado por fornecedor+NF)
+  var _ordIds={};
+  (listasCompra||[]).forEach(function(l){ (l.itens||[]).forEach(function(it){
+    if(it&&it.compra&&it.compra.compraLancId===id){
+      it.compra.recebido=false;
+      delete it.compra.recebidoEm; delete it.compra.recebidoPor; delete it.compra.compraLancId; delete it.compra.formaPag;
+      delete it.compra.recebidoQtd; delete it.compra.recebidoPreco; delete it.compra.recebidoDivergente;
+      (it.origem||[]).forEach(function(og){ _ordIds[og.orderId]=1; });
+    }
+  }); });
+  if(_pcRec){
+    _pcRec.recebimentos=(_pcRec.recebimentos||[]).filter(r=>!r||r.compraLancId!==id);
+    if(_pcRec.status==='recebido'||_pcRec.status==='conciliado'||_pcRec.status==='em_recebimento'){
+      _pcRec.status='em_recebimento'; delete _pcRec.recebidoEm; delete _pcRec.recebidoPor;
+    }
+  }
+  Object.keys(_ordIds).forEach(function(oid){ try{ _reavaliarComprasPedido(oid); }catch(_e){} });
+  renderCompras();
+  try{ if(typeof renderCompRecebimento==='function') renderCompRecebimento(); }catch(_e){}
+  try{ if(typeof renderRecebimento==='function') renderRecebimento(); }catch(_e){}
+  saveData();
+  if(_temLeva) alert('✓ Lançamento excluído e recebimento ESTORNADO.'+(_pcRec?'\n\nO pedido '+(_pcRec.numero||'')+' voltou para Compras › Recebimento de Pedido — refaça a conciliação e o "Receber mercadoria".':''));
 }
 
 // v124 — múltiplas formas de pagamento numa compra: cada PARCELA tem sua forma. compra.forma='misto' se houver mais de uma.
@@ -12937,7 +13053,7 @@ function renderCompras(){
       return`<tr>
         <td style="padding:8px 12px;border-bottom:.5px solid var(--border)">${fmtDate(c.data)}</td>
         <td style="padding:8px 12px;border-bottom:.5px solid var(--border)">${c.dataEmissao?fmtDate(c.dataEmissao):'—'}</td>
-        <td style="padding:8px 12px;border-bottom:.5px solid var(--border);font-family:monospace;font-size:11px">${c.nf?escapeHtml(c.nf):'—'}</td>
+        <td style="padding:8px 12px;border-bottom:.5px solid var(--border);font-family:monospace;font-size:11px">${c.nf?escapeHtml(c.nf):'—'}${c.docFaturado?`<div style="font-size:9px;color:var(--text-tertiary)" title="CNPJ que faturou esta NF">${escapeHtml(c.docFaturado)}</div>`:''}</td>
         <td style="padding:8px 12px;border-bottom:.5px solid var(--border);font-weight:500">${escapeHtml(fn?.nome||'—')}</td>
         <td style="padding:8px 12px;border-bottom:.5px solid var(--border)">
           ${pc?`<div style="display:flex;align-items:center;gap:5px"><span style="width:8px;height:8px;border-radius:50%;background:${pc.cor};flex-shrink:0"></span>${escapeHtml(pc.nome)}</div>`:'—'}
@@ -14164,7 +14280,7 @@ function _mlAutoc(pref, arr, label){
   const inf=document.getElementById('ml-'+pref+'-info'); if(inf) inf.style.display='none';
   if(q.length<2){ ac.classList.remove('open'); return; }
   const qd=q.replace(/\D/g,'');
-  const m=(arr||[]).filter(x=>(x.nome||'').toLowerCase().includes(q)||(x.apelido||'').toLowerCase().includes(q)||(qd.length>1&&(x.doc||'').replace(/\D/g,'').includes(qd))).slice(0,8);
+  const m=(arr||[]).filter(x=>(x.nome||'').toLowerCase().includes(q)||(x.apelido||'').toLowerCase().includes(q)||(x.marcas||'').toLowerCase().includes(q)||(qd.length>1&&_fornDocs(x).some(d=>d.replace(/\D/g,'').includes(qd)))).slice(0,8);
   if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nenhum '+label+' encontrado no cadastro.</div>'; ac.classList.add('open'); return; }
   ac.innerHTML=m.map(x=>`<div class="autocomplete-item" onclick="_mlSelEnt2('${pref}','${x.id}')"><div class="ac-name">${escapeHtml(x.nome)}</div><div class="ac-doc">${escapeHtml(x.doc||x.categoria||'')}</div></div>`).join('');
   ac.classList.add('open');
@@ -15583,7 +15699,7 @@ function renderClients(){
   const _badge=document.getElementById('cli-incompletos-badge');
   if(_badge){ if(_incompletos.length){ _badge.textContent=_incompletos.length; _badge.style.display=''; } else _badge.style.display='none'; }
   let base = (activeClientesTab==='incompletos') ? _incompletos : clients;
-  const f=base.filter(c=>!q||(c.nome||'').toLowerCase().includes(q)||(c.doc||'').includes(q));
+  const f=base.filter(c=>!q||(c.nome||'').toLowerCase().includes(q)||_docMatch(c.doc,q));
   const grid=document.getElementById('clients-grid'),empty=document.getElementById('clients-empty');
   if(!f.length){grid.innerHTML='';empty.style.display='';empty.textContent=activeClientesTab==='incompletos'?'Nenhum cadastro incompleto.':'Nenhum cliente encontrado.';return;}
   empty.style.display='none';
@@ -16129,6 +16245,94 @@ async function _extrairLinhasPDF(file){
     });
   }
   return linhas;
+}
+// ═══════ v170 — 📥 IMPORTAR EMBALAGENS (Catálogo › Embalagens, pedido do dono 23/07) ═══════
+// Lê o PDF "Cadastro de Produtos" (Resumida) do Opery, compara com os insumos de embalagem por
+// CÓDIGO e por NOME normalizado, mostra os FALTANTES e cadastra só com confirmação humana.
+// Parser validado no PDF real de 23/07 (24 pág., 480 itens, 0 falhas de leitura).
+var _embImpStage=null;
+const _EMB_IMP_CATS=['EMB COMPLETA FORN','EMB COMPLETA INTERNA','CORPO EMBALAGEM','COMPLEMENTOS','TAMPAS','TAMPA','VALVULAS','VALVULA','VÁLVULA','RÓTULO','ROTULO','CAIXAS','CAIXA','ACESSORIO','ACESSÓRIO','MATERIAL DE CONSUMO','SEMI-ACABADO DERMATO','SEMI-ACABADO','CAPSULAS E INVOLUCROS'];
+function _embImpNorm(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]/g,''); }
+async function importarEmbalagensPDF(input){
+  const file=input.files&&input.files[0]; if(input) input.value=''; if(!file) return;
+  let linhas;
+  try{ linhas=await _extrairLinhasPDF(file); }
+  catch(e){ alert('Não consegui ler o PDF: '+((e&&e.message)||e)); return; }
+  const lixo=/^(Total de p|CADASTRO DE PRODUTOS|Tipo de Impress|CODIGO|FATOR PRE|LISTA$|Hora:|Data:|Pagina)/i;
+  const uteis=(linhas||[]).map(l=>String(l||'').trim()).filter(l=>l && !lixo.test(l));
+  const recs=[]; let cur=null;
+  uteis.forEach(l=>{
+    const m=l.match(/^(\d{6})\s*(.*)$/);
+    if(m && /[A-Za-zÀ-ú]/.test(m[2])){ if(cur) recs.push(cur); cur={codigo:m[1], resto:m[2]}; } // linha só-números = preço/fator, não é registro
+    else if(cur){ cur.resto+=' '+l; }
+  });
+  if(cur) recs.push(cur);
+  const itens=[];
+  recs.forEach(r=>{
+    let corte=null;
+    // categoria REAL = token seguido dos números de custo; token dentro do NOME ("SP TAMPA DISK...")
+    // é seguido de letras e NÃO corta (bug pego no teste offline: 8 nomes viravam só "SP")
+    _EMB_IMP_CATS.forEach(c=>{
+      let from=0;
+      while(true){
+        const i=r.resto.indexOf(c, from); if(i<0) break;
+        if(/^\s*\d/.test(r.resto.slice(i+c.length))){ if(i>0 && (corte===null || i<corte)) corte=i; break; }
+        from=i+1;
+      }
+    });
+    let nome = (corte!==null) ? r.resto.slice(0,corte) : String(r.resto).split(/\s\d+[.,]\d/)[0];
+    nome=String(nome||'').replace(/\s+/g,' ').trim();
+    if(nome && nome.length>=3) itens.push({codigo:r.codigo, nome:nome});
+  });
+  if(!itens.length){ alert('Não reconheci embalagens neste PDF.\n\nEle é o "Cadastro de Produtos" (tipo Resumida) exportado do Opery?'); return; }
+  // já cadastradas: por código OU por nome normalizado (pega cadastro com código diferente/vazio)
+  const codSet={}, nomeSet={};
+  (insumos||[]).filter(x=>x && x.tipo==='embalagem').forEach(x=>{
+    if(x.codigo) codSet[String(x.codigo).trim()]=1;
+    const n=_embImpNorm(x.nome); if(n) nomeSet[n]=1;
+  });
+  // v170 — dedupe também DENTRO do lote (Opery tem itens com o MESMO nome em códigos diferentes)
+  const _vistos={};
+  const faltam=itens.filter(it=>{
+    const n=_embImpNorm(it.nome);
+    if(codSet[it.codigo] || (n && nomeSet[n]) || (n && _vistos[n])) return false;
+    if(n) _vistos[n]=1;
+    return true;
+  });
+  const jaTem=itens.length-faltam.length;
+  if(!faltam.length){ alert('✓ PDF lido: '+itens.length+' embalagens — TODAS já estão cadastradas. Nada a importar.'); return; }
+  _embImpStage=faltam.map(f=>({codigo:f.codigo, nome:f.nome, incluir:true}));
+  const td='padding:5px 8px;border-bottom:.5px solid var(--border)';
+  const rows=_embImpStage.map((f,i)=>'<tr>'+
+    '<td style="'+td+';text-align:center"><input type="checkbox" checked onchange="_embImpStage['+i+'].incluir=this.checked;_embImpCount()" style="width:14px;height:14px"></td>'+
+    '<td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(f.codigo)+'</td>'+
+    '<td style="'+td+';font-size:12px">'+escapeHtml(f.nome)+'</td></tr>').join('');
+  const html='<div class="overlay open" id="emb-imp-overlay" data-dyn="1"><div class="modal" style="width:660px;max-width:95vw;max-height:86vh;display:flex;flex-direction:column">'+
+    '<h2 style="font-size:16px;flex-shrink:0">📥 Importar embalagens — conferência</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;flex-shrink:0">PDF lido: <b>'+itens.length+'</b> embalagens · <b>'+jaTem+'</b> já cadastradas · <b style="color:var(--st-mid-tx)">'+faltam.length+' SEM cadastro</b> (listadas abaixo). Desmarque o que não quiser — <b>nada é gravado sem a sua confirmação</b>.</div>'+
+    '<div style="flex:1;overflow:auto;border:.5px solid var(--border);border-radius:8px"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
+    '<th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px">✔</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:left">Código</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:left">Embalagem</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<div class="modal-footer" style="margin-top:10px;flex-shrink:0"><span id="emb-imp-count" style="margin-right:auto;font-size:12px;color:var(--text-secondary)"></span>'+
+    '<button onclick="document.getElementById(\'emb-imp-overlay\').remove();_embImpStage=null">Cancelar</button>'+
+    '<button class="btn-primary" onclick="_embImpConfirmar()">Cadastrar selecionadas</button></div></div></div>';
+  const old=document.getElementById('emb-imp-overlay'); if(old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+  _embImpCount();
+}
+function _embImpCount(){ const e=document.getElementById('emb-imp-count'); if(e&&_embImpStage) e.textContent=_embImpStage.filter(x=>x.incluir).length+' selecionada(s) para cadastro'; }
+function _embImpConfirmar(){
+  if(!_embImpStage) return;
+  const sel=_embImpStage.filter(x=>x.incluir);
+  if(!sel.length){ alert('Nenhuma embalagem selecionada.'); return; }
+  if(!confirm('Cadastrar '+sel.length+' embalagem(ns) no catálogo?')) return;
+  const now=Date.now();
+  sel.forEach((f,i)=>{ insumos.push({ id:'emb'+(now+i), codigo:f.codigo, nome:f.nome, tipo:'embalagem', unidade:'un', ativo:true, criadoEm:now+i, criadoPor:(currentUser&&currentUser.name)||'', origem:'import_pdf_opery' }); });
+  const ov=document.getElementById('emb-imp-overlay'); if(ov) ov.remove();
+  _embImpStage=null;
+  saveData();
+  try{ renderCatSimples('embalagem'); }catch(_e){}
+  alert('✓ '+sel.length+' embalagem(ns) cadastrada(s) no catálogo.');
 }
 function _parsePedidoLecarePDF(linhas){
   const txt=linhas.join('\n'); const L=linhas;
@@ -19814,7 +20018,7 @@ function renderCalendario(){
 function getFornecedorSuggestions(q){
   const ql=(q||'').toLowerCase();
   const qd=(q||'').replace(/\D/g,''); // v113 — dígitos p/ buscar por CNPJ/CPF
-  return fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(ql) || (f.apelido||'').toLowerCase().includes(ql) || (qd.length>=2 && (f.doc||'').replace(/\D/g,'').includes(qd))).slice(0,8);
+  return fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(ql) || (f.apelido||'').toLowerCase().includes(ql) || _fornMarcaMatch(f,ql) || (qd.length>=2 && _fornDocs(f).some(d=>d.replace(/\D/g,'').includes(qd)))).slice(0,8);
 }
 
 function renderFornecedorAc(acId,inputId,onSelect){
@@ -20312,7 +20516,7 @@ function onPtFornecedorInput(val){
   if(q.length<1){ac.classList.remove('open');return;}
   // Combine registered fornecedores + unique names from freteRealLanc
   const _qd=q.replace(/\D/g,''); // v113 — também por CNPJ/CPF
-  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||(_qd.length>=2&&(f.doc||'').replace(/\D/g,'').includes(_qd)));
+  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||_fornMarcaMatch(f,q)||(_qd.length>=2&&_fornDocs(f).some(d=>d.replace(/\D/g,'').includes(_qd))));
   const fromFr=[...new Set(freteRealLanc.map(x=>x.fornecedorNome).filter(n=>n&&n.toLowerCase().includes(q)))]
     .filter(n=>!fromForn.find(f=>f.nome.toLowerCase()===n.toLowerCase()))
     .map(n=>({id:null,nome:n}));
@@ -20897,7 +21101,7 @@ function onPgFornecedorInput(val){
   if(q.length<1){ ac.classList.remove('open'); return; }
   // nomes de gráfica vindos dos lançamentos impressao + fornecedores cadastrados
   const _qd=q.replace(/\D/g,''); // v113 — também por CNPJ/CPF
-  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||(_qd.length>=2&&(f.doc||'').replace(/\D/g,'').includes(_qd))).map(f=>f.nome);
+  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||_fornMarcaMatch(f,q)||(_qd.length>=2&&_fornDocs(f).some(d=>d.replace(/\D/g,'').includes(_qd)))).map(f=>f.nome);
   const fromPag=[...new Set((pagamentos||[]).filter(p=>p.tipo==='impressao').map(p=>p.fornecedor).filter(n=>n&&n.toLowerCase().includes(q)))];
   const all=[...new Set([...fromPag,...fromForn])].slice(0,8);
   if(all.length){
@@ -22455,15 +22659,17 @@ const METAS_TIPOS = {
   venda_mae:'Venda Mãe', venda_filho:'Venda Filho',
   bonificacao:'Bonificação', amostra:'Amostra', pnd:'P&D'
 };
+// v170 — Convênio ganhou linha própria (pedido do dono 23/07: caía no "Outro"); "Outro" vira sentinela
+// (deve ficar sempre zerado — valor ali = forma estranha escapando).
 const METAS_FORMAS = {
   pix:'PIX', boleto:'Boleto', cartao_credito:'Cartão de Crédito',
   cartao_debito:'Cartão de Débito', transferencia:'Transferência',
-  cheque:'Cheque', outro:'Outro'
+  cheque:'Cheque', convenio:'Convênio', outro:'Outro'
 };
 const METAS_FORMAS_MAP = {
   'PIX':'pix','Boleto':'boleto','Cartão de Crédito':'cartao_credito',
   'Cartão de Débito':'cartao_debito','Transferência':'transferencia',
-  'Cheque':'cheque','Outro':'outro'
+  'Cheque':'cheque','Convênio':'convenio','CONVENIO':'convenio','Outro':'outro'
 };
 
 // Current active DC tab

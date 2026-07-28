@@ -1261,6 +1261,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div class="crm-tab active" id="cat-tab-produtos" onclick="setCatalogoTab('produtos')">Produtos</div>
           <div class="crm-tab" id="cat-tab-insumos" onclick="setCatalogoTab('insumos')">Insumos (Ativos)</div>
           <div class="crm-tab" id="cat-tab-embalagens" onclick="setCatalogoTab('embalagens')">Embalagens</div>
+          <div class="crm-tab" id="cat-tab-catnovo" onclick="setCatalogoTab('catnovo')">🧪 Catálogo Novo</div><!-- v174 — fórmulas de manipulação -->
+
         </div>
         <div id="cat-sec-produtos">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
@@ -1317,6 +1319,27 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </table></div>
           <div id="emb-vazio" style="display:none;color:var(--text-secondary);font-size:13px;padding:24px;text-align:center">Nenhuma embalagem cadastrada. Clique em "Cadastrar embalagem".</div>
         </div>
+        <!-- v174 — CATÁLOGO NOVO: fórmulas de manipulação (produto = composição vinculada; custo/preço calculados na venda) -->
+        <div id="cat-sec-catnovo" style="display:none">
+          <div class="des-tabs" style="margin-bottom:12px;gap:4px">
+            <div class="des-tab active" id="cn-sub-formulas" onclick="setCatNovoSub('formulas')">Fórmulas</div>
+            <div class="des-tab" id="cn-sub-simulador" onclick="setCatNovoSub('simulador')">🧮 Simulador</div>
+            <div class="des-tab" id="cn-sub-config" onclick="setCatNovoSub('config')">⚙ Configuração</div>
+          </div>
+          <div id="cn-pg-formulas">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+              <input type="text" id="cn-busca" placeholder="Buscar fórmula..." oninput="renderCatNovo()" style="min-width:220px">
+              <button class="btn-primary" id="cn-novo-btn" onclick="openCnModal()">+ Nova fórmula</button>
+            </div>
+            <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Fórmula</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:left">Forma</th><th style="padding:8px 10px;text-align:center">Composição</th><th style="padding:8px 10px;text-align:left">Padrão</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
+              <tbody id="cn-tbody"></tbody>
+            </table></div>
+            <div id="cn-vazio" style="display:none;color:var(--text-secondary);font-size:13px;padding:24px;text-align:center">Nenhuma fórmula cadastrada. Clique em "+ Nova fórmula".</div>
+          </div>
+          <div id="cn-pg-simulador" style="display:none"><div id="cn-sim-box"></div></div>
+          <div id="cn-pg-config" style="display:none"><div id="cn-cfg-box"></div></div>
+        </div>
       </div>
       <!-- v130 — modal cadastro de insumo/embalagem -->
       <div class="overlay" id="insumo-modal">
@@ -1328,7 +1351,72 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </div>
           <div class="form-group" style="margin-bottom:12px"><label id="ins-nome-label">Nome do insumo *</label><input type="text" id="ins-nome" placeholder="ex: Ácido Hialurônico"></div>
           <div class="form-group" style="margin-bottom:12px"><label>Categoria</label><select id="ins-categoria"></select></div>
+          <!-- v174 — F1 Catálogo Novo: campos técnicos do INSUMO (densidade/concentração/unidade) -->
+          <div id="ins-f1-insumo" style="display:none">
+            <div class="form-row">
+              <div class="form-group"><label>Densidade (g/mL) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(vazio = 1:1)</span></label><input type="number" min="0" step="0.001" id="ins-densidade" placeholder="ex: 1.05"></div>
+              <div class="form-group"><label>Concentração (%) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(100 = 1:1; 80 pesa ×1,25)</span></label><input type="number" min="0" step="0.01" id="ins-conc" placeholder="100"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Unidade de dosagem</label><select id="ins-unidpad"><option value="">— (usa a da fórmula)</option><option value="%">%</option><option value="mg">mg</option><option value="g">g</option><option value="mcg">mcg</option><option value="UI">UI</option></select></div>
+              <div class="form-group"><label>Fator UI→mg <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(só p/ dosagem em UI)</span></label><input type="number" min="0" step="0.000001" id="ins-fatorui" placeholder="mg por 1 UI"></div>
+            </div>
+          </div>
+          <!-- v174 — F1: capacidade da EMBALAGEM (filtra compatível com o QSP escolhido na venda) -->
+          <div id="ins-f1-emb" style="display:none">
+            <div class="form-row">
+              <div class="form-group"><label>Capacidade</label><input type="number" min="0" step="0.01" id="ins-capacidade" placeholder="ex: 120"></div>
+              <div class="form-group"><label>Unidade da capacidade</label><select id="ins-capun"><option value="mL">mL</option><option value="g">g</option></select></div>
+            </div>
+          </div>
+          <!-- v174 — F1: precificação (vale p/ insumo E embalagem): custo-base editável + markup próprio -->
+          <div class="form-row">
+            <div class="form-group"><label>Custo base (R$) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(usado no preço; vazio = último custo)</span></label><input type="number" min="0" step="0.0001" id="ins-custobase" placeholder="por unidade de compra"></div>
+            <div class="form-group"><label>Markup de venda (%)</label><input type="number" min="0" step="0.01" id="ins-markup" placeholder="ex: 300"></div>
+          </div>
+          <div id="ins-custos-info" style="font-size:11px;color:var(--text-secondary);background:var(--bg-secondary);border-radius:8px;padding:7px 10px;margin-bottom:12px;display:none"></div>
           <div class="modal-footer"><button onclick="closeInsumoModal()">Cancelar</button><button class="btn-primary" onclick="saveInsumo()">Salvar</button></div>
+        </div>
+      </div>
+      <!-- v174 — modal FÓRMULA do Catálogo Novo -->
+      <div class="overlay" id="cn-modal">
+        <div class="modal" style="width:680px;max-width:95vw;max-height:88vh;overflow-y:auto">
+          <h2 id="cn-modal-title">Nova fórmula</h2>
+          <div class="form-row">
+            <div class="form-group"><label>Código</label><input type="text" id="cn-codigo" placeholder="Gerado automaticamente"></div>
+            <div class="form-group"><label>Nome da fórmula *</label><input type="text" id="cn-nome" placeholder="ex: Sérum GHK-Cu"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Categoria do produto <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(perdas e custo fixo vêm da Configuração)</span></label><select id="cn-cat"></select></div>
+            <div class="form-group"><label>Forma farmacêutica *</label><select id="cn-forma" onchange="_cnFormaChange()"><option value="semisolido">Semisólido (creme/gel/pomada)</option><option value="liquido">Líquido</option><option value="capsula">Cápsulas</option></select></div>
+          </div>
+          <div class="modal-section">
+            <div class="modal-section-title">Composição — vinculada aos insumos <span id="cn-comp-hint" style="font-weight:400;color:var(--text-tertiary);font-size:11px"></span></div>
+            <div class="autocomplete-wrap" style="margin-bottom:8px"><input type="text" id="cn-ins-busca" placeholder="Buscar insumo do catálogo para adicionar..." oninput="_cnInsSearch()" autocomplete="off"><div class="autocomplete-list" id="cn-ins-ac"></div></div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead><tr style="color:var(--text-tertiary);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:4px 6px">Insumo</th><th style="text-align:left;padding:4px 6px">Papel</th><th style="text-align:right;padding:4px 6px">Dose</th><th style="text-align:left;padding:4px 6px">Unid.</th><th></th></tr></thead>
+              <tbody id="cn-comp-tbody"></tbody>
+            </table>
+            <div id="cn-comp-vazio" style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Nenhum componente — busque acima. O EXCIPIENTE/QSP não leva dose (completa o total sozinho).</div>
+          </div>
+          <div id="cn-box-caps" style="display:none">
+            <div class="form-row">
+              <div class="form-group"><label>Cápsula de preferência</label><select id="cn-capstam"><option value="">— escolher na venda</option><option value="00">00</option><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
+              <div class="form-group"><label>Invólucro padrão <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(embalagem da cápsula)</span></label><div class="autocomplete-wrap"><input type="text" id="cn-inv-busca" placeholder="Buscar embalagem (ex: CAP 00...)" oninput="_cnInvSearch()" autocomplete="off"><div class="autocomplete-list" id="cn-inv-ac"></div></div></div>
+            </div>
+          </div>
+          <div id="cn-box-qsp" class="form-row">
+            <div class="form-group"><label>QSP padrão <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(pré-preenchido na venda; editável lá)</span></label><input type="number" min="0" step="0.01" id="cn-qspv" placeholder="ex: 120"></div>
+            <div class="form-group"><label>Unidade do QSP</label><select id="cn-qspu"><option value="g">g (peso)</option><option value="mL">mL (volume)</option></select></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Custo do rótulo (R$ por produto)</label><input type="number" min="0" step="0.01" id="cn-rotulo" placeholder="0,00"></div>
+            <div class="form-group"><label>Markup do rótulo (%)</label><input type="number" min="0" step="0.01" id="cn-rotulomk" placeholder="0"></div>
+          </div>
+          <div class="form-group" style="margin-bottom:10px"><label>Modo de uso</label><textarea id="cn-modouso" rows="2" style="width:100%;font-size:12px"></textarea></div>
+          <div class="form-group" style="margin-bottom:10px"><label>Observações</label><textarea id="cn-obs" rows="2" style="width:100%;font-size:12px"></textarea></div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:12px"><input type="checkbox" id="cn-ativo" checked style="width:auto"> Fórmula ativa</label>
+          <div class="modal-footer"><button onclick="closeCnModal()">Cancelar</button><button class="btn-primary" onclick="saveCnFormula()">Salvar fórmula</button></div>
         </div>
       </div>
       <!-- v130 — PÁGINA: Solicitação de Compra -->
@@ -4160,7 +4248,8 @@ function _sepDefRow(){ return function(o){ return { id:String(o.id), data:o, upd
   ['insumos','insumos'], // v130 — catálogo de insumos (ativos) + embalagens p/ solicitação de compra
   ['solicitacoesCompra','solicitacoes_compra'], // v130 — solicitações de compra por pedido (ativos/embalagens)
   ['listasCompra','listas_compra'], // v130 — listas de compra consolidadas (cotação/compra) por tipo
-  ['pedidosCompra','pedidos_compra'] // v160 — PEDIDO DE COMPRA por fornecedor (espelho da NF; recebimento/conciliação)
+  ['pedidosCompra','pedidos_compra'], // v160 — PEDIDO DE COMPRA por fornecedor (espelho da NF; recebimento/conciliação)
+  ['catalogoNovo','catalogo_novo'] // v174 — CATÁLOGO NOVO: fórmulas de manipulação (composição vinculada; custo/preço calculados na venda)
 ].forEach(function(p){
   SEP_ENTITIES.push({
     key:p[0], table:p[1], idText:true,
@@ -4347,21 +4436,29 @@ async function _sepLoadOne(cfg){
     // A thread completa desce só ao ABRIR a conversa (_convHidratar). Toda gravação continua
     // passando pela UNIÃO com o servidor (v107) — cópia fatiada NUNCA sobrescreve a completa.
     if(cfg.key==='conversas'){
+      // v174 — INCIDENTE 28/07 ("conversas sumindo"): o PostgREST corta QUALQUER resposta em 1000 linhas
+      // e o sistema passou de 1000 conversas — a RPC vinha truncada e ~66 conversas NUNCA chegavam ao
+      // navegador (e sem ORDER BY, QUAIS somem variava a cada carga). O atendente abria o cliente,
+      // o front não achava a conversa e criava uma NOVA VAZIA. Fix: RPC com ORDER BY id + paginação aqui.
       try{
-        const { data:_lz, error:_le } = await _sb.rpc('conversas_boot', { p_msgs: 30 });
-        if(_le) throw _le;
-        if(Array.isArray(_lz)){
-          for(var _li=0;_li<_lz.length;_li++){
+        var _cvFrom=0, _cvPg=500;
+        while(true){
+          const { data:_lz, error:_le } = await _sb.rpc('conversas_boot', { p_msgs: 30 }).range(_cvFrom, _cvFrom+_cvPg-1);
+          if(_le) throw _le;
+          var _lzN=Array.isArray(_lz)?_lz.length:0;
+          for(var _li=0;_li<_lzN;_li++){
             var _lr=_lz[_li]; if(!_lr || !_lr.data) continue;
             all.push(_lr.data);
             try{ _convMsgsTotais[String(_lr.data.id)] = Number(_lr.msgs_totais)||0; }catch(_e){}
           }
+          if(_lzN<_cvPg) break;
+          _cvFrom+=_cvPg;
         }
       }catch(_e){ all=[]; console.warn('conversas_boot falhou; carga completa:', _e && _e.message); }
     }
     if(!all.length)
     while(true){
-      const { data, error }=await _sb.from(cfg.table).select('data').range(from,from+page-1);
+      const { data, error }=await _sb.from(cfg.table).select('data').order('id').range(from,from+page-1); // v174 — ordem estável: sem .order a paginação pode pular/duplicar linhas (insumos já passa de 4.700)
       if(error){ console.warn(cfg.table+' load:', error.message); return false; }
       if(!data || !data.length) break;
       for(var i=0;i<data.length;i++){ if(data[i] && data[i].data) all.push(data[i].data); }
@@ -4388,10 +4485,23 @@ async function _sepLoadOne(cfg){
     cfg.set(all);
     // v119 — PRESERVA escritas locais EM VOO: o resync substitui pelo servidor, mas mantém as linhas dirty
     // (obs/pendência/status recém-salvos ainda não confirmados) — fim do "some / precisa 2 vezes".
+    // v174 — CAIXA NÃO REGRIDE (caso 28/07 "aprovado no Caixa e voltou"): quando uma cópia local
+    // preservada (dirty/pend) de conta a pagar/receber ainda está 'pendente' mas o SERVIDOR já tem
+    // aprovada/rejeitada (outra tela aprovou no meio), a cópia HERDA o status do servidor antes de
+    // ser re-aplicada — a edição local dos demais campos continua valendo, mas a aprovação nunca é desfeita.
+    var _guardaCaixa=function(_localRow,_srvRow){
+      if(!_localRow||!_srvRow) return;
+      if((cfg.key==='contasPagar'||cfg.key==='contasReceber') &&
+         (_localRow.statusCaixa||'pendente')==='pendente' && _srvRow.statusCaixa && _srvRow.statusCaixa!=='pendente'){
+        _localRow.statusCaixa=_srvRow.statusCaixa;
+        if(_srvRow.caixaAprovadoEm) _localRow.caixaAprovadoEm=_srvRow.caixaAprovadoEm;
+        if(_srvRow.caixaAprovadoPor) _localRow.caixaAprovadoPor=_srvRow.caixaAprovadoPor;
+      }
+    };
     var _dty=_sepDirty[cfg.key];
     if(_dty && Object.keys(_dty).length){
       var _ar=cfg.get()||[]; var _pos={}; for(var _z=0;_z<_ar.length;_z++){ if(_ar[_z]!=null) _pos[String(cfg.id(_ar[_z]))]=_z; }
-      Object.keys(_dty).forEach(function(_id){ var _lo=_dty[_id]; if(_pos[_id]!=null) _ar[_pos[_id]]=_lo; else _ar.push(_lo); });
+      Object.keys(_dty).forEach(function(_id){ var _lo=_dty[_id]; if(_pos[_id]!=null){ try{ _guardaCaixa(_lo,_ar[_pos[_id]]); }catch(_e){} _ar[_pos[_id]]=_lo; } else _ar.push(_lo); });
       cfg.set(_ar);
     }
     // v134 — re-aplica as edições não gravadas por cima do estado do servidor
@@ -4399,7 +4509,7 @@ async function _sepLoadOne(cfg){
     if(_pids.length){
       var _ar2=cfg.get()||[]; var _pos2={}; for(var _z2=0;_z2<_ar2.length;_z2++){ if(_ar2[_z2]!=null) _pos2[String(cfg.id(_ar2[_z2]))]=_z2; }
       _pids.forEach(function(_id2){ var _lo2=_pend[_id2];
-        if(_pos2[_id2]!=null) _ar2[_pos2[_id2]]=_lo2;                                   // ainda existe no servidor → mantém minha edição
+        if(_pos2[_id2]!=null){ try{ _guardaCaixa(_lo2,_ar2[_pos2[_id2]]); }catch(_e){} _ar2[_pos2[_id2]]=_lo2; } // ainda existe no servidor → mantém minha edição (status do Caixa nunca regride)
         else if(!Object.prototype.hasOwnProperty.call(_snAnt,_id2)) _ar2.push(_lo2);    // criado localmente e ainda não gravado → preserva
         else delete _pend[_id2];  // v136 — existia na última carga e o SERVIDOR APAGOU → a EXCLUSÃO vence (não ressuscita registro apagado por outro usuário)
       });
@@ -4500,7 +4610,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v172';
+var APP_VERSION = 'v174';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5561,6 +5671,7 @@ var orcamentosCrm=[]; var catalogo=[];
 var insumos=[]; // v130 — insumos (ativos) + embalagens: [{id, codigo, nome, tipo:'insumo'|'embalagem', unidade, ativo, criadoEm}]
 var solicitacoesCompra=[]; // v130 — 1 por (pedido,tipo): [{id, orderId, orderNum, cliente, tipo:'ativo'|'embalagem', itens:[{itemId,codigo,nome,qtd,unidade}], status:'solicitado'|'em_lista'|'comprado', listaId, criadoPor, criadoEm, atualizadoEm}]
 var listasCompra=[]; // v130 — lista consolidada por tipo: [{id, tipo:'ativo'|'embalagem', criadoEm, criadoPor, solicIds:[], itens:[{itemId,codigo,nome,unidade,qtdTotal, origem:[{orderId,orderNum,qtd}], cotacoes:[{fornecedorId,fornecedorNome,preco}], escolhida:idx|null, compra:{}}], status:'cotacao'|'compra'|'finalizada'}]
+var catalogoNovo=[]; // v174 — fórmulas: [{id,codigo,nome,categoria,forma:'semisolido'|'liquido'|'capsula',composicao:[{insumoId,codigo,nome,papel:'ativo'|'excipiente',dose,unidade}],capsTam,involucroId,involucroNome,qspValor,qspUn,custoRotulo,markupRotulo,modoUso,obs,ativo,criadoEm,criadoPor}]
 var pedidosCompra=[]; // v160 — PEDIDO DE COMPRA por fornecedor (espelho da NF): [{id, numero:'PC-001', fornecedorId, fornecedorNome, status:'aberto'|'fechado'|'faturado'|'recebido', criadoEm/Por, fechadoEm/Por, nf, nfEm/Por, recebimentos:[{em,por,valor,compraLancId,itens:[{listaId,itemId,nome,qtd,preco}]}]}]. Itens vinculados via it.compra.pedidoCompraId nas listasCompra.
 var equipes=[]; // [{id,nome,tipo:'vendas'|'sdr',coordenadorId,atendentesIds:[],ativa}]
 var conversas=[]; // [{id,clienteId,atendenteId,equipeId,canal,ultimaMsg,ultimaMsgEm,naoLidas,mensagens:[]}] // [{id,leadId,clienteId,clienteNome,empresa,tipoProduto,valor,frete,forma,prevPgto,validade,data,status,obs,responsavel,criadoPor,criadoEm}]
@@ -7093,7 +7204,10 @@ function openClientModal(id){
   _cliAtend = (c && Array.isArray(c.atendidosIds)) ? c.atendidosIds.slice() : [];
   // v106 — contatos: usa c.contatos; se vazio, semeia de tel1/tel2/contato financeiro
   if(c && Array.isArray(c.contatos) && c.contatos.length){ _cliContatos=c.contatos.map(x=>({nome:x.nome||'',cargo:x.cargo||'',telefone:x.telefone||x.whats||'',email:x.email||''})); }
-  else if(c){ _cliContatos=[]; if(c.tel1) _cliContatos.push({nome:c.nome||'Contato principal',cargo:'',telefone:c.tel1,email:c.email||''}); if(c.tel2) _cliContatos.push({nome:(c.nome||'Contato')+' (2)',cargo:'',telefone:c.tel2,email:''}); if(c.finContato||c.finTel) _cliContatos.push({nome:c.finContato||'Financeiro',cargo:'Financeiro',telefone:c.finTel||'',email:c.finEmail||''}); }
+  else if(c){ _cliContatos=[]; // v173 — semeadura respeita a LÁPIDE (contato excluído não renasce do tel1/tel2)
+    if(c.tel1 && !_ctTombHit(c,c.tel1)) _cliContatos.push({nome:c.nome||'Contato principal',cargo:'',telefone:c.tel1,email:c.email||''});
+    if(c.tel2 && !_ctTombHit(c,c.tel2)) _cliContatos.push({nome:(c.nome||'Contato')+' (2)',cargo:'',telefone:c.tel2,email:''});
+    if((c.finContato||c.finTel) && !(c.finTel&&_ctTombHit(c,c.finTel))) _cliContatos.push({nome:c.finContato||'Financeiro',cargo:'Financeiro',telefone:c.finTel||'',email:c.finEmail||''}); }
   else { _cliContatos=[]; }
   if(typeof _renderCliContatos==='function') _renderCliContatos();
   if(typeof _onTipoPessoaChange==='function') _onTipoPessoaChange();
@@ -7264,6 +7378,13 @@ function saveClient(){
       data.carteiraAnest = (typeof getSDREquipeId==='function' ? getSDREquipeId() : '') || '';
     }
   }
+  // v173 — universo antigo (cadastro∪card) capturado ANTES do assign, p/ a lápide de contatos
+  let _ctUnivAntigo=[];
+  try{
+    const _c0=editingClientId?clients.find(x=>x.id===editingClientId):null;
+    const _l0=editingClientId?(crmLeads||[]).find(l=>l.clienteId===editingClientId):null;
+    _ctUnivAntigo=[...((_c0&&_c0.contatos)||[]), ...((_l0&&_l0.contatos)||[])];
+  }catch(_e){}
   let newId=null;
   if(editingClientId){const _cEdit = clients.find(x=>x.id===editingClientId);
     if(_cEdit){
@@ -7289,6 +7410,8 @@ function saveClient(){
   // Se editou um cliente existente, sincroniza o card com a nova carteira
   if(editingClientId){ _sincronizarCardComCarteira(editingClientId); }
   try{ _aplicarClienteInterno(editingClientId||newId); }catch(_e){} // v144 : interno: some do CRM e das carteiras
+  // v173 — lápide: contato que existia (cadastro∪card) e saiu da lista salva NÃO volta mais
+  try{ _ctTombAtualiza(clients.find(x=>x.id===(editingClientId||newId)), _ctUnivAntigo, _cliContatos); }catch(_e){}
   // v106 — espelha os contatos do cadastro para o card do CRM
   if(typeof _sincronizarContatos==='function') _sincronizarContatos(editingClientId||newId, 'cliente');
   // v120 — AUTO-VÍNCULO de pedidos órfãos (lançados pelo agente sem cadastro) por CPF/CNPJ.
@@ -8251,7 +8374,7 @@ function selectLeadClient(id){
   info.style.display='block';
   info.textContent=`✓ ${c.nome}${c.doc?' — '+c.doc:''}${c.cidade?' — '+c.cidade+(c.uf?'/'+c.uf:''):''}`;
   // Puxa o contato do cadastro do cliente se o card ainda não tiver
-  if((!leadContatos || !leadContatos.length) && (c.tel1||c.tel2||c.email)){
+  if((!leadContatos || !leadContatos.length) && (c.tel1||c.tel2||c.email) && !_ctTombHit(c, c.tel1||c.tel2)){ // v173 — lápide vence
     leadContatos=[{nome:c.finContato||c.rtNome||c.nome||'Contato principal', cargo:'', whats:c.tel1||c.tel2||'', email:c.email||'', _doCliente:true}];
     renderLeadContatosList();
   }
@@ -8421,7 +8544,7 @@ function openLeadModal(id, funil, etapa){
   leadContatos=lead?[...(lead.contatos||[])]:[];
   if((!leadContatos || !leadContatos.length) && lead && lead.clienteId){
     const _cli = clients.find(c=>c.id===lead.clienteId);
-    if(_cli && (_cli.tel1||_cli.tel2||_cli.email)){
+    if(_cli && (_cli.tel1||_cli.tel2||_cli.email) && !_ctTombHit(_cli, _cli.tel1||_cli.tel2)){ // v173 — lápide vence
       leadContatos = [{
         nome: _cli.finContato || _cli.rtNome || _cli.nome || 'Contato principal',
         cargo: '',
@@ -8548,10 +8671,17 @@ function updateLeadTipoBadge(){
 async function saveLead(){
   const clienteId=document.getElementById('lead-empresa').dataset.clienteId||null;
   if(!clienteId){alert('Vincule o lead a um cliente do cadastro.\nSe o cliente ainda não está cadastrado, clique em "Cadastrar novo cliente →".');return;}
+  // v173 — universo antigo (cadastro∪card) p/ a lápide de contatos
+  let _ctUniv0=[];
+  try{
+    const _c0=clients.find(x=>x.id===clienteId);
+    const _l0=(crmLeads||[]).find(l=>l.clienteId===clienteId);
+    _ctUniv0=[...((_c0&&_c0.contatos)||[]), ...((_l0&&_l0.contatos)||[])];
+  }catch(_e){}
   // ── Contato obrigatório no card ──────────────────────────
   if(!leadContatos || !leadContatos.length){
     const _cli=clients.find(x=>x.id===clienteId);
-    if(_cli && (_cli.tel1||_cli.tel2||_cli.email)){
+    if(_cli && (_cli.tel1||_cli.tel2||_cli.email) && !_ctTombHit(_cli, _cli.tel1||_cli.tel2)){ // v173 — não ressuscita contato com lápide
       // puxa automaticamente do cadastro do cliente
       leadContatos=[{nome:_cli.finContato||_cli.rtNome||_cli.nome||'Contato principal', cargo:'', whats:_cli.tel1||_cli.tel2||'', email:_cli.email||'', _doCliente:true}];
     } else {
@@ -8640,6 +8770,8 @@ async function saveLead(){
   }else{
     crmLeads.push({id:'l'+Date.now(),...data,historico:[{ts:Date.now(),tipo:'📝',txt:`Lead criado na etapa ${etapa}`,por:currentUser?.name||'Sistema'}]});
   }
+  // v173 — lápide: contato removido no CARD também não volta pela união
+  try{ _ctTombAtualiza(clients.find(x=>x.id===data.clienteId), _ctUniv0, leadContatos); }catch(_e){}
   // v106 — espelha os contatos do card de volta para o cadastro do cliente
   if(data.clienteId && typeof _sincronizarContatos==='function') _sincronizarContatos(data.clienteId, 'card');
   // ── Auto-update client carteira based on EQUIPE + tipoProduto ──
@@ -10029,11 +10161,12 @@ var _catTab='produtos';
 function _canEditInsumos(){ return (typeof canEditCatalogo==='function'&&canEditCatalogo()) || (typeof canAccessCompras==='function'&&canAccessCompras()); }
 function setCatalogoTab(tab){
   _catTab=tab;
-  ['produtos','insumos','embalagens'].forEach(function(t){
+  ['produtos','insumos','embalagens','catnovo'].forEach(function(t){
     var b=document.getElementById('cat-tab-'+t); if(b) b.classList.toggle('active', t===tab);
     var s=document.getElementById('cat-sec-'+t); if(s) s.style.display = t===tab?'':'none';
   });
   if(tab==='produtos') renderCatalogo();
+  else if(tab==='catnovo'){ _cnCfgCarregar(); setCatNovoSub(_cnSub||'formulas'); } // v174
   else renderCatSimples(tab==='insumos'?'insumo':'embalagem');
 }
 function _proximoCodigoInsumo(tipo){
@@ -10114,6 +10247,22 @@ function openInsumoModal(tipo, id){
     _catSel.innerHTML=_cats.map(function(c){ return '<option value="'+c+'">'+(c||'sem categoria')+'</option>'; }).join('');
     _catSel.value=(x&&x.categoria&&_cats.indexOf(x.categoria)>=0)?x.categoria:_cats[0];
   }
+  // v174 — F1 Catálogo Novo: campos técnicos + precificação (custo-base editável + markup por componente)
+  var _f1i=document.getElementById('ins-f1-insumo'), _f1e=document.getElementById('ins-f1-emb');
+  if(_f1i) _f1i.style.display=ehIns?'':'none';
+  if(_f1e) _f1e.style.display=ehIns?'none':'';
+  var _setV=function(id,v){ var e=document.getElementById(id); if(e) e.value=(v!=null&&v!=='')?v:''; };
+  _setV('ins-densidade', x&&x.densidade); _setV('ins-conc', x&&x.concentracao); _setV('ins-fatorui', x&&x.fatorUI);
+  var _up=document.getElementById('ins-unidpad'); if(_up) _up.value=(x&&x.unidadePadrao)||'';
+  _setV('ins-capacidade', x&&x.capacidade); var _cu=document.getElementById('ins-capun'); if(_cu) _cu.value=(x&&x.capacidadeUn)||'mL';
+  _setV('ins-custobase', x&&x.custoBase); _setV('ins-markup', x&&x.markup);
+  var _ci=document.getElementById('ins-custos-info');
+  if(_ci){
+    var _cst=x?_custosItem(x.id, x.codigo):null;
+    var _m12=x?_cnMenor12m(x.id, x.codigo):null;
+    _ci.style.display=_cst?'':'none';
+    if(_cst) _ci.innerHTML='📈 Compras (por '+escapeHtml((x&&x.unidade)||'UN')+'): último <b>'+fmtMoney(_cst.ultimo)+'</b> · médio <b>'+fmtMoney(_cst.medio)+'</b> · menor 12m <b>'+(_m12!=null?fmtMoney(_m12):'—')+'</b> · menor geral '+fmtMoney(_cst.minimo)+' <span style="color:var(--text-tertiary)">(custo base vazio → usa o último)</span>';
+  }
   document.getElementById('insumo-modal').classList.add('open');
 }
 // v150 — categorias do catálogo de insumos/embalagens (definidas pelo dono 10/07)
@@ -10128,12 +10277,18 @@ function saveInsumo(){
   var unidade=document.getElementById('ins-unidade').value||'UN';
   var codigo=document.getElementById('ins-codigo').value.trim();
   var categoria=document.getElementById('ins-categoria')?.value||'sem categoria';
+  // v174 — F1: campos técnicos + precificação
+  var _num=function(id){ var e=document.getElementById(id); if(!e) return null; var v=parseFloat(e.value); return isNaN(v)?null:v; };
+  var extra={ densidade:_num('ins-densidade'), concentracao:_num('ins-conc'), fatorUI:_num('ins-fatorui'),
+    unidadePadrao:(document.getElementById('ins-unidpad')?.value||''),
+    capacidade:_num('ins-capacidade'), capacidadeUn:(document.getElementById('ins-capun')?.value||'mL'),
+    custoBase:_num('ins-custobase'), markup:_num('ins-markup') };
   if(_insEditId){
     var x=(insumos||[]).find(function(p){ return p.id===_insEditId; });
-    if(x){ x.nome=nome; x.unidade=unidade; x.categoria=categoria; if(codigo) x.codigo=codigo; }
+    if(x){ x.nome=nome; x.unidade=unidade; x.categoria=categoria; if(codigo) x.codigo=codigo; Object.assign(x, extra); }
   } else {
     if(!codigo) codigo=_proximoCodigoInsumo(_insTipo);
-    insumos.push({ id:(_insTipo==='insumo'?'ins':'emb')+Date.now(), codigo:codigo, nome:nome, tipo:_insTipo, unidade:unidade, categoria:categoria, ativo:true, criadoEm:Date.now() });
+    insumos.push(Object.assign({ id:(_insTipo==='insumo'?'ins':'emb')+Date.now(), codigo:codigo, nome:nome, tipo:_insTipo, unidade:unidade, categoria:categoria, ativo:true, criadoEm:Date.now() }, extra));
   }
   closeInsumoModal(); renderCatSimples(_insTipo); saveData();
 }
@@ -10144,6 +10299,373 @@ function deleteInsumo(id){
   var tipo=x.tipo;
   insumos=insumos.filter(function(p){ return p.id!==id; });
   renderCatSimples(tipo); saveData();
+}
+// ═══════════ v174 — CATÁLOGO NOVO: fórmulas de manipulação (F1+F2) ═══════════
+// Produto = FÓRMULA vinculada a insumos/embalagens; custo/preço CALCULADOS na venda (plano
+// D:\CLAUDE CODE\PLANO_CATALOGO_NOVO.md). Preço = Σ custo_componente × (1+markup_componente).
+var _cnSub='formulas';
+var CN_CAPS_PADRAO={'00':0.91,'0':0.68,'1':0.50,'2':0.37,'3':0.30,'4':0.21}; // volume interno (mL) — editável na Configuração
+var CN_CFG_KEY='lecare_catnovo_config';
+var _cnCfg=null; // {categorias:[{nome,perdas,custoFixo,markupFixo}], caps:{...}, _ts}
+function _cnCfgGet(){ return _cnCfg||{categorias:[],caps:Object.assign({},CN_CAPS_PADRAO)}; }
+async function _cnCfgCarregar(){
+  try{ if(!_sb) return;
+    const { data }=await _sb.from('app_data').select('value').eq('key',CN_CFG_KEY).maybeSingle();
+    if(data&&data.value&&typeof data.value==='object'){ if((data.value._ts||0)>=((_cnCfg&&_cnCfg._ts)||0)) _cnCfg=data.value; }
+    if(_cnSub==='config') renderCnConfig();
+  }catch(e){ console.warn('catnovo cfg load:', e); }
+}
+async function _cnCfgSalvar(){
+  try{ if(!_sb) return;
+    var c=_cnCfgGet(); c._ts=Date.now(); c._por=(currentUser&&currentUser.name)||''; _cnCfg=c;
+    const { error }=await _sb.from('app_data').upsert({ key:CN_CFG_KEY, value:c, updated_at:new Date().toISOString() }, { onConflict:'key' });
+    if(error) console.warn('catnovo cfg save:', error.message);
+  }catch(e){ console.warn('catnovo cfg save:', e); }
+}
+// menor custo dos últimos 12 meses (histórico de compras do insumo)
+function _cnMenor12m(itemId, codigo){
+  var corte=Date.now()-365*24*3600*1000, min=null;
+  _histComprasItem(itemId, codigo).forEach(function(h){ if((h.em||0)>=corte && h.preco>0 && (min===null||h.preco<min)) min=h.preco; });
+  return min;
+}
+// custo unitário-base do componente (na UNIDADE DE COMPRA): custoBase editável > último > médio
+function _cnCustoUnit(x){
+  if(x && x.custoBase!=null && x.custoBase>0) return {v:x.custoBase, fonte:'base'};
+  var c=_custosItem(x&&x.id, x&&x.codigo);
+  if(c&&c.ultimo>0) return {v:c.ultimo, fonte:'último'};
+  if(c&&c.medio>0) return {v:c.medio, fonte:'médio'};
+  return {v:0, fonte:'—'};
+}
+// custo por GRAMA do insumo (converte a unidade de compra; volume→massa pela densidade; sem densidade=1)
+function _cnCustoPorG(x){
+  var u=String((x&&x.unidade)||'UN').toLowerCase(), c=_cnCustoUnit(x), d=(x&&x.densidade>0)?x.densidade:1;
+  var gPorUn = u==='g'?1 : u==='kg'?1000 : u==='mg'?0.001 : (u==='ml')?d : (u==='l')?1000*d : null;
+  if(gPorUn===null) return null; // comprado por UN — não dá p/ custear por grama
+  return {porG:(gPorUn>0?c.v/gPorUn:0), fonte:c.fonte};
+}
+// dose → gramas (mcg/mg/g/UI; UI exige fatorUI do insumo = mg por UI)
+function _cnDoseG(dose, un, x){
+  var v=parseFloat(dose)||0;
+  if(un==='g') return {g:v};
+  if(un==='mg') return {g:v/1000};
+  if(un==='mcg') return {g:v/1e6};
+  if(un==='UI'){ var f=(x&&x.fatorUI>0)?x.fatorUI:null; return f?{g:v*f/1000}:{g:0, aviso:'cadastre o Fator UI→mg de "'+((x&&x.nome)||'?')+'"'}; }
+  return {g:v};
+}
+function _cnCatCfg(nomeCat){ return (_cnCfgGet().categorias||[]).find(function(c){ return c.nome===nomeCat; })||null; }
+// ── MOTOR DE CÁLCULO ── opts: {qspValor,qspUn} (semisólido/líquido) ou {nCaps,capsTam,involucroId} (cápsula); {embalagemId}
+function _cnCalcular(f, opts){
+  var linhas=[], avisos=[], custoT=0, precoT=0;
+  var cat=_cnCatCfg(f.categoria), perdas=(cat&&parseFloat(cat.perdas))||0;
+  var comp=(f.composicao||[]).map(function(cp){ return Object.assign({}, cp, {_x:(insumos||[]).find(function(i){ return i.id===cp.insumoId; })}); });
+  comp.forEach(function(cp){ if(!cp._x) avisos.push('insumo da fórmula não encontrado no catálogo: '+(cp.nome||cp.insumoId)); });
+  var ativos=comp.filter(function(c){ return c.papel!=='excipiente' && c._x; });
+  var excip=comp.find(function(c){ return c.papel==='excipiente' && c._x; });
+  var addLinha=function(nome, qtd, un, custo, markup, fonte, aviso){
+    var preco=custo*(1+(parseFloat(markup)||0)/100);
+    custoT+=custo; precoT+=preco;
+    linhas.push({nome:nome, qtd:qtd, un:un, custo:custo, markup:parseFloat(markup)||0, preco:preco, fonte:fonte||'', aviso:aviso||''});
+  };
+  var sugestaoTam=null;
+  if(f.forma==='capsula'){
+    var n=Math.max(1, parseInt(opts.nCaps,10)||1);
+    var caps=_cnCfgGet().caps||CN_CAPS_PADRAO;
+    var volAtivos=0;
+    var pes=ativos.map(function(cp){
+      var d=_cnDoseG(cp.dose, cp.unidade, cp._x); if(d.aviso) avisos.push(d.aviso);
+      var conc=(cp._x.concentracao>0?cp._x.concentracao:100);
+      var pesada=(d.g/(conc/100))*(1+perdas/100);
+      volAtivos+=pesada/((cp._x.densidade>0)?cp._x.densidade:1);
+      return {cp:cp, gCaps:pesada};
+    });
+    var tams=Object.keys(caps).sort(function(a,b){ return caps[a]-caps[b]; });
+    for(var ti=0; ti<tams.length; ti++){ if(caps[tams[ti]]>=volAtivos){ sugestaoTam=tams[ti]; break; } }
+    var tam=opts.capsTam||sugestaoTam||'00';
+    var volCaps=caps[tam]||0;
+    if(volAtivos>volCaps+1e-9) avisos.push('os ativos ('+volAtivos.toFixed(3)+' mL) NÃO cabem na cápsula '+tam+' ('+volCaps+' mL) — use maior');
+    pes.forEach(function(p){
+      var g=p.gCaps*n, cpg=_cnCustoPorG(p.cp._x);
+      if(!cpg){ avisos.push('"'+p.cp._x.nome+'" é comprado por UN — não dá para custear por grama'); addLinha(p.cp._x.nome, g, 'g', 0, p.cp._x.markup, '?', 'sem custo/g'); }
+      else addLinha(p.cp._x.nome, g, 'g', g*cpg.porG, p.cp._x.markup, cpg.fonte);
+    });
+    if(excip){
+      var dEx=(excip._x.densidade>0)?excip._x.densidade:1;
+      var gEx=Math.max(0,(volCaps-volAtivos))*dEx*(1+perdas/100)*n;
+      var cpgE=_cnCustoPorG(excip._x);
+      addLinha(excip._x.nome+' (excipiente)', gEx, 'g', cpgE?gEx*cpgE.porG:0, excip._x.markup, cpgE?cpgE.fonte:'?', cpgE?'':'sem custo/g');
+    } else avisos.push('a fórmula não tem EXCIPIENTE marcado — o volume restante da cápsula ficou sem custeio');
+    var inv=(insumos||[]).find(function(i){ return i.id===(opts.involucroId||f.involucroId); });
+    if(inv){ var cI=_cnCustoUnit(inv); addLinha(inv.nome+' (invólucro ×'+n+')', n, 'UN', n*cI.v, inv.markup, cI.fonte); }
+    else avisos.push('escolha o INVÓLUCRO (embalagem da cápsula) para custear');
+  } else {
+    var qspV=parseFloat(opts.qspValor)||0, qspU=opts.qspUn||'g';
+    if(qspV<=0) avisos.push('informe o QSP (quantidade total)');
+    var dBase=(excip&&excip._x&&excip._x.densidade>0)?excip._x.densidade:1;
+    var qspG=(qspU==='g')?qspV:qspV*dBase; // conversão pela densidade cadastrada; sem densidade = 1:1 (decisão do dono)
+    var somaPes=0;
+    ativos.forEach(function(cp){
+      var teor;
+      if(cp.unidade==='%') teor=(parseFloat(cp.dose)||0)/100*qspG;
+      else { var d=_cnDoseG(cp.dose, cp.unidade, cp._x); if(d.aviso) avisos.push(d.aviso); teor=d.g; }
+      var conc=(cp._x.concentracao>0?cp._x.concentracao:100);
+      var pesada=teor/(conc/100); somaPes+=pesada;
+      var g=pesada*(1+perdas/100), cpg=_cnCustoPorG(cp._x);
+      if(!cpg){ avisos.push('"'+cp._x.nome+'" é comprado por UN — não dá para custear por grama'); addLinha(cp._x.nome, g, 'g', 0, cp._x.markup, '?', 'sem custo/g'); }
+      else addLinha(cp._x.nome, g, 'g', g*cpg.porG, cp._x.markup, cpg.fonte);
+    });
+    if(excip){
+      var gB=Math.max(0, qspG-somaPes)*(1+perdas/100);
+      var cpgB=_cnCustoPorG(excip._x);
+      addLinha(excip._x.nome+' (base/QSP)', gB, 'g', cpgB?gB*cpgB.porG:0, excip._x.markup, cpgB?cpgB.fonte:'?', cpgB?'':'sem custo/g');
+    } else if(ativos.length) avisos.push('a fórmula não tem BASE/EXCIPIENTE QSP — o restante até '+qspG.toFixed(1)+' g ficou sem custeio');
+  }
+  var emb=(insumos||[]).find(function(i){ return i.id===opts.embalagemId; });
+  if(emb){ var cE=_cnCustoUnit(emb); addLinha(emb.nome+' (embalagem)', 1, 'UN', cE.v, emb.markup, cE.fonte); }
+  else avisos.push('escolha a EMBALAGEM para custear');
+  if(cat && (parseFloat(cat.custoFixo)||0)>0) addLinha('Custo fixo — categoria '+cat.nome, 1, '', parseFloat(cat.custoFixo)||0, cat.markupFixo, 'config');
+  else if(!cat && f.categoria) avisos.push('categoria "'+f.categoria+'" sem configuração (perdas/custo fixo) — cadastre em ⚙ Configuração');
+  if((parseFloat(f.custoRotulo)||0)>0) addLinha('Rótulo', 1, '', parseFloat(f.custoRotulo)||0, f.markupRotulo, 'produto');
+  return {linhas:linhas, custoTotal:custoT, precoTotal:precoT, avisos:avisos, perdas:perdas, sugestaoTam:sugestaoTam};
+}
+// ── SUB-ABAS ──
+function setCatNovoSub(sub){
+  _cnSub=sub;
+  ['formulas','simulador','config'].forEach(function(t){
+    var b=document.getElementById('cn-sub-'+t); if(b) b.classList.toggle('active', t===sub);
+    var p=document.getElementById('cn-pg-'+t); if(p) p.style.display=(t===sub)?'':'none';
+  });
+  if(sub==='formulas') renderCatNovo();
+  if(sub==='config') renderCnConfig();
+  if(sub==='simulador') renderCnSimulador();
+}
+// ── LISTA DE FÓRMULAS ──
+function _cnFormaLbl(fm){ return fm==='capsula'?'Cápsulas':(fm==='liquido'?'Líquido':'Semisólido'); }
+function renderCatNovo(){
+  var tb=document.getElementById('cn-tbody'); if(!tb) return;
+  var pode=_canEditInsumos();
+  var nb=document.getElementById('cn-novo-btn'); if(nb) nb.style.display=pode?'':'none';
+  var q=(document.getElementById('cn-busca')?.value||'').toLowerCase().trim();
+  var lista=(catalogoNovo||[]).slice();
+  if(q) lista=lista.filter(function(f){ return ((f.nome||'')+' '+(f.codigo||'')+' '+(f.categoria||'')).toLowerCase().indexOf(q)>=0; });
+  lista.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+  var vazio=document.getElementById('cn-vazio'); if(vazio) vazio.style.display=lista.length?'none':'block';
+  tb.innerHTML=lista.map(function(f){
+    var nAt=(f.composicao||[]).filter(function(c){ return c.papel!=='excipiente'; }).length;
+    var temEx=(f.composicao||[]).some(function(c){ return c.papel==='excipiente'; });
+    var padrao=f.forma==='capsula' ? ('cáps '+(f.capsTam||'?')+(f.involucroNome?' · '+f.involucroNome:'')) : (f.qspValor?('QSP '+f.qspValor+' '+(f.qspUn||'g')):'—');
+    var acoes=pode?('<button onclick="openCnModal(\''+f.id+'\')" style="font-size:11px;padding:3px 9px">Editar</button> <button onclick="_cnSimularDe(\''+f.id+'\')" style="font-size:11px;padding:3px 9px" title="Abrir no simulador">🧮</button> <button onclick="deleteCnFormula(\''+f.id+'\')" style="font-size:11px;padding:3px 9px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">Excluir</button>'):'—';
+    return '<tr style="border-bottom:.5px solid var(--border);'+(f.ativo===false?'opacity:.5;':'')+'">'+
+      '<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(f.codigo||'—')+'</td>'+
+      '<td style="padding:7px 10px">'+escapeHtml(f.nome||'—')+'</td>'+
+      '<td style="padding:7px 10px;font-size:12px">'+(f.categoria?'<span style="padding:2px 8px;border-radius:12px;background:var(--bg-info);color:var(--text-info);font-size:11px">'+escapeHtml(f.categoria)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+      '<td style="padding:7px 10px;font-size:12px">'+_cnFormaLbl(f.forma)+'</td>'+
+      '<td style="padding:7px 10px;text-align:center;font-size:12px">'+nAt+' ativo(s)'+(temEx?' + QSP':' <span style="color:var(--st-bad-tx)" title="sem base/excipiente">⚠</span>')+'</td>'+
+      '<td style="padding:7px 10px;font-size:11px;color:var(--text-secondary)">'+escapeHtml(padrao)+'</td>'+
+      '<td style="padding:7px 10px;text-align:center;white-space:nowrap">'+acoes+'</td></tr>';
+  }).join('');
+}
+// ── MODAL DE FÓRMULA ──
+var _cnEditId=null, _cnComp=[], _cnInvId=null;
+function _proximoCodigoCn(){ var max=0; (catalogoNovo||[]).forEach(function(f){ var m=(f.codigo||'').match(/^CN-(\d+)/); if(m){ var n=parseInt(m[1],10); if(n>max) max=n; } }); return 'CN-'+String(max+1).padStart(4,'0'); }
+function openCnModal(id){
+  if(!_canEditInsumos()){ alert('Sem permissão para editar o catálogo.'); return; }
+  _cnEditId=id||null;
+  var f=id?(catalogoNovo||[]).find(function(x){ return x.id===id; }):null;
+  document.getElementById('cn-modal-title').textContent=f?'Editar fórmula':'Nova fórmula';
+  document.getElementById('cn-codigo').value=f?(f.codigo||''):'';
+  document.getElementById('cn-nome').value=f?(f.nome||''):'';
+  var catSel=document.getElementById('cn-cat');
+  var cats=(_cnCfgGet().categorias||[]).map(function(c){ return c.nome; });
+  catSel.innerHTML='<option value="">— sem categoria —</option>'+cats.map(function(c){ return '<option value="'+escapeHtml(c)+'">'+escapeHtml(c)+'</option>'; }).join('');
+  catSel.value=(f&&f.categoria&&cats.indexOf(f.categoria)>=0)?f.categoria:'';
+  document.getElementById('cn-forma').value=f?(f.forma||'semisolido'):'semisolido';
+  _cnComp=f?(f.composicao||[]).map(function(c){ return Object.assign({},c); }):[];
+  _cnInvId=f?(f.involucroId||null):null;
+  document.getElementById('cn-inv-busca').value=(f&&f.involucroNome)||'';
+  document.getElementById('cn-capstam').value=(f&&f.capsTam)||'';
+  document.getElementById('cn-qspv').value=(f&&f.qspValor!=null)?f.qspValor:'';
+  document.getElementById('cn-qspu').value=(f&&f.qspUn)||'g';
+  document.getElementById('cn-rotulo').value=(f&&f.custoRotulo!=null)?f.custoRotulo:'';
+  document.getElementById('cn-rotulomk').value=(f&&f.markupRotulo!=null)?f.markupRotulo:'';
+  document.getElementById('cn-modouso').value=f?(f.modoUso||''):'';
+  document.getElementById('cn-obs').value=f?(f.obs||''):'';
+  document.getElementById('cn-ativo').checked=f?(f.ativo!==false):true;
+  document.getElementById('cn-ins-busca').value='';
+  _cnFormaChange(); _cnRenderComp();
+  document.getElementById('cn-modal').classList.add('open');
+}
+function closeCnModal(){ document.getElementById('cn-modal').classList.remove('open'); _cnEditId=null; _cnComp=[]; _cnInvId=null; }
+function _cnFormaChange(){
+  var fm=document.getElementById('cn-forma').value;
+  document.getElementById('cn-box-caps').style.display=(fm==='capsula')?'':'none';
+  document.getElementById('cn-box-qsp').style.display=(fm==='capsula')?'none':'';
+  var h=document.getElementById('cn-comp-hint');
+  if(h) h.textContent=(fm==='capsula')?'— dose POR CÁPSULA (mg/g/mcg/UI); excipiente completa pelo volume da cápsula':'— ativos em % (ou peso absoluto); a BASE marcada como excipiente completa o QSP';
+  _cnRenderComp();
+}
+function _cnInsSearch(){
+  var q=(document.getElementById('cn-ins-busca').value||'').toLowerCase().trim();
+  var ac=document.getElementById('cn-ins-ac');
+  if(q.length<1){ ac.classList.remove('open'); return; }
+  var m=(insumos||[]).filter(function(x){ return x.tipo==='insumo' && x.ativo!==false && ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(q)>=0; }).slice(0,8);
+  if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nada encontrado em Insumos (Ativos).</div>'; ac.classList.add('open'); return; }
+  ac.innerHTML=m.map(function(x){ return '<div class="autocomplete-item" onmousedown="_cnAddComp(\''+x.id+'\')"><div class="ac-name">'+escapeHtml(x.nome)+'</div><div class="ac-doc">'+escapeHtml(x.codigo||'')+' · '+escapeHtml(x.categoria||'')+'</div></div>'; }).join('');
+  ac.classList.add('open');
+}
+function _cnAddComp(insumoId){
+  var x=(insumos||[]).find(function(p){ return p.id===insumoId; }); if(!x) return;
+  if(_cnComp.some(function(c){ return c.insumoId===insumoId; })){ document.getElementById('cn-ins-ac').classList.remove('open'); return; }
+  var fm=document.getElementById('cn-forma').value;
+  var ehBase=/excipiente|base/i.test(x.categoria||'');
+  var un=x.unidadePadrao||((fm==='capsula')?'mg':'%');
+  _cnComp.push({insumoId:x.id, codigo:x.codigo||'', nome:x.nome||'', papel:ehBase?'excipiente':'ativo', dose:ehBase?'':'', unidade:ehBase?'':un});
+  document.getElementById('cn-ins-busca').value=''; document.getElementById('cn-ins-ac').classList.remove('open');
+  _cnRenderComp();
+}
+function _cnSetComp(i,campo,val){ if(_cnComp[i]){ _cnComp[i][campo]=val; if(campo==='papel') _cnRenderComp(); } }
+function _cnRemComp(i){ _cnComp.splice(i,1); _cnRenderComp(); }
+function _cnRenderComp(){
+  var tb=document.getElementById('cn-comp-tbody'); if(!tb) return;
+  var vazio=document.getElementById('cn-comp-vazio'); if(vazio) vazio.style.display=_cnComp.length?'none':'block';
+  var fm=document.getElementById('cn-forma').value;
+  var uns=(fm==='capsula')?['mg','g','mcg','UI']:['%','mg','g','mcg','UI'];
+  tb.innerHTML=_cnComp.map(function(c,i){
+    var ehEx=c.papel==='excipiente';
+    return '<tr style="border-bottom:.5px solid var(--border)">'+
+      '<td style="padding:4px 6px"><span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(c.codigo||'')+'</span> '+escapeHtml(c.nome||'')+'</td>'+
+      '<td style="padding:4px 6px"><select onchange="_cnSetComp('+i+',\'papel\',this.value)" style="font-size:11px;padding:2px 4px"><option value="ativo"'+(ehEx?'':' selected')+'>Ativo</option><option value="excipiente"'+(ehEx?' selected':'')+'>Excipiente/QSP</option></select></td>'+
+      '<td style="padding:4px 6px;text-align:right">'+(ehEx?'<span style="color:var(--text-tertiary);font-size:11px">completa</span>':'<input type="number" min="0" step="any" value="'+(c.dose!=null?c.dose:'')+'" oninput="_cnSetComp('+i+',\'dose\',this.value)" style="width:80px;text-align:right;font-size:12px">')+'</td>'+
+      '<td style="padding:4px 6px">'+(ehEx?'—':'<select onchange="_cnSetComp('+i+',\'unidade\',this.value)" style="font-size:11px;padding:2px 4px">'+uns.map(function(u){ return '<option value="'+u+'"'+(u===c.unidade?' selected':'')+'>'+u+'</option>'; }).join('')+'</select>')+'</td>'+
+      '<td style="padding:4px 6px;text-align:right"><button onclick="_cnRemComp('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button></td></tr>';
+  }).join('');
+}
+function _cnInvSearch(){
+  var q=(document.getElementById('cn-inv-busca').value||'').toLowerCase().trim();
+  var ac=document.getElementById('cn-inv-ac'); _cnInvId=null;
+  if(q.length<1){ ac.classList.remove('open'); return; }
+  var m=(insumos||[]).filter(function(x){ return x.tipo==='embalagem' && x.ativo!==false && ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(q)>=0; }).slice(0,8);
+  if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nada encontrado em Embalagens.</div>'; ac.classList.add('open'); return; }
+  ac.innerHTML=m.map(function(x){ return '<div class="autocomplete-item" onmousedown="_cnPickInv(\''+x.id+'\')"><div class="ac-name">'+escapeHtml(x.nome)+'</div><div class="ac-doc">'+escapeHtml(x.codigo||'')+'</div></div>'; }).join('');
+  ac.classList.add('open');
+}
+function _cnPickInv(id){ var x=(insumos||[]).find(function(p){ return p.id===id; }); if(!x) return; _cnInvId=x.id; document.getElementById('cn-inv-busca').value=x.nome||''; document.getElementById('cn-inv-ac').classList.remove('open'); }
+function saveCnFormula(){
+  var nome=document.getElementById('cn-nome').value.trim();
+  if(!nome){ alert('Informe o nome da fórmula.'); return; }
+  var comp=_cnComp.filter(function(c){ return c.insumoId && (c.papel==='excipiente' || (parseFloat(c.dose)||0)>0); });
+  if(!comp.length){ alert('Adicione ao menos um componente com dose (ou um excipiente).'); return; }
+  if(comp.filter(function(c){ return c.papel==='excipiente'; }).length>1){ alert('A fórmula só pode ter UM excipiente/QSP.'); return; }
+  var codigo=document.getElementById('cn-codigo').value.trim()||_proximoCodigoCn();
+  var invNome=_cnInvId?(((insumos||[]).find(function(p){ return p.id===_cnInvId; })||{}).nome||''):'';
+  var _num=function(id){ var v=parseFloat(document.getElementById(id).value); return isNaN(v)?null:v; };
+  var dados={ codigo:codigo, nome:nome, categoria:document.getElementById('cn-cat').value||'',
+    forma:document.getElementById('cn-forma').value, composicao:comp,
+    capsTam:document.getElementById('cn-capstam').value||'', involucroId:_cnInvId||null, involucroNome:invNome,
+    qspValor:_num('cn-qspv'), qspUn:document.getElementById('cn-qspu').value||'g',
+    custoRotulo:_num('cn-rotulo'), markupRotulo:_num('cn-rotulomk'),
+    modoUso:document.getElementById('cn-modouso').value.trim(), obs:document.getElementById('cn-obs').value.trim(),
+    ativo:document.getElementById('cn-ativo').checked };
+  if(_cnEditId){
+    var f=(catalogoNovo||[]).find(function(x){ return x.id===_cnEditId; });
+    if(f) Object.assign(f, dados);
+  } else {
+    catalogoNovo.push(Object.assign({ id:'cn'+Date.now(), criadoEm:Date.now(), criadoPor:(currentUser&&currentUser.name)||'' }, dados));
+  }
+  closeCnModal(); renderCatNovo(); saveData();
+}
+function deleteCnFormula(id){
+  if(!_canEditInsumos()){ alert('Sem permissão.'); return; }
+  var f=(catalogoNovo||[]).find(function(x){ return x.id===id; }); if(!f) return;
+  if(!confirm('Excluir a fórmula "'+(f.nome||'')+'"?')) return;
+  catalogoNovo=catalogoNovo.filter(function(x){ return x.id!==id; });
+  renderCatNovo(); saveData();
+}
+// ── CONFIGURAÇÃO (% perdas + custo fixo por CATEGORIA; volumes das cápsulas) ──
+function renderCnConfig(){
+  var box=document.getElementById('cn-cfg-box'); if(!box) return;
+  var cfg=_cnCfgGet(), pode=_canEditInsumos();
+  var h='<div class="panel" style="padding:14px;margin-bottom:12px">'+
+    '<div style="font-weight:600;margin-bottom:4px">Categorias de produto</div>'+
+    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">% de perdas (aplicada na quantidade de MP) e custo fixo (com markup próprio) POR CATEGORIA — regra do dono 24/07.</div>'+
+    '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--text-tertiary);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:4px 6px">Categoria</th><th style="text-align:right;padding:4px 6px">Perdas %</th><th style="text-align:right;padding:4px 6px">Custo fixo R$</th><th style="text-align:right;padding:4px 6px">Markup fixo %</th><th></th></tr></thead><tbody>'+
+    (cfg.categorias||[]).map(function(c,i){
+      return '<tr><td style="padding:3px 6px"><input type="text" value="'+escapeHtml(c.nome||'')+'" onchange="_cnCfgSetCat('+i+',\'nome\',this.value)" style="width:100%;font-size:12px"'+(pode?'':' disabled')+'></td>'+
+        '<td style="padding:3px 6px;text-align:right"><input type="number" min="0" step="0.01" value="'+(c.perdas!=null?c.perdas:'')+'" onchange="_cnCfgSetCat('+i+',\'perdas\',this.value)" style="width:80px;text-align:right;font-size:12px"'+(pode?'':' disabled')+'></td>'+
+        '<td style="padding:3px 6px;text-align:right"><input type="number" min="0" step="0.01" value="'+(c.custoFixo!=null?c.custoFixo:'')+'" onchange="_cnCfgSetCat('+i+',\'custoFixo\',this.value)" style="width:90px;text-align:right;font-size:12px"'+(pode?'':' disabled')+'></td>'+
+        '<td style="padding:3px 6px;text-align:right"><input type="number" min="0" step="0.01" value="'+(c.markupFixo!=null?c.markupFixo:'')+'" onchange="_cnCfgSetCat('+i+',\'markupFixo\',this.value)" style="width:80px;text-align:right;font-size:12px"'+(pode?'':' disabled')+'></td>'+
+        '<td style="padding:3px 6px;text-align:right">'+(pode?'<button onclick="_cnCfgRemCat('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer">✕</button>':'')+'</td></tr>';
+    }).join('')+'</tbody></table>'+
+    (pode?'<button onclick="_cnCfgAddCat()" style="font-size:12px;padding:5px 12px;margin-top:8px">+ Adicionar categoria</button>':'')+
+  '</div>'+
+  '<div class="panel" style="padding:14px;margin-bottom:12px">'+
+    '<div style="font-weight:600;margin-bottom:4px">Volumetria das cápsulas (mL por tamanho)</div>'+
+    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">Usada na sugestão do tamanho e no cálculo do excipiente.</div>'+
+    '<div style="display:flex;gap:14px;flex-wrap:wrap">'+
+    ['00','0','1','2','3','4'].map(function(t){
+      var v=(cfg.caps&&cfg.caps[t]!=null)?cfg.caps[t]:CN_CAPS_PADRAO[t];
+      return '<label style="font-size:12px;display:flex;align-items:center;gap:6px">Cáps '+t+' <input type="number" min="0" step="0.01" value="'+v+'" onchange="_cnCfgSetCaps(\''+t+'\',this.value)" style="width:70px;text-align:right;font-size:12px"'+(pode?'':' disabled')+'> mL</label>';
+    }).join('')+'</div></div>'+
+  (pode?'<button class="btn-primary" onclick="_cnCfgSalvarClick()" style="font-size:13px">💾 Salvar configuração</button>':'');
+  box.innerHTML=h;
+}
+function _cnCfgSetCat(i,campo,val){ var c=_cnCfgGet(); if(!c.categorias[i]) return; c.categorias[i][campo]=(campo==='nome')?String(val).trim():(parseFloat(val)||0); _cnCfg=c; }
+function _cnCfgAddCat(){ var c=_cnCfgGet(); c.categorias.push({nome:'',perdas:0,custoFixo:0,markupFixo:0}); _cnCfg=c; renderCnConfig(); }
+function _cnCfgRemCat(i){ var c=_cnCfgGet(); c.categorias.splice(i,1); _cnCfg=c; renderCnConfig(); }
+function _cnCfgSetCaps(t,val){ var c=_cnCfgGet(); c.caps=c.caps||Object.assign({},CN_CAPS_PADRAO); c.caps[t]=parseFloat(val)||0; _cnCfg=c; }
+function _cnCfgSalvarClick(){ var c=_cnCfgGet(); c.categorias=(c.categorias||[]).filter(function(x){ return (x.nome||'').trim(); }); _cnCfg=c; _cnCfgSalvar(); renderCnConfig(); alert('✓ Configuração salva.'); }
+// ── SIMULADOR ──
+var _cnSimSel={fId:'', nCaps:60, capsTam:'', invId:null, qspV:'', qspU:'g', embId:null};
+function _cnSimularDe(fId){ _cnSimSel.fId=fId; var f=(catalogoNovo||[]).find(function(x){ return x.id===fId; }); if(f){ _cnSimSel.capsTam=f.capsTam||''; _cnSimSel.invId=f.involucroId||null; _cnSimSel.qspV=(f.qspValor!=null)?f.qspValor:''; _cnSimSel.qspU=f.qspUn||'g'; } setCatalogoTab('catnovo'); setCatNovoSub('simulador'); }
+function _cnSimSet(campo,val){ _cnSimSel[campo]=val; if(campo==='fId'){ var f=(catalogoNovo||[]).find(function(x){ return x.id===val; }); if(f){ _cnSimSel.capsTam=f.capsTam||''; _cnSimSel.invId=f.involucroId||null; _cnSimSel.qspV=(f.qspValor!=null)?f.qspValor:''; _cnSimSel.qspU=f.qspUn||'g'; } } renderCnSimulador(); }
+function _cnSimBuscaEmb(inputId, acId, alvo){
+  var q=(document.getElementById(inputId).value||'').toLowerCase().trim();
+  var ac=document.getElementById(acId);
+  if(q.length<2){ ac.classList.remove('open'); return; }
+  var m=(insumos||[]).filter(function(x){ return x.tipo==='embalagem' && x.ativo!==false && ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(q)>=0; }).slice(0,8);
+  ac.innerHTML=m.length?m.map(function(x){ return '<div class="autocomplete-item" onmousedown="_cnSimPickEmb(\''+alvo+'\',\''+x.id+'\')"><div class="ac-name">'+escapeHtml(x.nome)+'</div><div class="ac-doc">'+escapeHtml(x.codigo||'')+(x.capacidade?' · '+x.capacidade+' '+(x.capacidadeUn||'mL'):'')+'</div></div>'; }).join(''):'<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nada encontrado.</div>';
+  ac.classList.add('open');
+}
+function _cnSimPickEmb(alvo,id){ _cnSimSel[alvo]=id; renderCnSimulador(); }
+function renderCnSimulador(){
+  var box=document.getElementById('cn-sim-box'); if(!box) return;
+  var s=_cnSimSel;
+  var fs=(catalogoNovo||[]).filter(function(f){ return f.ativo!==false; }).sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+  var f=(catalogoNovo||[]).find(function(x){ return x.id===s.fId; });
+  var nomeIns=function(id){ var x=(insumos||[]).find(function(p){ return p.id===id; }); return x?x.nome:''; };
+  var h='<div class="panel" style="padding:14px;margin-bottom:12px">'+
+    '<div style="font-weight:600;margin-bottom:8px">🧮 Simulador de orçamento — custo e preço calculados da composição</div>'+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">'+
+    '<div class="form-group" style="min-width:260px;margin:0"><label>Fórmula</label><select onchange="_cnSimSet(\'fId\',this.value)" style="width:100%">'+'<option value="">— escolha —</option>'+fs.map(function(x){ return '<option value="'+x.id+'"'+(x.id===s.fId?' selected':'')+'>'+escapeHtml(x.nome)+' ('+_cnFormaLbl(x.forma)+')</option>'; }).join('')+'</select></div>';
+  if(f&&f.forma==='capsula'){
+    h+='<div class="form-group" style="margin:0"><label>Nº de cápsulas</label><input type="number" min="1" step="1" value="'+(s.nCaps||60)+'" onchange="_cnSimSet(\'nCaps\',this.value)" style="width:90px"></div>'+
+       '<div class="form-group" style="margin:0"><label>Tamanho</label><select onchange="_cnSimSet(\'capsTam\',this.value)" style="width:110px"><option value="">sugestão</option>'+['00','0','1','2','3','4'].map(function(t){ return '<option value="'+t+'"'+(t===s.capsTam?' selected':'')+'>'+t+'</option>'; }).join('')+'</select></div>'+
+       '<div class="form-group" style="min-width:220px;margin:0"><label>Invólucro '+(s.invId?'<span style="color:var(--st-ok-tx)">✓ '+escapeHtml(nomeIns(s.invId))+'</span>':'')+'</label><div class="autocomplete-wrap"><input type="text" id="cn-sim-inv" placeholder="Buscar cápsula (embalagem)..." oninput="_cnSimBuscaEmb(\'cn-sim-inv\',\'cn-sim-inv-ac\',\'invId\')" autocomplete="off"><div class="autocomplete-list" id="cn-sim-inv-ac"></div></div></div>';
+  } else if(f){
+    h+='<div class="form-group" style="margin:0"><label>QSP (quantidade)</label><input type="number" min="0" step="0.01" value="'+(s.qspV!==''?s.qspV:'')+'" onchange="_cnSimSet(\'qspV\',this.value)" style="width:100px"></div>'+
+       '<div class="form-group" style="margin:0"><label>Unidade</label><select onchange="_cnSimSet(\'qspU\',this.value)" style="width:90px"><option value="g"'+(s.qspU==='g'?' selected':'')+'>g</option><option value="mL"'+(s.qspU==='mL'?' selected':'')+'>mL</option></select></div>';
+  }
+  if(f) h+='<div class="form-group" style="min-width:220px;margin:0"><label>Embalagem '+(s.embId?'<span style="color:var(--st-ok-tx)">✓ '+escapeHtml(nomeIns(s.embId))+'</span>':'')+'</label><div class="autocomplete-wrap"><input type="text" id="cn-sim-emb" placeholder="Buscar embalagem..." oninput="_cnSimBuscaEmb(\'cn-sim-emb\',\'cn-sim-emb-ac\',\'embId\')" autocomplete="off"><div class="autocomplete-list" id="cn-sim-emb-ac"></div></div></div>';
+  h+='</div></div>';
+  if(f){
+    var opts={ nCaps:s.nCaps, capsTam:s.capsTam, involucroId:s.invId, qspValor:s.qspV, qspUn:s.qspU, embalagemId:s.embId };
+    var r=_cnCalcular(f, opts);
+    if(f.forma==='capsula'&&r.sugestaoTam&&!s.capsTam) h+='<div style="font-size:12px;color:var(--text-info);margin-bottom:8px">💡 Sugestão: cápsula <b>'+r.sugestaoTam+'</b> (menos excipiente para completar) — escolha livre.</div>';
+    if(r.avisos.length) h+='<div style="font-size:12px;background:var(--st-mid-bg);color:var(--st-mid-tx);border-radius:8px;padding:8px 12px;margin-bottom:8px">⚠ '+r.avisos.map(escapeHtml).join('<br>⚠ ')+'</div>';
+    h+='<div class="panel" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'+
+      '<thead><tr style="background:var(--bg-secondary);font-size:10px;text-transform:uppercase;color:var(--text-secondary)"><th style="text-align:left;padding:7px 10px">Componente</th><th style="text-align:right;padding:7px 10px">Qtd</th><th style="text-align:right;padding:7px 10px">Custo</th><th style="text-align:right;padding:7px 10px">Markup</th><th style="text-align:right;padding:7px 10px">Preço</th><th style="text-align:left;padding:7px 10px">Custo via</th></tr></thead><tbody>'+
+      r.linhas.map(function(l){
+        return '<tr style="border-bottom:.5px solid var(--border)"><td style="padding:6px 10px">'+escapeHtml(l.nome)+(l.aviso?' <span style="color:var(--st-bad-tx);font-size:10px">'+escapeHtml(l.aviso)+'</span>':'')+'</td>'+
+          '<td style="padding:6px 10px;text-align:right;white-space:nowrap">'+(l.un?((Math.round(l.qtd*1000)/1000).toLocaleString('pt-BR')+' '+l.un):'—')+'</td>'+
+          '<td style="padding:6px 10px;text-align:right;white-space:nowrap">'+fmtMoney(l.custo)+'</td>'+
+          '<td style="padding:6px 10px;text-align:right">'+(l.markup?l.markup+'%':'—')+'</td>'+
+          '<td style="padding:6px 10px;text-align:right;white-space:nowrap;font-weight:600">'+fmtMoney(l.preco)+'</td>'+
+          '<td style="padding:6px 10px;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(l.fonte)+'</td></tr>';
+      }).join('')+
+      '</tbody><tfoot><tr style="background:var(--bg-secondary);font-weight:700"><td style="padding:8px 10px">TOTAL'+(r.perdas?' <span style="font-weight:400;font-size:10px;color:var(--text-tertiary)">(perdas '+r.perdas+'% já aplicadas)</span>':'')+'</td><td></td><td style="padding:8px 10px;text-align:right">'+fmtMoney(r.custoTotal)+'</td><td></td><td style="padding:8px 10px;text-align:right">'+fmtMoney(r.precoTotal)+'</td><td style="padding:8px 10px;font-size:11px;font-weight:400">'+(r.custoTotal>0?('margem '+Math.round((1-r.custoTotal/Math.max(r.precoTotal,0.0001))*100)+'%'):'')+'</td></tr></tfoot></table></div>';
+  } else {
+    h+='<div style="font-size:13px;color:var(--text-tertiary);padding:20px;text-align:center">Escolha uma fórmula para simular.</div>';
+  }
+  box.innerHTML=h;
 }
 // ═══════════ v130 — SOLICITAÇÃO DE COMPRA (por pedido; ativos/embalagens) ═══════════
 var _solTab='ativo';          // 'ativo' | 'embalagem'
@@ -10469,16 +10991,32 @@ function renderSolCompra(tab){
 function _solVerBlocoSolic(s){
   var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado'};
   var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
+  // v174 — solicitação com TODOS os itens resolvidos pelo "✕ Não comprar" (ajustado/tinha estoque/sem
+  // estoque) ficava como "EM LISTA" no cabeçalho e parecia pendente (caso EDULCORANTE 102707, 28/07)
+  var _todosNc = lst && (s.itens||[]).length>0 && (s.itens||[]).every(function(it){
+    var li=(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); });
+    return li && li.naoComprado;
+  });
   var h='<div style="margin:12px 0 4px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase">'+
-    (_lbl[_solStatusEfetivo(s)]||s.status)+(s.numSeq?' · '+_solCodSeq(s):'')+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
+    (_todosNc?'Resolvida — sem compra':(_lbl[_solStatusEfetivo(s)]||s.status))+(s.numSeq?' · '+_solCodSeq(s):'')+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
     (s.criadoEm?' · '+fmtDate(_gstDataDe(s.criadoEm)):'')+(s.criadoPor?' · solicitado por <b>'+escapeHtml(s.criadoPor)+'</b>':'')+'</div>';
   (s.itens||[]).forEach(function(it){
     var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
     var c=(li&&li.compra&&li.compra.comprado)?li.compra:null;
+    // v174 — item RESOLVIDO pelo "✕ Não comprar" (v172) mostrava NADA aqui e parecia pendente (caso
+    // FOCUSPEARL 102717, 28/07): agora exibe a resolução — ajustado/tinha estoque contam como entregue.
+    var nc='';
+    if(!c && li && li.naoComprado){
+      var _r=li.ncResolucao;
+      nc = _r==='ajustado' ? '<span style="color:var(--st-ok-tx)">🔧 ajustado'+(li.naoCompradoMotivo?' — '+escapeHtml(li.naoCompradoMotivo):'')+' (conta como entregue)</span>'
+         : _r==='tinha_estoque' ? '<span style="color:var(--st-inf-tx)">📦 tinha estoque (conta como entregue)</span>'
+         : _r==='sem_estoque' ? '<span style="color:var(--st-bad-tx)">🚫 sem estoque — volta na próxima lista</span>'
+         : '<span style="color:var(--st-bad-tx)">✕ não comprado'+(li.naoCompradoMotivo?' — '+escapeHtml(li.naoCompradoMotivo):'')+'</span>';
+    }
     h+='<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:.5px solid var(--border);font-size:12px">'+
       '<span>'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</span>'+
       '<span style="white-space:nowrap;text-align:right">'+(parseFloat(it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+
-      (c?' · <span style="color:var(--st-ok-tx)">✔ comprado'+(c.fornecedorNome?' — '+escapeHtml(c.fornecedorNome):'')+((parseFloat(c.precoPago)||0)>0?' · '+fmtMoney(c.precoPago)+'/un':'')+'</span>'+(li&&li.compraParcial?' <span style="color:var(--st-bad-tx);font-weight:600" title="Solicitado subiu acima do comprado — estornar e comprar o total">⚠ parcial</span>':''):'')+
+      (c?' · <span style="color:var(--st-ok-tx)">✔ comprado'+(c.fornecedorNome?' — '+escapeHtml(c.fornecedorNome):'')+((parseFloat(c.precoPago)||0)>0?' · '+fmtMoney(c.precoPago)+'/un':'')+'</span>'+(li&&li.compraParcial?' <span style="color:var(--st-bad-tx);font-weight:600" title="Solicitado subiu acima do comprado — estornar e comprar o total">⚠ parcial</span>':''):(nc?' · '+nc:''))+
       '</span></div>';
   });
   return h;
@@ -14221,18 +14759,10 @@ function _finBaixarSelecionadas(tipo){
   const fora=selInfo.filter(x=>x.chave!==princ.chave);
   if(fora.length){
     // v161 — RECEBER com clientes diferentes vai para a BAIXA EM LOTE (decisão do dono 16/07, volume de
-    // cartão): até 20 parcelas numa tacada, mesma data/forma/conta/taxa%. Pagar segue por fornecedor.
-    if(tipo!=='pagar'){ _finBaixarLote(selInfo); return; }
-    const rotulo='fornecedor';
-    const outrosNomes=[...new Set(fora.map(x=>x.nome))];
-    if(!confirm(
-      '⚠ ATENÇÃO — seleção com '+rotulo+'es diferentes\n\n'+
-      'Você marcou '+selInfo.length+' parcela(s) de '+(outrosNomes.length+1)+' '+rotulo+'es diferentes.\n'+
-      'A baixa é feita por '+rotulo+' (um pagamento por '+rotulo+'), então NÃO dá para baixar todas de uma vez.\n\n'+
-      '➡ ENTRA agora: '+princ.nome+' — '+doPrinc.length+' parcela(s)\n'+
-      '❌ NÃO entra ('+fora.length+' parcela[s]): '+outrosNomes.join(', ')+'\n\n'+
-      'Faça a baixa deste '+rotulo+' e depois repita para '+(outrosNomes.length>1?'cada um dos outros':'o outro')+'.\n\nContinuar com '+princ.nome+'?'
-    )) return;
+    // cartão): até 20 parcelas numa tacada, mesma data/forma/conta/taxa%.
+    // v174 — PAGAR também (pedido do dono 28/07: fatura do cartão com 19 fornecedores). A baixa é UPDATE
+    // em contas_pagar/receber — a trava de exclusão em massa (que protege DELETE) NÃO se aplica.
+    _finBaixarLote(selInfo, tipo); return;
   }
   openBaixaModal(tipo, princ.s.dataset.conta, parseInt(princ.s.dataset.parc));
   if(doPrinc.length>1){
@@ -14248,29 +14778,31 @@ function _finBaixarSelecionadas(tipo){
 // continua parcela a parcela e a DRE/DFC leem igual à baixa normal. Segurança: baixa é UPDATE em
 // contas_receber — a trava de exclusão em massa (orders, DELETE) não se aplica.
 var _loteState=null;
-function _finBaixarLote(selInfo){
+function _finBaixarLote(selInfo, tipo){
+  tipo=(tipo==='pagar')?'pagar':'receber'; // v174 — lote também no PAGAR (fatura de cartão com N fornecedores)
   if(selInfo.length>20){ alert('O lote aceita até 20 parcelas por vez (você marcou '+selInfo.length+').\nDesmarque algumas e repita o lote.'); return; }
+  var _lst=(tipo==='pagar')?contasPagar:contasReceber;
   var rows=selInfo.map(function(x){
-    var c=contasReceber.find(function(y){ return y.id===x.s.dataset.conta; }); if(!c) return null;
+    var c=_lst.find(function(y){ return y.id===x.s.dataset.conta; }); if(!c) return null;
     var pi=parseInt(x.s.dataset.parc,10); var p=c.parcelas&&c.parcelas[pi]; if(!p||p.pago) return null;
-    return { contaId:c.id, parcIdx:pi, cliente:c.clienteNome||'—', desc:c.descricao||'', valor:parseFloat(p.valor)||0, venc:p.vencimento||'' };
+    return { contaId:c.id, parcIdx:pi, cliente:(tipo==='pagar'?(c.fornecedorNome||c.clienteNome):(c.clienteNome||c.fornecedorNome))||'—', desc:c.descricao||'', valor:parseFloat(p.valor)||0, venc:p.vencimento||'' };
   }).filter(Boolean);
   if(!rows.length){ alert('Nenhuma parcela em aberto na seleção.'); return; }
-  _loteState={rows:rows};
+  _loteState={rows:rows, tipo:tipo};
   var ov=document.getElementById('baixa-lote-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='baixa-lote-overlay'; ov.className='overlay'; document.body.appendChild(ov); }
   var contasCx=(planoContas||[]).filter(function(p){ return p.atividadeDFC==='caixa'&&p.analitica!==false; });
   ov.innerHTML='<div class="modal" style="width:660px;max-height:86vh;overflow-y:auto">'+
-    '<h2>💳 Baixa em lote — recebimentos</h2>'+
-    '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Até 20 parcelas por lote, de clientes diferentes. Cada parcela recebe a própria baixa (estorno continua parcela a parcela). A taxa de máquina em % é calculada sobre cada parcela.</div>'+
+    '<h2>💳 Baixa em lote — '+(tipo==='pagar'?'pagamentos':'recebimentos')+'</h2>'+
+    '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Até 20 parcelas por lote, de '+(tipo==='pagar'?'fornecedores':'clientes')+' diferentes. Cada parcela recebe a própria baixa (estorno continua parcela a parcela).'+(tipo==='pagar'?'':' A taxa de máquina em % é calculada sobre cada parcela.')+'</div>'+
     '<div style="max-height:220px;overflow:auto;border:.5px solid var(--border);border-radius:6px;margin-bottom:10px">'+rows.map(function(r){ return '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 10px;border-bottom:.5px solid var(--border);font-size:12px"><span>'+escapeHtml(r.cliente)+' <span style="color:var(--text-tertiary);font-size:10px">'+escapeHtml(r.desc)+'</span></span><span style="white-space:nowrap">'+fmtMoney(r.valor)+(r.venc?' <span style="color:var(--text-tertiary);font-size:10px">venc '+fmtDate(r.venc)+'</span>':'')+'</span></div>'; }).join('')+'</div>'+
     '<div class="form-row">'+
       '<div class="form-group"><label>Data da baixa</label><input type="date" id="lote-data" value="'+today()+'"></div>'+
       '<div class="form-group"><label>Forma</label><select id="lote-forma">'+FORMAS_PAG.map(function(f){ return '<option '+(f==='Cartão de Crédito'?'selected':'')+'>'+f+'</option>'; }).join('')+'</select></div>'+
     '</div>'+
     '<div class="form-row">'+
-      '<div class="form-group"><label>Conta destino (caixa/banco)</label><select id="lote-conta"><option value="">—</option>'+contasCx.map(function(p){ return '<option value="'+p.id+'">'+escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)+'</option>'; }).join('')+'</select></div>'+
-      '<div class="form-group"><label>Taxa de máquina (%) <span style="font-size:10px;color:var(--text-tertiary)">por parcela</span></label><input type="number" id="lote-taxa" value="0" min="0" step="0.01" oninput="_loteRecalc()"></div>'+
+      '<div class="form-group"><label>Conta '+(tipo==='pagar'?'de origem (caixa/banco)':'destino (caixa/banco)')+'</label><select id="lote-conta"><option value="">—</option>'+contasCx.map(function(p){ return '<option value="'+p.id+'">'+escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)+'</option>'; }).join('')+'</select></div>'+
+      (tipo==='pagar'?'':'<div class="form-group"><label>Taxa de máquina (%) <span style="font-size:10px;color:var(--text-tertiary)">por parcela</span></label><input type="number" id="lote-taxa" value="0" min="0" step="0.01" oninput="_loteRecalc()"></div>')+
     '</div>'+
     '<div class="form-group"><label>Observação</label><input type="text" id="lote-obs" placeholder="opcional"></div>'+
     '<div id="lote-resumo" style="font-size:13px;font-weight:600;margin:8px 0"></div>'+
@@ -14289,23 +14821,29 @@ function _loteRecalc(){
 }
 function confirmarBaixaLote(){
   if(!_loteState) return;
+  var tipo=_loteState.tipo||'receber';
   var data=(document.getElementById('lote-data')||{}).value||today();
   var forma=(document.getElementById('lote-forma')||{}).value||'Cartão de Crédito';
   var contaDest=(document.getElementById('lote-conta')||{}).value||null;
-  var pct=parseFloat((document.getElementById('lote-taxa')||{}).value)||0;
+  var pct=(tipo==='pagar')?0:(parseFloat((document.getElementById('lote-taxa')||{}).value)||0);
   var obs=((document.getElementById('lote-obs')||{}).value||'').trim();
+  var _lst=(tipo==='pagar')?contasPagar:contasReceber;
   var n=0, liquido=0;
   _loteState.rows.forEach(function(r){
-    var c=contasReceber.find(function(y){ return y.id===r.contaId; }); if(!c) return;
+    var c=_lst.find(function(y){ return y.id===r.contaId; }); if(!c) return;
     var p=c.parcelas&&c.parcelas[r.parcIdx]; if(!p||p.pago) return;
     var taxa=+((parseFloat(p.valor)||0)*pct/100).toFixed(2);
     p.pago=true;
     p.baixa={ id:'bx'+Date.now()+'_'+n, data:data, valorBruto:(parseFloat(p.valor)||0), forma:forma, conta:contaDest, obs:(obs?obs+' ':'')+'[lote]', por:(currentUser&&currentUser.name)||'—', ts:Date.now(), desconto:0, taxa:taxa, juros:0, grupo:null };
+    // v174 — PAGAR de origem COMPRA: espelha o 'pago' na parcela da compra (mesmo espelho da baixa normal; o estorno já desfaz)
+    if(tipo==='pagar' && c.origem==='compra'){ try{ var comp=compras.find(function(z){ return z.id===c.origemId; }); if(comp&&comp.parcelas&&comp.parcelas[r.parcIdx]) comp.parcelas[r.parcIdx].pago=true; }catch(_e){} }
     liquido+=(parseFloat(p.valor)||0)-taxa; n++;
   });
   document.getElementById('baixa-lote-overlay').classList.remove('open'); _loteState=null;
-  saveData(); renderFinAReceber(); try{ renderFinPainel(); }catch(_e){}
-  alert('✓ Lote concluído: '+n+' recebimento(s) baixado(s).\nLíquido total: '+fmtMoney(liquido));
+  saveData();
+  if(tipo==='pagar'){ try{ renderFinAPagar(); }catch(_e){} } else { try{ renderFinAReceber(); }catch(_e){} }
+  try{ renderFinPainel(); }catch(_e){}
+  alert('✓ Lote concluído: '+n+' '+(tipo==='pagar'?'pagamento(s)':'recebimento(s)')+' baixado(s).\n'+(pct?'Líquido total: ':'Total: ')+fmtMoney(liquido));
 }
 function getContaStatus(c){
   if(c.formaPag==='bonificacao') return 'bonificacao'; // v127 — bonificação: registrada, não paga, nunca vence
@@ -27497,8 +28035,18 @@ async function _pollConversas(){
     if(!_sb || !_sbReady || !currentUser || _versionBlocked || document.hidden) return;
     if(_focoReloadInFlight) return;
     Object.keys(_convRemovidas).forEach(function(id){ if(Date.now()-_convRemovidas[id]>60000) delete _convRemovidas[id]; });
-    const { data:rows } = await _sb.from('conversas').select('id,updated_at');
-    if(!Array.isArray(rows)) return;
+    // v174 — paginado (PostgREST corta em 1000; o sistema passou de 1000 conversas — incidente 28/07)
+    var rows=[];
+    { var _pf=0, _pp=1000;
+      while(true){
+        const { data:_pr } = await _sb.from('conversas').select('id,updated_at').order('id').range(_pf,_pf+_pp-1);
+        if(!Array.isArray(_pr)||!_pr.length) break;
+        rows=rows.concat(_pr);
+        if(_pr.length<_pp) break;
+        _pf+=_pp;
+      }
+    }
+    if(!Array.isArray(rows)||!rows.length) return;
     if(!_convPollFirst){ _convPollFirst=true; rows.forEach(function(r){ _convSeenUpd[r.id]=r.updated_at; }); return; }
     const changed = rows.filter(function(r){ const p=_convSeenUpd[r.id]; return (!p || p < r.updated_at) && !_convRemovidas[r.id]; });
     if(!changed.length) return;
@@ -29153,6 +29701,38 @@ async function _convEnviarAnexos(){
   const files=_convAnexoFiles||[]; const containerId=_convAnexoCid;
   if(ov) ov.classList.remove('open');
   const conv=conversas.find(c=>c.id===conversaAtivaId); if(!conv||!files.length){ _convAnexoFiles=null; return; }
+  // v173 — ANEXO EM GRUPO (caso 24/07: "cliente não tem telefone válido"): envio isolado como o TEXTO
+  // v148 — NÃO passa por registrarMensagem (grupo não tem cliente; getOuCriarConversa retornava null e o
+  // anexo nem entrava na conversa) nem pelo guard de dono (grupo não tem dono). RPC idempotente + flag grupo.
+  if(conv.grupo){
+    if(!_podeResponderConv(conv)){ alert('Você não atende neste número.'); _convAnexoFiles=null; return; }
+    if(!conv.grupoId){ alert('⚠ Este grupo está sem ID — não dá para enviar pro WhatsApp.'); _convAnexoFiles=null; return; }
+    const _nomeAut=(currentUser&&currentUser.name)?String(currentUser.name).trim():'';
+    let _env=0;
+    for(let fi=0; fi<files.length; fi++){
+      let file=files[fi];
+      if(/^image\/jpe?g$/i.test(file.type||'')){ try{ file=await _waNormalizarImagem(file); }catch(_e){ /* formato exotico: envia o original */ } }
+      if(file.size>50*1024*1024){ alert('"'+file.name+'" excede 50MB e não será enviado.'); continue; }
+      const safe=(file.name||'arquivo').replace(/[^\w.\-]+/g,'_');
+      const path='conversa_'+conv.id+'/'+Date.now()+'_'+Math.floor(Math.random()*1000)+'_'+safe;
+      try{
+        const up=await _sb.storage.from('anexos').upload(path, file, {upsert:false, contentType:file.type||undefined});
+        if(up.error){ alert('Falha ao enviar "'+file.name+'": '+(up.error.message||up.error)); continue; }
+        const sizeStr=file.size>1024*1024?(file.size/1024/1024).toFixed(1)+' MB':(file.size/1024).toFixed(0)+' KB';
+        const _mg={ id:'m'+Date.now()+Math.floor(Math.random()*1000), de:'atendente', texto:(fi===0?caption:''), anexo:{ nome:file.name, tamanho:sizeStr, tipo:file.type, kind:_waKindFromMime(file.type), path:path }, em:Date.now(), autorId:(currentUser?currentUser.id:null), status:'fila' };
+        conv.mensagens=Array.isArray(conv.mensagens)?conv.mensagens:[]; conv.mensagens.push(_mg);
+        conv.ultimaMsg='📎 '+_txCut(file.name||'anexo',70); conv.ultimaMsgEm=_mg.em;
+        try{ await _sb.rpc('conv_append_msg', { p_conv_id: conv.id, p_msg: _mg }); }catch(_e){}
+        // v149 — em grupo, a legenda sai com o autor na 1ª linha (vários usuários no mesmo número)
+        const _cap=_nomeAut?('*'+_nomeAut+':*'+(_mg.texto?'\n'+_mg.texto:'')):_mg.texto;
+        _sb.functions.invoke('wa-send-media', { body:{ convId:conv.id, msgId:_mg.id, phone:(conv.grupoId||''), path:path, fileName:file.name, mimeType:file.type, caption:_cap, grupo:true } }).catch(function(_e){ console.warn('wa-send-media grupo:', _e); });
+        _env++;
+      }catch(err){ alert('Erro ao enviar "'+file.name+'": '+err); }
+    }
+    _convAnexoFiles=null;
+    if(_env>0){ try{ renderConversaTela(conv.id, containerId); renderConversasLista(); _updateConvBadge(); }catch(_e){} }
+    return;
+  }
   if(!(await _convGuardDonoServidor(conv, containerId))){ _convAnexoFiles=null; return; } // v159 — mesmo guard de dono do texto
   let enviados=0; const _fila=[];
   for(let fi=0; fi<files.length; fi++){
@@ -29184,6 +29764,7 @@ async function _convEnviarAnexos(){
 // transferida em outra tela ANTES de enviar qualquer coisa (texto/anexo/áudio/imagem colada) e
 // auto-assume, com carimbo, conversa sem dono. Retorna true quando pode enviar.
 async function _convGuardDonoServidor(conv, containerId){
+  if(conv && conv.grupo) return true; // v173 — grupo não tem dono: sem guard/auto-assumir (permissão do número é checada pelo chamador)
   if(_waModoDois() && _sb && currentUser){ // guard vale p/ TODOS (admin/diretora também não atropelam)
     try{
       const { data:_row } = await _sb.from('conversas').select('at:data->>atendenteId, em:data->>atendEm').eq('id', conv.id).maybeSingle();
@@ -29214,6 +29795,15 @@ async function _convGuardDonoServidor(conv, containerId){
 async function _waEnviarAnexo(conv, msg, file, path){
   try{
     if(!_sb) return;
+    // v173 — GRUPO: destino é o ID do grupo (flag grupo; wa-send-media v11 não prefixa 55)
+    if(conv && conv.grupo){
+      if(!conv.grupoId){ alert('⚠ Este grupo está sem ID — o anexo ficou só registrado no sistema.'); return; }
+      const _nA=(currentUser&&currentUser.name)?String(currentUser.name).trim():'';
+      const _capG=_nA?('*'+_nA+':*'+(msg.texto?'\n'+msg.texto:'')):(msg.texto||'');
+      const { error:_eG } = await _sb.functions.invoke('wa-send-media', { body:{ convId:conv.id, msgId:msg.id, phone:conv.grupoId, path, fileName:file.name, mimeType:file.type, caption:_capG, grupo:true } });
+      if(_eG) console.warn('wa-send-media (grupo) retornou erro:', _eG.message||_eG);
+      return;
+    }
     const cli = clients.find(c=>c.id===conv.clienteId);
     const phone = (conv && conv.telefone && _waFone(conv.telefone).length>=12 ? _waFone(conv.telefone) : '') || _waFoneCliente(cli);
     if(!phone){ console.warn('wa-send-media: cliente sem telefone válido'); alert('⚠ O cliente não tem telefone válido — o anexo ficou só registrado no sistema (não foi enviado pro WhatsApp).'); return; }
@@ -31420,6 +32010,23 @@ function _carteiraDefineProduto(tipo){
 // v106 — contatos do cliente (nome+cargo+telefone) sincronizados com os contatos do card do CRM
 var _cliContatos=[];
 function _ctKey(c){ const d=String((c&&(c.telefone||c.whats))||'').replace(/\D/g,''); return d.length>=8?d.slice(-8):(((c&&c.nome)||'').toLowerCase().trim()); }
+// v173 — LÁPIDE de contato (caso VerriFarma 24/07: contato excluído SEMPRE voltava — a união
+// cadastro↔card e as semeaduras por tel1/tel2 ressuscitavam). Padrão lápide (como usersRemovidos
+// v132): exclusão VENCE. Guardada em cliente.contatosRemovidos {chave _ctKey: ts}; re-adicionar limpa.
+function _ctTombHit(cli, telOuContato){
+  try{
+    const k=_ctKey(typeof telOuContato==='object'?telOuContato:{telefone:telOuContato});
+    return !!(k && cli && cli.contatosRemovidos && cli.contatosRemovidos[k]);
+  }catch(_e){ return false; }
+}
+function _ctTombAtualiza(cli, universoAntigo, listaNova){
+  if(!cli) return;
+  const tb={...(cli.contatosRemovidos||{})};
+  const novos={}; (listaNova||[]).forEach(x=>{ const k=_ctKey(x); if(k) novos[k]=1; });
+  (universoAntigo||[]).forEach(x=>{ const k=_ctKey(x); if(k && !novos[k]) tb[k]=Date.now(); }); // sumiu da lista salva → lápide
+  Object.keys(novos).forEach(k=>{ delete tb[k]; });                                             // (re)adicionado → limpa a lápide
+  cli.contatosRemovidos=tb;
+}
 function _renderCliContatos(){
   const el=document.getElementById('c-contatos-list'); if(!el) return;
   el.innerHTML = _cliContatos.length ? _cliContatos.map((c,i)=>`
@@ -31450,7 +32057,9 @@ function _sincronizarContatos(clienteId, fonte){
     else { const M=merged[k]; if(!M.nome&&c.nome)M.nome=String(c.nome).trim(); if(!M.cargo&&c.cargo)M.cargo=String(c.cargo).trim(); if(!M.tel&&tel)M.tel=tel; if(!M.email&&c.email)M.email=String(c.email).trim(); } }); };
   if(fonte==='card'){ addAll(lead&&lead.contatos); addAll(cli&&cli.contatos); }
   else { addAll(cli&&cli.contatos); addAll(lead&&lead.contatos); }
-  const lista=Object.values(merged);
+  // v173 — a união NUNCA ressuscita contato com lápide (exclusão vence)
+  const _tb=(cli&&cli.contatosRemovidos)||{};
+  const lista=Object.values(merged).filter(c=>{ const k=_ctKey({nome:c.nome,telefone:c.tel}); return !(k&&_tb[k]); });
   if(cli) cli.contatos=lista.map(c=>({nome:c.nome,cargo:c.cargo,telefone:c.tel,email:c.email}));
   if(lead) lead.contatos=lista.map(c=>({nome:c.nome,cargo:c.cargo,whats:c.tel,email:c.email}));
 }

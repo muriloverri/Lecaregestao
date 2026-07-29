@@ -1460,6 +1460,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <div class="des-tab" id="lst-sub-embalagem" onclick="setListaSub('embalagem')">Embalagem</div>
             </div>
             <button class="btn-primary" id="lst-gerar-btn" onclick="gerarListaCompra()">+ Gerar lista de ativos</button>
+            <button id="lst-fse-btn" onclick="openForaEstoqueModal()" style="font-size:12px;padding:6px 12px;color:var(--st-bad-tx);border:.5px solid var(--st-bad-bd)" title="Itens devolvidos como SEM ESTOQUE aguardando a próxima lista">🚫 Fora de estoque</button><!-- v175 -->
             <span id="lst-pend-info" style="margin-left:auto;font-size:12px;color:var(--text-secondary)"></span>
           </div></div>
           <div id="lst-list"></div>
@@ -4448,6 +4449,7 @@ async function _sepLoadOne(cfg){
           var _lzN=Array.isArray(_lz)?_lz.length:0;
           for(var _li=0;_li<_lzN;_li++){
             var _lr=_lz[_li]; if(!_lr || !_lr.data) continue;
+            if(_lr.data.id==null && _lr.id!=null) _lr.data.id=_lr.id; // v175 — mesma blindagem anti-clone
             all.push(_lr.data);
             try{ _convMsgsTotais[String(_lr.data.id)] = Number(_lr.msgs_totais)||0; }catch(_e){}
           }
@@ -4458,10 +4460,13 @@ async function _sepLoadOne(cfg){
     }
     if(!all.length)
     while(true){
-      const { data, error }=await _sb.from(cfg.table).select('data').order('id').range(from,from+page-1); // v174 — ordem estável: sem .order a paginação pode pular/duplicar linhas (insumos já passa de 4.700)
+      const { data, error }=await _sb.from(cfg.table).select('id,data').order('id').range(from,from+page-1); // v174 — ordem estável: sem .order a paginação pode pular/duplicar linhas (insumos já passa de 4.700)
       if(error){ console.warn(cfg.table+' load:', error.message); return false; }
       if(!data || !data.length) break;
-      for(var i=0;i<data.length;i++){ if(data[i] && data[i].data) all.push(data[i].data); }
+      // v175 — BLINDAGEM (incidente da migração 28/07, mesmo DNA do PED-001): registro cujo data veio SEM
+      // 'id' interno ficava sem identidade no SEP e era RE-CHAVEADO e re-salvo como CLONE a cada sync
+      // (~3.000 clones em 3 ciclos). O id da LINHA vira o id do objeto — clone impossível.
+      for(var i=0;i<data.length;i++){ if(data[i] && data[i].data){ if(data[i].data.id==null && data[i].id!=null) data[i].data.id=data[i].id; all.push(data[i].data); } }
       if(data.length<page) break;
       from+=page;
     }
@@ -4610,7 +4615,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v174';
+var APP_VERSION = 'v175';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -11274,10 +11279,68 @@ function setListaSub(tipo){
   renderListaCompra();
 }
 function _solicPendentes(tipo){ return (solicitacoesCompra||[]).filter(function(s){ return s && s.tipo===tipo && s.status==='solicitado' && (s.itens||[]).length; }); }
+// ═══════ v175 — 🚫 FORA DE ESTOQUE (pedido do dono 28/07) ═══════
+// Item devolvido pela resolução "Sem estoque" fica MARCADO na fila (it.semEstoque). O Gerar lista
+// PERGUNTA se inclui; o botão "🚫 Fora de estoque" lista os marcados. Ao entrar numa lista
+// (Gerar incluindo / Complementar) a marca é LIMPA — só volta se for marcado sem estoque de novo.
+function _fseItensPendentes(tipo){
+  var out=[];
+  _solicPendentes(tipo).forEach(function(s){ (s.itens||[]).forEach(function(it){ if(it&&it.semEstoque) out.push({s:s,it:it}); }); });
+  return out;
+}
+function _fseLimparMarcas(sols){ (sols||[]).forEach(function(s){ (s.itens||[]).forEach(function(it){ if(it&&it.semEstoque){ delete it.semEstoque; delete it.semEstoqueEm; delete it.semEstoquePor; } }); }); }
+// retroativo (idempotente): devoluções sem_estoque feitas ANTES do marcador existir ganham a marca
+function _healSemEstoqueFlags(){
+  try{
+    var mudou=false;
+    (listasCompra||[]).forEach(function(l){ (l.itens||[]).forEach(function(li){
+      if(!(li&&li.naoComprado&&li.ncResolucao==='sem_estoque')) return;
+      (solicitacoesCompra||[]).forEach(function(s){
+        if(!s||s.status!=='solicitado'||s.tipo!==l.tipo) return;
+        if(!(li.origem||[]).some(function(og){ return String(og.orderId)===String(s.orderId); })) return;
+        (s.itens||[]).forEach(function(it){ if(it&&it.itemId===li.itemId&&!it.semEstoque){ it.semEstoque=true; it.semEstoqueEm=li.naoCompradoEm||Date.now(); it.semEstoquePor=li.naoCompradoPor||''; mudou=true; } });
+      });
+    }); });
+    if(mudou) saveData();
+  }catch(_e){}
+}
+function openForaEstoqueModal(){
+  var tipo=_listaTipo;
+  var rows=_fseItensPendentes(tipo);
+  var ov=document.getElementById('fse-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='fse-overlay'; ov.className='overlay'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:660px;max-width:95vw;max-height:85vh;overflow-y:auto">'+
+    '<h2 style="font-size:16px">🚫 Fora de estoque — '+(tipo==='ativo'?'ativos':'embalagens')+'</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Itens devolvidos pela resolução "Sem estoque", aguardando a próxima lista. Ao entrarem numa lista (Gerar/Complementar) saem daqui — e só voltam se forem marcados sem estoque de novo.</div>'+
+    (rows.length?('<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--text-tertiary);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:5px 8px">Item</th><th style="text-align:right;padding:5px 8px">Qtd</th><th style="text-align:left;padding:5px 8px">Pedido</th><th style="text-align:left;padding:5px 8px">Marcado</th></tr></thead><tbody>'+
+      rows.map(function(r){ return '<tr style="border-bottom:.5px solid var(--border)"><td style="padding:6px 8px"><span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.it.codigo||'')+'</span> '+escapeHtml(r.it.nome||'')+'</td><td style="padding:6px 8px;text-align:right;white-space:nowrap">'+(parseFloat(r.it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(r.it.unidade||'')+'</td><td style="padding:6px 8px">'+escapeHtml(r.s.orderNum||'—')+'</td><td style="padding:6px 8px;font-size:11px;color:var(--text-secondary)">'+(r.it.semEstoqueEm?fmtDate(_dtLocalStr(r.it.semEstoqueEm)):'—')+(r.it.semEstoquePor?' · '+escapeHtml(r.it.semEstoquePor):'')+'</td></tr>'; }).join('')+
+      '</tbody></table>'):'<div style="font-size:13px;color:var(--text-tertiary);padding:16px;text-align:center">Nenhum item fora de estoque aguardando.</div>')+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'fse-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
+  ov.classList.add('open');
+}
 function gerarListaCompra(){
   var tipo=_listaTipo;
   var pend=_solicPendentes(tipo);
   if(!pend.length){ alert('Nenhuma solicitação de '+(tipo==='ativo'?'ativos':'embalagens')+' pendente para gerar a lista.'); return; }
+  // v175 — pergunta se inclui os itens FORA DE ESTOQUE (regra do dono 28/07)
+  var fse=_fseItensPendentes(tipo);
+  if(fse.length){
+    var incluirFse=confirm('🚫 Há '+fse.length+' item(ns) FORA DE ESTOQUE na fila (fornecedor não tinha).\n\nOK = INCLUIR na lista (saem do "Fora de estoque")\nCancelar = gerar a lista SEM eles (continuam na fila do botão 🚫 Fora de estoque)');
+    if(incluirFse){ _fseLimparMarcas(pend); }
+    else {
+      var _now0=Date.now(), _seq=0;
+      pend.slice().forEach(function(s){
+        var fica=(s.itens||[]).filter(function(it){ return !it.semEstoque; });
+        var sai=(s.itens||[]).filter(function(it){ return it.semEstoque; });
+        if(!sai.length) return;
+        if(!fica.length){ pend.splice(pend.indexOf(s),1); return; } // solicitação 100% fora de estoque → fica pendente inteira
+        s.itens=fica; s.atualizadoEm=_now0;
+        // separa os fora-de-estoque numa solicitação própria (continua pendente p/ próxima decisão)
+        solicitacoesCompra.push({ id:'solc'+_now0+'se'+(_seq++), orderId:s.orderId, orderNum:s.orderNum, cliente:s.cliente, tipo:s.tipo, itens:sai, status:'solicitado', listaId:null, criadoPor:s.criadoPor||'', criadoEm:s.criadoEm||_now0, atualizadoEm:_now0 });
+      });
+      if(!pend.length){ alert('Todas as solicitações pendentes eram de itens fora de estoque — nada para gerar.'); renderListaCompra(); saveData(); return; }
+    }
+  }
   var mapa={};
   pend.forEach(function(s){ (s.itens||[]).forEach(function(it){
     var k=it.itemId; if(!mapa[k]) mapa[k]={ itemId:it.itemId, codigo:it.codigo, nome:it.nome, unidade:it.unidade, qtdTotal:0, origem:[], cotacoes:[], escolhida:null, compra:{} };
@@ -11328,6 +11391,12 @@ function renderListaCompra(){
   var tipo=_listaTipo;
   var pend=_solicPendentes(tipo);
   var pi=document.getElementById('lst-pend-info'); if(pi) pi.textContent=pend.length+' solicitação(ões) pendente(s) p/ próxima lista';
+  // v175 — heal retroativo (uma vez por sessão) + contador no botão 🚫 Fora de estoque
+  try{
+    if(!window._fseHealOnce){ window._fseHealOnce=true; _healSemEstoqueFlags(); }
+    var fb=document.getElementById('lst-fse-btn');
+    if(fb){ var nf=_fseItensPendentes(tipo).length; fb.textContent='🚫 Fora de estoque'+(nf?' ('+nf+')':''); }
+  }catch(_e){}
   var minhas=(listasCompra||[]).filter(function(l){ return l.tipo===tipo; }).sort(function(a,b){ return (b.criadoEm||0)-(a.criadoEm||0); });
   if(!minhas.length){ el.innerHTML='<div class="empty" style="padding:24px">Nenhuma lista de '+(tipo==='ativo'?'ativos':'embalagens')+' gerada ainda. Clique em "Gerar lista".</div>'; if(_lcAbertaId)_renderListaCompraAberta(); return; }
   var th='padding:8px 12px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
@@ -11434,6 +11503,7 @@ function complementarLista(listaId){
   if(!pend.length){ alert('Nenhuma solicitação de '+(l.tipo==='ativo'?'ativos':'embalagens')+' pendente para complementar.'); return; }
   var nItens=0; pend.forEach(function(s){ nItens+=(s.itens||[]).length; });
   if(!confirm('Complementar a lista '+_lcCodigo(l)+' com '+pend.length+' solicitação(ões) pendente(s) ('+nItens+' item(ns))?\n\nItens iguais somam a quantidade; itens novos entram sem cotação.\nItem já COMPRADO/COTADO gera aviso na tela.')) return;
+  _fseLimparMarcas(pend); // v175 — entrou em lista → sai do "Fora de estoque" (só volta se marcado de novo)
   var now=Date.now(), novos=0, somados=0, avisos=[];
   pend.forEach(function(s){
     (s.itens||[]).forEach(function(it){
@@ -11773,11 +11843,12 @@ function _ncConfirmar(){
         solicitacoesCompra.push(alvo);
       }
       var ex=(alvo.itens||[]).find(function(x){ return x.itemId===it.itemId; });
-      if(ex) ex.qtd=(parseFloat(ex.qtd)||0)+qtd;
-      else alvo.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:qtd, unidade:it.unidade||'UN' });
+      // v175 — marca FORA DE ESTOQUE no item devolvido (fila própria; Gerar lista pergunta se inclui)
+      if(ex){ ex.qtd=(parseFloat(ex.qtd)||0)+qtd; ex.semEstoque=true; ex.semEstoqueEm=now; ex.semEstoquePor=(currentUser&&currentUser.name)||''; }
+      else alvo.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:qtd, unidade:it.unidade||'UN', semEstoque:true, semEstoqueEm:now, semEstoquePor:(currentUser&&currentUser.name)||'' });
       alvo.atualizadoEm=now; devolvidos++;
     });
-    msg='🚫 Item marcado SEM ESTOQUE.\n↩ Quantidades devolvidas ('+devolvidos+' origem(ns)) — entram na próxima lista de compra gerada.';
+    msg='🚫 Item marcado SEM ESTOQUE.\n↩ Quantidades devolvidas ('+devolvidos+' origem(ns)) — ficam na fila "Fora de estoque"; o Gerar lista pergunta se inclui.';
   } else {
     // ajustado / tinha_estoque: NÃO devolve — o item conta como resolvido; reavalia o status dos pedidos de origem
     (it.origem||[]).forEach(function(og){ try{ _reavaliarComprasPedido(og.orderId); }catch(_e){} });
@@ -11885,7 +11956,15 @@ function _ladoComprasEstado(o, tipo, cutTs){
   // selo apaga: solicitação COMPLEMENTAR criada DEPOIS do lado fechado não conta (regra do dono 15/07).
   var nn=o.compraNaoNec && o.compraNaoNec[tipo];
   var solics=_solTodasSolic(o.id, tipo).filter(function(s){ return (s.itens||[]).length && (!cutTs || (s.criadoEm||0)<=cutTs); });
-  if(!solics.length) return nn ? {definido:true, compradoOk:true, recebidoOk:true} : {definido:false, compradoOk:false, recebidoOk:false};
+  if(!solics.length){
+    if(nn) return {definido:true, compradoOk:true, recebidoOk:true};
+    // v175 — caso 102761 (28/07): pedido JÁ EXPEDIDO sem solicitação e sem "não necessário" ficava
+    // TRAVADO p/ sempre — ao expedir, a linha SOME da Solicitação de Compra (v131) e não há mais onde
+    // definir o lado. Se saiu fisicamente, o lado está resolvido DE FATO → conta como ok e o
+    // "Produto entregue" destrava.
+    if(typeof _expSaiu==='function' && _expSaiu(o)) return {definido:true, compradoOk:true, recebidoOk:true};
+    return {definido:false, compradoOk:false, recebidoOk:false};
+  }
   var compradoOk=true, recebidoOk=true;
   for(var i=0;i<solics.length;i++){
     var s=solics[i];
@@ -22786,7 +22865,10 @@ function _pausaNumsDe(userId){
   return ((_waNumCfg.numeros)||[]).filter(n=>(n.equipes||[]).some(eq=>_usuarioPertenceEquipe(userId, eq))).map(n=>n.id);
 }
 function _pausaAtendentesElegiveis(){
-  return (users||[]).filter(u=>u && u.ativo!==false && !['admin','diretor_comercial'].includes(u.perfil)
+  // v175 — pergunta do dono 28/07 (caso Tairine): DIRETOR COMERCIAL que também atende agora é PAUSÁVEL
+  // (a exclusão de perfil escondia a Tairine do painel). As travas de pausado já valem p/ qualquer cargo;
+  // diferença prática: diretor consegue se despausar sozinho (tem acesso ao painel). Admin segue fora (não atende).
+  return (users||[]).filter(u=>u && u.ativo!==false && u.perfil!=='admin'
     && (equipes||[]).some(e=>e.coordenadorId===u.id || (e.atendentesIds||[]).includes(u.id)));
 }
 function renderPausasPanel(){
@@ -25920,7 +26002,6 @@ function openCaixaEditPgtoModal(orderId){
   // v98 — Conta do plano editável aqui dentro do Pgto (era só no seletor inline da coluna)
   const _cps=contasReceber.filter(c=>c.origem==='pedido'&&String(c.origemId)===String(orderId));
   const _curPlano=(_cps[0]&&_cps[0].contaPlanoId)||o.contaPlanoId||(typeof _planoVendaId==='function'?_planoVendaId():'')||'';
-  const _planoOpts='<option value="">— sem conta —</option>'+(planoContas||[]).filter(p=>p.analitica!==false).map(p=>`<option value="${p.id}" ${_curPlano===p.id?'selected':''}>${escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)}</option>`).join('');
   const _planoNomeCx=(()=>{const _pp=(planoContas||[]).find(p=>p.id===_curPlano);return _pp?((_pp.codigo?_pp.codigo+' — ':'')+_pp.nome):'— sem conta —';})();
   const ov=document.getElementById('cxpgto-overlay');
   const _tituloCx=_cxParIds?_cxParIds.map(id=>{const x=orders.find(y=>String(y.id)===id);return x?x.num:'';}).join(' / '):o.num;
@@ -25936,7 +26017,8 @@ function openCaixaEditPgtoModal(orderId){
         <span id="cx-plano-label" style="font-size:13px;font-weight:500;color:${_curPlano?'var(--text-primary)':'var(--st-bad-tx)'}">${escapeHtml(_planoNomeCx)}</span>
         <button type="button" onclick="_cxEditarPlano()" style="font-size:11px;padding:3px 10px;color:var(--text-info);border:.5px solid var(--text-info);border-radius:var(--r-md);background:transparent;cursor:pointer">✏ Editar</button>
       </div>
-      <select id="cx-plano" style="display:none;width:100%;font-size:12px;padding:6px;margin-top:4px" onchange="_cxPlanoSel()">${_planoOpts}</select></div>
+      <!-- v175 — pedido do dono 28/07: seleção por DIGITAÇÃO (autocomplete do plano, padrão v161) em vez do select -->
+      <div id="cx-plano-edit" style="display:none;margin-top:4px"><div class="autocomplete-wrap"><input type="text" id="cx-plano-busca" placeholder="Digite código ou nome da conta..." oninput="_planoAcSearch('cx-plano')" onblur="_planoAcBlur('cx-plano')" autocomplete="off" style="width:100%;font-size:12px;padding:6px"><div class="autocomplete-list" id="cx-plano-ac"></div><input type="hidden" id="cx-plano" value="${_curPlano}"></div></div></div>
     <div class="form-group" style="margin-bottom:12px"><label style="font-size:12px;font-weight:600">Data de emissão (NF)</label>
       <input type="date" id="cx-dataemissao" value="${o.dataEmissaoNF||''}" style="display:block;width:180px;font-size:12px;padding:6px"></div>
     <div id="cx-blocos"></div>
@@ -26019,14 +26101,12 @@ function _cxDistrib(){
 }
 // v98 — Conta do plano no Pgto: "✏ Editar" revela o seletor; ao escolher, recolhe mostrando o novo plano.
 function _cxEditarPlano(){
-  const v=document.getElementById('cx-plano-view'); const s=document.getElementById('cx-plano');
-  if(v) v.style.display='none'; if(s){ s.style.display=''; s.focus(); }
+  // v175 — abre a BUSCA por digitação (autocomplete v161); o hidden #cx-plano mantém o id p/ o _cxSalvar
+  const v=document.getElementById('cx-plano-view'); const e=document.getElementById('cx-plano-edit'); const hid=document.getElementById('cx-plano');
+  if(v) v.style.display='none';
+  if(e){ e.style.display=''; try{ _planoAcSet('cx-plano', (hid&&hid.value)||''); }catch(_e){} const b=document.getElementById('cx-plano-busca'); if(b){ b.focus(); try{ b.select(); }catch(_e){} } }
 }
-function _cxPlanoSel(){
-  const s=document.getElementById('cx-plano'); const lbl=document.getElementById('cx-plano-label'); const v=document.getElementById('cx-plano-view');
-  if(lbl&&s){ const opt=s.options[s.selectedIndex]; lbl.textContent=opt?opt.textContent:'— sem conta —'; lbl.style.color=s.value?'var(--text-primary)':'var(--st-bad-tx)'; }
-  if(v) v.style.display='flex'; if(s) s.style.display='none';
-}
+function _cxPlanoSel(){ /* v175 — MORTA: era o onchange do select antigo; a escolha agora é pelo autocomplete (_planoAcPick) */ }
 // v107 — ao trocar o tipo no editor do Caixa, re-deriva o pagamento (especial = forma travada/valor total; normal = forma livre)
 function _cxTipoChange(novoTipo){
   const mod=_formaModalidadeDoTipo(novoTipo);
@@ -30262,7 +30342,7 @@ async function _convEditarMsg(convId, msgId){
   }catch(e){ alert('Falha ao editar: '+(e.message||e)); }
 }
 // v104 — menu ⋮ por mensagem: Copiar / Responder / Encaminhar / Editar
-var _convReplyTo=null, _convFwdTexto='';
+var _convReplyTo=null, _convFwdTexto='', _convFwdAnexo=null; // v175 — encaminhar também FOTO/VÍDEO/ARQUIVO/ÁUDIO
 function _convCloseMsgMenu(){ document.getElementById('conv-msgmenu')?.remove(); }
 function _convMsgMenu(ev, convId, mid){
   ev.stopPropagation(); _convCloseMsgMenu();
@@ -30276,7 +30356,7 @@ function _convMsgMenu(ev, convId, mid){
   if(podeReenviar) opts.push(['🔄 Reenviar', `_convReenviarMsg('${convId}','${mid}')`]);
   if(m.texto) opts.push(['📋 Copiar', `_convCopiarMsgId('${convId}','${mid}')`]);
   opts.push(['↩ Responder', `_convResponderMsg('${convId}','${mid}')`]);
-  if(m.texto) opts.push(['➦ Encaminhar', `_convEncaminharMsg('${convId}','${mid}')`]);
+  if(m.texto || (m.anexo&&m.anexo.path)) opts.push(['➦ Encaminhar', `_convEncaminharMsg('${convId}','${mid}')`]); // v175 — mídia também
   if(podeEditar) opts.push(['✎ Editar', `_convEditarMsg('${convId}','${mid}')`]);
   else if(mine && m.texto && conv.canal==='whatsapp' && (Date.now()-(m.em||0) < 900000) && !zid) opts.push(['✎ Editar (aguardando WhatsApp)', `alert('Esta mensagem ainda não recebeu a confirmação do WhatsApp — aguarde alguns segundos e tente de novo.')`]); // v145
   if(mine && zid && conv.canal==='whatsapp') opts.push(['🗑️ Apagar p/ todos', `_convApagarMsg('${convId}','${mid}')`]);
@@ -30389,16 +30469,20 @@ function _convResponderMsg(convId, mid){
   setTimeout(()=>{ document.getElementById('conv-tela')?.querySelector('.conv-input-field')?.focus(); },0);
 }
 function _convCancelReply(){ _convReplyTo=null; if(conversaAtivaId) renderConversaTela(conversaAtivaId); }
-// Encaminhar para um contato salvo (cliente com telefone)
+// Encaminhar para um contato salvo (cliente com telefone) — v175: TEXTO e MÍDIA (foto/vídeo/arquivo/áudio;
+// reusa o MESMO arquivo do Storage — sem re-upload; o WhatsApp recebe pela wa-send-media)
 function _convEncaminharMsg(convId, mid){
   const conv=(conversas||[]).find(c=>c.id===convId); const m=conv&&(conv.mensagens||[]).find(x=>String(x.id)===String(mid));
-  if(!m||!m.texto){ alert('Por enquanto só dá para encaminhar mensagens de texto.'); return; }
-  _convFwdTexto=m.texto;
+  if(!m||(!m.texto && !(m.anexo&&m.anexo.path))){ alert('Nada para encaminhar nesta mensagem (mídia antiga sem arquivo salvo não dá para encaminhar).'); return; }
+  _convFwdTexto=m.texto||'';
+  _convFwdAnexo=(m.anexo&&m.anexo.path)?JSON.parse(JSON.stringify(m.anexo)):null;
+  const _kIco=k=> k==='image'?'🖼':(k==='video'?'🎬':(k==='audio'?'🎙':'📄'));
+  const _prev=(_convFwdAnexo?`<div style="font-size:12px;font-weight:600;margin-bottom:4px">${_kIco(_convFwdAnexo.kind)} ${escapeHtml(_convFwdAnexo.nome||'anexo')} <span style="font-weight:400;color:var(--text-tertiary)">${escapeHtml(_convFwdAnexo.tamanho||'')}</span></div>`:'')+(m.texto?escapeHtml(m.texto):'');
   let ov=document.getElementById('conv-fwd-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='conv-fwd-overlay'; ov.className='overlay'; ov.style.zIndex='4200'; document.body.appendChild(ov); }
   ov.innerHTML=`<div class="modal" style="width:460px;max-height:80vh;display:flex;flex-direction:column">
-    <h2 style="margin-bottom:6px">Encaminhar mensagem</h2>
-    <div style="font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);border-radius:8px;padding:8px 10px;margin-bottom:10px;max-height:90px;overflow:auto">${escapeHtml(m.texto)}</div>
+    <h2 style="margin-bottom:6px">Encaminhar ${_convFwdAnexo?'mídia':'mensagem'}</h2>
+    <div style="font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);border-radius:8px;padding:8px 10px;margin-bottom:10px;max-height:90px;overflow:auto">${_prev}</div>
     <input type="text" id="conv-fwd-search" placeholder="Buscar contato salvo (nome ou telefone)..." oninput="_convFwdRender()" style="font-size:13px;padding:8px 10px;margin-bottom:8px">
     <div id="conv-fwd-list" style="overflow-y:auto;flex:1;min-height:140px;border:.5px solid var(--border);border-radius:8px"></div>
     <div class="modal-footer"><button onclick="document.getElementById('conv-fwd-overlay').classList.remove('open')">Cancelar</button></div>
@@ -30423,7 +30507,9 @@ async function _convForwardEnviar(destClienteId){
   document.getElementById('conv-fwd-overlay')?.classList.remove('open');
   const cli=(clients||[]).find(c=>c.id===destClienteId); if(!cli) return;
   const phone=_waFoneCliente(cli); if(!phone){ alert('Esse contato não tem um telefone válido (DDD + número).'); return; }
-  const texto=_convFwdTexto||''; if(!texto) return;
+  const texto=_convFwdTexto||'';
+  const anexo=_convFwdAnexo?JSON.parse(JSON.stringify(_convFwdAnexo)):null; // v175 — mídia: reusa o MESMO path do Storage
+  if(!texto && !anexo) return;
   // v149 — MODERNIZADO: mesmo destino do "abrir conversa pelo card" (v142) — conversa EXISTENTE com mensagens
   // num número autorizado (não cria conversa vazia no número errado); envio ATÔMICO (conv_append_msg + wa-send,
   // padrão v145) em vez do caminho antigo via blob; respeita o dono da conversa no pool.
@@ -30438,19 +30524,24 @@ async function _convForwardEnviar(destClienteId){
   if(!conv) conv=getOuCriarConversa(destClienteId, phone);
   if(!conv){ alert('Não foi possível abrir a conversa do contato.'); return; }
   if(!_podeResponderConv(conv)){ alert('A conversa desse contato está em atendimento por outra pessoa — peça a transferência para encaminhar.'); return; }
-  const _mg={ id:'m'+Date.now()+Math.floor(Math.random()*1000), de:'atendente', texto:texto, anexo:null, em:Date.now(), autorId:(currentUser?currentUser.id:null), status:'fila' };
+  const _mg={ id:'m'+Date.now()+Math.floor(Math.random()*1000), de:'atendente', texto:texto, anexo:anexo, em:Date.now(), autorId:(currentUser?currentUser.id:null), status:'fila' };
   conv.mensagens=Array.isArray(conv.mensagens)?conv.mensagens:[]; conv.mensagens.push(_mg);
-  conv.ultimaMsg=_txCut(texto,80); conv.ultimaMsgEm=_mg.em;
+  conv.ultimaMsg=anexo?('📎 '+_txCut(anexo.nome||'anexo',70)):_txCut(texto,80); conv.ultimaMsgEm=_mg.em;
   try{ if(_sb) await _sb.rpc('conv_append_msg', { p_conv_id: conv.id, p_msg: _mg }); }catch(_e){}
   try{
-    const { data:_d, error:_e2 } = await _sb.functions.invoke('wa-send', { body:{ convId:conv.id, msgId:_mg.id, phone:phone, texto:texto } });
+    // v175 — MÍDIA vai pela wa-send-media (mesmo arquivo do Storage; a Z-API baixa pela URL assinada); texto pela wa-send
+    const _d2 = anexo
+      ? await _sb.functions.invoke('wa-send-media', { body:{ convId:conv.id, msgId:_mg.id, phone:phone, path:anexo.path, fileName:anexo.nome||'arquivo', mimeType:anexo.tipo||'', caption:texto||'' } })
+      : await _sb.functions.invoke('wa-send', { body:{ convId:conv.id, msgId:_mg.id, phone:phone, texto:texto } });
+    const _d=_d2&&_d2.data, _e2=_d2&&_d2.error;
     if(!_e2 && _d && _d.ok){ if(_d.providerMsgId) _mg.providerMsgId=_d.providerMsgId; if(_d.zapiMessageId) _mg.zapiMessageId=_d.zapiMessageId; if(_mg.status==='fila') _mg.status='enviada'; }
     else { _mg.status='falha'; }
   }catch(_e){ _mg.status='falha'; }
+  _convFwdTexto=''; _convFwdAnexo=null;
   try{ renderConversasLista(); if(typeof _updateConvBadge==='function') _updateConvBadge(); }catch(_e){}
   alert(_mg.status==='falha'
     ? '⚠ O encaminhamento para '+(cli.nome||'contato')+' não foi confirmado pelo WhatsApp — abra a conversa dele e reenvie.'
-    : '✓ Mensagem encaminhada para '+(cli.nome||'contato')+'.');
+    : '✓ '+(anexo?'Mídia encaminhada':'Mensagem encaminhada')+' para '+(cli.nome||'contato')+'.');
 }
 function abrirConversa(convId){
   conversaAtivaId = convId;

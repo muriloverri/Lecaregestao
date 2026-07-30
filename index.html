@@ -4615,7 +4615,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v175';
+var APP_VERSION = 'v176';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7208,7 +7208,7 @@ function openClientModal(id){
   _cliVinc = (c && Array.isArray(c.pessoasVinculadas)) ? c.pessoasVinculadas.map(v=>({tipoPessoa:v.tipoPessoa||'pf',nome:v.nome||'',doc:v.doc||''})) : [];
   _cliAtend = (c && Array.isArray(c.atendidosIds)) ? c.atendidosIds.slice() : [];
   // v106 — contatos: usa c.contatos; se vazio, semeia de tel1/tel2/contato financeiro
-  if(c && Array.isArray(c.contatos) && c.contatos.length){ _cliContatos=c.contatos.map(x=>({nome:x.nome||'',cargo:x.cargo||'',telefone:x.telefone||x.whats||'',email:x.email||''})); }
+  if(c && Array.isArray(c.contatos) && c.contatos.length){ _cliContatos=c.contatos.map(x=>({nome:x.nome||'',cargo:x.cargo||'',telefone:x.telefone||x.whats||'',email:x.email||'',principal:!!x.principal})); } // v176 — carrega o ★ principal
   else if(c){ _cliContatos=[]; // v173 — semeadura respeita a LÁPIDE (contato excluído não renasce do tel1/tel2)
     if(c.tel1 && !_ctTombHit(c,c.tel1)) _cliContatos.push({nome:c.nome||'Contato principal',cargo:'',telefone:c.tel1,email:c.email||''});
     if(c.tel2 && !_ctTombHit(c,c.tel2)) _cliContatos.push({nome:(c.nome||'Contato')+' (2)',cargo:'',telefone:c.tel2,email:''});
@@ -7370,7 +7370,7 @@ function saveClient(){
     intermediaria:(tipoPessoa==='intermediario'),
     pessoasVinculadas:(tipoPessoa==='intermediario'?[]:_cliVinc.map(v=>({tipoPessoa:v.tipoPessoa,nome:v.nome,doc:v.doc}))),
     atendidosIds:(tipoPessoa==='intermediario'?_cliAtend.slice():[]),
-    contatos:_cliContatos.map(c=>({nome:c.nome||'',cargo:c.cargo||'',telefone:c.telefone||c.whats||'',email:c.email||''})),
+    contatos:_cliContatos.map(c=>({nome:c.nome||'',cargo:c.cargo||'',telefone:c.telefone||c.whats||'',email:c.email||'',principal:!!c.principal})), // v176 — ★ principal persiste
     rtNome,
     prodLinha,prodAnest,conselhoTipo:document.getElementById('c-conselho-tipo').value.trim(),conselhoNum:document.getElementById('c-conselho-num').value.trim(),tag:document.getElementById('c-tag').value.trim(),email:document.getElementById('c-email').value.trim(),tel1:_fmtTelBR(document.getElementById('c-tel1').value),tel2:_fmtTelBR(document.getElementById('c-tel2').value),finContato:document.getElementById('c-fin-contato').value.trim(),finEmail:document.getElementById('c-fin-email').value.trim(),finTel:_fmtTelBR(document.getElementById('c-fin-tel').value),cep:document.getElementById('c-cep').value.trim(),uf:document.getElementById('c-uf').value.trim().toUpperCase(),cidade:document.getElementById('c-cidade').value.trim(),bairro:document.getElementById('c-bairro').value.trim(),rua:document.getElementById('c-rua').value.trim(),numero:document.getElementById('c-numero').value.trim(),comp:document.getElementById('c-comp').value.trim(),obs:document.getElementById('c-obs').value.trim(),carteiraLinha:document.getElementById('c-carteira-linha')?.value.trim()||'',carteiraAnest:document.getElementById('c-carteira-anest')?.value.trim()||'',cadastroIncompleto:!docClean,deliveryAddresses:[...deliveryAddresses]};
   // v144 : interno/fornecedor — so admin/diretora alteram o campo; para os demais o valor atual e preservado
@@ -8377,7 +8377,8 @@ function selectLeadClient(id){
   document.getElementById('lead-client-not-found').style.display='none';
   const info=document.getElementById('lead-client-info');
   info.style.display='block';
-  info.textContent=`✓ ${c.nome}${c.doc?' — '+c.doc:''}${c.cidade?' — '+c.cidade+(c.uf?'/'+c.uf:''):''}`;
+  // v175 — botão 💬 também no vínculo recém-selecionado (pedido do dono 29/07)
+  info.innerHTML=`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">✓ ${escapeHtml(c.nome)}${c.doc?' — '+escapeHtml(c.doc):''}${c.cidade?' — '+escapeHtml(c.cidade)+(c.uf?'/'+c.uf:''):''}<button type="button" onclick="closeLeadModal();abrirConversaCliente('${c.id}')" title="Abrir a conversa deste cliente no WhatsApp" style="margin-left:auto;font-size:11px;padding:3px 10px;border:.5px solid var(--st-ok-bd);border-radius:var(--r-md);background:#fff;color:var(--st-ok-tx);cursor:pointer;white-space:nowrap">💬 Abrir conversa</button></div>`;
   // Puxa o contato do cadastro do cliente se o card ainda não tiver
   if((!leadContatos || !leadContatos.length) && (c.tel1||c.tel2||c.email) && !_ctTombHit(c, c.tel1||c.tel2)){ // v173 — lápide vence
     leadContatos=[{nome:c.finContato||c.rtNome||c.nome||'Contato principal', cargo:'', whats:c.tel1||c.tel2||'', email:c.email||'', _doCliente:true}];
@@ -8419,9 +8420,19 @@ function renderLeadContatosList(){
         ${c.whats?`<span style="font-size:11px;color:var(--text-secondary);margin-left:8px">📱 ${escapeHtml(c.whats)}</span>`:''}
         ${c.email?`<span style="font-size:11px;color:var(--text-secondary);margin-left:8px">✉ ${escapeHtml(c.email)}</span>`:''}
       </div>
+      ${c.whats?`<label title="Número PRINCIPAL — os botões 💬 fora do modal abrem este" style="display:flex;align-items:center;gap:2px;font-size:11px;color:${c.principal?'#B8860B':'var(--text-tertiary)'};cursor:pointer;white-space:nowrap"><input type="checkbox" ${c.principal?'checked':''} onchange="_leadSetContatoPrincipal(${i},this.checked)" style="width:auto;margin:0">★</label>`:''}
+      ${c.whats?`<button onclick="_leadAbrirConversaContato(${i})" title="Abrir conversa com ESTE número" style="font-size:11px;padding:2px 8px;color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:var(--r-md);background:transparent;cursor:pointer">💬</button>`:''}
       <button onclick="abrirModalContato(${i})" style="font-size:11px;padding:2px 8px">Editar</button>
       <button onclick="removeLeadContato(${i})" style="font-size:11px;padding:2px 6px;color:var(--st-bad-tx)">×</button>
     </div>`).join(''):'<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">Nenhum contato adicionado.</div>';
+}
+// v176 — número PRINCIPAL (pedido do dono 29/07): ★ marca UM contato; 💬 por contato abre a conversa daquele número
+function _leadSetContatoPrincipal(i,on){ leadContatos.forEach((c,j)=>{ if(on){ if(j===i) c.principal=true; else delete c.principal; } else if(j===i) delete c.principal; }); renderLeadContatosList(); }
+function _leadAbrirConversaContato(i){
+  const c=leadContatos[i]; if(!c||!c.whats) return;
+  const cid=document.getElementById('lead-empresa')?.dataset.clienteId||'';
+  if(!cid){ alert('Vincule o card a um cliente do cadastro para abrir a conversa.'); return; }
+  closeLeadModal(); abrirConversaCliente(cid, c.whats);
 }
 
 function addLeadTask(){
@@ -8485,6 +8496,7 @@ function openLeadModal(id, funil, etapa){
           ${c.doc?`<span style="color:var(--st-ok-tx);opacity:.8">— ${c.doc}</span>`:''}
           ${c.cidade?`<span style="color:var(--st-ok-tx);opacity:.8">— ${escapeHtml(c.cidade)}${c.uf?'/'+c.uf:''}</span>`:''}
           <span style="font-size:11px;padding:1px 8px;border-radius:20px;background:${_ss.bg};color:${_ss.color};font-weight:500">${_ss.label}${c.situacaoOverride?.sit?' 🔒':''}</span>
+          <button type="button" onclick="closeLeadModal();abrirConversaCliente('${c.id}')" title="Abrir a conversa deste cliente no WhatsApp" style="margin-left:auto;font-size:11px;padding:3px 10px;border:.5px solid var(--st-ok-bd);border-radius:var(--r-md);background:#fff;color:var(--st-ok-tx);cursor:pointer;white-space:nowrap">💬 Abrir conversa</button><!-- v175 — pedido do dono 29/07 -->
         </div>
         ${c.tag?`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:${(c.carteiraLinha||c.carteiraAnest)?'6px':'0'}">
           ${c.tag.split(',').map(t=>t.trim()).filter(Boolean).map(t=>`<span style="font-size:10px;padding:1px 8px;border-radius:20px;background:var(--bg-tertiary);color:var(--text-secondary);border:.5px solid var(--border-md)">🏷 ${escapeHtml(t)}</span>`).join('')}
@@ -31287,6 +31299,10 @@ function abrirConversaCliente(clienteId, telefone){
   if(telefone===undefined){
     const cli=(clients||[]).find(c=>c.id===clienteId);
     const lead=(crmLeads||[]).find(l=>l.clienteId===clienteId);
+    // v176 — número PRINCIPAL (★ no cadastro/card) VENCE: botões 💬 fora do modal abrem direto este
+    const _pri=[...((cli&&cli.contatos)||[]), ...((lead&&lead.contatos)||[])].find(c=>c&&c.principal&&String(c.telefone||c.whats||'').trim());
+    if(_pri){ telefone=String(_pri.telefone||_pri.whats).trim(); }
+    else {
     const tels={};
     const addCt=(arr)=>{ (arr||[]).forEach(c=>{ const t=String(c.telefone||c.whats||'').trim(); const tk=_telKey(t); if(tk && !tels[tk]) tels[tk]={tel:t, nome:(c.nome||t)}; }); };
     addCt(cli&&cli.contatos); addCt(lead&&lead.contatos);
@@ -31294,6 +31310,7 @@ function abrirConversaCliente(clienteId, telefone){
     const opts=Object.values(tels);
     if(opts.length>1){ _abrirSeletorContatoConversa(clienteId, opts); return; }
     telefone = opts.length?opts[0].tel:'';
+    } // fim do else (sem ★ principal — coleta/seletor)
   }
   // v142 : modo dois numeros: se o cliente JA tem conversa COM MENSAGENS em algum numero autorizado,
   // abre ELA (a mais recente) — em vez de criar uma conversa vazia no numero do menu atual
@@ -32123,8 +32140,16 @@ function _renderCliContatos(){
   el.innerHTML = _cliContatos.length ? _cliContatos.map((c,i)=>`
     <div style="display:flex;align-items:center;gap:8px;padding:6px 9px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md);margin-bottom:4px;font-size:12px">
       <span style="flex:1;min-width:0"><strong>${escapeHtml(c.nome||'(sem nome)')}</strong>${c.cargo?` <span style="color:var(--text-tertiary)">· ${escapeHtml(c.cargo)}</span>`:''}${c.telefone?` <span style="color:var(--text-secondary)">· 📱 ${escapeHtml(c.telefone)}</span>`:''}</span>
+      ${c.telefone?`<label title="Número PRINCIPAL — os botões 💬 fora do cadastro abrem este" style="display:flex;align-items:center;gap:2px;font-size:11px;color:${c.principal?'#B8860B':'var(--text-tertiary)'};cursor:pointer;white-space:nowrap"><input type="checkbox" ${c.principal?'checked':''} onchange="_cliSetContatoPrincipal(${i},this.checked)" style="width:auto;margin:0">★</label>`:''}
+      ${(c.telefone&&editingClientId)?`<button type="button" onclick="_cliAbrirConversaContato(${i})" title="Abrir conversa com ESTE número" style="font-size:11px;padding:2px 8px;color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:var(--r-md);background:transparent;cursor:pointer">💬</button>`:''}
       <button type="button" onclick="_delCliContato(${i})" style="border:none;background:none;color:var(--st-bad-tx);cursor:pointer;font-size:15px">×</button>
     </div>`).join('') : '<div style="font-size:11px;color:var(--text-tertiary)">Nenhum contato ainda.</div>';
+}
+// v176 — ★ principal e 💬 por contato também na FICHA do cliente
+function _cliSetContatoPrincipal(i,on){ _cliContatos.forEach((c,j)=>{ if(on){ if(j===i) c.principal=true; else delete c.principal; } else if(j===i) delete c.principal; }); _renderCliContatos(); }
+function _cliAbrirConversaContato(i){
+  const c=_cliContatos[i]; if(!c||!c.telefone||!editingClientId) return;
+  closeClientModal(); abrirConversaCliente(editingClientId, c.telefone);
 }
 function _addCliContato(){
   const nome=(document.getElementById('c-ct-nome')?.value||'').trim();
@@ -32144,15 +32169,17 @@ function _sincronizarContatos(clienteId, fonte){
   if(!cli && !lead) return;
   const merged={};
   const addAll=(arr)=>{ (arr||[]).forEach(c=>{ const k=_ctKey(c); if(!k) return; const tel=String(c.telefone||c.whats||'').trim();
-    if(!merged[k]) merged[k]={nome:(c.nome||'').trim(),cargo:(c.cargo||'').trim(),tel,email:(c.email||'').trim()};
-    else { const M=merged[k]; if(!M.nome&&c.nome)M.nome=String(c.nome).trim(); if(!M.cargo&&c.cargo)M.cargo=String(c.cargo).trim(); if(!M.tel&&tel)M.tel=tel; if(!M.email&&c.email)M.email=String(c.email).trim(); } }); };
+    if(!merged[k]) merged[k]={nome:(c.nome||'').trim(),cargo:(c.cargo||'').trim(),tel,email:(c.email||'').trim(),principal:!!c.principal};
+    else { const M=merged[k]; if(!M.nome&&c.nome)M.nome=String(c.nome).trim(); if(!M.cargo&&c.cargo)M.cargo=String(c.cargo).trim(); if(!M.tel&&tel)M.tel=tel; if(!M.email&&c.email)M.email=String(c.email).trim(); if(c.principal)M.principal=true; } }); }; // v176 — ★ atravessa a união
   if(fonte==='card'){ addAll(lead&&lead.contatos); addAll(cli&&cli.contatos); }
   else { addAll(cli&&cli.contatos); addAll(lead&&lead.contatos); }
   // v173 — a união NUNCA ressuscita contato com lápide (exclusão vence)
   const _tb=(cli&&cli.contatosRemovidos)||{};
   const lista=Object.values(merged).filter(c=>{ const k=_ctKey({nome:c.nome,telefone:c.tel}); return !(k&&_tb[k]); });
-  if(cli) cli.contatos=lista.map(c=>({nome:c.nome,cargo:c.cargo,telefone:c.tel,email:c.email}));
-  if(lead) lead.contatos=lista.map(c=>({nome:c.nome,cargo:c.cargo,whats:c.tel,email:c.email}));
+  // v176 — garante UM principal só (o primeiro marcado vence)
+  { let _achou=false; lista.forEach(c=>{ if(c.principal){ if(_achou) c.principal=false; else _achou=true; } }); }
+  if(cli) cli.contatos=lista.map(c=>({nome:c.nome,cargo:c.cargo,telefone:c.tel,email:c.email,principal:!!c.principal}));
+  if(lead) lead.contatos=lista.map(c=>({nome:c.nome,cargo:c.cargo,whats:c.tel,email:c.email,principal:!!c.principal}));
 }
 function _cliTipoAtual(){
   if(document.getElementById('c-tipo-pf')?.checked) return 'pf';

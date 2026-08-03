@@ -4615,7 +4615,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v182';
+var APP_VERSION = 'v184';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -11477,11 +11477,12 @@ function renderListaCompra(){
   if(_lcAbertaId) _renderListaCompraAberta(); // cotar/comprar/não-comprar chamam renderListaCompra → o modal aberto acompanha
 }
 // v155 — modal da lista aberta (quase tela cheia)
-var _lcAbertaId=null;
+var _lcAbertaId=null, _lcAbaAtiva='itens'; // v184 — aba ativa do modal da lista (Itens | Pregão)
 function openListaCompraAberta(id){
-  _lcAbertaId=id; _renderListaCompraAberta();
+  _lcAbertaId=id; _lcAbaAtiva='itens'; _renderListaCompraAberta();
   var ov=document.getElementById('lista-compra-overlay'); if(ov) ov.classList.add('open');
 }
+function _lcSetAba(ab){ _lcAbaAtiva=ab; _renderListaCompraAberta(); }
 function closeListaCompraAberta(){
   _lcAbertaId=null;
   var ov=document.getElementById('lista-compra-overlay'); if(ov) ov.classList.remove('open');
@@ -11501,7 +11502,81 @@ function _renderListaCompraAberta(){
       : '<button disabled title="Esta lista já tem compra (ou item não comprado) registrada — as pendências entram na próxima lista gerada" style="font-size:12px;padding:4px 12px;opacity:.5;cursor:not-allowed">＋ Complementar lista</button>';
     res.innerHTML='Cotados: <b>'+nCot+'/'+((l.itens||[]).length)+'</b>'+(totalEsc>0?' · Estimado <b>'+fmtMoney(totalEsc)+'</b>':'')+' · '+_lcStatusBadge(l.status)+' '+btnC;
   }
-  var body=document.getElementById('lc-ab-body'); if(body) body.innerHTML=_lcItensTableHtml(l);
+  var body=document.getElementById('lc-ab-body');
+  if(body){
+    // v184 — abas Itens | Pregão (pedido do dono 04/08): o pregão é o comparativo de preços por fornecedor
+    var _tb=function(ab,rot){ var on=_lcAbaAtiva===ab;
+      return '<button onclick="_lcSetAba(\''+ab+'\')" style="font-size:12.5px;padding:6px 16px;border-radius:8px 8px 0 0;border:.5px solid var(--border);border-bottom:'+(on?'2px solid var(--bg-primary)':'0.5px solid var(--border)')+';background:'+(on?'var(--bg-primary)':'var(--bg-secondary)')+';font-weight:'+(on?'700':'400')+';cursor:pointer;margin-bottom:-1px">'+rot+'</button>'; };
+    body.innerHTML='<div style="display:flex;gap:4px;border-bottom:.5px solid var(--border);margin-bottom:10px">'+_tb('itens','📋 Itens')+_tb('pregao','⚖ Pregão')+'</div>'+
+      (_lcAbaAtiva==='pregao'?_lcPregaoHtml(l):_lcItensTableHtml(l));
+  }
+}
+// ── v184 — ABA PREGÃO: comparativo da lista por FORNECEDOR (uma coluna por fornecedor cotado).
+// Azul = menor preço do item; amarelo = empate no menor. Botão direito na célula = Comprar / cotações
+// (reusa openComprarModal/openCotacaoModal — nenhum caminho novo de gravação).
+function _lcFornKey(c){ return String((c&&c.fornecedorId)||('n:'+String((c&&c.fornecedorNome)||'').toLowerCase().trim())); }
+function _lcPregaoHtml(l){
+  var forns=[], seen={};
+  (l.itens||[]).forEach(function(it){ (it.cotacoes||[]).forEach(function(c){ var k=_lcFornKey(c); if(!k||k==='n:'||seen[k]) return; seen[k]=1; forns.push({k:k, nome:c.fornecedorNome||'—'}); }); });
+  forns.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+  if(!forns.length) return '<div style="padding:26px;color:var(--text-tertiary);font-size:13px">Nenhuma cotação registrada nesta lista ainda — cote os itens na aba Itens e o pregão monta o comparativo automaticamente.</div>';
+  var th='padding:6px 8px;background:var(--bg-secondary);font-size:10px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
+  var td='padding:6px 8px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
+  var head='<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solic.</th>'+
+    forns.map(function(f){ return '<th style="'+th+';text-align:right;border-left:.5px solid var(--border)">'+escapeHtml(f.nome)+'</th>'; }).join('');
+  var rows=(l.itens||[]).map(function(it,ix){
+    var _ref=(it.itemId!=null&&it.itemId!=='')?String(it.itemId):('#'+ix);
+    if(it.naoComprado){
+      return '<tr style="opacity:.5"><td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(it.codigo||'—')+'</td>'+
+        '<td style="'+td+';text-decoration:line-through">'+escapeHtml(it.nome||'')+'</td>'+
+        '<td style="'+td+';text-align:right;text-decoration:line-through">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
+        '<td style="'+td+'" colspan="'+forns.length+'"><span style="font-size:11px;color:var(--text-tertiary)">'+(it.ncResolucao==='ajustado'?'🔧 Ajustado':(it.ncResolucao==='tinha_estoque'?'📦 Tinha estoque':(it.ncResolucao==='sem_estoque'?'🚫 Sem estoque':'✕ Não comprado')))+'</span></td></tr>';
+    }
+    var precos=forns.map(function(f){ var c=(it.cotacoes||[]).find(function(cc){ return _lcFornKey(cc)===f.k; }); var v=c?parseFloat(c.preco):NaN; return isNaN(v)?NaN:v; });
+    var validos=precos.filter(function(p){ return !isNaN(p); });
+    var mn=validos.length?Math.min.apply(null,validos):null;
+    var nMin=validos.filter(function(p){ return p===mn; }).length;
+    var esc=_cotItemEscolhida(it);
+    var _c=it.compra||{};
+    var cells=forns.map(function(f,fi){
+      var p=precos[fi];
+      var ctx=' oncontextmenu="return _pregaoCtx(event,\''+l.id+'\',\''+_ref+'\')"';
+      if(isNaN(p)) return '<td style="'+td+';text-align:center;color:var(--text-tertiary);border-left:.5px solid var(--border)"'+ctx+'>—</td>';
+      var bg=(p===mn)?(nMin>1?'background:#FBF0C4;':'background:#DDEBFA;'):'';
+      var escMark=(esc&&_lcFornKey(esc)===f.k)?' <span style="font-size:9px;color:var(--st-ok-tx);font-weight:700" title="Cotação escolhida">✓</span>':'';
+      var compMark=(_c.comprado&&_lcFornKey(_c)===f.k)?'<div style="font-size:9.5px;color:var(--st-ok-tx);font-weight:700">✓ COMPRADO'+(_c.recebido?' · recebido':'')+'</div>':'';
+      return '<td style="'+td+';text-align:right;white-space:nowrap;cursor:context-menu;border-left:.5px solid var(--border);'+bg+'" title="Botão direito: comprar deste fornecedor / ver cotações"'+ctx+'>'+
+        '<div style="font-weight:600">'+fmtMoney(p)+'<span style="font-size:9px;color:var(--text-secondary)">/'+escapeHtml(it.unidade||'un')+'</span>'+escMark+'</div>'+
+        '<div style="font-size:10px;color:var(--text-secondary)">Total '+fmtMoney(p*(parseFloat(it.qtdTotal)||0))+'</div>'+compMark+'</td>';
+    }).join('');
+    return '<tr><td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(it.codigo||'—')+'</td>'+
+      '<td style="'+td+'">'+escapeHtml(it.nome||'')+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+cells+'</tr>';
+  }).join('');
+  return '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px"><span style="background:#DDEBFA;border-radius:4px;padding:1px 8px">azul</span> menor preço · <span style="background:#FBF0C4;border-radius:4px;padding:1px 8px">amarelo</span> empate no menor · <b>botão direito</b> na célula = comprar / cotações</div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+head+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function _pregaoCtx(ev, listaId, ref){
+  try{ ev.preventDefault(); }catch(_e){}
+  var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); var it=l?_lcItemByRef(l,ref):null; if(!it) return false;
+  var comprado=!!(it.compra&&it.compra.comprado), recebido=!!(comprado&&it.compra.recebido);
+  var m=document.getElementById('pregao-ctx');
+  if(!m){
+    m=document.createElement('div'); m.id='pregao-ctx';
+    m.style.cssText='position:fixed;z-index:6000;background:var(--bg-primary,#fff);border:.5px solid var(--border);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:4px;display:none;min-width:200px';
+    document.body.appendChild(m);
+    document.addEventListener('click', function(){ var x=document.getElementById('pregao-ctx'); if(x) x.style.display='none'; });
+    document.addEventListener('scroll', function(){ var x=document.getElementById('pregao-ctx'); if(x) x.style.display='none'; }, true);
+  }
+  var btn='style="display:block;width:100%;text-align:left;font-size:12.5px;padding:7px 10px;border:none;background:none;cursor:pointer;border-radius:6px" onmouseover="this.style.background=\'var(--bg-secondary)\'" onmouseout="this.style.background=\'none\'"';
+  m.innerHTML=(recebido
+      ? '<div style="font-size:11px;color:var(--text-tertiary);padding:7px 10px">✓ Comprado e RECEBIDO — ajustes pelo financeiro</div>'
+      : '<button '+btn+' onclick="document.getElementById(\'pregao-ctx\').style.display=\'none\';openComprarModal(\''+listaId+'\',\''+ref+'\')">'+(comprado?'✏ Editar compra':'🛒 Comprar')+'</button>')+
+    '<button '+btn+' onclick="document.getElementById(\'pregao-ctx\').style.display=\'none\';openCotacaoModal(\''+listaId+'\',\''+ref+'\')">💰 Ver / editar cotações</button>';
+  m.style.left=Math.min(ev.clientX, window.innerWidth-220)+'px';
+  m.style.top=Math.min(ev.clientY, window.innerHeight-100)+'px';
+  m.style.display='block';
+  return false;
 }
 // v161 — EXCLUIR LISTA (admin; regras do dono 16/07): as solicitações voltam como PENDENTES (entram na
 // próxima lista gerada). Item já COMPRADO tem a compra ESTORNADA junto — mas se o pedido de compra do
@@ -11667,7 +11742,7 @@ function _lcItensTableHtml(l){
           '<td style="'+_tdNc+';text-align:right;text-decoration:line-through">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
           '<td style="'+_tdNc+';text-align:right;color:var(--text-tertiary)">—</td>'+
           '<td style="'+_tdNc+';font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' ped.</td>'+
-          '<td style="'+_tdNc+'" colspan="3">'+(function(){ // v171 — rótulo por resolução (ajustado/sem estoque/tinha estoque; sem resolucao = legado v138)
+          '<td style="'+_tdNc+'" colspan="4">'+(function(){ // v171 — rótulo por resolução (ajustado/sem estoque/tinha estoque; sem resolucao = legado v138)
             var r=it.ncResolucao;
             var lbl = r==='ajustado' ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">🔧 Ajustado</span>'
                     : r==='tinha_estoque' ? '<span style="font-size:11px;color:var(--st-inf-tx);font-weight:600">📦 Tinha estoque</span>'
@@ -11689,12 +11764,15 @@ function _lcItensTableHtml(l){
       // v161 — colunas enxutas (pedido do dono 16/07): fornecedor/NF/PC já aparecem dentro do Cotar e do
       // Comprado — aqui fica só PREÇO UNIT. e TOTAL: da compra (qtd comprada) se comprado; senão da
       // cotação ESCOLHIDA (é a que vale) ou, sem escolhida, da MAIS BARATA (× qtd solicitada).
-      var _precoU=null, _srcLbl='';
-      if(_c.comprado){ _precoU=parseFloat(_c.precoPago)||0; }
+      var _precoU=null, _srcLbl='', _fornTxt='';
+      if(_c.comprado){ _precoU=parseFloat(_c.precoPago)||0; _fornTxt=_c.fornecedorNome||''; }
       else if((it.cotacoes||[]).length){
         var _esc2=_cotItemEscolhida(it);
-        if(_esc2){ _precoU=parseFloat(_esc2.preco)||0; _srcLbl='escolhida'; }
-        else { var _mn=Math.min.apply(null,(it.cotacoes||[]).map(function(cc){ var v=parseFloat(cc.preco); return isNaN(v)?Infinity:v; })); if(isFinite(_mn)){ _precoU=_mn; _srcLbl='menor cot.'; } }
+        if(_esc2){ _precoU=parseFloat(_esc2.preco)||0; _srcLbl='escolhida'; _fornTxt=_esc2.fornecedorNome||''; }
+        else { var _mn=Math.min.apply(null,(it.cotacoes||[]).map(function(cc){ var v=parseFloat(cc.preco); return isNaN(v)?Infinity:v; })); if(isFinite(_mn)){ _precoU=_mn; _srcLbl='menor cot.';
+          // v184 — fornecedor(es) do MENOR preço; empate separado por " / " (pedido do dono 04/08)
+          _fornTxt=(it.cotacoes||[]).filter(function(cc){ return parseFloat(cc.preco)===_mn; }).map(function(cc){ return cc.fornecedorNome||'—'; }).join(' / ');
+        } }
       }
       var _qtdBase=_c.comprado?(parseFloat(_c.qtdComprada)||0):(parseFloat(it.qtdTotal)||0);
       var _corPU=_c.comprado?'color:var(--st-ok-tx);font-weight:600':'';
@@ -11705,6 +11783,7 @@ function _lcItensTableHtml(l){
         '<td style="'+td+';text-align:right">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
         '<td style="'+td+';text-align:right">'+_qtdCmp+'</td>'+
         '<td style="'+td+';font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' ped.</td>'+
+        '<td style="'+td+';font-size:11px;max-width:180px" title="'+escapeHtml(_fornTxt)+'">'+(_fornTxt?escapeHtml(_fornTxt):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
         '<td style="'+td+';text-align:right;white-space:nowrap">'+_puCell+'</td>'+
         '<td style="'+td+';text-align:right;white-space:nowrap">'+_totCell+'</td>'+
         // v159 — botões passam a IDENTIDADE do item (itemId), não a posição: a lista pode ser reordenada
@@ -11716,7 +11795,7 @@ function _lcItensTableHtml(l){
         '</td></tr>';
   }).join('');
   return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
-    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solic.</th><th style="'+th+';text-align:right">Qtd compr.</th><th style="'+th+'">Origem</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solic.</th><th style="'+th+';text-align:right">Qtd compr.</th><th style="'+th+'">Origem</th><th style="'+th+'">Fornecedor</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 // ── Cotação ──
 // v159 — resolve o item pela IDENTIDADE (itemId); '#N' é fallback por posição (item legado sem itemId).
@@ -18125,7 +18204,7 @@ async function handleAnexoFile(input){
   const files=Array.from(input.files);
   let enviados=0;
   for(const file of files){
-    if(file.size>50*1024*1024){ alert('"'+file.name+'" excede 50MB e não será enviado.'); continue; }
+    if(file.size>150*1024*1024){ alert('"'+file.name+'" excede 150MB e não será enviado.'); continue; }
     const safe=(file.name||'arquivo').replace(/[^\w.\-]+/g,'_');
     const path='pedido_'+o.id+'/'+Date.now()+'_'+Math.floor(Math.random()*1000)+'_'+safe;
     try{
@@ -29884,7 +29963,7 @@ async function _convEnviarAnexos(){
     for(let fi=0; fi<files.length; fi++){
       let file=files[fi];
       if(/^image\/jpe?g$/i.test(file.type||'')){ try{ file=await _waNormalizarImagem(file); }catch(_e){ /* formato exotico: envia o original */ } }
-      if(file.size>50*1024*1024){ alert('"'+file.name+'" excede 50MB e não será enviado.'); continue; }
+      if(file.size>150*1024*1024){ alert('"'+file.name+'" excede 150MB e não será enviado.'); continue; }
       const safe=(file.name||'arquivo').replace(/[^\w.\-]+/g,'_');
       const path='conversa_'+conv.id+'/'+Date.now()+'_'+Math.floor(Math.random()*1000)+'_'+safe;
       try{
@@ -29910,7 +29989,7 @@ async function _convEnviarAnexos(){
   for(let fi=0; fi<files.length; fi++){
     let file=files[fi];
     if(/^image\/jpe?g$/i.test(file.type||'')){ try{ file=await _waNormalizarImagem(file); }catch(_e){ /* formato exotico: envia o original */ } }
-    if(file.size>50*1024*1024){ alert('"'+file.name+'" excede 50MB e não será enviado.'); continue; }
+    if(file.size>150*1024*1024){ alert('"'+file.name+'" excede 150MB e não será enviado.'); continue; }
     const safe=(file.name||'arquivo').replace(/[^\w.\-]+/g,'_');
     const path='conversa_'+conv.id+'/'+Date.now()+'_'+Math.floor(Math.random()*1000)+'_'+safe;
     try{
@@ -30055,7 +30134,7 @@ document.addEventListener('keydown', function(e){
   if(e.key==='Escape' && _micRec && _micRec.state==='recording'){ _micCancelado=true; try{ _micRec.stop(); }catch(_e){} }
 });
 async function _convEnviarAudio(conv, file, containerId){
-  if(file.size>50*1024*1024){ alert('O áudio excede 50MB e não será enviado.'); return; }
+  if(file.size>150*1024*1024){ alert('O áudio excede 150MB e não será enviado.'); return; }
   if(!(await _convGuardDonoServidor(conv, containerId))) return; // v159 — mesmo guard de dono do texto
   const safe=(file.name||'audio').replace(/[^\w.\-]+/g,'_');
   const path='conversa_'+conv.id+'/'+Date.now()+'_'+Math.floor(Math.random()*1000)+'_'+safe;
@@ -30498,7 +30577,7 @@ async function _convApagarMsg(convId, mid){
   try{
     const { data, error } = await _sb.functions.invoke('wa-delete', { body:{ phone, messageId:zid, owner:true, convId, targetMid:mid } });
     if(error || !data || data.ok!==true){ alert('Não foi possível apagar.\nO WhatsApp só permite "apagar para todos" por um tempo limitado após o envio.'); return; }
-    m.apagada=true; m.texto=''; m.anexo=null;
+    m.apagada=true; // v183 (regra do dono): some para o CLIENTE, mas o conteúdo FICA na nossa tela (cinza + tag Excluída)
     renderConversaTela(convId); renderConversasLista();
   }catch(e){ alert('Falha ao apagar: '+(e.message||e)); }
 }
@@ -30723,10 +30802,11 @@ function _convMsgsHtml(conv){
     return _diaChip+`<div class="wa-row ${mine?'mine':''}">
       <div class="wa-bubble ${mine?'out':'in'}" data-mid="${m.id||''}">
         ${autor?`<div class="wa-author${mine?'':' in'}">${escapeHtml(autor)}</div>`:''}
-        ${m.apagada?`<span class="wa-txt" style="font-style:italic;color:#8696a0">🚫 mensagem apagada</span>`:''}
+        ${(m.apagada||m.apagadaPeloCliente)?`<div style="margin-bottom:2px"><span style="font-size:9px;font-weight:700;letter-spacing:.4px;background:#ececea;color:#77756f;border:.5px solid #d9d7d2;border-radius:8px;padding:1px 7px;text-transform:uppercase">${m.apagadaPeloCliente?'Excluída pelo cliente':'Excluída'}</span></div>`:''}
         ${_q?`<div class="wa-quote" ${_q.mid?`onclick="_waScrollToMsg('${_q.mid}')" style="cursor:pointer"`:''}>${_q.aut?`<div class="wa-quote-aut">${escapeHtml(_q.aut)}</div>`:''}<div class="wa-quote-txt">${escapeHtml((_q.txt||'📎 anexo').slice(0,120))}</div></div>`:''}
-        ${(!m.apagada&&m.texto)?`<span class="wa-txt">${escapeHtml(m.texto)}</span>`:''}
-        ${m.apagada?'':_waAnexoHtml(m.anexo)}
+        ${m.texto?`<span class="wa-txt"${(m.apagada||m.apagadaPeloCliente)?' style="opacity:.55"':''}>${escapeHtml(m.texto)}</span>`:''}
+        ${(m.apagada&&!m.texto&&!m.anexo)?`<span class="wa-txt" style="font-style:italic;color:#8696a0">🚫 mensagem apagada (conteúdo não preservado)</span>`:''}
+        ${(m.apagada||m.apagadaPeloCliente)?(m.anexo?`<div style="opacity:.55">${_waAnexoHtml(m.anexo)}</div>`:''):_waAnexoHtml(m.anexo)}
         <span class="wa-time">${m.editada?'editada · ':''}${fmtTs(m.em)}${(m.recebidaEm&&(m.recebidaEm-(m.em||0))>300000)?`<span style="color:#B45309;font-weight:600" title="Enviada pelo contato às ${fmtTs(m.em)}, mas entregue ao sistema somente às ${fmtTs(m.recebidaEm)} (atraso na entrega do WhatsApp)"> · ⏱ chegou ${fmtTs(m.recebidaEm)}</span>`:''}${_waTick(mine,m)}</span>
         ${(m.reacaoMinha||m.reacaoCliente)?`<span class="wa-reac">${escapeHtml(m.reacaoMinha||'')}${escapeHtml(m.reacaoCliente||'')}</span>`:''}
         ${(m.id&&!m.apagada)?`<button class="wa-msgmenu" onclick="_convMsgMenu(event,'${conv.id}','${m.id}')" title="Opções da mensagem">⋮</button>`:''}
@@ -31081,8 +31161,17 @@ async function _convPushAtendente(conv){
 async function _waUpsertConversa(conv){
   try{
     if(!_sb || !conv) return;
-    try{ const { data:row } = await _sb.from('conversas').select('data').eq('id', conv.id).maybeSingle();
-      if(row && row.data) _convUniaoMsgs(conv, row.data); }catch(_e){}
+    // v183 — NUNCA GRAVAR ÀS CEGAS (causa raiz do incidente 03/08: leitura prévia falhava e a aba
+    // gravava a cópia velha por cima, apagando mensagens): se não conseguir LER o estado atual,
+    // tenta 1x de novo e, falhando, ABORTA a gravação (a trava do banco é a rede final).
+    let _row=null, _leu=false;
+    for(let _t=0; _t<2 && !_leu; _t++){
+      try{ const _r=await _sb.from('conversas').select('data').eq('id', conv.id).maybeSingle();
+        if(_r && !_r.error){ _row=_r.data; _leu=true; } }catch(_e){}
+      if(!_leu) await new Promise(function(res){ setTimeout(res,1500); });
+    }
+    if(!_leu){ console.warn('gravação da conversa ABORTADA (não li o estado atual):', conv.id); return; }
+    if(_row && _row.data) _convUniaoMsgs(conv, _row.data);
     await _sb.from('conversas').upsert({ id:conv.id, data:conv, updated_at:new Date().toISOString() });
   }catch(e){ console.warn('upsert da conversa falhou:', e); }
 }

@@ -4615,7 +4615,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v180';
+var APP_VERSION = 'v182';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -11021,7 +11021,7 @@ function renderSolCompra(tab){
 }
 // v171 — bloco de UMA solicitação no modal 👁 (extraído do _solVerPedido p/ reusar no botão
 // "Lista de compra" do status de Compras). _lbl era o _statLbl local (nota v166).
-function _solVerBlocoSolic(s){
+function _solVerBlocoSolic(s, tally){
   var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado'};
   var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
   // v174 — solicitação com TODOS os itens resolvidos pelo "✕ Não comprar" (ajustado/tinha estoque/sem
@@ -11036,21 +11036,32 @@ function _solVerBlocoSolic(s){
   (s.itens||[]).forEach(function(it){
     var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
     var c=(li&&li.compra&&li.compra.comprado)?li.compra:null;
-    // v174 — item RESOLVIDO pelo "✕ Não comprar" (v172) mostrava NADA aqui e parecia pendente (caso
-    // FOCUSPEARL 102717, 28/07): agora exibe a resolução — ajustado/tinha estoque contam como entregue.
-    var nc='';
-    if(!c && li && li.naoComprado){
+    // v182 — TODO item ganha um status EXPLÍCITO (pedido do dono 03/08: item sem selo parecia
+    // comprado/perdido e não dava para saber o que estava só em cotação). Estados possíveis:
+    // comprado / cotado aguardando compra / em lista aguardando cotação / aguardando entrar em
+    // lista / resoluções do "✕ Não comprar" (v174). `tally` acumula os totais p/ o resumo do modal.
+    var st='', k='';
+    if(c){
+      k = (li&&li.compraParcial)?'parcial':'comprado';
+      st='<span style="color:var(--st-ok-tx)">✔ comprado'+(c.fornecedorNome?' — '+escapeHtml(c.fornecedorNome):'')+((parseFloat(c.precoPago)||0)>0?' · '+fmtMoney(c.precoPago)+'/un':'')+'</span>'+(li&&li.compraParcial?' <span style="color:var(--st-bad-tx);font-weight:600" title="Solicitado subiu acima do comprado — estornar e comprar o total">⚠ parcial</span>':'');
+    } else if(li && li.naoComprado){
       var _r=li.ncResolucao;
-      nc = _r==='ajustado' ? '<span style="color:var(--st-ok-tx)">🔧 ajustado'+(li.naoCompradoMotivo?' — '+escapeHtml(li.naoCompradoMotivo):'')+' (conta como entregue)</span>'
+      k = _r==='sem_estoque'?'sem_estoque':(_r?'resolvido':'nao_comprado');
+      st = _r==='ajustado' ? '<span style="color:var(--st-ok-tx)">🔧 ajustado'+(li.naoCompradoMotivo?' — '+escapeHtml(li.naoCompradoMotivo):'')+' (conta como entregue)</span>'
          : _r==='tinha_estoque' ? '<span style="color:var(--st-inf-tx)">📦 tinha estoque (conta como entregue)</span>'
          : _r==='sem_estoque' ? '<span style="color:var(--st-bad-tx)">🚫 sem estoque — volta na próxima lista</span>'
          : '<span style="color:var(--st-bad-tx)">✕ não comprado'+(li.naoCompradoMotivo?' — '+escapeHtml(li.naoCompradoMotivo):'')+'</span>';
+    } else if(li && ((li.cotacoes||[]).length || li.escolhida!=null)){
+      k='cotado'; st='<span style="color:#B45309;font-weight:600">💰 cotado — aguardando compra</span>';
+    } else if(li){
+      k='aguarda_cot'; st='<span style="color:var(--text-tertiary)">⏳ em lista — aguardando cotação</span>';
+    } else {
+      k='aguarda_lista'; st='<span style="color:var(--text-tertiary)">📨 solicitado — aguardando entrar em lista</span>';
     }
-    h+='<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:.5px solid var(--border);font-size:12px">'+
-      '<span>'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</span>'+
-      '<span style="white-space:nowrap;text-align:right">'+(parseFloat(it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+
-      (c?' · <span style="color:var(--st-ok-tx)">✔ comprado'+(c.fornecedorNome?' — '+escapeHtml(c.fornecedorNome):'')+((parseFloat(c.precoPago)||0)>0?' · '+fmtMoney(c.precoPago)+'/un':'')+'</span>'+(li&&li.compraParcial?' <span style="color:var(--st-bad-tx);font-weight:600" title="Solicitado subiu acima do comprado — estornar e comprar o total">⚠ parcial</span>':''):(nc?' · '+nc:''))+
-      '</span></div>';
+    if(tally) tally[k]=(tally[k]||0)+1;
+    h+='<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:.5px solid var(--border);font-size:12px;align-items:baseline;flex-wrap:wrap">'+
+      '<span style="flex:1 1 240px;min-width:200px">'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</span>'+
+      '<span style="text-align:right;flex-shrink:0;max-width:100%">'+(parseFloat(it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+' · '+st+'</span></div>';
   });
   return h;
 }
@@ -11059,19 +11070,33 @@ function _solVerBlocoSolic(s){
 function verListaCompraPedido(orderId){
   if(orderId==null) return;
   var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); })||{};
-  var secoes='';
+  // v182 — modal maior + RESUMO no topo (totais por estado) + status explícito em cada item
+  var secoes='', tally={};
   [['ativo','🧪 Ativos'],['embalagem','📦 Embalagens']].forEach(function(p){
     var todas=_solTodasSolic(orderId, p[0]);
     if(!todas.length) return;
     secoes+='<div style="margin-top:16px;padding-bottom:2px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700">'+p[1]+'</div>';
-    todas.forEach(function(s){ secoes+=_solVerBlocoSolic(s); });
+    todas.forEach(function(s){ secoes+=_solVerBlocoSolic(s, tally); });
   });
   if(!secoes){ alert('Nada foi solicitado para este pedido ainda.'); return; }
+  var _chips=[
+    ['comprado','✔ comprados','var(--st-ok-tx)'],
+    ['parcial','⚠ compra parcial','var(--st-bad-tx)'],
+    ['cotado','💰 cotados (aguardando compra)','#B45309'],
+    ['aguarda_cot','⏳ aguardando cotação','var(--text-secondary)'],
+    ['aguarda_lista','📨 aguardando entrar em lista','var(--text-secondary)'],
+    ['resolvido','🔧 resolvidos sem compra','var(--st-inf-tx)'],
+    ['sem_estoque','🚫 sem estoque','var(--st-bad-tx)'],
+    ['nao_comprado','✕ não comprados','var(--st-bad-tx)']
+  ].filter(function(c){ return tally[c[0]]; }).map(function(c){
+    return '<span style="font-size:11.5px;font-weight:600;color:'+c[2]+';border:.5px solid var(--border);border-radius:14px;padding:3px 10px;white-space:nowrap">'+tally[c[0]]+' '+c[1]+'</span>';
+  }).join(' ');
   var ov=document.getElementById('sol-ver-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='sol-ver-overlay'; ov.className='overlay'; ov.style.zIndex='465'; document.body.appendChild(ov); }
-  ov.innerHTML='<div class="modal" style="width:560px;max-width:95vw;max-height:85vh;overflow:auto">'+
+  ov.innerHTML='<div class="modal" style="width:820px;max-width:96vw;max-height:88vh;overflow:auto">'+
     '<h2 style="font-size:16px">📋 Lista de compra — itens solicitados</h2>'+
     '<div style="font-size:12px;color:var(--text-secondary)">Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+' <span style="color:var(--text-tertiary)">· somente leitura</span></div>'+
+    (_chips?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+_chips+'</div>':'')+
     secoes+
     '<div class="modal-footer"><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
   ov.classList.add('open');
@@ -20514,9 +20539,13 @@ async function renderImportacoes(){
   html+='<button class="btn-primary" style="padding:4px 10px;font-size:13px" onclick="renderImportacoes()">↻ Atualizar</button></div>';
   if(!rows.length){ html+='<div class="panel"><div style="color:var(--text-tertiary)">Nenhuma importação registrada ainda.</div></div>'; el.innerHTML=html; return; }
   const lista=(titulo,arr,render,cor)=>{ if(!arr||!arr.length) return ''; return '<div style="margin-top:8px"><div style="font-weight:600;font-size:13px;color:'+(cor||'var(--text-secondary)')+'">'+titulo+' ('+arr.length+')</div><div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">'+arr.map(render).join('')+'</div></div>'; };
-  rows.forEach(r=>{
+  // v181 — BLINDAGEM (incidente 03/08: a rodada de 31/07 gravou jaExistiam como TEXTO em vez de lista;
+  // o .map estourava e a tela congelava em "Carregando…"). Agora: campo-texto com cara de lista é
+  // convertido; registro quebrado vira uma linha de erro visível — nunca mais trava a tela inteira.
+  const _arrImp=v=>{ if(Array.isArray(v)) return v; if(typeof v==='string'&&/^\s*\[/.test(v)){ try{ const p=JSON.parse(v); return Array.isArray(p)?p:[]; }catch(_e){ return []; } } return []; };
+  rows.forEach(r=>{ try{
     const R=r.resumo||{};
-    const ins=R.inseridos||[], pend=R.pendencias||[], ja=R.jaExistiam||[], aguard=R.aguardandoCadastro||[];
+    const ins=_arrImp(R.inseridos), pend=_arrImp(R.pendencias), ja=_arrImp(R.jaExistiam), aguard=_arrImp(R.aguardandoCadastro);
     const dt=new Date(r.criado_em);
     const quando=isNaN(dt.getTime())?esc(r.criado_em):dt.toLocaleString('pt-BR');
     const resumoLinha='✅ '+ins.length+' inserido(s) · ⚠ '+pend.length+' pendência(s) · ↺ '+ja.length+' já existia(m) · ⏳ '+aguard.length+' aguardando cadastro';
@@ -20533,7 +20562,7 @@ async function renderImportacoes(){
         +ja.map(x=>esc((x&&x.num)||x)).join('; ')+'</div></div>';
     }
     html+='</div>';
-  });
+  }catch(_eRow){ html+='<div class="panel" style="margin-bottom:12px;color:var(--st-bad-tx)">Registro '+esc((r&&r.id)||'?')+' com formato inesperado — não exibido ('+esc((_eRow&&_eRow.message)||_eRow)+'). Avise o suporte.</div>'; } });
   el.innerHTML=html;
 }
 async function _checkImportBadge(){

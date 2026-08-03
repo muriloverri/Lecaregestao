@@ -1514,7 +1514,19 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </div>
           <div class="form-group" style="margin-bottom:12px" id="cmp-nf-row"><label>Nº da Nota Fiscal <span style="font-size:10px;color:var(--text-tertiary)">(compra antiga sem pedido — a NF das compras novas é informada no PEDIDO DE COMPRA, no Recebimento)</span></label><input type="text" id="cmp-nf" placeholder="NF (se já tiver)"></div>
           <div id="cmp-total" style="font-size:12px;color:var(--text-secondary);margin-bottom:10px"></div>
-          <div class="modal-footer"><button id="cmp-estornar-btn" onclick="estornarCompraItem()" style="display:none;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">↩ Estornar compra</button><button id="cmp-corrigir-btn" onclick="_cmpCorrigir()" title="Destrava quantidade e preço para correção, MANTENDO a data original da compra (só admin)" style="display:none;color:var(--text-info);border-color:var(--border-info);margin-right:auto">🔓 Corrigir</button><button onclick="closeComprarModal()">Cancelar</button><button class="btn-primary" onclick="saveCompraItem()">Marcar como comprado</button></div>
+          <!-- v186 — COMPRAR EM DOIS FORNECEDORES (pedido do dono 03/08): parte no mais barato, parte no mais rápido -->
+          <div id="cmp-dual-sec" style="display:none;border:.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;background:var(--bg-secondary)">
+            <div style="font-size:12px;font-weight:600;margin-bottom:6px">🔀 2º fornecedor</div>
+            <div class="form-group" style="margin-bottom:8px"><label>Fornecedor 2 * <span style="font-size:10px;color:var(--text-tertiary)">(uma das cotações do item)</span></label>
+              <select id="cmp2-fornec" style="font-size:13px" onchange="_cmpDualPre()"></select>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Qtd fornecedor 2 *</label><input type="number" id="cmp2-qtd" min="0" step="any" placeholder="0" oninput="_cmpDualResumo()"></div>
+              <div class="form-group"><label>Preço unit. pago 2 (R$) *</label><input type="number" id="cmp2-preco" min="0" step="0.01" placeholder="0,00" oninput="_cmpDualResumo()"></div>
+            </div>
+            <div id="cmp2-resumo" style="font-size:11px;color:var(--text-secondary)"></div>
+          </div>
+          <div class="modal-footer"><button id="cmp-estornar-btn" onclick="estornarCompraItem()" style="display:none;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">↩ Estornar compra</button><button id="cmp-corrigir-btn" onclick="_cmpCorrigir()" title="Destrava quantidade e preço para correção, MANTENDO a data original da compra (só admin)" style="display:none;color:var(--text-info);border-color:var(--border-info);margin-right:auto">🔓 Corrigir</button><button id="cmp-dual-btn" onclick="_cmpDualToggle()" title="Dividir a compra deste item entre DOIS fornecedores (quantidade e preço de cada um)" style="display:none;color:var(--text-info);border-color:var(--border-info)">🔀 Comprar em 2 fornecedores</button><button onclick="closeComprarModal()">Cancelar</button><button class="btn-primary" id="cmp-save-btn" onclick="saveCompraItem()">Marcar como comprado</button></div>
         </div>
       </div>
       <!-- v130 — MODAL: receber compra (financeiro) — forma de pagamento + gera no Caixa -->
@@ -3738,7 +3750,48 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         </div>
         <div style="font-size:10px;color:var(--text-tertiary);margin-top:3px" id="c-interm-hint">Intermediário: faz o atendimento das conversas, mas os pedidos vão para as PF/PJ que ele atende (não para ele).</div>
       </div>
-      <div class="form-row"><div class="form-group"><label id="c-nome-label">Nome / Razão Social *</label><input type="text" id="c-nome"></div><div class="form-group"><label id="c-doc-label">CNPJ / CPF *</label><input type="text" id="c-doc" placeholder="00.000.000/0001-00"></div></div>
+      <div class="form-row"><div class="form-group"><label id="c-nome-label">Nome / Razão Social *</label><input type="text" id="c-nome"></div><div class="form-group"><label id="c-doc-label">CNPJ / CPF *</label><div style="display:flex;gap:6px"><input type="text" id="c-doc" placeholder="00.000.000/0001-00" style="flex:1"><button type="button" id="c-doc-buscar" onclick="_buscarCnpjCliente()" title="Buscar a razão social e o endereço na Receita pelo CNPJ" style="font-size:12px;padding:0 12px;white-space:nowrap;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit">🔍 Buscar</button></div></div></div>
+    </div>
+    <div class="modal-section"><div class="modal-section-title">Endereço Principal</div>
+      <div class="form-row"><div class="form-group"><label>CEP</label><div style="display:flex;gap:6px"><input type="text" id="c-cep" placeholder="00000-000" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();_buscarCepCliente();}"><button type="button" onclick="_buscarCepCliente()" title="Preencher o endereço automaticamente pelo CEP" style="font-size:12px;padding:0 12px;white-space:nowrap;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit">🔍 Buscar</button></div></div><div class="form-group"><label>UF</label><input type="text" id="c-uf" placeholder="SP" maxlength="2" style="text-transform:uppercase"></div></div>
+      <div class="form-row"><div class="form-group"><label>Cidade</label><input type="text" id="c-cidade"></div><div class="form-group"><label>Bairro</label><input type="text" id="c-bairro"></div></div>
+      <div class="form-row"><div class="form-group full"><label>Logradouro</label><input type="text" id="c-rua"></div></div>
+      <div class="form-row"><div class="form-group"><label>Número</label><input type="text" id="c-numero"></div><div class="form-group"><label>Complemento</label><input type="text" id="c-comp"></div></div>
+    </div>
+    <div class="modal-section"><div class="modal-section-title">Endereços de Entrega</div>
+      <div id="delivery-addr-list"></div>
+      <div style="background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md);padding:12px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-size:11px;font-weight:600;color:var(--text-tertiary)">Novo endereço de entrega</div>
+          <button type="button" onclick="_copiarEnderecoPrincipal()" style="font-size:10px;padding:2px 10px;border-radius:20px;border:.5px solid var(--border-md);background:var(--bg-secondary);cursor:pointer">📋 Usar endereço principal</button>
+        </div>
+        <div class="form-row" style="margin-bottom:8px"><div class="form-group"><label>Identificação</label><input type="text" id="na-label" placeholder="ex: Filial SP"></div><div class="form-group"><label>CEP</label><input type="text" id="na-cep"></div></div>
+        <div class="form-row" style="margin-bottom:8px"><div class="form-group"><label>Logradouro</label><input type="text" id="na-rua"></div><div class="form-group"><label>Número</label><input type="text" id="na-num"></div></div>
+        <div class="form-row" style="margin-bottom:8px"><div class="form-group"><label>Bairro</label><input type="text" id="na-bairro"></div><div class="form-group"><label>Cidade / UF</label><input type="text" id="na-cidade" placeholder="São Paulo / SP"></div></div>
+        <button onclick="addDeliveryAddress()" style="font-size:12px;padding:5px 12px">+ Adicionar</button>
+      </div>
+    </div>
+    <div class="modal-section"><div class="modal-section-title">Contato</div>
+      <div class="form-row"><div class="form-group"><label>E-mail *</label><input type="email" id="c-email" placeholder="nome@empresa.com"></div><div class="form-group"><label>Telefone principal *</label><input type="tel" id="c-tel1" placeholder="(11) 99999-9999" oninput="this.value=_fmtTelBR(this.value)" maxlength="16"></div></div>
+      <div class="form-row"><div class="form-group"><label>Telefone secundário</label><input type="tel" id="c-tel2" placeholder="(11) 99999-9999" oninput="this.value=_fmtTelBR(this.value)" maxlength="16"></div><div class="form-group"><label>Contato Financeiro</label><input type="text" id="c-fin-contato"></div></div>
+      <div class="form-row"><div class="form-group"><label>E-mail Financeiro</label><input type="email" id="c-fin-email"></div><div class="form-group"><label>Telefone Financeiro</label><input type="tel" id="c-fin-tel" placeholder="(11) 99999-9999" oninput="this.value=_fmtTelBR(this.value)" maxlength="16"></div></div>
+    </div>
+    <div class="modal-section"><div class="modal-section-title">Contatos da empresa</div>
+      <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Cada número de contato com nome (e cargo). Sincroniza com os contatos do card no CRM.</div>
+      <div id="c-contatos-list" style="margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <input type="text" id="c-ct-nome" placeholder="Nome do contato *" style="font-size:12px;flex:1;min-width:130px">
+        <input type="text" id="c-ct-cargo" placeholder="Cargo (opcional)" style="font-size:12px;width:120px">
+        <input type="tel" id="c-ct-tel" placeholder="Telefone" oninput="this.value=_fmtTelBR(this.value)" maxlength="16" style="font-size:12px;width:150px">
+        <button type="button" onclick="_addCliContato()" style="font-size:12px;padding:5px 12px;cursor:pointer">+ Adicionar</button>
+      </div>
+    </div>
+    <div class="modal-section"><div class="modal-section-title">Responsável Técnico</div>
+      <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px" id="rt-hint">Pessoa física responsável tecnicamente. Em Pessoa Jurídica, é o RT da empresa.</div>
+      <div class="form-row" style="margin-bottom:8px"><div class="form-group full"><label>Nome do Responsável Técnico <button type="button" onclick="_usarMesmoNomeRT()" id="rt-mesmo-btn" style="font-size:10px;padding:1px 8px;margin-left:6px;border-radius:20px;border:.5px solid var(--border-md);background:var(--bg-secondary);cursor:pointer">usar mesmo nome do cliente</button></label><input type="text" id="c-rt-nome" placeholder="Nome completo do responsável técnico"></div></div>
+      <div class="form-row"><div class="form-group"><label>Tipo de Conselho</label><input type="text" id="c-conselho-tipo" placeholder="ex: CRF, CRM"></div><div class="form-group"><label>Número do Conselho</label><input type="text" id="c-conselho-num" placeholder="CRF-SP 12345"></div></div>
+    </div>
+    <div class="modal-section"><div class="modal-section-title">Classificação e roteamento</div>
       <div style="margin-bottom:8px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
         <input type="checkbox" id="c-favorito" style="accent-color:#BA7517;width:15px;height:15px">
         <span>⭐ Marcar como cliente favorito (aparece com estrela no CRM e no cadastro)</span>
@@ -3769,45 +3822,6 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px" id="c-vinc-help">Vincule a PF/PJ do mesmo cliente para não duplicar cadastro — o histórico fica junto neste card.</div>
       <div id="c-vinc-box"></div>
     </div>
-    <div class="modal-section"><div class="modal-section-title">Contato</div>
-      <div class="form-row"><div class="form-group"><label>E-mail *</label><input type="email" id="c-email" placeholder="nome@empresa.com"></div><div class="form-group"><label>Telefone principal *</label><input type="tel" id="c-tel1" placeholder="(11) 99999-9999" oninput="this.value=_fmtTelBR(this.value)" maxlength="16"></div></div>
-      <div class="form-row"><div class="form-group"><label>Telefone secundário</label><input type="tel" id="c-tel2" placeholder="(11) 99999-9999" oninput="this.value=_fmtTelBR(this.value)" maxlength="16"></div><div class="form-group"><label>Contato Financeiro</label><input type="text" id="c-fin-contato"></div></div>
-      <div class="form-row"><div class="form-group"><label>E-mail Financeiro</label><input type="email" id="c-fin-email"></div><div class="form-group"><label>Telefone Financeiro</label><input type="tel" id="c-fin-tel" placeholder="(11) 99999-9999" oninput="this.value=_fmtTelBR(this.value)" maxlength="16"></div></div>
-    </div>
-    <div class="modal-section"><div class="modal-section-title">Contatos da empresa</div>
-      <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Cada número de contato com nome (e cargo). Sincroniza com os contatos do card no CRM.</div>
-      <div id="c-contatos-list" style="margin-bottom:8px"></div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <input type="text" id="c-ct-nome" placeholder="Nome do contato *" style="font-size:12px;flex:1;min-width:130px">
-        <input type="text" id="c-ct-cargo" placeholder="Cargo (opcional)" style="font-size:12px;width:120px">
-        <input type="tel" id="c-ct-tel" placeholder="Telefone" oninput="this.value=_fmtTelBR(this.value)" maxlength="16" style="font-size:12px;width:150px">
-        <button type="button" onclick="_addCliContato()" style="font-size:12px;padding:5px 12px;cursor:pointer">+ Adicionar</button>
-      </div>
-    </div>
-    <div class="modal-section"><div class="modal-section-title">Responsável Técnico</div>
-      <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px" id="rt-hint">Pessoa física responsável tecnicamente. Em Pessoa Jurídica, é o RT da empresa.</div>
-      <div class="form-row" style="margin-bottom:8px"><div class="form-group full"><label>Nome do Responsável Técnico <button type="button" onclick="_usarMesmoNomeRT()" id="rt-mesmo-btn" style="font-size:10px;padding:1px 8px;margin-left:6px;border-radius:20px;border:.5px solid var(--border-md);background:var(--bg-secondary);cursor:pointer">usar mesmo nome do cliente</button></label><input type="text" id="c-rt-nome" placeholder="Nome completo do responsável técnico"></div></div>
-      <div class="form-row"><div class="form-group"><label>Tipo de Conselho</label><input type="text" id="c-conselho-tipo" placeholder="ex: CRF, CRM"></div><div class="form-group"><label>Número do Conselho</label><input type="text" id="c-conselho-num" placeholder="CRF-SP 12345"></div></div>
-    </div>
-    <div class="modal-section"><div class="modal-section-title">Endereço Principal</div>
-      <div class="form-row"><div class="form-group"><label>CEP</label><div style="display:flex;gap:6px"><input type="text" id="c-cep" placeholder="00000-000" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();_buscarCepCliente();}"><button type="button" onclick="_buscarCepCliente()" title="Preencher o endereço automaticamente pelo CEP" style="font-size:12px;padding:0 12px;white-space:nowrap;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit">🔍 Buscar</button></div></div><div class="form-group"><label>UF</label><input type="text" id="c-uf" placeholder="SP" maxlength="2" style="text-transform:uppercase"></div></div>
-      <div class="form-row"><div class="form-group"><label>Cidade</label><input type="text" id="c-cidade"></div><div class="form-group"><label>Bairro</label><input type="text" id="c-bairro"></div></div>
-      <div class="form-row"><div class="form-group full"><label>Logradouro</label><input type="text" id="c-rua"></div></div>
-      <div class="form-row"><div class="form-group"><label>Número</label><input type="text" id="c-numero"></div><div class="form-group"><label>Complemento</label><input type="text" id="c-comp"></div></div>
-    </div>
-    <div class="modal-section"><div class="modal-section-title">Endereços de Entrega</div>
-      <div id="delivery-addr-list"></div>
-      <div style="background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md);padding:12px;margin-bottom:8px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div style="font-size:11px;font-weight:600;color:var(--text-tertiary)">Novo endereço de entrega</div>
-          <button type="button" onclick="_copiarEnderecoPrincipal()" style="font-size:10px;padding:2px 10px;border-radius:20px;border:.5px solid var(--border-md);background:var(--bg-secondary);cursor:pointer">📋 Usar endereço principal</button>
-        </div>
-        <div class="form-row" style="margin-bottom:8px"><div class="form-group"><label>Identificação</label><input type="text" id="na-label" placeholder="ex: Filial SP"></div><div class="form-group"><label>CEP</label><input type="text" id="na-cep"></div></div>
-        <div class="form-row" style="margin-bottom:8px"><div class="form-group"><label>Logradouro</label><input type="text" id="na-rua"></div><div class="form-group"><label>Número</label><input type="text" id="na-num"></div></div>
-        <div class="form-row" style="margin-bottom:8px"><div class="form-group"><label>Bairro</label><input type="text" id="na-bairro"></div><div class="form-group"><label>Cidade / UF</label><input type="text" id="na-cidade" placeholder="São Paulo / SP"></div></div>
-        <button onclick="addDeliveryAddress()" style="font-size:12px;padding:5px 12px">+ Adicionar</button>
-      </div>
-    </div>
     <div class="modal-section"><div class="modal-section-title">Observações</div><textarea id="c-obs" placeholder="Informações adicionais..."></textarea></div>
     <div class="modal-section" id="cli-sit-section" style="display:none">
       <div class="modal-section-title">Classificação do Cliente</div>
@@ -3831,6 +3845,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <div id="cli-sit-override-info" style="font-size:11px;color:var(--text-tertiary)"></div>
       </div>
     </div>
+    <div id="c-meta-datas" style="display:none;font-size:11px;color:var(--text-tertiary);padding:8px 2px 0;border-top:.5px solid var(--border);margin-top:8px"></div>
     <div class="modal-footer" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><button onclick="_vincAbrirPicker()" title="Fundir este cadastro em outro: o selecionado é o principal (dados dele prevalecem); telefones/contatos se somam; pedidos, conversas e cards migram; este cadastro deixa de existir" style="color:var(--text-info)">🔗 Vincular a um cadastro</button><div style="display:flex;gap:10px"><button onclick="closeClientModal()">Cancelar</button><button class="btn-primary" onclick="saveClient()">Salvar</button></div></div>
   </div>
 </div>
@@ -4615,7 +4630,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v184';
+var APP_VERSION = 'v186';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7195,12 +7210,21 @@ function openClientModal(id){
   editingClientId=id||null;deliveryAddresses=[];
   const c=id?clients.find(x=>x.id===id):null;
   document.getElementById('client-modal-title').textContent=c?'Editar Cliente':'Novo Cliente';
+  // v186 — rodapé da ficha: data de abertura + última alteração (pedido do dono 03/08)
+  (function(){ const m=document.getElementById('c-meta-datas'); if(!m) return;
+    const f=v=>{ if(!v) return null; const d=new Date(v); return isNaN(d.getTime())?null:d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}); };
+    if(c){ m.style.display=''; m.textContent='Cadastro aberto em: '+(f(c.criadoEm)||'não registrado')+'   ·   Última alteração: '+(f(c.modificadoEm)||'não registrada (passa a ser gravada a partir desta versão)'); }
+    else m.style.display='none';
+  })();
   [['c-nome','nome'],['c-doc','doc'],['c-conselho-tipo','conselhoTipo'],['c-conselho-num','conselhoNum'],['c-rt-nome','rtNome'],['c-tag','tag'],['c-carteira-linha','carteiraLinha'],['c-carteira-anest','carteiraAnest'],['c-email','email'],['c-tel1','tel1'],['c-tel2','tel2'],['c-fin-contato','finContato'],['c-fin-email','finEmail'],['c-fin-tel','finTel'],['c-cep','cep'],['c-uf','uf'],['c-cidade','cidade'],['c-bairro','bairro'],['c-rua','rua'],['c-numero','numero'],['c-comp','comp'],['c-obs','obs']].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.value=c?c[k]||'':'';});  const favEl=document.getElementById('c-favorito');if(favEl)favEl.checked=c?c.favorito||false:false;
   const intEl=document.getElementById('c-interno');if(intEl)intEl.checked=c?c.interno||false:false; // v144
   const intWrap=document.getElementById('c-interno-wrap');if(intWrap)intWrap.style.display=(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial'))?'':'none'; // v144 : so admin/diretora
   const plEl=document.getElementById('c-prod-linha');if(plEl)plEl.checked=c?c.prodLinha||false:false;
   // Tipo de pessoa
-  const tp = (c && _ehIntermediario(c)) ? 'intermediario' : (c?.tipoPessoa || 'pj');
+  // v186 — sem tipoPessoa gravado, o tipo é inferido pelo FORMATO do documento (11 díg.=PF, 14=PJ);
+  // o padrão cego "pj" rotulava CPF importado como Pessoa Jurídica (caso Raissa).
+  const _docDigs=String(c?.doc||'').replace(/\D/g,'');
+  const tp = (c && _ehIntermediario(c)) ? 'intermediario' : (c?.tipoPessoa || (_docDigs.length===11?'pf':'pj'));
   const pjEl=document.getElementById('c-tipo-pj'); const pfEl=document.getElementById('c-tipo-pf'); const inEl=document.getElementById('c-tipo-interm');
   if(pjEl) pjEl.checked = (tp==='pj');
   if(pfEl) pfEl.checked = (tp==='pf');
@@ -7325,6 +7349,13 @@ function _fmtTelBR(v){
   if(d.length<=10) return '('+d.slice(0,2)+') '+d.slice(2,6)+'-'+d.slice(6);
   return '('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7);
 }
+// v186 — validação de documento com dígito verificador (pedido do dono 03/08, caso Raissa PJ com CPF)
+function _docValidoCPF(s){ s=String(s||'').replace(/\D/g,''); if(s.length!==11||/^(\d)\1{10}$/.test(s)) return false;
+  for(const n of [9,10]){ let sm=0; for(let i=0;i<n;i++) sm+=(+s[i])*((n+1)-i); let dv=(sm*10)%11; if(dv===10)dv=0; if(dv!==+s[n]) return false; }
+  return true; }
+function _docValidoCNPJ(s){ s=String(s||'').replace(/\D/g,''); if(s.length!==14||/^(\d)\1{13}$/.test(s)) return false;
+  const calc=n=>{ const p=(n===12)?[5,4,3,2,9,8,7,6,5,4,3,2]:[6,5,4,3,2,9,8,7,6,5,4,3,2]; let sm=0; for(let i=0;i<n;i++) sm+=(+s[i])*p[i]; const r=sm%11; return r<2?0:11-r; };
+  return calc(12)===+s[12] && calc(13)===+s[13]; }
 function saveClient(){
   const nome=document.getElementById('c-nome').value.trim();
   const doc=document.getElementById('c-doc').value.trim();
@@ -7333,6 +7364,23 @@ function saveClient(){
   if(!nome){alert('Nome / Razão Social é obrigatório.');return;}
   if(!doc && !_eraIncompleto){alert('CNPJ / CPF é obrigatório.');return;}
   const docClean=doc.replace(/\D/g,'');
+  // v186 — o documento tem que SER do tipo de pessoa marcado, e válido (dígito verificador):
+  // Pessoa Jurídica exige CNPJ válido; Pessoa Física exige CPF válido; Intermediário aceita os dois.
+  if(docClean){
+    const _tpSel=document.getElementById('c-tipo-interm')?.checked?'intermediario':(document.getElementById('c-tipo-pf')?.checked?'pf':'pj');
+    if(_tpSel==='pf' && !_docValidoCPF(docClean)){
+      alert(docClean.length===14?'O documento digitado tem 14 dígitos (CNPJ), mas o cadastro está marcado como PESSOA FÍSICA.\n\nSe o cliente é uma empresa, troque o Tipo de pessoa para Pessoa Jurídica; se é uma pessoa, informe o CPF dela.':'CPF inválido — confira os dígitos.');
+      return;
+    }
+    if(_tpSel==='pj' && !_docValidoCNPJ(docClean)){
+      alert(docClean.length===11?'O documento digitado tem 11 dígitos (CPF), mas o cadastro está marcado como PESSOA JURÍDICA.\n\nSe o cliente é uma pessoa, troque o Tipo de pessoa para Pessoa Física; se é uma empresa, informe o CNPJ dela (o botão 🔍 Buscar preenche a razão social).':'CNPJ inválido — confira os dígitos.');
+      return;
+    }
+    if(_tpSel==='intermediario' && !_docValidoCPF(docClean) && !_docValidoCNPJ(docClean)){
+      alert('Documento inválido — informe um CPF ou CNPJ válido.');
+      return;
+    }
+  }
   const tel1=document.getElementById('c-tel1').value.trim();
   const tel1Clean=tel1.replace(/\D/g,'');
   const _emailCli=document.getElementById('c-email').value.trim();
@@ -7350,6 +7398,24 @@ function saveClient(){
     if(_cands.length){ _abrirAlertaDup(_cands, {nome:nome,doc:doc,tel1:tel1}); return; }
   }
   _dupCheckBypass=false;
+
+  // v186 — TRAVA DE IDENTIDADE (caso Ritha/Silvia 27/07, regra do dono 03/08): trocar OU apagar o
+  // CPF/CNPJ de um cadastro que já tem PEDIDOS re-rotula o histórico inteiro (o pedido exibe a ficha
+  // do clienteId). Operação EXCLUSIVA do administrador, e mesmo ele só com confirmação explícita.
+  // Se a intenção é registrar OUTRO cliente, o caminho certo é criar um cadastro novo.
+  if(_editCli){
+    const _docAnt=String(_editCli.doc||'').replace(/\D/g,'');
+    if(_docAnt && _docAnt!==docClean){
+      const _nPed=(orders||[]).filter(o=>o&&o.clienteId===editingClientId).length;
+      if(_nPed>0){
+        if(!currentUser || currentUser.perfil!=='admin'){
+          alert('Este cadastro tem '+_nPed+' pedido(s) e o CPF/CNPJ está sendo '+(docClean?'TROCADO':'APAGADO')+' (atual: '+(_editCli.doc||'')+').\n\nO documento é a identidade do cliente — mudar aqui faz TODO o histórico de pedidos passar a exibir outra identidade. Se for outro cliente, crie um cadastro novo.\n\nAlteração de documento de cadastro com pedidos: somente o administrador.');
+          return;
+        }
+        if(!confirm('ATENÇÃO: este cadastro tem '+_nPed+' pedido(s) e o CPF/CNPJ está sendo '+(docClean?'TROCADO':'APAGADO')+':\n\nAtual: '+(_editCli.doc||'—')+'\nNovo: '+(doc||'(vazio)')+'\n\nTodo o histórico de pedidos passará a exibir a nova identidade. Se for OUTRO cliente, cancele e crie um cadastro novo.\n\nConfirma a alteração de documento?')) return;
+      }
+    }
+  }
 
   // ── Produtos (define roteamento) ──
   const carteiraLinhaVal=document.getElementById('c-carteira-linha')?.value.trim()||'';
@@ -7372,7 +7438,7 @@ function saveClient(){
     atendidosIds:(tipoPessoa==='intermediario'?_cliAtend.slice():[]),
     contatos:_cliContatos.map(c=>({nome:c.nome||'',cargo:c.cargo||'',telefone:c.telefone||c.whats||'',email:c.email||'',principal:!!c.principal})), // v176 — ★ principal persiste
     rtNome,
-    prodLinha,prodAnest,conselhoTipo:document.getElementById('c-conselho-tipo').value.trim(),conselhoNum:document.getElementById('c-conselho-num').value.trim(),tag:document.getElementById('c-tag').value.trim(),email:document.getElementById('c-email').value.trim(),tel1:_fmtTelBR(document.getElementById('c-tel1').value),tel2:_fmtTelBR(document.getElementById('c-tel2').value),finContato:document.getElementById('c-fin-contato').value.trim(),finEmail:document.getElementById('c-fin-email').value.trim(),finTel:_fmtTelBR(document.getElementById('c-fin-tel').value),cep:document.getElementById('c-cep').value.trim(),uf:document.getElementById('c-uf').value.trim().toUpperCase(),cidade:document.getElementById('c-cidade').value.trim(),bairro:document.getElementById('c-bairro').value.trim(),rua:document.getElementById('c-rua').value.trim(),numero:document.getElementById('c-numero').value.trim(),comp:document.getElementById('c-comp').value.trim(),obs:document.getElementById('c-obs').value.trim(),carteiraLinha:document.getElementById('c-carteira-linha')?.value.trim()||'',carteiraAnest:document.getElementById('c-carteira-anest')?.value.trim()||'',cadastroIncompleto:!docClean,deliveryAddresses:[...deliveryAddresses]};
+    prodLinha,prodAnest,conselhoTipo:document.getElementById('c-conselho-tipo').value.trim(),conselhoNum:document.getElementById('c-conselho-num').value.trim(),tag:document.getElementById('c-tag').value.trim(),email:document.getElementById('c-email').value.trim(),tel1:_fmtTelBR(document.getElementById('c-tel1').value),tel2:_fmtTelBR(document.getElementById('c-tel2').value),finContato:document.getElementById('c-fin-contato').value.trim(),finEmail:document.getElementById('c-fin-email').value.trim(),finTel:_fmtTelBR(document.getElementById('c-fin-tel').value),cep:document.getElementById('c-cep').value.trim(),uf:document.getElementById('c-uf').value.trim().toUpperCase(),cidade:document.getElementById('c-cidade').value.trim(),bairro:document.getElementById('c-bairro').value.trim(),rua:document.getElementById('c-rua').value.trim(),numero:document.getElementById('c-numero').value.trim(),comp:document.getElementById('c-comp').value.trim(),obs:document.getElementById('c-obs').value.trim(),carteiraLinha:document.getElementById('c-carteira-linha')?.value.trim()||'',carteiraAnest:document.getElementById('c-carteira-anest')?.value.trim()||'',cadastroIncompleto:!docClean,modificadoEm:new Date().toISOString(),deliveryAddresses:[...deliveryAddresses]};
   // v144 : interno/fornecedor — so admin/diretora alteram o campo; para os demais o valor atual e preservado
   if(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial')){ data.interno=!!document.getElementById('c-interno')?.checked; }
   else if(_editCli){ data.interno=!!_editCli.interno; }
@@ -7500,18 +7566,19 @@ function _dupFecharAlerta(){ const ov=document.getElementById('dup-alert-overlay
 function _abrirAlertaDup(cands, novo){
   const rotulo={telefone:'mesmo telefone',documento:'mesmo CPF/CNPJ',nome:'nome parecido — confira'};
   const cor={telefone:'var(--st-bad-tx)',documento:'var(--st-bad-tx)',nome:'var(--st-mid-tx)'};
+  const _adm=!!(currentUser&&currentUser.perfil==='admin'); // v186 — unificar: só o administrador vê o botão
   const linhas=cands.slice(0,8).map(x=>{ const c=x.cliente; return `<div style="border:.5px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:center">
       <div style="min-width:0"><div style="font-weight:600">${escapeHtml(c.nome||'(sem nome)')}</div>
       <div style="font-size:11px;color:var(--text-tertiary)">${escapeHtml(c.doc||'sem CPF/CNPJ')} · ${escapeHtml(c.tel1||c.tel2||'sem telefone')}</div>
       <div style="font-size:11px;color:${cor[x.motivo]};font-weight:600;margin-top:2px">⚠ ${rotulo[x.motivo]}</div></div>
       <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
-        <button class="btn-primary" style="font-size:11px;padding:5px 10px;white-space:nowrap" onclick="_dupUnificar('${c.id}')">É o mesmo — unificar</button>
+        ${_adm?`<button class="btn-primary" style="font-size:11px;padding:5px 10px;white-space:nowrap" onclick="_dupUnificar('${c.id}')">É o mesmo — unificar</button>`:''}
         <button style="font-size:11px;padding:5px 10px;white-space:nowrap" onclick="_dupVer('${c.id}')">Ver cadastro</button>
       </div></div>`; }).join('');
   const ov=_dupAlertOverlay();
   ov.innerHTML=`<div class="modal" style="width:560px;max-height:88vh;overflow:auto">
     <h2 style="margin-bottom:4px">⚠ Possível cliente duplicado</h2>
-    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Já existe cadastro que pode ser <b>${escapeHtml(novo.nome||'este cliente')}</b>. Unificar evita duplicar e <b>junta as conversas num fio só</b> — nenhuma mensagem é perdida.</p>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Já existe cadastro que pode ser <b>${escapeHtml(novo.nome||'este cliente')}</b>. ${_adm?'Unificar evita duplicar e <b>junta as conversas num fio só</b> — nenhuma mensagem é perdida.':'<b>Unificação de cadastros: somente o administrador.</b> Se for o mesmo cliente, avise o administrador — não crie um cadastro duplicado.'}</p>
     ${linhas||'<div style="color:var(--text-tertiary)">—</div>'}
     <div class="modal-footer">
       <button onclick="_dupFecharAlerta()">Cancelar</button>
@@ -7523,9 +7590,21 @@ function _abrirAlertaDup(cands, novo){
 function _dupVer(id){ _dupFecharAlerta(); closeClientModal(); openClientModal(id); }
 function _dupSalvarNovoMesmoAssim(){ _dupFecharAlerta(); _dupCheckBypass=true; saveClient(); }
 function _dupUnificar(canonId){
+  if(!_soAdminFunde()) return; // v186 — fusão só admin (regra do dono 03/08)
   const canon=(clients||[]).find(c=>c.id===canonId); if(!canon){ _dupFecharAlerta(); return; }
   const campos={ nome:'c-nome',doc:'c-doc',email:'c-email',tel1:'c-tel1',tel2:'c-tel2',conselhoTipo:'c-conselho-tipo',conselhoNum:'c-conselho-num',cep:'c-cep',uf:'c-uf',cidade:'c-cidade',bairro:'c-bairro',rua:'c-rua',numero:'c-numero',comp:'c-comp',obs:'c-obs',carteiraLinha:'c-carteira-linha',carteiraAnest:'c-carteira-anest',finContato:'c-fin-contato',finEmail:'c-fin-email',finTel:'c-fin-tel' };
+  const _nomeAntes=canon.nome||'', _docAntesU=String(canon.doc||'').replace(/\D/g,''); // v186 — identidade anterior não se perde
   Object.keys(campos).forEach(k=>{ const v=document.getElementById(campos[k])?.value?.trim?.(); if(v){ canon[k]= (k==='uf'?v.toUpperCase():v); } });
+  // v186 — se o formulário TROCOU o documento do cadastro principal (mecanismo do caso Ritha 27/07),
+  // o documento anterior é preservado como pessoa/empresa vinculada — nenhuma identidade some na unificação.
+  const _docDepoisU=String(canon.doc||'').replace(/\D/g,'');
+  if(_docAntesU && _docDepoisU && _docAntesU!==_docDepoisU){
+    if(!Array.isArray(canon.pessoasVinculadas)) canon.pessoasVinculadas=[];
+    if(!canon.pessoasVinculadas.some(v=>String((v&&v.doc)||'').replace(/\D/g,'')===_docAntesU)){
+      const _docFmt=_docAntesU.length===11?_docAntesU.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/,'$1.$2.$3-$4'):_docAntesU.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5');
+      canon.pessoasVinculadas.push({tipoPessoa:(_docAntesU.length===14?'pj':'pf'), nome:_nomeAntes, doc:_docFmt});
+    }
+  }
   if(document.getElementById('c-prod-linha')?.checked || canon.carteiraLinha) canon.prodLinha=true;
   if(document.getElementById('c-prod-anest')?.checked || canon.carteiraAnest) canon.prodAnest=true;
   if(canon.doc && canon.doc.replace(/\D/g,'')) canon.cadastroIncompleto=false;
@@ -7599,7 +7678,39 @@ function _fundirClientes(keepId, dropId){
   // AGENDAMENTOS). Se falhar, o usuário é avisado e o vigia REGISTRO ÓRFÃO pega em até 1h.
   try{ if(_sb) _sb.rpc('cliente_fundir_repontar',{ p_de:dropId, p_para:keepId, p_nome:keep.nome||null }).then(function(r){ if(r&&r.error){ try{ alert('⚠ A fusão foi aplicada neste navegador, mas a repontagem no SERVIDOR falhou ('+r.error.message+'). Avise o suporte — o vigia também vai acusar.'); }catch(_e2){} } }); }catch(_e){}
   _unirCardsNaFusao(keepId); // v110 — funde os cards do CRM do cliente unificado (2 viram 1)
-  ['doc','email','tel1','tel2','cep','uf','cidade','bairro','rua','numero','conselhoTipo','conselhoNum','carteiraLinha','carteiraAnest','finContato','finEmail','finTel'].forEach(f=>{ if(!keep[f] && drop[f]) keep[f]=drop[f]; });
+  // v186 — FUSÃO NUNCA PERDE INFORMAÇÃO (regra do dono 03/08; casos Ritha/Ingrid/Kamilla):
+  // tudo que o absorvido tinha e o principal não comporta nos campos únicos é PRESERVADO.
+  if(!Array.isArray(keep.pessoasVinculadas)) keep.pessoasVinculadas=[];
+  const _dK=String(keep.doc||'').replace(/\D/g,''), _dD=String(drop.doc||'').replace(/\D/g,'');
+  const _temVinc=d=>keep.pessoasVinculadas.some(v=>String((v&&v.doc)||'').replace(/\D/g,'')===d);
+  // (a) documento do absorvido diferente do principal → vira pessoa/empresa vinculada (identidade não some)
+  if(_dD && _dK && _dD!==_dK && !_temVinc(_dD)){
+    keep.pessoasVinculadas.push({tipoPessoa:(_dD.length===14?'pj':'pf'), nome:drop.nome||'', doc:drop.doc||''});
+  }
+  // (b) pessoas vinculadas do absorvido se somam (dedup por documento)
+  (Array.isArray(drop.pessoasVinculadas)?drop.pessoasVinculadas:[]).forEach(v=>{
+    if(!v) return; const vd=String(v.doc||'').replace(/\D/g,'');
+    if(vd===_dK) return; // não registrar o doc do próprio principal como vinculada
+    if(vd?!_temVinc(vd):!keep.pessoasVinculadas.some(x=>String((x&&x.nome)||'').toLowerCase().trim()===String(v.nome||'').toLowerCase().trim()&&String(v.nome||'').trim()))
+      keep.pessoasVinculadas.push({tipoPessoa:v.tipoPessoa||'pf',nome:v.nome||'',doc:v.doc||''});
+  });
+  // (c) contatos/telefones se somam (dedup por telefone; ★ principal preservado)
+  try{ keep.contatos=_unirContatos(keep, drop); }catch(_e){}
+  // (d) observações do absorvido são anexadas; atendidos de intermediário se somam
+  if(drop.obs && String(drop.obs).trim() && String(drop.obs).trim()!==String(keep.obs||'').trim()){
+    keep.obs=((keep.obs||'')+(keep.obs?'\n':'')+String(drop.obs).trim());
+  }
+  if(Array.isArray(drop.atendidosIds)&&drop.atendidosIds.length){ keep.atendidosIds=[...new Set([...(keep.atendidosIds||[]),...drop.atendidosIds])]; }
+  // (e) endereços de entrega se somam; endereço principal DIVERGENTE do absorvido vira endereço de entrega
+  keep.deliveryAddresses=Array.isArray(keep.deliveryAddresses)?keep.deliveryAddresses:[];
+  const _daKey=a=>[a&&a.cep,a&&a.rua,a&&(a.num||a.numero)].map(x=>String(x||'').toLowerCase().trim()).join('|');
+  const _daSeen=new Set(keep.deliveryAddresses.map(_daKey));
+  (Array.isArray(drop.deliveryAddresses)?drop.deliveryAddresses:[]).forEach(a=>{ if(!a) return; const k=_daKey(a); if(!_daSeen.has(k)){ _daSeen.add(k); keep.deliveryAddresses.push(a); } });
+  if(drop.rua && keep.rua && (String(drop.rua).toLowerCase().trim()!==String(keep.rua).toLowerCase().trim() || String(drop.numero||'').trim()!==String(keep.numero||'').trim())){
+    const _ea={label:'Endereço de '+(drop.nome||'cadastro fundido'), rua:drop.rua||'', num:drop.numero||'', bairro:drop.bairro||'', cidade:(drop.cidade||'')+(drop.uf?' / '+drop.uf:''), cep:drop.cep||''};
+    if(!_daSeen.has(_daKey(_ea))) keep.deliveryAddresses.push(_ea);
+  }
+  ['doc','email','tel1','tel2','cep','uf','cidade','bairro','rua','numero','comp','tag','conselhoTipo','conselhoNum','carteiraLinha','carteiraAnest','finContato','finEmail','finTel'].forEach(f=>{ if(!keep[f] && drop[f]) keep[f]=drop[f]; });
   if(drop.prodLinha) keep.prodLinha=true; if(drop.prodAnest) keep.prodAnest=true;
   if(keep.doc && keep.doc.replace(/\D/g,'')) keep.cadastroIncompleto=false;
   const ic=clients.findIndex(c=>c.id===dropId); if(ic>=0) clients.splice(ic,1);
@@ -7611,15 +7722,16 @@ function _fundirClientes(keepId, dropId){
 function _unirContatos(pj, pf){
   const out=[], seen=new Set();
   const k8=t=>String(t||'').replace(/\D/g,'').slice(-8);
-  const add=(nome,tel,cargo,email)=>{ const tt=String(tel||'').trim(); const key=tt?k8(tt):('n:'+String(nome||'').toLowerCase().trim()); if(!key||seen.has(key)) return; seen.add(key); out.push({nome:String(nome||'').trim(),cargo:String(cargo||'').trim(),telefone:tt,email:String(email||'').trim()}); };
-  (pj.contatos||[]).forEach(c=>add(c.nome,c.telefone||c.whats,c.cargo,c.email));
-  (pf.contatos||[]).forEach(c=>add(c.nome,c.telefone||c.whats,c.cargo,c.email));
+  const add=(nome,tel,cargo,email,principal)=>{ const tt=String(tel||'').trim(); const key=tt?k8(tt):('n:'+String(nome||'').toLowerCase().trim()); if(!key||seen.has(key)) return; seen.add(key); out.push({nome:String(nome||'').trim(),cargo:String(cargo||'').trim(),telefone:tt,email:String(email||'').trim(),principal:!!principal}); }; // v186 — ★ principal não se perde na fusão
+  (pj.contatos||[]).forEach(c=>add(c.nome,c.telefone||c.whats,c.cargo,c.email,c.principal));
+  (pf.contatos||[]).forEach(c=>add(c.nome,c.telefone||c.whats,c.cargo,c.email,c.principal));
   [[pj.nome,pj.tel1],[pj.nome,pj.tel2],[pf.nome,pf.tel1],[pf.nome,pf.tel2]].forEach(([n,t])=>{ if(t) add(n,t); });
   return out;
 }
 // v107 — VINCULAR PESSOA FÍSICA AO PJ: mantém o PJ como cadastro único, grava o CPF do PF em pessoasVinculadas,
 // move pedidos/conversas/contas/cards (somam), une contatos, PJ prevalece nos dados únicos, remove o PF.
 function _vincularPFaoPJ(aId, bId){
+  if(!_soAdminFunde()) return; // v186 — fusão só admin
   const a=(clients||[]).find(c=>String(c.id)===String(aId)), b=(clients||[]).find(c=>String(c.id)===String(bId));
   if(!a||!b||a.id===b.id) return;
   const dig=c=>String(c.doc||'').replace(/\D/g,'');
@@ -7644,6 +7756,7 @@ function _vincularPFaoPJ(aId, bId){
 // são completados com os do atual, telefones/contatos se SOMAM, pedidos/conversas/contas/cards migram,
 // e o cadastro ATUAL (aberto na ficha) deixa de existir. Reusa _fundirClientes + _unirContatos (invariantes v106/v147).
 function _vincAbrirPicker(){
+  if(!_soAdminFunde()) return; // v186 — fusão só admin (regra do dono 03/08)
   if(!editingClientId){ alert('Salve o cadastro primeiro — o vínculo funde este cadastro em outro já existente.'); return; }
   let ov=document.getElementById('vinc-picker-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='vinc-picker-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','0'); ov.style.zIndex='4300'; document.body.appendChild(ov); }
@@ -7674,6 +7787,7 @@ function _vincRenderLista(){
   </div>`).join('');
 }
 function _vincEmOutro(targetId){
+  if(!_soAdminFunde()) return; // v186 — fusão só admin
   const cur=(clients||[]).find(c=>c.id===editingClientId);
   const alvo=(clients||[]).find(c=>c.id===targetId);
   if(!cur||!alvo||cur.id===alvo.id) return;
@@ -7726,6 +7840,7 @@ function _marcarIntermediaria(id, parId){
   saveData(); try{ renderInconsistencias(); }catch(_){}
 }
 function _fundirClienteDup(keepId,dropId){
+  if(!_soAdminFunde()) return; // v186 — fusão só admin
   const keep=(clients||[]).find(c=>String(c.id)===String(keepId)), drop=(clients||[]).find(c=>String(c.id)===String(dropId));
   if(!keep||!drop) return;
   if(!confirm('FUNDIR cadastros? Tudo de "'+(drop.nome||'?')+'" vai para "'+(keep.nome||'?')+'" e o duplicado é REMOVIDO (irreversível).')) return;
@@ -7914,6 +8029,13 @@ async function saveUser(){
 // v77 — só o administrador (Murilo) pode excluir registros.
 function _soAdminApaga(){
   if(!currentUser || currentUser.perfil!=='admin'){ alert('Apenas o administrador pode excluir registros.'); return false; }
+  return true;
+}
+// v186 — regra do dono 03/08 (caso Ritha/Silvia): FUSÃO/unificação de cadastros é operação de
+// identidade e passa a ser EXCLUSIVA do administrador. Comercial que suspeitar de duplicidade
+// avisa o administrador — ele confere e unifica sem perder nada.
+function _soAdminFunde(){
+  if(!currentUser || currentUser.perfil!=='admin'){ alert('Unificação/fusão de cadastros: somente o administrador.\n\nSe você acredita que são o mesmo cliente, avise o administrador — ele confere e unifica sem perder nada.'); return false; }
   return true;
 }
 function confirmDel(type,id,nome){
@@ -10927,11 +11049,13 @@ function _solStatusEfetivo(s){
   if(!l) return s.status;
   var algum=false;
   for(var j=0;j<(s.itens||[]).length;j++){
-    var li=(l.itens||[]).find(function(x){ return x.itemId===s.itens[j].itemId; });
-    if(!li) return s.status;
-    if(li.naoComprado) continue;
-    if(!(li.compra&&li.compra.comprado) || li.compraParcial) return s.status; // v169 — parcial = pendente
-    algum=true;
+    var lis=_lcPartesDoItem(l, s.itens[j].itemId); // v186 — compra dividida: TODAS as partes contam
+    if(!lis.length) return s.status;
+    for(var j2=0;j2<lis.length;j2++){ var li=lis[j2];
+      if(li.naoComprado) continue;
+      if(!(li.compra&&li.compra.comprado) || li.compraParcial) return s.status; // v169 — parcial = pendente
+      algum=true;
+    }
   }
   return algum?'comprado':s.status;
 }
@@ -11520,7 +11644,9 @@ function _lcPregaoHtml(l){
   (l.itens||[]).forEach(function(it){ (it.cotacoes||[]).forEach(function(c){ var k=_lcFornKey(c); if(!k||k==='n:'||seen[k]) return; seen[k]=1; forns.push({k:k, nome:c.fornecedorNome||'—'}); }); });
   forns.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
   if(!forns.length) return '<div style="padding:26px;color:var(--text-tertiary);font-size:13px">Nenhuma cotação registrada nesta lista ainda — cote os itens na aba Itens e o pregão monta o comparativo automaticamente.</div>';
-  var th='padding:6px 8px;background:var(--bg-secondary);font-size:10px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
+  // v185 — cabeçalho FLUTUANTE (pedido do dono 04/08): th sticky; a rolagem vertical é da própria
+  // tabela (max-height no wrapper), senão o sticky não acompanha. Borda vira box-shadow (borda some no sticky).
+  var th='padding:6px 8px;background:var(--bg-secondary);font-size:10px;font-weight:600;color:var(--text-secondary);text-align:left;white-space:nowrap;position:sticky;top:0;z-index:2;box-shadow:0 1px 0 var(--border)';
   var td='padding:6px 8px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
   var head='<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solic.</th>'+
     forns.map(function(f){ return '<th style="'+th+';text-align:right;border-left:.5px solid var(--border)">'+escapeHtml(f.nome)+'</th>'; }).join('');
@@ -11538,28 +11664,33 @@ function _lcPregaoHtml(l){
     var nMin=validos.filter(function(p){ return p===mn; }).length;
     var esc=_cotItemEscolhida(it);
     var _c=it.compra||{};
+    var rowBg=(_c.comprado)?'background:#F1F8F2;':''; // v186 — linha inteira com fundo quando o item já foi comprado
     var cells=forns.map(function(f,fi){
       var p=precos[fi];
-      var ctx=' oncontextmenu="return _pregaoCtx(event,\''+l.id+'\',\''+_ref+'\')"';
-      if(isNaN(p)) return '<td style="'+td+';text-align:center;color:var(--text-tertiary);border-left:.5px solid var(--border)"'+ctx+'>—</td>';
-      var bg=(p===mn)?(nMin>1?'background:#FBF0C4;':'background:#DDEBFA;'):'';
+      var ctx=' oncontextmenu="return _pregaoCtx(event,\''+l.id+'\',\''+_ref+'\',\''+String(f.k).replace(/'/g,'')+'\')"';
+      if(isNaN(p)) return '<td style="'+td+';text-align:center;color:var(--text-tertiary);border-left:.5px solid var(--border);'+rowBg+'"'+ctx+'>—</td>';
+      var isComp=(_c.comprado&&_lcFornKey(_c)===f.k);
+      // v186 — item comprado: célula do fornecedor da compra em VERDE; demais células da linha com o tint; azul/amarelo só valem enquanto o pregão está aberto
+      var bg=_c.comprado?(isComp?'background:#CBE8D1;':rowBg):((p===mn)?(nMin>1?'background:#FBF0C4;':'background:#DDEBFA;'):'');
       var escMark=(esc&&_lcFornKey(esc)===f.k)?' <span style="font-size:9px;color:var(--st-ok-tx);font-weight:700" title="Cotação escolhida">✓</span>':'';
-      var compMark=(_c.comprado&&_lcFornKey(_c)===f.k)?'<div style="font-size:9.5px;color:var(--st-ok-tx);font-weight:700">✓ COMPRADO'+(_c.recebido?' · recebido':'')+'</div>':'';
+      var compMark=isComp?'<div style="font-size:9.5px;color:var(--st-ok-tx);font-weight:700">✓ COMPRADO'+(_c.recebido?' · recebido':'')+'</div>':'';
       return '<td style="'+td+';text-align:right;white-space:nowrap;cursor:context-menu;border-left:.5px solid var(--border);'+bg+'" title="Botão direito: comprar deste fornecedor / ver cotações"'+ctx+'>'+
         '<div style="font-weight:600">'+fmtMoney(p)+'<span style="font-size:9px;color:var(--text-secondary)">/'+escapeHtml(it.unidade||'un')+'</span>'+escMark+'</div>'+
         '<div style="font-size:10px;color:var(--text-secondary)">Total '+fmtMoney(p*(parseFloat(it.qtdTotal)||0))+'</div>'+compMark+'</td>';
     }).join('');
-    return '<tr><td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(it.codigo||'—')+'</td>'+
-      '<td style="'+td+'">'+escapeHtml(it.nome||'')+'</td>'+
-      '<td style="'+td+';text-align:right;white-space:nowrap">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+cells+'</tr>';
+    return '<tr><td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary);'+rowBg+'">'+escapeHtml(it.codigo||'—')+'</td>'+
+      '<td style="'+td+';'+rowBg+'">'+escapeHtml(it.nome||'')+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap;'+rowBg+'">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+cells+'</tr>';
   }).join('');
-  return '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px"><span style="background:#DDEBFA;border-radius:4px;padding:1px 8px">azul</span> menor preço · <span style="background:#FBF0C4;border-radius:4px;padding:1px 8px">amarelo</span> empate no menor · <b>botão direito</b> na célula = comprar / cotações</div>'+
-    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+head+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+  return '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px"><span style="background:#DDEBFA;border-radius:4px;padding:1px 8px">azul</span> menor preço · <span style="background:#FBF0C4;border-radius:4px;padding:1px 8px">amarelo</span> empate no menor · <span style="background:#CBE8D1;border-radius:4px;padding:1px 8px">verde</span> comprado · <b>botão direito</b> na célula = comprar / cotações</div>'+
+    '<div style="overflow:auto;max-height:64vh"><table style="width:100%;border-collapse:separate;border-spacing:0"><thead><tr>'+head+'</tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
-function _pregaoCtx(ev, listaId, ref){
+function _pregaoCtx(ev, listaId, ref, fornKey){
   try{ ev.preventDefault(); }catch(_e){}
   var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); var it=l?_lcItemByRef(l,ref):null; if(!it) return false;
   var comprado=!!(it.compra&&it.compra.comprado), recebido=!!(comprado&&it.compra.recebido);
+  // v186 — a célula informa de QUAL fornecedor é: comprar por ali seleciona a cotação daquele fornecedor
+  var temCot=!!(fornKey&&(it.cotacoes||[]).some(function(c){ return _lcFornKey(c)===fornKey; }));
   var m=document.getElementById('pregao-ctx');
   if(!m){
     m=document.createElement('div'); m.id='pregao-ctx';
@@ -11571,12 +11702,41 @@ function _pregaoCtx(ev, listaId, ref){
   var btn='style="display:block;width:100%;text-align:left;font-size:12.5px;padding:7px 10px;border:none;background:none;cursor:pointer;border-radius:6px" onmouseover="this.style.background=\'var(--bg-secondary)\'" onmouseout="this.style.background=\'none\'"';
   m.innerHTML=(recebido
       ? '<div style="font-size:11px;color:var(--text-tertiary);padding:7px 10px">✓ Comprado e RECEBIDO — ajustes pelo financeiro</div>'
-      : '<button '+btn+' onclick="document.getElementById(\'pregao-ctx\').style.display=\'none\';openComprarModal(\''+listaId+'\',\''+ref+'\')">'+(comprado?'✏ Editar compra':'🛒 Comprar')+'</button>')+
+      : (comprado
+        ? '<button '+btn+' onclick="document.getElementById(\'pregao-ctx\').style.display=\'none\';openComprarModal(\''+listaId+'\',\''+ref+'\')">✏ Editar compra</button>'
+        : (temCot
+          ? '<button '+btn+' onclick="document.getElementById(\'pregao-ctx\').style.display=\'none\';_pregaoComprar(\''+listaId+'\',\''+ref+'\',\''+fornKey+'\')">🛒 Comprar deste fornecedor</button>'
+          : '<button '+btn+' onclick="document.getElementById(\'pregao-ctx\').style.display=\'none\';_pregaoComprar(\''+listaId+'\',\''+ref+'\',\'\')">🛒 Comprar (cotação escolhida)</button>')))+
     '<button '+btn+' onclick="document.getElementById(\'pregao-ctx\').style.display=\'none\';openCotacaoModal(\''+listaId+'\',\''+ref+'\')">💰 Ver / editar cotações</button>';
   m.style.left=Math.min(ev.clientX, window.innerWidth-220)+'px';
   m.style.top=Math.min(ev.clientY, window.innerHeight-100)+'px';
   m.style.display='block';
   return false;
+}
+// v186 — COMPRAR PELO PREGÃO (pedido do dono 04/08): comprar na célula usa a cotação DAQUELE fornecedor.
+// Se ele não for o mais barato, pede confirmação; no sim, a cotação ESCOLHIDA é transferida para ele
+// (mesma gravação do saveCotacao: it.escolhida + renderListaCompra + saveData) e a tela de compra abre
+// direto — o dono não precisa mais abrir a cotação só para marcar o escolhido. Sem fornKey, vale a
+// escolhida atual; sem escolhida, o MAIS BARATO é selecionado automaticamente. A regra v160 permanece:
+// sem NENHUMA cotação não se compra (vai para o modal de cotação).
+function _pregaoComprar(listaId, ref, fornKey){
+  var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); var it=l?_lcItemByRef(l,ref):null; if(!it) return;
+  if(it.compra&&it.compra.comprado){ openComprarModal(listaId, ref); return; }
+  var cots=it.cotacoes||[];
+  if(!cots.length){ alert('Este item ainda não tem nenhuma cotação — lance os fornecedores e preços primeiro (a compra é sempre feita a partir de uma cotação).'); openCotacaoModal(listaId, ref); return; }
+  var mnIdx=-1, mn=Infinity;
+  cots.forEach(function(c,i){ var v=parseFloat(c.preco); if(!isNaN(v)&&v>0&&v<mn){ mn=v; mnIdx=i; } });
+  var idx=-1;
+  if(fornKey){ for(var i2=0;i2<cots.length;i2++){ if(_lcFornKey(cots[i2])===fornKey){ idx=i2; break; } } }
+  if(idx<0) idx=(it.escolhida!=null&&cots[it.escolhida])?it.escolhida:mnIdx;
+  if(idx<0){ openCotacaoModal(listaId, ref); return; }
+  var p=parseFloat(cots[idx].preco);
+  if(mnIdx>=0 && !isNaN(p) && p>mn){
+    var un=it.unidade||'un';
+    if(!confirm('Este fornecedor NÃO é o mais barato deste item.\n\n'+(cots[idx].fornecedorNome||'?')+': '+fmtMoney(p)+'/'+un+'\nMais barato: '+(cots[mnIdx].fornecedorNome||'?')+' — '+fmtMoney(mn)+'/'+un+'\n\nDeseja continuar? (a cotação escolhida passa a ser a deste fornecedor)')) return;
+  }
+  if(it.escolhida!==idx){ it.escolhida=idx; renderListaCompra(); saveData(); }
+  openComprarModal(listaId, ref);
 }
 // v161 — EXCLUIR LISTA (admin; regras do dono 16/07): as solicitações voltam como PENDENTES (entram na
 // próxima lista gerada). Item já COMPRADO tem a compra ESTORNADA junto — mas se o pedido de compra do
@@ -11915,9 +12075,12 @@ function _pedidoTudoNoEstado(orderId, campo){ // campo: 'comprado' | 'recebido'
     var s=solics[i]; if(!s.listaId) return false;
     var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; }); if(!l) return false;
     for(var j=0;j<s.itens.length;j++){
-      var li=(l.itens||[]).find(function(x){ return x.itemId===s.itens[j].itemId; });
-      if(li && li.naoComprado) continue; // v138 — não comprado foi RE-ENFILEIRADO: conta na nova solicitação, não nesta lista
-      if(!li || !li.compra || !li.compra[campo] || li.compraParcial) return false; // v169 — parcial = não comprado
+      var lis=_lcPartesDoItem(l, s.itens[j].itemId); // v186 — compra dividida: TODAS as partes precisam do estado
+      if(!lis.length) return false;
+      for(var j2=0;j2<lis.length;j2++){ var li=lis[j2];
+        if(li.naoComprado) continue; // v138 — não comprado foi RE-ENFILEIRADO: conta na nova solicitação, não nesta lista
+        if(!li.compra || !li.compra[campo] || li.compraParcial) return false; // v169 — parcial = não comprado
+      }
     }
   }
   return true;
@@ -12023,13 +12186,15 @@ function _ncConfirmar(){
 function _acompStatusItem(s, it){
   if(s.status==='solicitado' || !s.listaId) return {st:'Solicitado', li:null};
   var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; });
-  var li=l?(l.itens||[]).find(function(x){ return x.itemId===it.itemId; }):null;
+  var parts=l?_lcPartesDoItem(l, it.itemId):[]; // v186 — compra dividida: o status agrega as partes
+  var li=parts[0]||null;
   if(!li) return {st:'Em lista', li:null};
-  if(li.naoComprado) return {st: li.ncResolucao==='ajustado'?'Ajustado':li.ncResolucao==='tinha_estoque'?'Tinha estoque':li.ncResolucao==='sem_estoque'?'Sem estoque':'Não comprado', li:li}; // v171 — resolução por item
-  if(li.compraParcial && li.compra && li.compra.comprado) return {st:'Compra parcial', li:li}; // v169 — solicitado subiu acima do comprado
-  if(li.compra && li.compra.recebido) return {st:'Recebido', li:li};
-  if(li.compra && li.compra.comprado) return {st:'Comprado', li:li};
-  if((li.cotacoes||[]).length) return {st:'Orçado', li:li};
+  if(parts.every(function(p){ return p.naoComprado; })) return {st: li.ncResolucao==='ajustado'?'Ajustado':li.ncResolucao==='tinha_estoque'?'Tinha estoque':li.ncResolucao==='sem_estoque'?'Sem estoque':'Não comprado', li:li}; // v171 — resolução por item
+  if(parts.some(function(p){ return p.compraParcial && p.compra && p.compra.comprado; })) return {st:'Compra parcial', li:li}; // v169 — solicitado subiu acima do comprado
+  var vivos=parts.filter(function(p){ return !p.naoComprado; });
+  if(vivos.length && vivos.every(function(p){ return p.compra && p.compra.recebido; })) return {st:'Recebido', li:li};
+  if(vivos.length && vivos.every(function(p){ return p.compra && p.compra.comprado; })) return {st:'Comprado', li:li};
+  if(parts.some(function(p){ return (p.cotacoes||[]).length; })) return {st:'Orçado', li:li};
   return {st:'Em lista', li:li};
 }
 function renderSolAcomp(){
@@ -12130,11 +12295,14 @@ function _ladoComprasEstado(o, tipo, cutTs){
     var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; });
     if(!l) return {definido:true, compradoOk:false, recebidoOk:false};
     for(var j=0;j<s.itens.length;j++){
-      var li=(l.itens||[]).find(function(x){ return x.itemId===s.itens[j].itemId; });
-      if(li && li.naoComprado) continue;
-      // v169 — COMPRA PARCIAL (solicitado subiu acima do comprado após complemento): conta como NÃO comprado
-      if(!li || !li.compra || !li.compra.comprado || li.compraParcial) compradoOk=false;
-      if(!li || !li.compra || !li.compra.recebido || li.compraParcial) recebidoOk=false;
+      var lis=_lcPartesDoItem(l, s.itens[j].itemId); // v186 — compra dividida: o pedido só avança quando TODAS as partes estão compradas/recebidas
+      if(!lis.length){ compradoOk=false; recebidoOk=false; continue; }
+      for(var j2=0;j2<lis.length;j2++){ var li=lis[j2];
+        if(li.naoComprado) continue;
+        // v169 — COMPRA PARCIAL (solicitado subiu acima do comprado após complemento): conta como NÃO comprado
+        if(!li.compra || !li.compra.comprado || li.compraParcial) compradoOk=false;
+        if(!li.compra || !li.compra.recebido || li.compraParcial) recebidoOk=false;
+      }
     }
   }
   return {definido:true, compradoOk:compradoOk, recebidoOk:recebidoOk};
@@ -12222,9 +12390,17 @@ function openComprarModal(listaId, idx){
   if(it.compra && it.compra.recebido){ alert('Esta compra já foi RECEBIDA (lançamento enviado ao Caixa) — não pode mais ser editada aqui.\nSe precisar corrigir, fale com o financeiro/administrador.'); return; } // v159
   // v160 — regra do dono 16/07: NÃO se compra sem cotação — a compra é sempre a cotação ESCOLHIDA.
   // (Editar uma compra já feita [✏] segue liberado; a exigência é para a compra NOVA.)
+  // v186 — ajuste do dono 04/08: se há cotações mas nenhuma marcada, o MAIS BARATO vira o escolhido
+  // automaticamente (persistido no mesmo caminho do saveCotacao); o alert só permanece quando o item
+  // não tem cotação NENHUMA.
   if(!(it.compra&&it.compra.comprado) && !_cotItemEscolhida(it)){
-    alert('Cote este item antes de comprar.\n\nUse o botão "Cotar", lance os fornecedores/preços e MARQUE o escolhido — a compra é feita com o fornecedor escolhido na cotação.');
-    return;
+    var _cts=it.cotacoes||[], _mi=-1, _mv=Infinity;
+    _cts.forEach(function(c,i){ var v=parseFloat(c.preco); if(!isNaN(v)&&v>0&&v<_mv){ _mv=v; _mi=i; } });
+    if(_mi<0){
+      alert('Cote este item antes de comprar.\n\nUse o botão "Cotar" e lance os fornecedores/preços — a compra é feita com o fornecedor escolhido na cotação (o mais barato já fica selecionado automaticamente).');
+      return;
+    }
+    it.escolhida=_mi; renderListaCompra(); saveData();
   }
   _cmpListaId=listaId; _cmpItemIdx=idx;
   var esc=_cotItemEscolhida(it), cmp=it.compra||{};
@@ -12260,9 +12436,108 @@ function openComprarModal(listaId, idx){
   // ainda estiver ABERTO (fechado → reabrir o pedido primeiro; recebido nunca chega aqui — guard acima).
   var _estBtn=document.getElementById('cmp-estornar-btn');
   if(_estBtn) _estBtn.style.display=(cmp.comprado && !cmp.recebido)?'':'none';
+  // v186 — COMPRAR EM 2 FORNECEDORES: só para compra NOVA de item com 2+ cotações (o 2º fornecedor
+  // vem das cotações — mesma regra v160 da compra normal). Edição de compra registrada não divide.
+  _cmpDualReset();
+  var _dualBtn=document.getElementById('cmp-dual-btn');
+  if(_dualBtn) _dualBtn.style.display=(!cmp.comprado && (it.cotacoes||[]).length>=2)?'':'none';
   document.getElementById('comprar-modal').classList.add('open');
 }
-function closeComprarModal(){ document.getElementById('comprar-modal').classList.remove('open'); _cmpListaId=null; _cmpItemIdx=null; _cmpModoCorrecao=false; }
+function closeComprarModal(){ document.getElementById('comprar-modal').classList.remove('open'); _cmpListaId=null; _cmpItemIdx=null; _cmpModoCorrecao=false; _cmpDualReset(); }
+// ═══ v186 — COMPRA EM DOIS FORNECEDORES (pedido do dono 03/08) ═══
+// Estratégia ALINHADA AO SISTEMA: a compra dupla DIVIDE o item em duas linhas irmãs da própria lista
+// (parte 1 e parte 2, ligadas por splitDe). Cada parte é uma compra normal de UM fornecedor — pedido
+// de compra por fornecedor, NF, recebimento, Caixa, estorno e correção funcionam sem nenhum caminho
+// novo de gravação. Os status agregam as duas partes (o pedido só avança quando AMBAS estiverem
+// compradas/recebidas — helper _lcPartesDoItem).
+function _cmpDualReset(){
+  var s=document.getElementById('cmp-dual-sec'); if(s) s.style.display='none';
+  var b=document.getElementById('cmp-save-btn'); if(b) b.textContent='Marcar como comprado';
+  var db=document.getElementById('cmp-dual-btn'); if(db) db.textContent='🔀 Comprar em 2 fornecedores';
+  ['cmp2-qtd','cmp2-preco'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
+}
+function _cmpDualAtivo(){ var s=document.getElementById('cmp-dual-sec'); return !!(s && s.style.display!=='none'); }
+function _cmpDualToggle(){
+  var l=(listasCompra||[]).find(function(x){ return x.id===_cmpListaId; }); if(!l) return;
+  var it=_lcItemByRef(l, _cmpItemIdx); if(!it) return;
+  if(it.compra&&it.compra.comprado){ alert('Este item já está comprado — a divisão em 2 fornecedores é só para compra nova.'); return; }
+  var sec=document.getElementById('cmp-dual-sec'); if(!sec) return;
+  if(_cmpDualAtivo()){ _cmpDualReset(); return; }
+  var esc=_cotItemEscolhida(it);
+  var sel=document.getElementById('cmp2-fornec');
+  var ops=(it.cotacoes||[]).map(function(c,i){ return {i:i,c:c}; }).filter(function(x){ return !esc || _lcFornKey(x.c)!==_lcFornKey(esc); });
+  if(!ops.length){ alert('Só há cotação de um fornecedor neste item — cote um segundo fornecedor antes de dividir a compra.'); return; }
+  sel.innerHTML=ops.map(function(x){ return '<option value="'+x.i+'">'+escapeHtml(x.c.fornecedorNome||'?')+' — '+fmtMoney(parseFloat(x.c.preco)||0)+'/'+escapeHtml(it.unidade||'un')+'</option>'; }).join('');
+  sec.style.display='';
+  var b=document.getElementById('cmp-save-btn'); if(b) b.textContent='Concluir compra nos 2 fornecedores';
+  var db=document.getElementById('cmp-dual-btn'); if(db) db.textContent='✕ Cancelar divisão';
+  _cmpDualPre(); _cmpDualResumo();
+}
+function _cmpDualPre(){
+  var l=(listasCompra||[]).find(function(x){ return x.id===_cmpListaId; }); if(!l) return;
+  var it=_lcItemByRef(l, _cmpItemIdx); if(!it) return;
+  var i=parseInt(document.getElementById('cmp2-fornec').value,10);
+  var c=(it.cotacoes||[])[i]; if(!c) return;
+  var pe=document.getElementById('cmp2-preco'); if(pe && !parseFloat(pe.value)) pe.value=parseFloat(c.preco)||'';
+  _cmpDualResumo();
+}
+function _cmpDualResumo(){
+  var l=(listasCompra||[]).find(function(x){ return x.id===_cmpListaId; }); if(!l) return;
+  var it=_lcItemByRef(l, _cmpItemIdx); if(!it) return;
+  var el=document.getElementById('cmp2-resumo'); if(!el) return;
+  var T=parseFloat(it.qtdTotal)||0;
+  var q1=parseFloat(document.getElementById('cmp-qtd').value)||0;
+  var q2=parseFloat(document.getElementById('cmp2-qtd').value)||0;
+  var dif=(q1+q2)-T;
+  el.innerHTML='Solicitado: <b>'+T.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</b> · Fornecedor 1: '+q1.toLocaleString('pt-BR')+' · Fornecedor 2: '+q2.toLocaleString('pt-BR')+
+    (Math.abs(dif)<=0.0001?' <span style="color:var(--st-ok-tx);font-weight:600">✓ soma confere</span>':' <span style="color:var(--st-mid-tx);font-weight:600">⚠ soma '+(dif>0?'ACIMA':'ABAIXO')+' do solicitado ('+(q1+q2).toLocaleString('pt-BR')+')</span>');
+}
+// as PARTES de um item (a própria linha + as linhas divididas dela) — usado pelos status agregados
+function _lcPartesDoItem(l, itemId){
+  if(itemId==null||itemId==='') return [];
+  return (l&&l.itens||[]).filter(function(x){ return x && (String(x.itemId)===String(itemId) || String(x.splitDe||'')===String(itemId)); });
+}
+function _salvarCompraDual(l, it){
+  var esc=_cotItemEscolhida(it);
+  if(!esc){ alert('A compra em 2 fornecedores usa a cotação escolhida como fornecedor 1 — cote o item primeiro.'); return; }
+  var i2=parseInt(document.getElementById('cmp2-fornec').value,10);
+  var c2=(it.cotacoes||[])[i2];
+  if(!c2){ alert('Selecione o 2º fornecedor.'); return; }
+  if(_lcFornKey(c2)===_lcFornKey(esc)){ alert('O 2º fornecedor é o MESMO da cotação escolhida — para comprar tudo dele, use a compra normal.'); return; }
+  var q1=parseFloat(document.getElementById('cmp-qtd').value)||0;
+  var p1=parseFloat(document.getElementById('cmp-preco').value)||0;
+  var q2=parseFloat(document.getElementById('cmp2-qtd').value)||0;
+  var p2=parseFloat(document.getElementById('cmp2-preco').value)||0;
+  if(q1<=0||q2<=0){ alert('Informe a quantidade comprada dos DOIS fornecedores.'); return; }
+  if(p1<=0||p2<=0){ alert('Informe o preço unitário pago dos DOIS fornecedores.'); return; }
+  var T=parseFloat(it.qtdTotal)||0;
+  if(Math.abs((q1+q2)-T)>0.0001 && !confirm('A soma das quantidades ('+(q1+q2).toLocaleString('pt-BR')+') é DIFERENTE do solicitado ('+T.toLocaleString('pt-BR')+' '+(it.unidade||'')+').\n\nContinuar mesmo assim?')) return;
+  var f1nome=(document.getElementById('cmp-fornec').value||'').trim()||esc.fornecedorNome||'';
+  var f1=(fornecedores||[]).find(function(x){ return (x.nome||'').toLowerCase()===f1nome.toLowerCase(); });
+  var f2nome=c2.fornecedorNome||'';
+  var f2=(fornecedores||[]).find(function(x){ return (x.nome||'').toLowerCase()===f2nome.toLowerCase(); });
+  var agora=Date.now(), quem=(currentUser&&currentUser.name)||'';
+  // parte 2 = linha irmã (cópia profunda; cotações preservadas; escolhida aponta p/ o fornecedor 2)
+  var it2=JSON.parse(JSON.stringify(it));
+  it2.itemId=(it.itemId!=null&&it.itemId!=='')?(String(it.itemId)+'~2'):('split'+agora);
+  it2.splitDe=(it.itemId!=null&&it.itemId!=='')?String(it.itemId):null;
+  it2.nome=(it.nome||'')+' — 2º fornecedor';
+  it2.qtdTotal=(T-q1>0.0001)?(T-q1):q2;
+  it2.escolhida=i2;
+  delete it2.compraParcial;
+  it2.compra={ fornecedorId:f2?f2.id:(c2.fornecedorId||null), fornecedorNome:f2nome, qtdComprada:q2, precoPago:p2, nf:'', comprado:true, compradoEm:agora, compradoPor:quem, splitCompra:true };
+  try{ var _pc2=_pcAbertoDoFornecedor(f2?f2.id:(c2.fornecedorId||null), f2nome); it2.compra.pedidoCompraId=_pc2.id; }catch(_e){}
+  // parte 1 = a própria linha, com a compra do fornecedor escolhido
+  it.qtdTotal=q1;
+  delete it.compraParcial;
+  it.compra={ fornecedorId:f1?f1.id:(esc.fornecedorId||null), fornecedorNome:f1nome, qtdComprada:q1, precoPago:p1, nf:'', comprado:true, compradoEm:agora, compradoPor:quem, splitCompra:true };
+  try{ var _pc1=_pcAbertoDoFornecedor(f1?f1.id:(esc.fornecedorId||null), f1nome); it.compra.pedidoCompraId=_pc1.id; }catch(_e){}
+  var pos=l.itens.indexOf(it); l.itens.splice(pos>=0?pos+1:l.itens.length, 0, it2);
+  _atualizaStatusLista(l);
+  (it.origem||[]).forEach(function(og){ try{ _reavaliarComprasPedido(og.orderId); }catch(_e){} });
+  closeComprarModal(); renderListaCompra(); saveData();
+  alert('✓ Compra dividida registrada:\n\n• '+f1nome+': '+q1.toLocaleString('pt-BR')+' '+(it.unidade||'')+' × '+fmtMoney(p1)+'\n• '+f2nome+': '+q2.toLocaleString('pt-BR')+' '+(it.unidade||'')+' × '+fmtMoney(p2)+'\n\nCada parte entrou no pedido de compra do seu fornecedor (NF e recebimento separados, como qualquer compra).');
+}
 // v165 — 🔓 CORRIGIR compra registrada (SÓ ADMIN, pedido do dono 20/07): destrava qtd/preço para
 // correção SEM alterar a data da compra (compradoEm original preservado — estornar+recomprar geraria
 // data errada). Espelha a regra do estorno: pedido de compra do item precisa estar ABERTO.
@@ -12287,6 +12562,7 @@ function saveCompraItem(){
   var it=_lcItemByRef(l, _cmpItemIdx); // v159 — por identidade
   if(!it){ alert('Este item não está mais nesta lista (ela mudou em outra tela). Feche e reabra a lista.'); closeComprarModal(); return; }
   if(it.compra && it.compra.recebido){ alert('Esta compra já foi RECEBIDA (lançamento enviado ao Caixa) — a edição não foi aplicada.'); closeComprarModal(); return; } // v159 — o recebimento pode ter acontecido em outra tela enquanto o modal estava aberto
+  if(_cmpDualAtivo()){ if(!(it.compra&&it.compra.comprado)) return _salvarCompraDual(l, it); _cmpDualReset(); } // v186 — compra dividida em 2 fornecedores (só compra nova)
   var forn=(document.getElementById('cmp-fornec').value||'').trim();
   var qtd=parseFloat(document.getElementById('cmp-qtd').value)||0;
   var preco=parseFloat(document.getElementById('cmp-preco').value)||0;
@@ -16611,7 +16887,10 @@ function renderClients(){
   const _badge=document.getElementById('cli-incompletos-badge');
   if(_badge){ if(_incompletos.length){ _badge.textContent=_incompletos.length; _badge.style.display=''; } else _badge.style.display='none'; }
   let base = (activeClientesTab==='incompletos') ? _incompletos : clients;
-  const f=base.filter(c=>!q||(c.nome||'').toLowerCase().includes(q)||_docMatch(c.doc,q));
+  // v186 — a busca também acha pelas PESSOAS VINCULADAS (nome e CPF/CNPJ): documento antigo/da empresa
+  // preservado como vinculada não pode ficar inencontrável (pedido do dono 03/08).
+  const f=base.filter(c=>!q||(c.nome||'').toLowerCase().includes(q)||_docMatch(c.doc,q)
+    ||(Array.isArray(c.pessoasVinculadas)&&c.pessoasVinculadas.some(v=>v&&(((v.nome||'').toLowerCase().includes(q))||_docMatch(v.doc,q)))));
   const grid=document.getElementById('clients-grid'),empty=document.getElementById('clients-empty');
   if(!f.length){grid.innerHTML='';empty.style.display='';empty.textContent=activeClientesTab==='incompletos'?'Nenhum cadastro incompleto.':'Nenhum cliente encontrado.';return;}
   empty.style.display='none';
@@ -32692,6 +32971,37 @@ async function _buscarCepCliente(){
     if(inp) inp.value=cep.slice(0,5)+'-'+cep.slice(5);
     document.getElementById('c-numero')?.focus();
   }catch(e){ alert('Não consegui consultar o CEP (precisa de internet/online).'); }
+}
+// v186 — pedido do dono 03/08: buscar a razão social (e endereço) pelo CNPJ na Receita (BrasilAPI).
+// Só completa campos VAZIOS — nunca sobrescreve o que já está na ficha (o nome pede confirmação).
+async function _buscarCnpjCliente(){
+  const inp=document.getElementById('c-doc'); const cnpj=(inp?.value||'').replace(/\D/g,'');
+  if(cnpj.length!==14){ alert('Informe um CNPJ completo (14 dígitos) para buscar.\n(Para CPF não existe consulta pública.)'); return; }
+  const btn=document.getElementById('c-doc-buscar'); if(btn){ btn.disabled=true; btn.textContent='Buscando…'; }
+  try{
+    const r=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+cnpj);
+    if(!r.ok){ alert(r.status===404?'CNPJ não encontrado na Receita.':'A consulta de CNPJ falhou (serviço indisponível). Tente novamente em instantes.'); return; }
+    const d=await r.json();
+    const razao=(d.razao_social||'').trim();
+    if(razao){
+      const nomeEl=document.getElementById('c-nome');
+      if(nomeEl){
+        const atual=nomeEl.value.trim();
+        if(!atual || confirm('Razão social na Receita:\n\n'+razao+'\n\nSubstituir o nome atual "'+atual+'"?')) nomeEl.value=razao;
+      }
+    } else { alert('A Receita não retornou razão social para este CNPJ.'); }
+    if(inp) inp.value=cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5');
+    const setIfEmpty=(id,v)=>{ const e=document.getElementById(id); if(e&&!e.value.trim()&&v) e.value=String(v); };
+    setIfEmpty('c-cep', d.cep?String(d.cep).replace(/\D/g,'').replace(/^(\d{5})(\d{3})$/,'$1-$2'):'');
+    setIfEmpty('c-uf', (d.uf||'').toUpperCase());
+    setIfEmpty('c-cidade', d.municipio||'');
+    setIfEmpty('c-bairro', d.bairro||'');
+    setIfEmpty('c-rua', [d.descricao_tipo_de_logradouro||'', d.logradouro||''].join(' ').trim());
+    setIfEmpty('c-numero', d.numero||'');
+    setIfEmpty('c-comp', d.complemento||'');
+    if(d.nome_fantasia){ const o=document.getElementById('c-obs'); if(o && !o.value.toLowerCase().includes('fantasia')) o.value=(o.value?o.value+'\n':'')+'Nome fantasia: '+d.nome_fantasia; }
+  }catch(e){ alert('Não consegui consultar o CNPJ (precisa de internet/online).'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='🔍 Buscar'; } }
 }
 function openClienteFichaPorId(id){
   // Abre a ficha rica de visualizacao do cliente (Dados + Resumo Comercial + Historico de pedidos)

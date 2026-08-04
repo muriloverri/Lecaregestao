@@ -1261,6 +1261,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div class="crm-tab active" id="cat-tab-produtos" onclick="setCatalogoTab('produtos')">Produtos</div>
           <div class="crm-tab" id="cat-tab-insumos" onclick="setCatalogoTab('insumos')">Insumos (Ativos)</div>
           <div class="crm-tab" id="cat-tab-embalagens" onclick="setCatalogoTab('embalagens')">Embalagens</div>
+          <div class="crm-tab" id="cat-tab-grpemb" onclick="setCatalogoTab('grpemb')">📦 Grupos de Embalagem</div><!-- v187 — embalagem completa composta por componentes (NF desmembrada) -->
           <div class="crm-tab" id="cat-tab-catnovo" onclick="setCatalogoTab('catnovo')">🧪 Catálogo Novo</div><!-- v174 — fórmulas de manipulação -->
 
         </div>
@@ -1299,9 +1300,10 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
             <input type="text" id="ins-busca" placeholder="Buscar insumo (ativo)..." oninput="renderCatSimples('insumo')" style="min-width:220px">
             <button class="btn-primary" id="ins-novo-btn" onclick="openInsumoModal('insumo')">+ Cadastrar insumo</button>
+            <label class="btn-primary" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (ativos/MTP) exportado do Opery, mostra os que ainda NÃO estão no catálogo e cadastra com a sua confirmação — custo do relatório como custo base e markup padrão 400% (5×). Nada é gravado sem confirmar.">📥 Importar ativos<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarAtivosPDF(this)"></label><!-- v187 -->
           </div>
           <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Insumo (ativo)</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Média ponderada do histórico de compras">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço da compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
+            <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Insumo (ativo)</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Quantidade em estoque (na unidade de compra)">Estoque</th><th style="padding:8px 10px;text-align:right" title="Média ponderada das compras efetivadas">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço pago na compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
             <tbody id="ins-tbody"></tbody>
           </table></div>
           <div id="ins-vazio" style="display:none;color:var(--text-secondary);font-size:13px;padding:24px;text-align:center">Nenhum insumo cadastrado. Clique em "Cadastrar insumo".</div>
@@ -1314,10 +1316,26 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <label class="btn-primary" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (embalagens) exportado do Opery, mostra as que ainda NÃO estão no catálogo e cadastra com a sua confirmação — nada é gravado sem confirmar.">📥 Importar embalagens<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarEmbalagensPDF(this)"></label><!-- v170 -->
           </div>
           <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Embalagem</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Média ponderada do histórico de compras">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço da compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
+            <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Embalagem</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Quantidade em estoque (na unidade de compra)">Estoque</th><th style="padding:8px 10px;text-align:right" title="Média ponderada das compras efetivadas">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço pago na compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
             <tbody id="emb-tbody"></tbody>
           </table></div>
           <div id="emb-vazio" style="display:none;color:var(--text-secondary);font-size:13px;padding:24px;text-align:center">Nenhuma embalagem cadastrada. Clique em "Cadastrar embalagem".</div>
+        </div>
+        <!-- v187 — GRUPOS DE EMBALAGEM (pedido do dono 04/08): a mesma embalagem que um fornecedor vende
+             completa, outro entrega DESMEMBRADA na NF (tampa + frasco + cânula...). O grupo vincula os
+             componentes à embalagem completa: entrada no estoque = 1 embalagem, e o custo da embalagem
+             é a SOMA dos componentes. -->
+        <div id="cat-sec-grpemb" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+            <input type="text" id="ge-busca" placeholder="Buscar grupo..." oninput="renderGruposEmb()" style="min-width:220px">
+            <button class="btn-primary" id="ge-novo-btn" onclick="openGrpEmbModal()">+ Montar grupo</button>
+          </div>
+          <div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:12px">Um grupo liga a <b>embalagem completa</b> aos seus <b>componentes</b> (para quando a nota do fornecedor vem desmembrada). O custo do grupo é a soma do custo de cada componente (custo base; sem base, a última compra).</div>
+          <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Embalagem completa</th><th style="padding:8px 10px;text-align:left">Componentes</th><th style="padding:8px 10px;text-align:right" title="Soma do custo unitário dos componentes × quantidade">Custo somado</th><th style="padding:8px 10px;text-align:right" title="Custo da embalagem completa (base ou última compra)">Custo da completa</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
+            <tbody id="ge-tbody"></tbody>
+          </table></div>
+          <div id="ge-vazio" style="display:none;color:var(--text-secondary);font-size:13px;padding:24px;text-align:center">Nenhum grupo montado. Clique em "+ Montar grupo".</div>
         </div>
         <!-- v174 — CATÁLOGO NOVO: fórmulas de manipulação (produto = composição vinculada; custo/preço calculados na venda) -->
         <div id="cat-sec-catnovo" style="display:none">
@@ -1343,7 +1361,11 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       </div>
       <!-- v130 — modal cadastro de insumo/embalagem -->
       <div class="overlay" id="insumo-modal">
-        <div class="modal" style="width:460px">
+        <style>/* v187 — alinhamento da ficha (pedido do dono): rótulos com altura uniforme para os campos lado a lado ficarem nivelados */
+          #insumo-modal .form-row{align-items:end}
+          #insumo-modal .form-group label{display:flex;align-items:flex-end;min-height:32px;line-height:1.25}
+        </style>
+        <div class="modal" style="width:620px;max-width:95vw">
           <h2 id="insumo-modal-title">Cadastrar insumo</h2>
           <div class="form-row">
             <div class="form-group"><label>Código</label><input type="text" id="ins-codigo" placeholder="Gerado automaticamente"></div>
@@ -1374,8 +1396,32 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="form-group"><label>Custo base (R$) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(usado no preço; vazio = último custo)</span></label><input type="number" min="0" step="0.0001" id="ins-custobase" placeholder="por unidade de compra"></div>
             <div class="form-group"><label>Markup de venda (%)</label><input type="number" min="0" step="0.01" id="ins-markup" placeholder="ex: 300"></div>
           </div>
+          <!-- v187 — quantidade em estoque (pedido do dono 04/08; vale p/ insumo E embalagem) -->
+          <div class="form-row">
+            <div class="form-group"><label>Quantidade em estoque <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(na unidade de compra)</span></label><input type="number" min="0" step="any" id="ins-estoque" placeholder="0"></div>
+            <div class="form-group"></div>
+          </div>
           <div id="ins-custos-info" style="font-size:11px;color:var(--text-secondary);background:var(--bg-secondary);border-radius:8px;padding:7px 10px;margin-bottom:12px;display:none"></div>
           <div class="modal-footer"><button onclick="closeInsumoModal()">Cancelar</button><button class="btn-primary" onclick="saveInsumo()">Salvar</button></div>
+        </div>
+      </div>
+      <!-- v187 — modal GRUPO DE EMBALAGEM (embalagem completa + componentes) -->
+      <div class="overlay" id="grpemb-modal">
+        <div class="modal" style="width:640px;max-width:95vw;max-height:88vh;overflow-y:auto">
+          <h2 id="ge-modal-title">Montar grupo de embalagem</h2>
+          <div class="form-group" style="margin-bottom:10px"><label>Embalagem completa * <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(o item do catálogo que representa a embalagem inteira — é ela que entra no estoque)</span></label>
+            <input type="text" id="ge-emb" list="ge-emb-dl" placeholder="Digite o código ou nome da embalagem..."><datalist id="ge-emb-dl"></datalist>
+          </div>
+          <div class="form-group" style="margin-bottom:6px"><label>Componentes <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(como vêm na nota desmembrada, com a quantidade por 1 embalagem completa)</span></label></div>
+          <div id="ge-comps" style="margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+            <input type="text" id="ge-comp-busca" list="ge-comp-dl" placeholder="Código ou nome do componente..." style="font-size:12px;flex:1;min-width:200px"><datalist id="ge-comp-dl"></datalist>
+            <input type="number" id="ge-comp-qtd" min="0" step="any" value="1" title="Quantidade por 1 embalagem completa" style="font-size:12px;width:90px">
+            <button type="button" onclick="_geAddComp()" style="font-size:12px;padding:5px 12px;cursor:pointer">+ Adicionar</button>
+          </div>
+          <div id="ge-custo-info" style="font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);border-radius:8px;padding:8px 12px;margin-bottom:12px"></div>
+          <div class="form-group" style="margin-bottom:10px"><label>Observações</label><input type="text" id="ge-obs" placeholder="ex: fornecedor X entrega desmembrado"></div>
+          <div class="modal-footer"><button id="ge-del-btn" onclick="deleteGrpEmb()" style="display:none;color:var(--st-bad-tx);border-color:var(--st-bad-bd);margin-right:auto">Excluir grupo</button><button onclick="closeGrpEmbModal()">Cancelar</button><button class="btn-primary" onclick="saveGrpEmb()">Salvar grupo</button></div>
         </div>
       </div>
       <!-- v174 — modal FÓRMULA do Catálogo Novo -->
@@ -1534,6 +1580,17 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <div class="modal" style="width:520px">
           <h2>Receber compra — NF <span id="rcb-nf-title"></span></h2>
           <div id="rcb-info" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px"></div>
+          <!-- v187 — CUSTOS DA NOTA além dos itens (pedido do dono 04/08): frete/impostos/outros são
+               RATEADOS proporcionalmente ao valor de cada item (compõem o custo unitário REAL do
+               ativo/embalagem) e SOMAM no lançamento — o financeiro bate com o total da nota. -->
+          <div id="rcb-extras-wrap" style="border:.5px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:10px">
+            <div style="font-size:11.5px;font-weight:600;margin-bottom:6px">Custos da nota além dos itens <span style="font-weight:400;color:var(--text-tertiary)">(rateio proporcional ao valor de cada item → custo unitário real)</span></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <div class="form-group" style="flex:1;min-width:110px;margin-bottom:0"><label>Frete (R$)</label><input type="number" min="0" step="0.01" id="rcb-frete" placeholder="0,00" oninput="_rcbExtrasChange()"></div>
+              <div class="form-group" style="flex:1;min-width:110px;margin-bottom:0"><label>Impostos (R$)</label><input type="number" min="0" step="0.01" id="rcb-impostos" placeholder="0,00" oninput="_rcbExtrasChange()"></div>
+              <div class="form-group" style="flex:1;min-width:110px;margin-bottom:0"><label>Outros custos (R$)</label><input type="number" min="0" step="0.01" id="rcb-outros" placeholder="0,00" oninput="_rcbExtrasChange()"></div>
+            </div>
+          </div>
           <!-- v132 — pagamento padronizado em BLOCOS (modelo do Caixa); v139 — Bonificação é uma FORMA nos blocos -->
           <div id="rcb-blocos-wrap">
             <div id="rcb-blocos"></div>
@@ -4265,7 +4322,8 @@ function _sepDefRow(){ return function(o){ return { id:String(o.id), data:o, upd
   ['solicitacoesCompra','solicitacoes_compra'], // v130 — solicitações de compra por pedido (ativos/embalagens)
   ['listasCompra','listas_compra'], // v130 — listas de compra consolidadas (cotação/compra) por tipo
   ['pedidosCompra','pedidos_compra'], // v160 — PEDIDO DE COMPRA por fornecedor (espelho da NF; recebimento/conciliação)
-  ['catalogoNovo','catalogo_novo'] // v174 — CATÁLOGO NOVO: fórmulas de manipulação (composição vinculada; custo/preço calculados na venda)
+  ['catalogoNovo','catalogo_novo'], // v174 — CATÁLOGO NOVO: fórmulas de manipulação (composição vinculada; custo/preço calculados na venda)
+  ['gruposEmbalagem','grupos_embalagem'] // v187 — GRUPOS DE EMBALAGEM: embalagem completa composta por componentes (NF desmembrada)
 ].forEach(function(p){
   SEP_ENTITIES.push({
     key:p[0], table:p[1], idText:true,
@@ -4630,7 +4688,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v186';
+var APP_VERSION = 'v187';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5692,6 +5750,7 @@ var insumos=[]; // v130 — insumos (ativos) + embalagens: [{id, codigo, nome, t
 var solicitacoesCompra=[]; // v130 — 1 por (pedido,tipo): [{id, orderId, orderNum, cliente, tipo:'ativo'|'embalagem', itens:[{itemId,codigo,nome,qtd,unidade}], status:'solicitado'|'em_lista'|'comprado', listaId, criadoPor, criadoEm, atualizadoEm}]
 var listasCompra=[]; // v130 — lista consolidada por tipo: [{id, tipo:'ativo'|'embalagem', criadoEm, criadoPor, solicIds:[], itens:[{itemId,codigo,nome,unidade,qtdTotal, origem:[{orderId,orderNum,qtd}], cotacoes:[{fornecedorId,fornecedorNome,preco}], escolhida:idx|null, compra:{}}], status:'cotacao'|'compra'|'finalizada'}]
 var catalogoNovo=[]; // v174 — fórmulas: [{id,codigo,nome,categoria,forma:'semisolido'|'liquido'|'capsula',composicao:[{insumoId,codigo,nome,papel:'ativo'|'excipiente',dose,unidade}],capsTam,involucroId,involucroNome,qspValor,qspUn,custoRotulo,markupRotulo,modoUso,obs,ativo,criadoEm,criadoPor}]
+var gruposEmbalagem=[]; // v187 — grupos: [{id,embalagemId,embalagemCodigo,embalagemNome,componentes:[{insumoId,codigo,nome,qtd}],obs,criadoEm,criadoPor}]
 var pedidosCompra=[]; // v160 — PEDIDO DE COMPRA por fornecedor (espelho da NF): [{id, numero:'PC-001', fornecedorId, fornecedorNome, status:'aberto'|'fechado'|'faturado'|'recebido', criadoEm/Por, fechadoEm/Por, nf, nfEm/Por, recebimentos:[{em,por,valor,compraLancId,itens:[{listaId,itemId,nome,qtd,preco}]}]}]. Itens vinculados via it.compra.pedidoCompraId nas listasCompra.
 var equipes=[]; // [{id,nome,tipo:'vendas'|'sdr',coordenadorId,atendentesIds:[],ativa}]
 var conversas=[]; // [{id,clienteId,atendenteId,equipeId,canal,ultimaMsg,ultimaMsgEm,naoLidas,mensagens:[]}] // [{id,leadId,clienteId,clienteNome,empresa,tipoProduto,valor,frete,forma,prevPgto,validade,data,status,obs,responsavel,criadoPor,criadoEm}]
@@ -10316,12 +10375,13 @@ var _catTab='produtos';
 function _canEditInsumos(){ return (typeof canEditCatalogo==='function'&&canEditCatalogo()) || (typeof canAccessCompras==='function'&&canAccessCompras()); }
 function setCatalogoTab(tab){
   _catTab=tab;
-  ['produtos','insumos','embalagens','catnovo'].forEach(function(t){
+  ['produtos','insumos','embalagens','grpemb','catnovo'].forEach(function(t){
     var b=document.getElementById('cat-tab-'+t); if(b) b.classList.toggle('active', t===tab);
     var s=document.getElementById('cat-sec-'+t); if(s) s.style.display = t===tab?'':'none';
   });
   if(tab==='produtos') renderCatalogo();
   else if(tab==='catnovo'){ _cnCfgCarregar(); setCatNovoSub(_cnSub||'formulas'); } // v174
+  else if(tab==='grpemb') renderGruposEmb(); // v187 — grupos de embalagem
   else renderCatSimples(tab==='insumos'?'insumo':'embalagem');
 }
 function _proximoCodigoInsumo(tipo){
@@ -10329,29 +10389,67 @@ function _proximoCodigoInsumo(tipo){
   (insumos||[]).forEach(function(x){ if((x.codigo||'').indexOf(pref)===0){ var m=(x.codigo||'').match(/(\d+)\s*$/); if(m){ var n=parseInt(m[1],10); if(n>max) max=n; } } });
   return pref+String(max+1).padStart(4,'0');
 }
-// v150 — HISTÓRICO DE COMPRAS por item do catálogo (pedido do dono): deriva AUTOMATICAMENTE das listas de
-// compra (cotação escolhida = fornecedor + preço; it.compra = compra efetivada). Nada é digitado à mão.
+// v150 — HISTÓRICO DE COMPRAS por item do catálogo (pedido do dono): deriva AUTOMATICAMENTE das listas.
+// v187 — F1 COMPLETADA (pendência apontada pelo dono 04/08): compra EFETIVADA entra com o PREÇO PAGO,
+// a DATA DA COMPRA e o FORNECEDOR DA COMPRA (antes saíam o preço/fornecedor da COTAÇÃO e a data da
+// lista — o custo derivado ficava errado quando a NF diferia da cotação). Item só cotado continua no
+// histórico como "cotada" (informativo). Nada é digitado à mão.
 function _histComprasItem(itemId, codigo){
   var out=[];
   (listasCompra||[]).forEach(function(l){
     (l.itens||[]).forEach(function(it){
       if(it.naoComprado) return;
-      var bate=(itemId && String(it.itemId||'')===String(itemId)) || (codigo && it.codigo && String(it.codigo)===String(codigo));
+      var bate=(itemId && (String(it.itemId||'')===String(itemId) || String(it.splitDe||'')===String(itemId))) || (codigo && it.codigo && String(it.codigo)===String(codigo));
       if(!bate) return;
-      var c=_cotItemEscolhida(it); if(!c || !(parseFloat(c.preco)>0)) return;
-      out.push({ em:(it.compra&&it.compra.em)||l.criadoEm||0, fornecedor:c.fornecedorNome||'—', preco:parseFloat(c.preco)||0,
-                 qtd:parseFloat(it.qtdTotal)||0, comprado:!!(it.compra&&it.compra.comprado) });
+      if(it.compra && it.compra.comprado && parseFloat(it.compra.precoPago)>0){
+        // v187 — custoUnitReal (preço da NF + rateio de frete/impostos, gravado no recebimento) prevalece sobre o preço pago
+        out.push({ em:it.compra.compradoEm||l.criadoEm||0, fornecedor:it.compra.fornecedorNome||'—',
+                   preco:(parseFloat(it.compra.custoUnitReal)>0?parseFloat(it.compra.custoUnitReal):(parseFloat(it.compra.precoPago)||0)),
+                   qtd:parseFloat(it.compra.qtdComprada)||parseFloat(it.qtdTotal)||0, comprado:true });
+      } else {
+        var c=_cotItemEscolhida(it); if(!c || !(parseFloat(c.preco)>0)) return;
+        out.push({ em:l.criadoEm||0, fornecedor:c.fornecedorNome||'—', preco:parseFloat(c.preco)||0,
+                   qtd:parseFloat(it.qtdTotal)||0, comprado:false });
+      }
     });
   });
   out.sort(function(a,b){ return (b.em||0)-(a.em||0); });
   return out;
 }
+// v187 — custos derivados consideram SÓ compras efetivadas; item nunca comprado no sistema cai para as
+// cotações (flag deCotacao=true — as telas avisam e a gravação no cadastro NÃO usa valor de cotação).
 function _custosItem(itemId, codigo){
   var h=_histComprasItem(itemId, codigo);
   if(!h.length) return null;
+  var base=h.filter(function(x){ return x.comprado; }), deCot=false;
+  if(!base.length){ base=h; deCot=true; }
   var sq=0, sv=0, min=Infinity;
-  h.forEach(function(x){ var q=x.qtd>0?x.qtd:1; sq+=q; sv+=x.preco*q; if(x.preco<min) min=x.preco; });
-  return { medio:(sq>0?sv/sq:h[0].preco), ultimo:h[0].preco, minimo:min, n:h.length };
+  base.forEach(function(x){ var q=x.qtd>0?x.qtd:1; sq+=q; sv+=x.preco*q; if(x.preco<min) min=x.preco; });
+  return { medio:(sq>0?sv/sq:base[0].preco), ultimo:base[0].preco, minimo:min, n:base.length, deCotacao:deCot };
+}
+// v187 — grava os custos derivados NO CADASTRO do insumo/embalagem (custoUltimo/custoMedio/custoMenor12m
+// + custoAtualizadoEm): o plano F1 pede as chaves persistidas (o banco e a frente do catálogo leem direto).
+// Recalculado a cada compra efetivada, correção ou estorno — nunca digitado à mão; cotação não grava.
+function _syncCustosInsumo(listaItens){
+  var alvo={};
+  (listaItens||[]).forEach(function(it){
+    if(!it) return;
+    var ins=(insumos||[]).find(function(i){ return i && (i.id===it.itemId || (it.splitDe && i.id===it.splitDe) || (it.codigo && i.codigo===it.codigo)); });
+    if(ins) alvo[ins.id]=ins;
+  });
+  Object.keys(alvo).forEach(function(id){
+    var ins=alvo[id];
+    var c=_custosItem(ins.id, ins.codigo);
+    var m12=_cnMenor12m(ins.id, ins.codigo);
+    if(c && !c.deCotacao){
+      ins.custoUltimo=Math.round(c.ultimo*10000)/10000;
+      ins.custoMedio=Math.round(c.medio*10000)/10000;
+      ins.custoMenor12m=(m12!=null?Math.round(m12*10000)/10000:null);
+    } else {
+      ins.custoUltimo=null; ins.custoMedio=null; ins.custoMenor12m=null; // estornou a última compra → não fica valor velho
+    }
+    ins.custoAtualizadoEm=new Date().toISOString();
+  });
 }
 function _histItemToggle(btn){
   var id=btn.getAttribute('data-hid'); var r=document.getElementById(id);
@@ -10378,6 +10476,7 @@ function renderCatSimples(tipo){
       '<td style="padding:7px 10px">'+escapeHtml(x.nome||'—')+'</td>'+
       '<td style="padding:7px 10px">'+escapeHtml(x.unidade||'UN')+'</td>'+
       '<td style="padding:7px 10px;font-size:12px">'+((x.categoria&&x.categoria!=='sem categoria')?'<span style="padding:2px 8px;border-radius:12px;background:var(--bg-info);color:var(--text-info);font-size:11px">'+escapeHtml(x.categoria)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+      '<td style="padding:7px 10px;text-align:right;white-space:nowrap">'+((x.estoqueQtd!=null&&x.estoqueQtd!=='')?(parseFloat(x.estoqueQtd)||0).toLocaleString('pt-BR'):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
       '<td style="padding:7px 10px;text-align:right;white-space:nowrap"'+_tit+'>'+(cst?fmtMoney(cst.medio):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
       '<td style="padding:7px 10px;text-align:right;white-space:nowrap"'+_tit+'>'+(cst?fmtMoney(cst.ultimo):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
       '<td style="padding:7px 10px;text-align:right;white-space:nowrap;color:var(--st-ok-tx)"'+_tit+'>'+(cst?fmtMoney(cst.minimo):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
@@ -10411,12 +10510,13 @@ function openInsumoModal(tipo, id){
   var _up=document.getElementById('ins-unidpad'); if(_up) _up.value=(x&&x.unidadePadrao)||'';
   _setV('ins-capacidade', x&&x.capacidade); var _cu=document.getElementById('ins-capun'); if(_cu) _cu.value=(x&&x.capacidadeUn)||'mL';
   _setV('ins-custobase', x&&x.custoBase); _setV('ins-markup', x&&x.markup);
+  _setV('ins-estoque', x&&x.estoqueQtd); // v187 — quantidade em estoque
   var _ci=document.getElementById('ins-custos-info');
   if(_ci){
     var _cst=x?_custosItem(x.id, x.codigo):null;
     var _m12=x?_cnMenor12m(x.id, x.codigo):null;
     _ci.style.display=_cst?'':'none';
-    if(_cst) _ci.innerHTML='📈 Compras (por '+escapeHtml((x&&x.unidade)||'UN')+'): último <b>'+fmtMoney(_cst.ultimo)+'</b> · médio <b>'+fmtMoney(_cst.medio)+'</b> · menor 12m <b>'+(_m12!=null?fmtMoney(_m12):'—')+'</b> · menor geral '+fmtMoney(_cst.minimo)+' <span style="color:var(--text-tertiary)">(custo base vazio → usa o último)</span>';
+    if(_cst) _ci.innerHTML='📈 '+(_cst.deCotacao?'Cotações (sem compra efetivada no sistema)':'Compras')+' (por '+escapeHtml((x&&x.unidade)||'UN')+'): último <b>'+fmtMoney(_cst.ultimo)+'</b> · médio <b>'+fmtMoney(_cst.medio)+'</b> · menor 12m <b>'+(_m12!=null?fmtMoney(_m12):'—')+'</b> · menor geral '+fmtMoney(_cst.minimo)+' <span style="color:var(--text-tertiary)">(custo base vazio → usa o último'+(_cst.deCotacao?'; valores de cotação NÃO são gravados como custo':'')+')</span>';
   }
   document.getElementById('insumo-modal').classList.add('open');
 }
@@ -10437,7 +10537,8 @@ function saveInsumo(){
   var extra={ densidade:_num('ins-densidade'), concentracao:_num('ins-conc'), fatorUI:_num('ins-fatorui'),
     unidadePadrao:(document.getElementById('ins-unidpad')?.value||''),
     capacidade:_num('ins-capacidade'), capacidadeUn:(document.getElementById('ins-capun')?.value||'mL'),
-    custoBase:_num('ins-custobase'), markup:_num('ins-markup') };
+    custoBase:_num('ins-custobase'), markup:_num('ins-markup'),
+    estoqueQtd:_num('ins-estoque') }; // v187 — quantidade em estoque
   if(_insEditId){
     var x=(insumos||[]).find(function(p){ return p.id===_insEditId; });
     if(x){ x.nome=nome; x.unidade=unidade; x.categoria=categoria; if(codigo) x.codigo=codigo; Object.assign(x, extra); }
@@ -10454,6 +10555,127 @@ function deleteInsumo(id){
   var tipo=x.tipo;
   insumos=insumos.filter(function(p){ return p.id!==id; });
   renderCatSimples(tipo); saveData();
+}
+// ═══════════ v187 — GRUPOS DE EMBALAGEM (pedido do dono 04/08) ═══════════
+// Problema: a MESMA embalagem vem completa na NF de um fornecedor e DESMEMBRADA (tampa+frasco+cânula,
+// cada um com valor) na de outro. O grupo vincula os componentes à embalagem completa: a entrada no
+// estoque é 1 embalagem, e o custo da embalagem é a SOMA dos componentes (cascata custo base > última
+// compra > médio de cada componente, via _cnCustoUnit).
+var _geEditId=null, _geComps=[];
+function _geEmbs(){ return (insumos||[]).filter(function(x){ return x && x.tipo==='embalagem' && x.ativo!==false; }); }
+function _geLabel(x){ return (x.codigo?x.codigo+' — ':'')+(x.nome||''); }
+function _geResolve(txt){
+  txt=String(txt||'').trim(); if(!txt) return null;
+  var embs=_geEmbs(), low=txt.toLowerCase();
+  return embs.find(function(x){ return _geLabel(x).toLowerCase()===low; })
+      || embs.find(function(x){ return String(x.codigo||'').toLowerCase()===low; })
+      || embs.find(function(x){ return String(x.nome||'').toLowerCase()===low; })
+      || null;
+}
+function _geCustoComp(c){ var x=(insumos||[]).find(function(i){ return i.id===c.insumoId; }); if(!x) return null; var u=_cnCustoUnit(x); return {v:(u.v||0)*(parseFloat(c.qtd)||0), fonte:u.fonte}; }
+function _geCustoSomado(g){ var t=0, incompleto=false; (g.componentes||[]).forEach(function(c){ var cc=_geCustoComp(c); if(!cc||!(cc.v>0)) incompleto=true; else t+=cc.v; }); return {total:t, incompleto:incompleto}; }
+function renderGruposEmb(){
+  var tb=document.getElementById('ge-tbody'); if(!tb) return;
+  var pode=_canEditInsumos();
+  var nb=document.getElementById('ge-novo-btn'); if(nb) nb.style.display=pode?'':'none';
+  var busca=(document.getElementById('ge-busca')?.value||'').toLowerCase().trim();
+  var lista=(gruposEmbalagem||[]).slice();
+  if(busca) lista=lista.filter(function(g){ return ((g.embalagemNome||'')+' '+(g.embalagemCodigo||'')+' '+(g.componentes||[]).map(function(c){return c.nome||'';}).join(' ')).toLowerCase().indexOf(busca)>=0; });
+  lista.sort(function(a,b){ return (a.embalagemNome||'').localeCompare(b.embalagemNome||''); });
+  var vazio=document.getElementById('ge-vazio'); if(vazio) vazio.style.display=lista.length?'none':'block';
+  tb.innerHTML=lista.map(function(g){
+    var emb=(insumos||[]).find(function(i){ return i.id===g.embalagemId; });
+    var soma=_geCustoSomado(g);
+    var custoEmb=emb?_cnCustoUnit(emb):null;
+    var comps=(g.componentes||[]).map(function(c){ return escapeHtml((c.qtd!=1?((parseFloat(c.qtd)||0).toLocaleString('pt-BR')+'× '):'')+(c.nome||c.codigo||'?')); }).join(' + ');
+    return '<tr style="border-bottom:.5px solid var(--border)">'+
+      '<td style="padding:7px 10px"><b>'+escapeHtml(g.embalagemNome||'?')+'</b>'+(g.embalagemCodigo?' <span style="font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(g.embalagemCodigo)+'</span>':'')+(emb?'':' <span style="color:var(--st-bad-tx);font-size:11px;font-weight:600">⚠ embalagem não está mais no catálogo</span>')+'</td>'+
+      '<td style="padding:7px 10px;font-size:12px">'+(comps||'—')+'</td>'+
+      '<td style="padding:7px 10px;text-align:right;white-space:nowrap">'+(soma.total>0?fmtMoney(soma.total):'—')+(soma.incompleto?' <span style="color:var(--st-mid-tx)" title="Há componente sem custo (sem custo base e sem compra) — a soma está incompleta">⚠</span>':'')+'</td>'+
+      '<td style="padding:7px 10px;text-align:right;white-space:nowrap">'+((custoEmb&&custoEmb.v>0)?fmtMoney(custoEmb.v)+' <span style="font-size:10px;color:var(--text-tertiary)">('+custoEmb.fonte+')</span>':'—')+'</td>'+
+      '<td style="padding:7px 10px;text-align:center;white-space:nowrap">'+(pode?'<button onclick="openGrpEmbModal(\''+g.id+'\')" style="font-size:11px;padding:3px 9px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit">Editar</button>':'—')+'</td></tr>';
+  }).join('');
+}
+function openGrpEmbModal(id){
+  if(!_canEditInsumos()){ alert('Sem permissão para editar o catálogo.'); return; }
+  _geEditId=id||null;
+  var g=id?(gruposEmbalagem||[]).find(function(x){ return x.id===id; }):null;
+  document.getElementById('ge-modal-title').textContent=g?'Editar grupo de embalagem':'Montar grupo de embalagem';
+  // datalists: embalagem completa = qualquer embalagem; componentes = categoria "componente de embalagem" primeiro
+  var embs=_geEmbs();
+  var opc=function(x){ return '<option value="'+escapeHtml(_geLabel(x))+'">'; };
+  document.getElementById('ge-emb-dl').innerHTML=embs.slice(0,900).map(opc).join('');
+  var comps=embs.slice().sort(function(a,b){ var ca=(a.categoria==='componente de embalagem')?0:1, cb=(b.categoria==='componente de embalagem')?0:1; return ca-cb || (a.nome||'').localeCompare(b.nome||''); });
+  document.getElementById('ge-comp-dl').innerHTML=comps.slice(0,900).map(opc).join('');
+  document.getElementById('ge-emb').value='';
+  if(g){ var e=(insumos||[]).find(function(i){ return i.id===g.embalagemId; }); document.getElementById('ge-emb').value=e?_geLabel(e):((g.embalagemCodigo?g.embalagemCodigo+' — ':'')+(g.embalagemNome||'')); }
+  document.getElementById('ge-obs').value=g?(g.obs||''):'';
+  document.getElementById('ge-comp-busca').value=''; document.getElementById('ge-comp-qtd').value='1';
+  _geComps=g?(g.componentes||[]).map(function(c){ return {insumoId:c.insumoId, codigo:c.codigo||'', nome:c.nome||'', qtd:parseFloat(c.qtd)||1}; }):[];
+  var del=document.getElementById('ge-del-btn'); if(del) del.style.display=g?'':'none';
+  _geRenderComps();
+  document.getElementById('grpemb-modal').classList.add('open');
+}
+function closeGrpEmbModal(){ document.getElementById('grpemb-modal').classList.remove('open'); _geEditId=null; _geComps=[]; }
+function _geAddComp(){
+  var x=_geResolve(document.getElementById('ge-comp-busca').value);
+  if(!x){ alert('Componente não encontrado no catálogo de embalagens — cadastre-o primeiro na aba Embalagens.'); return; }
+  var emb=_geResolve(document.getElementById('ge-emb').value);
+  if(emb && emb.id===x.id){ alert('O componente não pode ser a própria embalagem completa.'); return; }
+  if(_geComps.some(function(c){ return c.insumoId===x.id; })){ alert('Este componente já está no grupo.'); return; }
+  var q=parseFloat(document.getElementById('ge-comp-qtd').value)||0;
+  if(q<=0){ alert('Informe a quantidade do componente por 1 embalagem completa.'); return; }
+  _geComps.push({insumoId:x.id, codigo:x.codigo||'', nome:x.nome||'', qtd:q});
+  document.getElementById('ge-comp-busca').value=''; document.getElementById('ge-comp-qtd').value='1';
+  _geRenderComps();
+}
+function _geRemComp(i){ _geComps.splice(i,1); _geRenderComps(); }
+function _geSetQtd(i,v){ var q=parseFloat(v); if(_geComps[i]) _geComps[i].qtd=(isNaN(q)||q<=0)?1:q; _geCustoRefresh(); }
+function _geRenderComps(){
+  var el=document.getElementById('ge-comps'); if(!el) return;
+  if(!_geComps.length){ el.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:6px 2px">Nenhum componente ainda — busque abaixo e adicione.</div>'; _geCustoRefresh(); return; }
+  el.innerHTML=_geComps.map(function(c,i){
+    var cc=_geCustoComp(c);
+    return '<div style="display:flex;gap:8px;align-items:center;border:.5px solid var(--border);border-radius:8px;padding:6px 10px;margin-bottom:5px">'+
+      '<div style="flex:1;min-width:0"><b style="font-size:12.5px">'+escapeHtml(c.nome||'?')+'</b>'+(c.codigo?' <span style="font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(c.codigo)+'</span>':'')+'</div>'+
+      '<input type="number" min="0" step="any" value="'+(parseFloat(c.qtd)||1)+'" oninput="_geSetQtd('+i+',this.value)" title="Quantidade por 1 embalagem completa" style="width:80px;font-size:12px;text-align:right">'+
+      '<div style="width:110px;text-align:right;font-size:12px;white-space:nowrap">'+((cc&&cc.v>0)?fmtMoney(cc.v)+' <span style="font-size:10px;color:var(--text-tertiary)">('+cc.fonte+')</span>':'<span style="color:var(--st-mid-tx)" title="Sem custo (sem custo base e sem compra)">sem custo</span>')+'</div>'+
+      '<button onclick="_geRemComp('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button></div>';
+  }).join('');
+  _geCustoRefresh();
+}
+function _geCustoRefresh(){
+  var el=document.getElementById('ge-custo-info'); if(!el) return;
+  var soma=_geCustoSomado({componentes:_geComps});
+  var emb=_geResolve(document.getElementById('ge-emb').value);
+  var ce=emb?_cnCustoUnit(emb):null;
+  el.innerHTML='Custo somado dos componentes: <b>'+(soma.total>0?fmtMoney(soma.total):'—')+'</b>'+(soma.incompleto?' <span style="color:var(--st-mid-tx)">(há componente sem custo — soma incompleta)</span>':'')+
+    (ce&&ce.v>0?' · custo da embalagem completa no catálogo: <b>'+fmtMoney(ce.v)+'</b> <span style="color:var(--text-tertiary)">('+ce.fonte+')</span>':'');
+}
+function saveGrpEmb(){
+  var emb=_geResolve(document.getElementById('ge-emb').value);
+  if(!emb){ alert('Informe a EMBALAGEM COMPLETA (um item existente da aba Embalagens).'); return; }
+  if(!_geComps.length){ alert('Adicione ao menos um componente.'); return; }
+  if(_geComps.some(function(c){ return c.insumoId===emb.id; })){ alert('O grupo contém a própria embalagem completa como componente — remova-a.'); return; }
+  var dup=(gruposEmbalagem||[]).find(function(g){ return g.embalagemId===emb.id && g.id!==_geEditId; });
+  if(dup){ alert('Já existe um grupo para esta embalagem — edite o grupo existente (1 grupo por embalagem).'); return; }
+  var dados={ embalagemId:emb.id, embalagemCodigo:emb.codigo||'', embalagemNome:emb.nome||'',
+    componentes:_geComps.map(function(c){ return {insumoId:c.insumoId, codigo:c.codigo||'', nome:c.nome||'', qtd:parseFloat(c.qtd)||1}; }),
+    obs:(document.getElementById('ge-obs').value||'').trim() };
+  if(_geEditId){
+    var g=(gruposEmbalagem||[]).find(function(x){ return x.id===_geEditId; });
+    if(g) Object.assign(g, dados);
+  } else {
+    gruposEmbalagem.push(Object.assign({ id:'ge'+Date.now(), criadoEm:Date.now(), criadoPor:(currentUser&&currentUser.name)||'' }, dados));
+  }
+  closeGrpEmbModal(); renderGruposEmb(); saveData();
+}
+function deleteGrpEmb(){
+  if(!_geEditId) return;
+  var g=(gruposEmbalagem||[]).find(function(x){ return x.id===_geEditId; }); if(!g) return;
+  if(!confirm('Excluir o grupo da embalagem "'+(g.embalagemNome||'')+'"?\n\n(Só o vínculo é removido — a embalagem e os componentes continuam no catálogo.)')) return;
+  gruposEmbalagem=gruposEmbalagem.filter(function(x){ return x.id!==_geEditId; });
+  closeGrpEmbModal(); renderGruposEmb(); saveData();
 }
 // ═══════════ v174 — CATÁLOGO NOVO: fórmulas de manipulação (F1+F2) ═══════════
 // Produto = FÓRMULA vinculada a insumos/embalagens; custo/preço CALCULADOS na venda (plano
@@ -10477,10 +10699,12 @@ async function _cnCfgSalvar(){
     if(error) console.warn('catnovo cfg save:', error.message);
   }catch(e){ console.warn('catnovo cfg save:', e); }
 }
-// menor custo dos últimos 12 meses (histórico de compras do insumo)
+// menor custo dos últimos 12 meses — v187: só COMPRAS efetivadas (cotações apenas se nunca houve compra)
 function _cnMenor12m(itemId, codigo){
   var corte=Date.now()-365*24*3600*1000, min=null;
-  _histComprasItem(itemId, codigo).forEach(function(h){ if((h.em||0)>=corte && h.preco>0 && (min===null||h.preco<min)) min=h.preco; });
+  var h=_histComprasItem(itemId, codigo);
+  var base=h.filter(function(x){ return x.comprado; }); if(!base.length) base=h;
+  base.forEach(function(x){ if((x.em||0)>=corte && x.preco>0 && (min===null||x.preco<min)) min=x.preco; });
   return min;
 }
 // custo unitário-base do componente (na UNIDADE DE COMPRA): custoBase editável > último > médio
@@ -12533,6 +12757,7 @@ function _salvarCompraDual(l, it){
   it.compra={ fornecedorId:f1?f1.id:(esc.fornecedorId||null), fornecedorNome:f1nome, qtdComprada:q1, precoPago:p1, nf:'', comprado:true, compradoEm:agora, compradoPor:quem, splitCompra:true };
   try{ var _pc1=_pcAbertoDoFornecedor(f1?f1.id:(esc.fornecedorId||null), f1nome); it.compra.pedidoCompraId=_pc1.id; }catch(_e){}
   var pos=l.itens.indexOf(it); l.itens.splice(pos>=0?pos+1:l.itens.length, 0, it2);
+  try{ _syncCustosInsumo([it, it2]); }catch(_e){} // v187 — custos derivados gravados no cadastro
   _atualizaStatusLista(l);
   (it.origem||[]).forEach(function(og){ try{ _reavaliarComprasPedido(og.orderId); }catch(_e){} });
   closeComprarModal(); renderListaCompra(); saveData();
@@ -12589,6 +12814,7 @@ function saveCompraItem(){
   if(!_eraComprado){
     try{ var _pcv=_pcAbertoDoFornecedor(f?f.id:null, forn); it.compra.pedidoCompraId=_pcv.id; }catch(_e){}
   }
+  try{ _syncCustosInsumo([it]); }catch(_e){} // v187 — custoUltimo/custoMedio/custoMenor12m gravados no cadastro do insumo
   _atualizaStatusLista(l); // v138 — finalizada automaticamente quando todos os itens estão comprados/não comprados
   (it.origem||[]).forEach(function(og){ _reavaliarComprasPedido(og.orderId); });
   closeComprarModal(); renderListaCompra(); saveData();
@@ -12607,6 +12833,7 @@ function estornarCompraItem(){
   }
   if(!confirm('↩ ESTORNAR a compra de "'+(it.nome||'')+'"?\n\nO item volta para "Comprar" (a cotação escolhida fica) e sai do pedido '+(pc?(pc.numero||''):'do fornecedor')+'.')) return;
   delete it.compra; // cotações vivem em it.cotacoes — ficam intactas
+  try{ _syncCustosInsumo([it]); }catch(_e){} // v187 — estorno recalcula os custos gravados (sem valor velho)
   _atualizaStatusLista(l);
   (it.origem||[]).forEach(function(og){ try{ _reavaliarComprasPedido(og.orderId); }catch(_e){} });
   closeComprarModal(); renderListaCompra(); renderRecebimento(); saveData();
@@ -12966,6 +13193,7 @@ function _pcRecebProsseguir(){
     +((_pcXml&&_pcXml.tot)?'<br><span style="font-size:11px;color:var(--text-secondary)">📄 XML: total NF <b>'+fmtMoney(_pcXml.tot.vNF)+'</b>'+(_pcXml.tot.vFrete?' · frete '+fmtMoney(_pcXml.tot.vFrete):'')+(_pcXml.tot.vDesc?' · desconto −'+fmtMoney(_pcXml.tot.vDesc):'')+(Math.abs(_pcXml.tot.vNF-total)>0.01?' · <span style="color:var(--st-mid-tx)">⚠ difere da leva ('+fmtMoney(total)+') — confira frete/desconto/itens fora desta leva</span>':' · <span style="color:var(--st-ok-tx)">✓ bate com a leva</span>')+'</span>':'');
   document.getElementById('rcb-total').textContent='Total a lançar: '+fmtMoney(total);
   document.getElementById('rcb-dataemissao').value='';
+  _rcbExtrasReset(); // v187 — frete/impostos/outros começam zerados a cada recebimento
   document.getElementById('rcb-blocos-wrap').style.display='';
   // v169 — duplicatas do XML pré-preenchem o BOLETO (vencimentos/valores); sem XML, padrão PIX
   if(_pcXml && _pcXml.dups && _pcXml.dups.length){
@@ -13003,6 +13231,7 @@ function openReceberModal(idx){
   document.getElementById('rcb-info').innerHTML='Fornecedor <b>'+escapeHtml(g.fornecedorNome)+'</b> · '+g.itens.length+' item(ns) · '+(g.tipo==='ativo'?'Ativos':'Embalagem');
   document.getElementById('rcb-total').textContent='Total a lançar: '+fmtMoney(g.total);
   document.getElementById('rcb-dataemissao').value='';
+  _rcbExtrasReset(); // v187 — frete/impostos/outros começam zerados a cada recebimento
   // v132 — pagamento em BLOCOS (padrão do Caixa): 1 bloco PIX pré-preenchido com o total; financeiro ajusta
   // v139 — Bonificação disponível como FORMA (nota parcial ou totalmente bonificada)
   document.getElementById('rcb-blocos-wrap').style.display='';
@@ -13014,6 +13243,50 @@ function openReceberModal(idx){
   document.getElementById('receber-modal').classList.add('open');
 }
 function closeReceberModal(){ document.getElementById('receber-modal').classList.remove('open'); _rcbKey=null; _rcbPedidoCtx=null; }
+// v187 — CUSTOS DA NOTA além dos itens (frete/impostos/outros): lidos no recebimento, rateados
+// proporcionalmente ao valor de cada item e somados no lançamento (o Caixa bate com o total da nota).
+function _rcbExtrasReset(){ ['rcb-frete','rcb-impostos','rcb-outros'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; }); }
+function _rcbExtras(){ var f=function(id){ return parseFloat(document.getElementById(id)?.value)||0; }; var fr=f('rcb-frete'), im=f('rcb-impostos'), ou=f('rcb-outros'); return {frete:fr, impostos:im, outros:ou, total:+(fr+im+ou).toFixed(2)}; }
+function _rcbExtrasBase(){
+  if(_rcbPedidoCtx && _rcbPedidoCtx.total!=null) return +(_rcbPedidoCtx.total).toFixed(2);
+  var g=_recebGrupos().find(function(x){ return x.key===_rcbKey; });
+  return g?+(g.total).toFixed(2):0;
+}
+function _rcbExtrasChange(){
+  var base=_rcbExtrasBase(), ex=_rcbExtras(), tot=+(base+ex.total).toFixed(2);
+  var el=document.getElementById('rcb-total'); if(el) el.textContent='Total a lançar: '+fmtMoney(tot)+(ex.total>0?' ('+fmtMoney(base)+' itens + '+fmtMoney(ex.total)+' frete/impostos/outros)':'');
+  // um único bloco de forma simples acompanha o novo total; configuração mais elaborada (boleto do XML etc.) é preservada
+  if(_rcbBlocos && _rcbBlocos.length===1 && (_rcbBlocos[0].parcelas||[]).length===1){ _rcbBlocos[0].valor=tot; _rcbBlocos[0].parcelas[0].valor=tot; }
+  _peOpen(_rcbBlocos,'rcb-blocos',tot,_rcbDistrib,'',_COMPRAS_PE_FORMAS_BON);
+  _rcbDistrib();
+}
+// v187 — ENTRADA NO ESTOQUE no recebimento + reconhecimento de GRUPO DE EMBALAGEM (pedido do dono):
+// componentes recebidos que formam um grupo viram, COM CONFIRMAÇÃO de quem está recebendo, N embalagens
+// completas no estoque (as sobras entram como componentes). Só ESTOQUE — o lançamento financeiro segue
+// exatamente o que veio na nota.
+function _rcbEstoqueEntrada(evts){
+  var porIns={};
+  (evts||[]).forEach(function(e){
+    if(!e || !(e.qtd>0)) return;
+    var ins=(insumos||[]).find(function(i){ return i && (i.id===e.itemId || (e.splitDe&&i.id===e.splitDe) || (e.codigo&&i.codigo===e.codigo)); });
+    if(!ins) return;
+    if(!porIns[ins.id]) porIns[ins.id]={ins:ins, qtd:0};
+    porIns[ins.id].qtd+=e.qtd;
+  });
+  (gruposEmbalagem||[]).forEach(function(g){
+    var comps=(g.componentes||[]); if(!comps.length) return;
+    if(!comps.every(function(c){ return porIns[c.insumoId] && porIns[c.insumoId].qtd>0; })) return;
+    var n=Math.floor(Math.min.apply(null, comps.map(function(c){ return porIns[c.insumoId].qtd/(parseFloat(c.qtd)||1); })));
+    if(!(n>0)) return;
+    var det=comps.map(function(c){ return '• '+(c.nome||c.codigo)+': recebido '+porIns[c.insumoId].qtd.toLocaleString('pt-BR')+', usa '+(n*(parseFloat(c.qtd)||1)).toLocaleString('pt-BR'); }).join('\n');
+    if(confirm('📦 GRUPO DE EMBALAGEM reconhecido: "'+(g.embalagemNome||'')+'"\n\nOs componentes desta leva formam '+n.toLocaleString('pt-BR')+' embalagem(ns) completa(s):\n'+det+'\n\nDar entrada no ESTOQUE como '+n.toLocaleString('pt-BR')+' × '+(g.embalagemNome||'embalagem completa')+'? (sobras entram como componentes)\n\nO lançamento financeiro NÃO muda — segue igual à nota.')){
+      comps.forEach(function(c){ porIns[c.insumoId].qtd=+((porIns[c.insumoId].qtd - n*(parseFloat(c.qtd)||1))).toFixed(4); });
+      var emb=(insumos||[]).find(function(i){ return i.id===g.embalagemId; });
+      if(emb){ if(!porIns[emb.id]) porIns[emb.id]={ins:emb, qtd:0}; porIns[emb.id].qtd+=n; }
+    }
+  });
+  Object.keys(porIns).forEach(function(id){ var p=porIns[id]; if(!(p.qtd>0)) return; p.ins.estoqueQtd=+(((parseFloat(p.ins.estoqueQtd)||0)+p.qtd)).toFixed(4); });
+}
 // v132 — helpers do pagamento em blocos do Recebimento
 var _rcbBlocos=[];
 function _rcbDistrib(){
@@ -13031,7 +13304,10 @@ function saveRecebimento(){
   var planoId=document.getElementById('rcb-plano').value||null;
   var dataEmissao=document.getElementById('rcb-dataemissao').value||'';
   var docFaturado=(document.getElementById('rcb-cnpj')||{}).value||''; // v171 — CNPJ do grupo que faturou esta NF
-  var now=Date.now(); var valor=+((_pcx?_pcx.total:g.total)).toFixed(2);
+  var now=Date.now();
+  var _exNF=_rcbExtras(); // v187 — frete/impostos/outros da NOTA: somam no lançamento e são rateados nos itens
+  var _valorItens=+((_pcx?_pcx.total:g.total)).toFixed(2);
+  var valor=+(_valorItens+_exNF.total).toFixed(2);
   // v139 — Bonificação é uma FORMA nos blocos (checkbox aposentado); nota 100% bonificada → forma='bonificacao'
   var forma, parcelas, _nsu='';
   {
@@ -13054,18 +13330,25 @@ function saveRecebimento(){
   }
   if(_pcx){
     // ── v160: leva do PEDIDO DE COMPRA (conciliação já feita/confirmada no passo anterior) ──
-    var compra={ id:'compra'+now, fornecedorId:pc.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:pc.nf||'', docFaturado:docFaturado, nsu:_nsu, valor:valor, forma:forma, desc:'Pedido de compra '+(pc.numero||'')+' — NF '+(pc.nf||'')+((pc.recebimentos||[]).length?' (leva '+((pc.recebimentos||[]).length+1)+')':''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, pedidoCompraId:pc.id, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
+    var compra={ id:'compra'+now, fornecedorId:pc.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:pc.nf||'', docFaturado:docFaturado, nsu:_nsu, valor:valor, valorItens:_valorItens, freteNF:_exNF.frete, impostosNF:_exNF.impostos, outrosNF:_exNF.outros, forma:forma, desc:'Pedido de compra '+(pc.numero||'')+' — NF '+(pc.nf||'')+((pc.recebimentos||[]).length?' (leva '+((pc.recebimentos||[]).length+1)+')':'')+(_exNF.total>0?' (itens '+fmtMoney(_valorItens)+' + frete/imp. '+fmtMoney(_exNF.total)+')':''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, pedidoCompraId:pc.id, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
     compras.push(compra);
-    var orderIds={};
+    var orderIds={}, _afx=[], _evx=[];
     _pcx.leva.forEach(function(r){
       var l=(listasCompra||[]).find(function(x){ return x.id===r.listaId; }); if(!l) return;
       var it=r.ref?_lcItemByRef(l, r.ref):null; if(!it||!it.compra) return;
       it.compra.recebido=true; it.compra.recebidoEm=now; it.compra.recebidoPor=(currentUser&&currentUser.name)||''; it.compra.compraLancId=compra.id; it.compra.formaPag=forma;
       // divergência da NF fica registrada SEM sobrescrever o que o comprador comprou
       if(Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009){ it.compra.recebidoQtd=r.qtd; it.compra.recebidoPreco=r.preco; it.compra.recebidoDivergente=true; }
+      // v187 — RATEIO dos custos da nota proporcional ao valor do item → CUSTO UNITÁRIO REAL
+      var _vI=r.qtd*r.preco, _shr=(_valorItens>0?_vI/_valorItens:0), _exI=+((_exNF.total*_shr)).toFixed(4);
+      it.compra.custoExtras=_exI;
+      it.compra.custoUnitReal=+((r.preco+(r.qtd>0?_exI/r.qtd:0))).toFixed(4);
+      _afx.push(it); _evx.push({itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:r.qtd});
       (it.origem||[]).forEach(function(og){ orderIds[og.orderId]=1; });
     });
-    (pc.recebimentos=pc.recebimentos||[]).push({ em:now, por:(currentUser&&currentUser.name)||'', valor:valor, compraLancId:compra.id, divergentes:_pcx.divergentes||0, itens:_pcx.leva.map(function(r){ return {listaId:r.listaId, itemId:r.ref, nome:r.nome, qtd:r.qtd, preco:r.preco}; }) });
+    (pc.recebimentos=pc.recebimentos||[]).push({ em:now, por:(currentUser&&currentUser.name)||'', valor:valor, valorItens:_valorItens, frete:_exNF.frete, impostos:_exNF.impostos, outros:_exNF.outros, compraLancId:compra.id, divergentes:_pcx.divergentes||0, itens:_pcx.leva.map(function(r){ return {listaId:r.listaId, itemId:r.ref, nome:r.nome, qtd:r.qtd, preco:r.preco}; }) });
+    try{ _syncCustosInsumo(_afx); }catch(_e){} // v187 — custoUltimo/custoMedio/custoMenor12m agora com o custo REAL (rateio incluso)
+    try{ _rcbEstoqueEntrada(_evx); }catch(_e){} // v187 — entrada no estoque + reconhecimento de grupo de embalagem (com confirmação)
     if(_pcTotais(pc).pendentes===0){ pc.status='recebido'; pc.recebidoEm=now; pc.recebidoPor=(currentUser&&currentUser.name)||''; }
     else if(pc.status==='conciliado'||pc.status==='em_recebimento'){ pc.status='em_recebimento'; } // v169 — leva parcial: volta p/ a fila do Recebimento de Pedido
     Object.keys(orderIds).forEach(function(oid){ _reavaliarComprasPedido(oid); });
@@ -13074,14 +13357,22 @@ function saveRecebimento(){
     alert('✓ Recebimento do '+(pc.numero||'pedido')+' confirmado ('+(pc.status==='recebido'?'pedido COMPLETO':'parcial')+').\nLançamento de '+fmtMoney(valor)+' enviado ao Caixa (aguardando aprovação).');
     return;
   }
-  var compra={ id:'compra'+now, fornecedorId:g.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:g.nf||'', docFaturado:docFaturado, nsu:_nsu, valor:valor, forma:forma, desc:'Compra '+(g.tipo==='ativo'?'de ativos':'de embalagens')+(g.nf?' — NF '+g.nf:''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
+  var compra={ id:'compra'+now, fornecedorId:g.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:g.nf||'', docFaturado:docFaturado, nsu:_nsu, valor:valor, valorItens:_valorItens, freteNF:_exNF.frete, impostosNF:_exNF.impostos, outrosNF:_exNF.outros, forma:forma, desc:'Compra '+(g.tipo==='ativo'?'de ativos':'de embalagens')+(g.nf?' — NF '+g.nf:'')+(_exNF.total>0?' (itens '+fmtMoney(_valorItens)+' + frete/imp. '+fmtMoney(_exNF.total)+')':''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
   compras.push(compra);
-  var orderIds={};
+  var orderIds={}, _afx2=[], _evx2=[];
   g.itens.forEach(function(gi){ var it=gi.it; if(!it.compra) it.compra={};
     it.compra.recebido=true; it.compra.recebidoEm=now; it.compra.recebidoPor=(currentUser&&currentUser.name)||''; it.compra.compraLancId=compra.id; it.compra.formaPag=forma;
+    // v187 — rateio dos custos da nota proporcional ao valor do item → custo unitário real
+    var _q=parseFloat(it.compra.qtdComprada)||0, _p=parseFloat(it.compra.precoPago)||0;
+    var _vI=_q*_p, _shr=(_valorItens>0?_vI/_valorItens:0), _exI=+((_exNF.total*_shr)).toFixed(4);
+    it.compra.custoExtras=_exI;
+    it.compra.custoUnitReal=+((_p+(_q>0?_exI/_q:0))).toFixed(4);
+    _afx2.push(it); _evx2.push({itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:_q});
     (it.origem||[]).forEach(function(og){ orderIds[og.orderId]=1; });
   });
   Object.keys(orderIds).forEach(function(oid){ _reavaliarComprasPedido(oid); });
+  try{ _syncCustosInsumo(_afx2); }catch(_e){} // v187
+  try{ _rcbEstoqueEntrada(_evx2); }catch(_e){} // v187
   try{ if(typeof sincronizarContasPagar==='function') sincronizarContasPagar(); }catch(_e){}
   closeReceberModal(); renderRecebimento(); saveData();
   alert('✓ Recebimento confirmado. Lançamento de '+fmtMoney(valor)+' enviado ao Caixa (aguardando aprovação).');
@@ -15293,12 +15584,14 @@ function _finBaixarSelecionadas(tipo){
 var _loteState=null;
 function _finBaixarLote(selInfo, tipo){
   tipo=(tipo==='pagar')?'pagar':'receber'; // v174 — lote também no PAGAR (fatura de cartão com N fornecedores)
-  if(selInfo.length>20){ alert('O lote aceita até 20 parcelas por vez (você marcou '+selInfo.length+').\nDesmarque algumas e repita o lote.'); return; }
+  // v187 — a receber aceita 50 por lote (pedido do dono; baixa é UPDATE — a trava de exclusão em massa não se aplica)
+  var _max=(tipo==='pagar')?20:50;
+  if(selInfo.length>_max){ alert('O lote aceita até '+_max+' parcelas por vez (você marcou '+selInfo.length+').\nDesmarque algumas e repita o lote.'); return; }
   var _lst=(tipo==='pagar')?contasPagar:contasReceber;
   var rows=selInfo.map(function(x){
     var c=_lst.find(function(y){ return y.id===x.s.dataset.conta; }); if(!c) return null;
     var pi=parseInt(x.s.dataset.parc,10); var p=c.parcelas&&c.parcelas[pi]; if(!p||p.pago) return null;
-    return { contaId:c.id, parcIdx:pi, cliente:(tipo==='pagar'?(c.fornecedorNome||c.clienteNome):(c.clienteNome||c.fornecedorNome))||'—', desc:c.descricao||'', valor:parseFloat(p.valor)||0, venc:p.vencimento||'' };
+    return { contaId:c.id, parcIdx:pi, cliente:(tipo==='pagar'?(c.fornecedorNome||c.clienteNome):(c.clienteNome||c.fornecedorNome))||'—', desc:c.descricao||'', valor:parseFloat(p.valor)||0, venc:p.vencimento||'', forma:(p.forma||c.forma||c.formaPag||'') }; // v187 — forma da conta/parcela
   }).filter(Boolean);
   if(!rows.length){ alert('Nenhuma parcela em aberto na seleção.'); return; }
   _loteState={rows:rows, tipo:tipo};
@@ -15307,16 +15600,13 @@ function _finBaixarLote(selInfo, tipo){
   var contasCx=(planoContas||[]).filter(function(p){ return p.atividadeDFC==='caixa'&&p.analitica!==false; });
   ov.innerHTML='<div class="modal" style="width:660px;max-height:86vh;overflow-y:auto">'+
     '<h2>💳 Baixa em lote — '+(tipo==='pagar'?'pagamentos':'recebimentos')+'</h2>'+
-    '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Até 20 parcelas por lote, de '+(tipo==='pagar'?'fornecedores':'clientes')+' diferentes. Cada parcela recebe a própria baixa (estorno continua parcela a parcela).'+(tipo==='pagar'?'':' A taxa de máquina em % é calculada sobre cada parcela.')+'</div>'+
-    '<div style="max-height:220px;overflow:auto;border:.5px solid var(--border);border-radius:6px;margin-bottom:10px">'+rows.map(function(r){ return '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 10px;border-bottom:.5px solid var(--border);font-size:12px"><span>'+escapeHtml(r.cliente)+' <span style="color:var(--text-tertiary);font-size:10px">'+escapeHtml(r.desc)+'</span></span><span style="white-space:nowrap">'+fmtMoney(r.valor)+(r.venc?' <span style="color:var(--text-tertiary);font-size:10px">venc '+fmtDate(r.venc)+'</span>':'')+'</span></div>'; }).join('')+'</div>'+
+    '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Até '+((tipo==='pagar')?20:50)+' parcelas por lote, de '+(tipo==='pagar'?'fornecedores':'clientes')+' diferentes. Cada parcela recebe a própria baixa (estorno continua parcela a parcela) com a FORMA já vinculada à conta.'+(tipo==='pagar'?'':' A taxa de máquina em % é calculada sobre cada parcela.')+'</div>'+
+    '<div style="max-height:220px;overflow:auto;border:.5px solid var(--border);border-radius:6px;margin-bottom:10px">'+rows.map(function(r){ return '<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 10px;border-bottom:.5px solid var(--border);font-size:12px"><span>'+escapeHtml(r.cliente)+' <span style="color:var(--text-tertiary);font-size:10px">'+escapeHtml(r.desc)+'</span></span><span style="white-space:nowrap">'+fmtMoney(r.valor)+' <span style="color:var(--text-secondary);font-size:10px">'+escapeHtml(_formaLbl(r.forma))+'</span>'+(r.venc?' <span style="color:var(--text-tertiary);font-size:10px">venc '+fmtDate(r.venc)+'</span>':'')+'</span></div>'; }).join('')+'</div>'+
     '<div class="form-row">'+
       '<div class="form-group"><label>Data da baixa</label><input type="date" id="lote-data" value="'+today()+'"></div>'+
-      '<div class="form-group"><label>Forma</label><select id="lote-forma">'+FORMAS_PAG.map(function(f){ return '<option '+(f==='Cartão de Crédito'?'selected':'')+'>'+f+'</option>'; }).join('')+'</select></div>'+
-    '</div>'+
-    '<div class="form-row">'+
       '<div class="form-group"><label>Conta '+(tipo==='pagar'?'de origem (caixa/banco)':'destino (caixa/banco)')+'</label><select id="lote-conta"><option value="">—</option>'+contasCx.map(function(p){ return '<option value="'+p.id+'">'+escapeHtml((p.codigo?p.codigo+' — ':'')+p.nome)+'</option>'; }).join('')+'</select></div>'+
-      (tipo==='pagar'?'':'<div class="form-group"><label>Taxa de máquina (%) <span style="font-size:10px;color:var(--text-tertiary)">por parcela</span></label><input type="number" id="lote-taxa" value="0" min="0" step="0.01" oninput="_loteRecalc()"></div>')+
     '</div>'+
+    (tipo==='pagar'?'':'<div class="form-row"><div class="form-group"><label>Taxa de máquina (%) <span style="font-size:10px;color:var(--text-tertiary)">por parcela</span></label><input type="number" id="lote-taxa" value="0" min="0" step="0.01" oninput="_loteRecalc()"></div><div class="form-group"></div></div>')+
     '<div class="form-group"><label>Observação</label><input type="text" id="lote-obs" placeholder="opcional"></div>'+
     '<div id="lote-resumo" style="font-size:13px;font-weight:600;margin:8px 0"></div>'+
     '<div class="modal-footer"><button onclick="document.getElementById(\'baixa-lote-overlay\').classList.remove(\'open\')">Cancelar</button><button class="btn-primary" onclick="confirmarBaixaLote()">Confirmar '+rows.length+' baixa(s)</button></div>'+
@@ -15336,7 +15626,6 @@ function confirmarBaixaLote(){
   if(!_loteState) return;
   var tipo=_loteState.tipo||'receber';
   var data=(document.getElementById('lote-data')||{}).value||today();
-  var forma=(document.getElementById('lote-forma')||{}).value||'Cartão de Crédito';
   var contaDest=(document.getElementById('lote-conta')||{}).value||null;
   var pct=(tipo==='pagar')?0:(parseFloat((document.getElementById('lote-taxa')||{}).value)||0);
   var obs=((document.getElementById('lote-obs')||{}).value||'').trim();
@@ -15347,6 +15636,7 @@ function confirmarBaixaLote(){
     var p=c.parcelas&&c.parcelas[r.parcIdx]; if(!p||p.pago) return;
     var taxa=+((parseFloat(p.valor)||0)*pct/100).toFixed(2);
     p.pago=true;
+    var forma=p.forma||c.forma||c.formaPag||''; // v187 — a forma da baixa É a forma vinculada à conta/parcela
     p.baixa={ id:'bx'+Date.now()+'_'+n, data:data, valorBruto:(parseFloat(p.valor)||0), forma:forma, conta:contaDest, obs:(obs?obs+' ':'')+'[lote]', por:(currentUser&&currentUser.name)||'—', ts:Date.now(), desconto:0, taxa:taxa, juros:0, grupo:null };
     // v174 — PAGAR de origem COMPRA: espelha o 'pago' na parcela da compra (mesmo espelho da baixa normal; o estorno já desfaz)
     if(tipo==='pagar' && c.origem==='compra'){ try{ var comp=compras.find(function(z){ return z.id===c.origemId; }); if(comp&&comp.parcelas&&comp.parcelas[r.parcIdx]) comp.parcelas[r.parcIdx].pago=true; }catch(_e){} }
@@ -15358,6 +15648,8 @@ function confirmarBaixaLote(){
   try{ renderFinPainel(); }catch(_e){}
   alert('✓ Lote concluído: '+n+' '+(tipo==='pagar'?'pagamento(s)':'recebimento(s)')+' baixado(s).\n'+(pct?'Líquido total: ':'Total: ')+fmtMoney(liquido));
 }
+// v187 — rótulo legível da forma de pagamento (a forma da BAIXA vem da conta/parcela, não é escolhida na hora)
+function _formaLbl(f){ if(!f) return '—'; var m={pix:'PIX',boleto:'Boleto',a_vista:'Dinheiro',dinheiro:'Dinheiro',transferencia:'Transferência',cartao_credito:'Cartão de Crédito',cartao:'Cartão de Crédito',bonificacao:'Bonificação',convenio:'Convênio',misto:'Misto'}; return m[String(f).toLowerCase()]||f; }
 function getContaStatus(c){
   if(c.formaPag==='bonificacao') return 'bonificacao'; // v127 — bonificação: registrada, não paga, nunca vence
   const parc = c.parcelas||[];
@@ -15567,7 +15859,7 @@ function _baixaParcelasElegiveis(tipo, contaPrincipalId, incluiOutras){
     }
     (c.parcelas||[]).forEach((p,pi)=>{
       if(p.pago) return;
-      out.push({contaId:c.id, descricao:c.descricao, parcIdx:pi, num:p.num||pi+1, valor:parseFloat(p.valor)||0, vencimento:p.vencimento, principal:mesma});
+      out.push({contaId:c.id, descricao:c.descricao, parcIdx:pi, num:p.num||pi+1, valor:parseFloat(p.valor)||0, vencimento:p.vencimento, principal:mesma, forma:(p.forma||c.forma||c.formaPag||'')}); // v187 — forma vem da conta/parcela
     });
   });
   return out;
@@ -15590,7 +15882,7 @@ function _renderBaixa(){
     const def = parcIdx>=0 ? (e.contaId===contaId && e.parcIdx===parcIdx) : e.principal;
     return `<label style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:.5px solid var(--border);font-size:12px">
       <input type="checkbox" class="baixa-parc" data-conta="${e.contaId}" data-parc="${e.parcIdx}" data-valor="${e.valor}" ${def?'checked':''} onchange="_recalcBaixa()" style="width:auto;margin:0">
-      <span style="flex:1">${escapeHtml(e.descricao||'')} — ${e.num}× ${fmtMoney(e.valor)} ${e.vencimento?'· venc. '+fmtDate(e.vencimento):''}${e.principal?'':' <span style="color:var(--text-info);font-size:10px">(outra conta)</span>'}</span>
+      <span style="flex:1">${escapeHtml(e.descricao||'')} — ${e.num}× ${fmtMoney(e.valor)} ${e.vencimento?'· venc. '+fmtDate(e.vencimento):''} · <span style="color:var(--text-secondary)">${escapeHtml(_formaLbl(e.forma))}</span>${e.principal?'':' <span style="color:var(--text-info);font-size:10px">(outra conta)</span>'}</span>
     </label>`;
   }).join('');
   document.getElementById('baixa-overlay').innerHTML=`<div class="modal" style="width:520px">
@@ -15611,11 +15903,9 @@ function _renderBaixa(){
     </div>
     <div class="form-row">
       <div class="form-group"><label>Juros/multa (R$)</label><input type="number" id="baixa-juros" min="0" step="0.01" value="0" oninput="_recalcBaixa()"></div>
-      <div class="form-group"><label>Forma</label><select id="baixa-forma">
-        <option value="pix">PIX</option><option value="boleto">Boleto</option><option value="a_vista">Dinheiro</option>
-        <option value="transferencia">Transferência</option><option value="cartao_credito">Cartão</option>
-      </select></div>
+      <div class="form-group"></div>
     </div>
+    <!-- v187 — a FORMA não é escolhida na baixa: vem da conta/parcela (já conferida antes) e aparece em cada linha acima -->
     <div class="form-group"><label>Observação</label><input type="text" id="baixa-obs" placeholder="(opcional — ex.: renegociação 2 boletos em 1)"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg-secondary);padding:10px 12px;border-radius:var(--r-md);margin:6px 0">
       <div style="font-size:12px;color:var(--text-secondary)">Valor original: <b id="baixa-bruto">R$ 0</b></div>
@@ -15650,7 +15940,6 @@ function confirmarBaixa(){
   const taxa=parseFloat(document.getElementById('baixa-taxa').value)||0;
   const juros=parseFloat(document.getElementById('baixa-juros').value)||0;
   const data=document.getElementById('baixa-data').value||today();
-  const forma=document.getElementById('baixa-forma').value;
   const contaDest=document.getElementById('baixa-conta').value||null;
   const obs=document.getElementById('baixa-obs').value.trim();
   const liquido=bruto-desconto-taxa+juros;
@@ -15659,6 +15948,7 @@ function confirmarBaixa(){
     const c=lista.find(y=>y.id===x.contaId); if(!c) return;
     const p=c.parcelas[x.parcIdx]; if(!p) return;
     p.pago=true;
+    const forma=p.forma||c.forma||c.formaPag||''; // v187 — a forma da baixa É a forma vinculada à conta/parcela
     p.baixa={ id:baixaId, data, valorBruto:x.valor, forma, conta:contaDest, obs, por:(currentUser&&currentUser.name)||'—', ts:Date.now(),
       // ajustes lançados só na 1ª parcela do grupo (evita duplicar na DRE/DFC)
       desconto: idx===0?desconto:0, taxa: idx===0?taxa:0, juros: idx===0?juros:0,
@@ -17524,6 +17814,143 @@ function _embImpConfirmar(){
   saveData();
   try{ renderCatSimples('embalagem'); }catch(_e){}
   alert('✓ '+sel.length+' embalagem(ns) cadastrada(s) no catálogo.');
+}
+// ═══════════ v187 — IMPORTAR ATIVOS (MTP) do "Cadastro de Produtos" do Opery (pedido do dono 04/08) ═══════════
+// LEITURA POR COORDENADAS (exigência do dono: "muito ajustado para não ter erro de leitura"): cada item de
+// texto do PDF é posicionado por x/y; as LINHAS são agrupadas por tolerância de Y (nunca por texto corrido —
+// extração textual entrelaça linhas vizinhas neste formato, provado na carga das embalagens de 04/08); a
+// coluna CUSTO é localizada pelo CABEÇALHO de cada página (números são alinhados à direita sob a coluna).
+// REGRA DE OURO: na dúvida (0 ou 2+ candidatos sob a coluna CUSTO), o custo fica VAZIO — nunca se chuta.
+// Markup PADRONIZADO em 400% (5×, regra do dono). Nada é gravado sem confirmação.
+var _insImpStage=null;
+async function _ativosImpLerPDF(file){
+  const pdfjsLib=await _ensurePdfJs();
+  const buf=await file.arrayBuffer();
+  const doc=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
+  const numBR=s=>{ const v=parseFloat(String(s).replace(/\./g,'').replace(',','.')); return isNaN(v)?null:v; };
+  const itens=[]; let semCusto=0, duvidosos=0;
+  for(let pg=1; pg<=doc.numPages; pg++){
+    const page=await doc.getPage(pg);
+    const tc=await page.getTextContent();
+    const words=tc.items.map(i=>({s:String(i.str||''), x:i.transform[4], y:i.transform[5], w:i.width||0})).filter(i=>i.s.trim());
+    // 1) cabeçalho da página: intervalos x de COMPRA/CUSTO/FATOR/PREÇO VENDA (mesmo se vierem colados num item só)
+    const cols={};
+    words.forEach(it=>{
+      const up=it.s.toUpperCase(); const cw=it.w/Math.max(1,it.s.length);
+      [['COMPRA','COMPRA'],['CUSTO','CUSTO'],['FATOR','FATOR'],['VENDA','PRECO']].forEach(([kw,nomeCol])=>{
+        const i=up.indexOf(kw);
+        if(i>=0 && !cols[nomeCol] && it.y>0){ cols[nomeCol]={x0:it.x+cw*i, x1:it.x+cw*(i+kw.length), y:it.y}; }
+      });
+    });
+    if(!cols.CUSTO || !cols.PRECO) continue; // página sem tabela (capa etc.)
+    // 2) agrupa palavras em LINHAS por tolerância de Y (2.5pt), só abaixo do cabeçalho
+    const hdrY=cols.CUSTO.y;
+    const corpo=words.filter(i=>i.y<hdrY-2).sort((a,b)=> b.y-a.y || a.x-b.x);
+    const linhas=[]; let curL=null, curY=null;
+    corpo.forEach(i=>{
+      if(curL===null || Math.abs(i.y-curY)>2.5){ curL={ws:[i]}; curY=i.y; linhas.push(curL); }
+      else curL.ws.push(i);
+    });
+    // 3) cada linha: código (dígitos à esquerda) + nome (até o MTP) + custo (nº alinhado sob a coluna CUSTO)
+    const anchors=[['COMPRA',cols.COMPRA],['CUSTO',cols.CUSTO],['FATOR',cols.FATOR],['PRECO',cols.PRECO]].filter(a=>a[1]);
+    let ultimo=null;
+    linhas.forEach(L=>{
+      const ws=L.ws.slice().sort((a,b)=>a.x-b.x);
+      // reconstrói tokens: um item do pdf.js pode conter vários números separados por espaço;
+      // números são atribuídos à coluna cuja BORDA DIREITA fica mais próxima (alinhamento à direita)
+      const toks=[];
+      ws.forEach(t=>{
+        const parts=t.s.split(/\s+/).filter(Boolean); const cw=t.w/Math.max(1,t.s.length);
+        let off=0;
+        parts.forEach(p=>{ const rel=t.s.indexOf(p,off); off=rel+p.length; toks.push({s:p, x:t.x+cw*rel, r:t.x+cw*(rel+p.length)}); });
+      });
+      const cod=toks.find(t=>/^\d{2,6}$/.test(t.s) && t.x < cols.COMPRA.x0-250);
+      const temMtp=toks.some(t=>t.s==='MTP');
+      if(!cod){
+        // continuação de nome (linha sem código, sem números de coluna): anexa ao item anterior
+        if(ultimo && !temMtp && !toks.some(t=>/^[\d.,]+$/.test(t.s) && t.r>cols.COMPRA.x0-20)){
+          const extra=toks.map(t=>t.s).join(' ').trim();
+          if(extra && /[A-Za-zÀ-ú]/.test(extra)) ultimo.nome=(ultimo.nome+' '+extra).replace(/\s+/g,' ').trim();
+        }
+        return;
+      }
+      const xLimiteNome=temMtp ? toks.find(t=>t.s==='MTP').x : (cols.COMPRA.x0-160);
+      const nome=toks.filter(t=>t!==cod && t.x<xLimiteNome-2 && t.s!=='MTP').map(t=>t.s).join(' ').replace(/\s+/g,' ').trim();
+      if(!nome || nome.length<3 || !/[A-Za-zÀ-ú]/.test(nome)) return;
+      // candidatos a CUSTO: números cuja borda direita casa com a coluna CUSTO (e não com as vizinhas)
+      const cand=toks.filter(t=>{
+        if(!/^\d+(?:[.,]\d+)?$/.test(t.s)) return false;
+        let melhor=null, dm=1e9;
+        anchors.forEach(([nc,a])=>{ const d=Math.abs(t.r-a.x1); if(d<dm){ dm=d; melhor=nc; } });
+        return melhor==='CUSTO' && dm<20;
+      });
+      let custo=null;
+      if(cand.length===1){ const c=numBR(cand[0].s); if(c!=null && c>0) custo=+c.toFixed(4); else if(c===0||c===null) custo=null; }
+      else if(cand.length>1){ duvidosos++; }
+      if(custo===null && cand.length<=1) semCusto+= (cand.length===0?1:0);
+      const item={codigo:cod.s, nome:nome, custo:custo, duvida:cand.length>1};
+      itens.push(item); ultimo=item;
+    });
+  }
+  return {itens:itens, semCusto:semCusto, duvidosos:duvidosos};
+}
+async function importarAtivosPDF(input){
+  const file=input.files&&input.files[0]; if(input) input.value=''; if(!file) return;
+  let lido;
+  try{ lido=await _ativosImpLerPDF(file); }
+  catch(e){ alert('Não consegui ler o PDF: '+((e&&e.message)||e)); return; }
+  const itens=lido.itens;
+  if(!itens.length){ alert('Não reconheci ativos neste PDF.\n\nEle é o "Cadastro de Produtos" (tipo Resumida, itens MTP) exportado do Opery?'); return; }
+  const codSet={}, nomeSet={};
+  (insumos||[]).filter(x=>x && x.tipo==='insumo').forEach(x=>{
+    if(x.codigo) codSet[String(x.codigo).trim()]=1;
+    const n=_embImpNorm(x.nome); if(n) nomeSet[n]=1;
+  });
+  const _vistos={};
+  const faltam=itens.filter(it=>{
+    const n=_embImpNorm(it.nome);
+    if(codSet[it.codigo] || (n && nomeSet[n]) || (n && _vistos[n])) return false;
+    if(n) _vistos[n]=1;
+    return true;
+  });
+  const jaTem=itens.length-faltam.length;
+  if(!faltam.length){ alert('✓ PDF lido: '+itens.length+' ativos — TODOS já estão cadastrados. Nada a importar.'); return; }
+  _insImpStage=faltam.map(f=>({codigo:f.codigo, nome:f.nome, custo:f.custo, duvida:!!f.duvida, incluir:true}));
+  const td='padding:5px 8px;border-bottom:.5px solid var(--border)';
+  const rows=_insImpStage.map((f,i)=>'<tr'+(f.duvida?' style="background:var(--st-mid-bg)"':'')+'>'+
+    '<td style="'+td+';text-align:center"><input type="checkbox" checked onchange="_insImpStage['+i+'].incluir=this.checked;_insImpCount()" style="width:14px;height:14px"></td>'+
+    '<td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(f.codigo)+'</td>'+
+    '<td style="'+td+';font-size:12px">'+escapeHtml(f.nome)+'</td>'+
+    '<td style="'+td+';font-size:12px;text-align:right;white-space:nowrap">'+(f.custo!=null?fmtMoney(f.custo):(f.duvida?'<span style="color:var(--st-mid-tx)" title="Leitura AMBÍGUA da coluna de custo nesta linha — por segurança o custo NÃO foi preenchido; confira no relatório e preencha na ficha">⚠ conferir</span>':'<span style="color:var(--st-mid-tx)" title="Relatório sem custo (0,00 ou em branco) — cadastra sem custo base">—</span>'))+'</td></tr>').join('');
+  const nDuv=_insImpStage.filter(x=>x.duvida).length;
+  const html='<div class="overlay open" id="ins-imp-overlay" data-dyn="1"><div class="modal" style="width:720px;max-width:95vw;max-height:86vh;display:flex;flex-direction:column">'+
+    '<h2 style="font-size:16px;flex-shrink:0">📥 Importar ativos — conferência</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;flex-shrink:0">PDF lido: <b>'+itens.length+'</b> ativos · <b>'+jaTem+'</b> já cadastrados · <b style="color:var(--st-mid-tx)">'+faltam.length+' SEM cadastro</b> (listados abaixo). Leitura por posição de coluna; custo do relatório vira o CUSTO BASE; markup padrão <b>400% (5×)</b>.'+(nDuv?' <b style="color:var(--st-mid-tx)">'+nDuv+' linha(s) com leitura ambígua — o custo ficou vazio por segurança (nunca se chuta).</b>':'')+' Desmarque o que não quiser — <b>nada é gravado sem a sua confirmação</b>.</div>'+
+    '<div style="flex:1;overflow:auto;border:.5px solid var(--border);border-radius:8px"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
+    '<th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px">✔</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:left">Código</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:left">Ativo</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:right">Custo (R$)</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<div class="modal-footer" style="margin-top:10px;flex-shrink:0"><span id="ins-imp-count" style="margin-right:auto;font-size:12px;color:var(--text-secondary)"></span>'+
+    '<button onclick="document.getElementById(\'ins-imp-overlay\').remove();_insImpStage=null">Cancelar</button>'+
+    '<button class="btn-primary" onclick="_insImpConfirmar()">Cadastrar selecionados</button></div></div></div>';
+  const old=document.getElementById('ins-imp-overlay'); if(old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+  _insImpCount();
+}
+function _insImpCount(){ const e=document.getElementById('ins-imp-count'); if(e&&_insImpStage) e.textContent=_insImpStage.filter(x=>x.incluir).length+' selecionado(s) para cadastro'; }
+function _insImpConfirmar(){
+  if(!_insImpStage) return;
+  const sel=_insImpStage.filter(x=>x.incluir);
+  if(!sel.length){ alert('Nenhum ativo selecionado.'); return; }
+  if(!confirm('Cadastrar '+sel.length+' ativo(s) no catálogo?\n\nCusto do relatório = custo base · markup padrão 400% (5×).')) return;
+  const now=Date.now();
+  sel.forEach((f,i)=>{ insumos.push({ id:'ins'+(now+i), codigo:f.codigo, nome:f.nome, tipo:'insumo', unidade:'g', categoria:'sem categoria', ativo:true,
+    custoBase:(f.custo!=null?f.custo:null), markup:400, custoBaseFonte:(f.custo!=null?'relatorio_ativos_opery':null),
+    criadoEm:now+i, criadoPor:(currentUser&&currentUser.name)||'', origem:'import_pdf_opery' }); });
+  const ov=document.getElementById('ins-imp-overlay'); if(ov) ov.remove();
+  _insImpStage=null;
+  saveData();
+  try{ renderCatSimples('insumo'); }catch(_e){}
+  alert('✓ '+sel.length+' ativo(s) cadastrado(s) no catálogo (markup 400%).');
 }
 function _parsePedidoLecarePDF(linhas){
   const txt=linhas.join('\n'); const L=linhas;

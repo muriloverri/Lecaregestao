@@ -1300,7 +1300,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
             <input type="text" id="ins-busca" placeholder="Buscar insumo (ativo)..." oninput="renderCatSimples('insumo')" style="min-width:220px">
             <button class="btn-primary" id="ins-novo-btn" onclick="openInsumoModal('insumo')">+ Cadastrar insumo</button>
-            <label class="btn-primary" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (ativos/MTP) exportado do Opery, mostra os que ainda NÃO estão no catálogo e cadastra com a sua confirmação — custo do relatório como custo base e markup padrão 400% (5×). Nada é gravado sem confirmar.">📥 Importar ativos<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarAtivosPDF(this)"></label><!-- v187 -->
+            <label class="btn-primary" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (ativos/MTP) exportado do Opery, mostra os que ainda NÃO estão no catálogo e cadastra com a sua confirmação — custo do relatório como custo base e markup automático pela CATEGORIA DE CUSTO. Nada é gravado sem confirmar.">📥 Importar ativos<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarAtivosPDF(this)"></label><!-- v187 -->
           </div>
           <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Insumo (ativo)</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Quantidade em estoque (na unidade de compra)">Estoque</th><th style="padding:8px 10px;text-align:right" title="Média ponderada das compras efetivadas">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço pago na compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
@@ -1372,6 +1372,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="form-group"><label>Unidade *</label><select id="ins-unidade"><option value="UN">UN (unidade)</option><option value="g">g (grama)</option><option value="mg">mg</option><option value="kg">kg</option><option value="ml">ml</option><option value="L">L (litro)</option></select></div>
           </div>
           <div class="form-group" style="margin-bottom:12px"><label id="ins-nome-label">Nome do insumo *</label><input type="text" id="ins-nome" placeholder="ex: Ácido Hialurônico"></div>
+          <!-- v188 — nome comercial (pedido do dono): nome que aparece PARA O CLIENTE no PDF do orçamento; vazio = usa o nome do cadastro -->
+          <div class="form-group" style="margin-bottom:12px"><label>Nome comercial <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(aparece para o cliente no PDF do orçamento; vazio = nome do cadastro)</span></label><input type="text" id="ins-nomecom" placeholder="ex: Hialurônico Premium"></div>
           <div class="form-group" style="margin-bottom:12px"><label>Categoria</label><select id="ins-categoria"></select></div>
           <!-- v174 — F1 Catálogo Novo: campos técnicos do INSUMO (densidade/concentração/unidade) -->
           <div id="ins-f1-insumo" style="display:none">
@@ -1392,14 +1394,14 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             </div>
           </div>
           <!-- v174 — F1: precificação (vale p/ insumo E embalagem): custo-base editável + markup próprio -->
+          <!-- v188 — markup em DOIS campos sincronizados (pedido do dono): % de acréscimo e VEZES (multiplicador); alterar um atualiza o outro (200% = 3×) -->
           <div class="form-row">
             <div class="form-group"><label>Custo base (R$) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(usado no preço; vazio = último custo)</span></label><input type="number" min="0" step="0.0001" id="ins-custobase" placeholder="por unidade de compra"></div>
-            <div class="form-group"><label>Markup de venda (%)</label><input type="number" min="0" step="0.01" id="ins-markup" placeholder="ex: 300"></div>
-          </div>
-          <!-- v187 — quantidade em estoque (pedido do dono 04/08; vale p/ insumo E embalagem) -->
-          <div class="form-row">
             <div class="form-group"><label>Quantidade em estoque <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(na unidade de compra)</span></label><input type="number" min="0" step="any" id="ins-estoque" placeholder="0"></div>
-            <div class="form-group"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Markup de venda (%) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(acréscimo sobre o custo)</span></label><input type="number" min="0" step="0.01" id="ins-markup" placeholder="ex: 200" oninput="_insMkSync('pct')"></div>
+            <div class="form-group"><label>Markup em vezes (×) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(preço = custo × este valor)</span></label><input type="number" min="0" step="0.01" id="ins-markup-x" placeholder="ex: 3" oninput="_insMkSync('x')"></div>
           </div>
           <div id="ins-custos-info" style="font-size:11px;color:var(--text-secondary);background:var(--bg-secondary);border-radius:8px;padding:7px 10px;margin-bottom:12px;display:none"></div>
           <div class="modal-footer"><button onclick="closeInsumoModal()">Cancelar</button><button class="btn-primary" onclick="saveInsumo()">Salvar</button></div>
@@ -1440,7 +1442,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="modal-section-title">Composição — vinculada aos insumos <span id="cn-comp-hint" style="font-weight:400;color:var(--text-tertiary);font-size:11px"></span></div>
             <div class="autocomplete-wrap" style="margin-bottom:8px"><input type="text" id="cn-ins-busca" placeholder="Buscar insumo do catálogo para adicionar..." oninput="_cnInsSearch()" autocomplete="off"><div class="autocomplete-list" id="cn-ins-ac"></div></div>
             <table style="width:100%;border-collapse:collapse;font-size:12px">
-              <thead><tr style="color:var(--text-tertiary);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:4px 6px">Insumo</th><th style="text-align:left;padding:4px 6px">Papel</th><th style="text-align:right;padding:4px 6px">Dose</th><th style="text-align:left;padding:4px 6px">Unid.</th><th></th></tr></thead>
+              <thead><tr style="color:var(--text-tertiary);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:4px 6px">Insumo</th><th style="text-align:left;padding:4px 6px">Papel</th><th style="text-align:right;padding:4px 6px">Dose</th><th style="text-align:left;padding:4px 6px">Unid.</th><th style="text-align:center;padding:4px 6px" title="Marcado = o componente NÃO aparece na composição do PDF do orçamento do cliente (o cálculo de custo/preço não muda)">Invisível</th><th></th></tr></thead>
               <tbody id="cn-comp-tbody"></tbody>
             </table>
             <div id="cn-comp-vazio" style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Nenhum componente — busque acima. O EXCIPIENTE/QSP não leva dose (completa o total sozinho).</div>
@@ -2436,6 +2438,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <div class="des-tab" id="ag-tab-vendas" onclick="setAgTab('vendas')">Vendas</div>
               <div class="des-tab" id="ag-tab-produtividade" onclick="setAgTab('produtividade')">Controle de Produtividade</div>
               <div class="des-tab" id="ag-tab-analise" onclick="setAgTab('analise')">Análise Comercial</div>
+              <div class="des-tab" id="ag-tab-lucr" onclick="setAgTab('lucr')">Análise de Lucratividade</div><!-- v187 -->
               <div class="des-tab" id="ag-tab-pausas" onclick="setAgTab('pausas')" style="display:none">⏸ Pausas</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
@@ -2667,7 +2670,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
 
         <!-- ABA VENDAS -->
         <div id="ag-pg-vendas" style="display:none">
-          <div class="panel" style="border-radius:0 0 var(--r-lg) var(--r-lg)">
+          <div class="panel" style="border-radius:0 0 var(--r-lg) var(--r-lg);padding:18px 20px"><!-- v188 — painel sem padding deixava cards/títulos encobertos pela borda (print do dono) -->
             <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:18px">
               <select id="vd-tipo" onchange="renderAgVendas()" style="font-size:12px;padding:5px 10px"></select>
               <select id="vd-linha" onchange="renderAgVendas()" style="font-size:12px;padding:5px 10px"></select>
@@ -2704,6 +2707,24 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <span style="font-size:11px;color:var(--text-tertiary)">publicados automaticamente pela rotina de análise de conversas (20h)</span>
             </div>
             <div id="ag-anl-content" style="padding:12px 16px"><div class="empty">Carregando…</div></div>
+          </div>
+        </div>
+        <!-- v187 — ANÁLISE DE LUCRATIVIDADE (pedido do dono 04/08): por venda do mês, preço alocado por
+             item × custo do catálogo (custo unitário × quantidade); média mensal + sub-abas por faixa.
+             Ganha precisão total quando os pedidos forem VINCULADOS aos produtos do Catálogo Novo. -->
+        <div id="ag-pg-lucr" style="display:none">
+          <div class="panel" style="border-radius:0 0 var(--r-lg) var(--r-lg)">
+            <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+              <h2>💹 Análise de Lucratividade</h2>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <label style="font-size:12px;color:var(--text-secondary)">Mês:</label>
+                <select id="al-mes" onchange="renderAnaliseLucr()" style="font-size:12px;padding:5px 10px;font-weight:500"></select>
+                <label style="font-size:12px;color:var(--text-secondary)" title="Custo médio da embalagem somado ao custo de cada unidade vendida">Custo embalagem (R$):</label>
+                <input type="number" id="al-emb" value="12" min="0" step="0.01" onchange="renderAnaliseLucr()" style="font-size:12px;padding:5px 8px;width:80px;text-align:right">
+                <button onclick="_alRecalibrar()" style="font-size:12px;padding:5px 12px" title="Refaz a análise de precificação com as vendas do ÚLTIMO ANO (regra do dono: janela anual — cresce conforme os meses passam) e compara os markups por categoria de custo com a meta">⚙ Recalibrar (último ano)</button>
+              </div>
+            </div>
+            <div id="al-content" style="padding:12px 16px"><div class="empty">Carregando…</div></div>
           </div>
         </div>
 
@@ -4688,7 +4709,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v187';
+var APP_VERSION = 'v188';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -10493,6 +10514,7 @@ function openInsumoModal(tipo, id){
   document.getElementById('ins-nome-label').textContent=ehIns?'Nome do insumo (ativo) *':'Nome da embalagem *';
   document.getElementById('ins-codigo').value=x?(x.codigo||''):'';
   document.getElementById('ins-nome').value=x?(x.nome||''):'';
+  var _nc=document.getElementById('ins-nomecom'); if(_nc) _nc.value=x?(x.nomeComercial||''):''; // v188 — nome comercial (PDF do orçamento)
   document.getElementById('ins-unidade').value=x?(x.unidade||'UN'):'UN';
   // v150 — categorias por tipo (pedido do dono)
   var _catSel=document.getElementById('ins-categoria');
@@ -10511,12 +10533,24 @@ function openInsumoModal(tipo, id){
   _setV('ins-capacidade', x&&x.capacidade); var _cu=document.getElementById('ins-capun'); if(_cu) _cu.value=(x&&x.capacidadeUn)||'mL';
   _setV('ins-custobase', x&&x.custoBase); _setV('ins-markup', x&&x.markup);
   _setV('ins-estoque', x&&x.estoqueQtd); // v187 — quantidade em estoque
+  _insMkSync('pct'); // v188 — espelha o markup em VEZES (200% = 3×)
   var _ci=document.getElementById('ins-custos-info');
   if(_ci){
     var _cst=x?_custosItem(x.id, x.codigo):null;
     var _m12=x?_cnMenor12m(x.id, x.codigo):null;
-    _ci.style.display=_cst?'':'none';
-    if(_cst) _ci.innerHTML='📈 '+(_cst.deCotacao?'Cotações (sem compra efetivada no sistema)':'Compras')+' (por '+escapeHtml((x&&x.unidade)||'UN')+'): último <b>'+fmtMoney(_cst.ultimo)+'</b> · médio <b>'+fmtMoney(_cst.medio)+'</b> · menor 12m <b>'+(_m12!=null?fmtMoney(_m12):'—')+'</b> · menor geral '+fmtMoney(_cst.minimo)+' <span style="color:var(--text-tertiary)">(custo base vazio → usa o último'+(_cst.deCotacao?'; valores de cotação NÃO são gravados como custo':'')+')</span>';
+    var _partes=[];
+    // v188 — os campos de custo aparecem SEMPRE na ficha (pedido do dono): sem histórico, mostram "—"
+    if(x){
+      if(_cst) _partes.push('📈 '+(_cst.deCotacao?'Cotações (sem compra efetivada no sistema)':'Compras')+' (por '+escapeHtml((x&&x.unidade)||'UN')+'): último <b>'+fmtMoney(_cst.ultimo)+'</b> · médio <b>'+fmtMoney(_cst.medio)+'</b> · menor 12m <b>'+(_m12!=null?fmtMoney(_m12):'—')+'</b> · menor geral '+fmtMoney(_cst.minimo)+' <span style="color:var(--text-tertiary)">(custo base vazio → usa o último'+(_cst.deCotacao?'; valores de cotação NÃO são gravados como custo':'')+')</span>');
+      else _partes.push('📈 Compras (por '+escapeHtml((x&&x.unidade)||'UN')+'): último <b>—</b> · médio <b>—</b> · menor 12m <b>—</b> <span style="color:var(--text-tertiary)">(sem compra nem cotação no sistema ainda'+(x.custoBase!=null&&x.custoBase!==''?'; o preço usa o custo base':'')+')</span>');
+    }
+    // v188 — categoria de custo do ativo (automática pelo custo vigente; markup digitado prevalece)
+    if(x && ehIns){
+      var _fx=_cnFaixaDoInsumo(x);
+      if(_fx) _partes.push('🏷 Categoria de custo <b>'+_fx.n+'</b> ('+(_fx.n===1?'barato':(_fx.n===2?'médio':'caro'))+') — markup da faixa <b>'+_fx.mk+'%</b>'+((x.markup!=null&&x.markup!=='')?' · <span style="color:var(--st-mid-tx)">este ativo tem markup MANUAL ('+x.markup+'%), que prevalece</span>':' <span style="color:var(--text-tertiary)">(vale enquanto o campo Markup estiver vazio)</span>'));
+    }
+    _ci.style.display=_partes.length?'':'none';
+    _ci.innerHTML=_partes.join('<br>');
   }
   document.getElementById('insumo-modal').classList.add('open');
 }
@@ -10526,6 +10560,19 @@ var CAT_INSUMO_CATEGORIAS={
   insumo:['sem categoria','liquido dermato','liquido oral','liquido ambos','solido dermato','solido oral','solido ambos','excipiente','base']
 };
 function closeInsumoModal(){ document.getElementById('insumo-modal').classList.remove('open'); }
+// v188 — markup em % e em VEZES sincronizados (alterar um atualiza o outro): × = 1 + %/100 (200% = 3×).
+// O que GRAVA continua sendo o campo % (ins-markup) — o campo × é espelho; vazio = faixa automática (ativos).
+function _insMkSync(origem){
+  var p=document.getElementById('ins-markup'), x=document.getElementById('ins-markup-x');
+  if(!p||!x) return;
+  if(origem==='x'){
+    var m=parseFloat(x.value);
+    p.value=isNaN(m)?'':(Math.round((m-1)*100*100)/100);
+  } else {
+    var v=parseFloat(p.value);
+    x.value=isNaN(v)?'':(Math.round((1+v/100)*100)/100);
+  }
+}
 function saveInsumo(){
   var nome=document.getElementById('ins-nome').value.trim();
   if(!nome){ alert('Informe o nome.'); return; }
@@ -10538,7 +10585,8 @@ function saveInsumo(){
     unidadePadrao:(document.getElementById('ins-unidpad')?.value||''),
     capacidade:_num('ins-capacidade'), capacidadeUn:(document.getElementById('ins-capun')?.value||'mL'),
     custoBase:_num('ins-custobase'), markup:_num('ins-markup'),
-    estoqueQtd:_num('ins-estoque') }; // v187 — quantidade em estoque
+    estoqueQtd:_num('ins-estoque'), // v187 — quantidade em estoque
+    nomeComercial:(document.getElementById('ins-nomecom')?.value||'').trim() }; // v188 — nome p/ o cliente no PDF do orçamento
   if(_insEditId){
     var x=(insumos||[]).find(function(p){ return p.id===_insEditId; });
     if(x){ x.nome=nome; x.unidade=unidade; x.categoria=categoria; if(codigo) x.codigo=codigo; Object.assign(x, extra); }
@@ -10707,6 +10755,28 @@ function _cnMenor12m(itemId, codigo){
   base.forEach(function(x){ if((x.em||0)>=corte && x.preco>0 && (min===null||x.preco<min)) min=x.preco; });
   return min;
 }
+// v188 — MARKUP POR CATEGORIA DE CUSTO (regra do dono 04/08): ativos classificados AUTOMATICAMENTE
+// pelo custo por grama vigente (cascata custo base > última compra > médio) — Categoria 1 (barato,
+// < lim1 R$/g) markup alto; Categoria 2 (médio, < lim2) intermediário; Categoria 3 (caro, ≥ lim2)
+// baixo. Dimensionado nas vendas reais de jul-ago/26: 8×/7×/4× (700/600/300%) mantém 75% de
+// lucratividade líquida no mix. Markup DIGITADO na ficha do ativo prevalece (exceção consciente).
+// Embalagens seguem o markup próprio (padrão 200%). Limites e markups editáveis na Configuração.
+function _cnFaixasCfg(){ var c=_cnCfgGet(); return Object.assign({lim1:1, lim2:5, mk1:700, mk2:600, mk3:300, embCusto:12, embMult:3, desconto:12, meta:75}, c.faixasCusto||{}); }
+function _cnFaixaDoInsumo(x){ // {n:1|2|3, mk} para ativos; null para embalagem
+  if(!x || x.tipo!=='insumo') return null;
+  var fx=_cnFaixasCfg();
+  var pg=_cnCustoPorG(x); var v=(pg&&pg.porG>0)?pg.porG:null;
+  if(v===null){ var cu=_cnCustoUnit(x); v=(cu&&cu.v>0)?cu.v:null; }
+  if(v===null) return {n:2, mk:parseFloat(fx.mk2)||600};
+  if(v<(parseFloat(fx.lim1)||1)) return {n:1, mk:parseFloat(fx.mk1)||700};
+  if(v<(parseFloat(fx.lim2)||5)) return {n:2, mk:parseFloat(fx.mk2)||600};
+  return {n:3, mk:parseFloat(fx.mk3)||300};
+}
+function _cnMarkupInsumo(x){
+  if(x && x.markup!=null && x.markup!=='' && !isNaN(parseFloat(x.markup))) return parseFloat(x.markup);
+  var f=_cnFaixaDoInsumo(x);
+  return f?f.mk:200; // embalagem sem markup próprio: padrão 200%
+}
 // custo unitário-base do componente (na UNIDADE DE COMPRA): custoBase editável > último > médio
 function _cnCustoUnit(x){
   if(x && x.custoBase!=null && x.custoBase>0) return {v:x.custoBase, fonte:'base'};
@@ -10764,17 +10834,17 @@ function _cnCalcular(f, opts){
     if(volAtivos>volCaps+1e-9) avisos.push('os ativos ('+volAtivos.toFixed(3)+' mL) NÃO cabem na cápsula '+tam+' ('+volCaps+' mL) — use maior');
     pes.forEach(function(p){
       var g=p.gCaps*n, cpg=_cnCustoPorG(p.cp._x);
-      if(!cpg){ avisos.push('"'+p.cp._x.nome+'" é comprado por UN — não dá para custear por grama'); addLinha(p.cp._x.nome, g, 'g', 0, p.cp._x.markup, '?', 'sem custo/g'); }
-      else addLinha(p.cp._x.nome, g, 'g', g*cpg.porG, p.cp._x.markup, cpg.fonte);
+      if(!cpg){ avisos.push('"'+p.cp._x.nome+'" é comprado por UN — não dá para custear por grama'); addLinha(p.cp._x.nome, g, 'g', 0, _cnMarkupInsumo(p.cp._x), '?', 'sem custo/g'); }
+      else addLinha(p.cp._x.nome, g, 'g', g*cpg.porG, _cnMarkupInsumo(p.cp._x), cpg.fonte);
     });
     if(excip){
       var dEx=(excip._x.densidade>0)?excip._x.densidade:1;
       var gEx=Math.max(0,(volCaps-volAtivos))*dEx*(1+perdas/100)*n;
       var cpgE=_cnCustoPorG(excip._x);
-      addLinha(excip._x.nome+' (excipiente)', gEx, 'g', cpgE?gEx*cpgE.porG:0, excip._x.markup, cpgE?cpgE.fonte:'?', cpgE?'':'sem custo/g');
+      addLinha(excip._x.nome+' (excipiente)', gEx, 'g', cpgE?gEx*cpgE.porG:0, _cnMarkupInsumo(excip._x), cpgE?cpgE.fonte:'?', cpgE?'':'sem custo/g');
     } else avisos.push('a fórmula não tem EXCIPIENTE marcado — o volume restante da cápsula ficou sem custeio');
     var inv=(insumos||[]).find(function(i){ return i.id===(opts.involucroId||f.involucroId); });
-    if(inv){ var cI=_cnCustoUnit(inv); addLinha(inv.nome+' (invólucro ×'+n+')', n, 'UN', n*cI.v, inv.markup, cI.fonte); }
+    if(inv){ var cI=_cnCustoUnit(inv); addLinha(inv.nome+' (invólucro ×'+n+')', n, 'UN', n*cI.v, _cnMarkupInsumo(inv), cI.fonte); }
     else avisos.push('escolha o INVÓLUCRO (embalagem da cápsula) para custear');
   } else {
     var qspV=parseFloat(opts.qspValor)||0, qspU=opts.qspUn||'g';
@@ -10789,17 +10859,17 @@ function _cnCalcular(f, opts){
       var conc=(cp._x.concentracao>0?cp._x.concentracao:100);
       var pesada=teor/(conc/100); somaPes+=pesada;
       var g=pesada*(1+perdas/100), cpg=_cnCustoPorG(cp._x);
-      if(!cpg){ avisos.push('"'+cp._x.nome+'" é comprado por UN — não dá para custear por grama'); addLinha(cp._x.nome, g, 'g', 0, cp._x.markup, '?', 'sem custo/g'); }
-      else addLinha(cp._x.nome, g, 'g', g*cpg.porG, cp._x.markup, cpg.fonte);
+      if(!cpg){ avisos.push('"'+cp._x.nome+'" é comprado por UN — não dá para custear por grama'); addLinha(cp._x.nome, g, 'g', 0, _cnMarkupInsumo(cp._x), '?', 'sem custo/g'); }
+      else addLinha(cp._x.nome, g, 'g', g*cpg.porG, _cnMarkupInsumo(cp._x), cpg.fonte);
     });
     if(excip){
       var gB=Math.max(0, qspG-somaPes)*(1+perdas/100);
       var cpgB=_cnCustoPorG(excip._x);
-      addLinha(excip._x.nome+' (base/QSP)', gB, 'g', cpgB?gB*cpgB.porG:0, excip._x.markup, cpgB?cpgB.fonte:'?', cpgB?'':'sem custo/g');
+      addLinha(excip._x.nome+' (base/QSP)', gB, 'g', cpgB?gB*cpgB.porG:0, _cnMarkupInsumo(excip._x), cpgB?cpgB.fonte:'?', cpgB?'':'sem custo/g');
     } else if(ativos.length) avisos.push('a fórmula não tem BASE/EXCIPIENTE QSP — o restante até '+qspG.toFixed(1)+' g ficou sem custeio');
   }
   var emb=(insumos||[]).find(function(i){ return i.id===opts.embalagemId; });
-  if(emb){ var cE=_cnCustoUnit(emb); addLinha(emb.nome+' (embalagem)', 1, 'UN', cE.v, emb.markup, cE.fonte); }
+  if(emb){ var cE=_cnCustoUnit(emb); addLinha(emb.nome+' (embalagem)', 1, 'UN', cE.v, _cnMarkupInsumo(emb), cE.fonte); }
   else avisos.push('escolha a EMBALAGEM para custear');
   if(cat && (parseFloat(cat.custoFixo)||0)>0) addLinha('Custo fixo — categoria '+cat.nome, 1, '', parseFloat(cat.custoFixo)||0, cat.markupFixo, 'config');
   else if(!cat && f.categoria) avisos.push('categoria "'+f.categoria+'" sem configuração (perdas/custo fixo) — cadastre em ⚙ Configuração');
@@ -10915,6 +10985,7 @@ function _cnRenderComp(){
       '<td style="padding:4px 6px"><select onchange="_cnSetComp('+i+',\'papel\',this.value)" style="font-size:11px;padding:2px 4px"><option value="ativo"'+(ehEx?'':' selected')+'>Ativo</option><option value="excipiente"'+(ehEx?' selected':'')+'>Excipiente/QSP</option></select></td>'+
       '<td style="padding:4px 6px;text-align:right">'+(ehEx?'<span style="color:var(--text-tertiary);font-size:11px">completa</span>':'<input type="number" min="0" step="any" value="'+(c.dose!=null?c.dose:'')+'" oninput="_cnSetComp('+i+',\'dose\',this.value)" style="width:80px;text-align:right;font-size:12px">')+'</td>'+
       '<td style="padding:4px 6px">'+(ehEx?'—':'<select onchange="_cnSetComp('+i+',\'unidade\',this.value)" style="font-size:11px;padding:2px 4px">'+uns.map(function(u){ return '<option value="'+u+'"'+(u===c.unidade?' selected':'')+'>'+u+'</option>'; }).join('')+'</select>')+'</td>'+
+      '<td style="padding:4px 6px;text-align:center"><input type="checkbox" '+(c.invisivel?'checked':'')+' onchange="_cnSetComp('+i+',\'invisivel\',this.checked)" title="Marcado = não aparece na composição do PDF do orçamento (custo/preço não mudam)" style="width:14px;height:14px"></td>'+ /* v188 — invisível no PDF (pedido do dono) */
       '<td style="padding:4px 6px;text-align:right"><button onclick="_cnRemComp('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button></td></tr>';
   }).join('');
 }
@@ -10977,6 +11048,19 @@ function renderCnConfig(){
     (pode?'<button onclick="_cnCfgAddCat()" style="font-size:12px;padding:5px 12px;margin-top:8px">+ Adicionar categoria</button>':'')+
   '</div>'+
   '<div class="panel" style="padding:14px;margin-bottom:12px">'+
+    '<div style="font-weight:600;margin-bottom:4px">Precificação por categoria de custo (ativos)</div>'+
+    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">Regra do dono 04/08: cada ativo é classificado AUTOMATICAMENTE pelo custo por grama vigente (custo base > última compra). Markup digitado na ficha do ativo prevalece sobre a faixa. As premissas alimentam a recalibração anual da aba Análise de Lucratividade.</div>'+
+    (function(){ var fx=_cnFaixasCfg(); var inp=function(campo,val,w,step){ return '<input type="number" min="0" step="'+(step||'0.01')+'" value="'+val+'" onchange="_cnCfgSetFx(\''+campo+'\',this.value)" style="width:'+(w||'80')+'px;text-align:right;font-size:12px"'+(pode?'':' disabled')+'>'; };
+      return '<div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px;align-items:center;margin-bottom:8px">'+
+        '<span>Cat. 1 (barato): até R$ '+inp('lim1',fx.lim1)+' /g → markup '+inp('mk1',fx.mk1,'70','1')+' %</span>'+
+        '<span>Cat. 2 (médio): até R$ '+inp('lim2',fx.lim2)+' /g → markup '+inp('mk2',fx.mk2,'70','1')+' %</span>'+
+        '<span>Cat. 3 (caro): acima → markup '+inp('mk3',fx.mk3,'70','1')+' %</span>'+
+      '</div>'+
+      '<div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px;align-items:center">'+
+        '<span title="Premissas usadas na recalibração">Premissas: embalagem R$ '+inp('embCusto',fx.embCusto)+' × '+inp('embMult',fx.embMult,'55')+' · desconto médio '+inp('desconto',fx.desconto,'60')+' % · meta de lucratividade '+inp('meta',fx.meta,'60')+' %</span>'+
+      '</div>'; })()+
+  '</div>'+
+  '<div class="panel" style="padding:14px;margin-bottom:12px">'+
     '<div style="font-weight:600;margin-bottom:4px">Volumetria das cápsulas (mL por tamanho)</div>'+
     '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">Usada na sugestão do tamanho e no cálculo do excipiente.</div>'+
     '<div style="display:flex;gap:14px;flex-wrap:wrap">'+
@@ -10991,6 +11075,7 @@ function _cnCfgSetCat(i,campo,val){ var c=_cnCfgGet(); if(!c.categorias[i]) retu
 function _cnCfgAddCat(){ var c=_cnCfgGet(); c.categorias.push({nome:'',perdas:0,custoFixo:0,markupFixo:0}); _cnCfg=c; renderCnConfig(); }
 function _cnCfgRemCat(i){ var c=_cnCfgGet(); c.categorias.splice(i,1); _cnCfg=c; renderCnConfig(); }
 function _cnCfgSetCaps(t,val){ var c=_cnCfgGet(); c.caps=c.caps||Object.assign({},CN_CAPS_PADRAO); c.caps[t]=parseFloat(val)||0; _cnCfg=c; }
+function _cnCfgSetFx(campo,val){ var c=_cnCfgGet(); c.faixasCusto=Object.assign(_cnFaixasCfg(), c.faixasCusto||{}); c.faixasCusto[campo]=parseFloat(val)||0; _cnCfg=c; } // v188 — faixas de custo/markup
 function _cnCfgSalvarClick(){ var c=_cnCfgGet(); c.categorias=(c.categorias||[]).filter(function(x){ return (x.nome||'').trim(); }); _cnCfg=c; _cnCfgSalvar(); renderCnConfig(); alert('✓ Configuração salva.'); }
 // ── SIMULADOR ──
 var _cnSimSel={fId:'', nCaps:60, capsTam:'', invId:null, qspV:'', qspU:'g', embId:null};
@@ -12167,7 +12252,7 @@ function _lcItensTableHtml(l){
         '<td style="'+td+';text-align:right">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
         '<td style="'+td+';text-align:right">'+_qtdCmp+'</td>'+
         '<td style="'+td+';font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' ped.</td>'+
-        '<td style="'+td+';font-size:11px;max-width:180px" title="'+escapeHtml(_fornTxt)+'">'+(_fornTxt?escapeHtml(_fornTxt):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+        '<td style="'+td+';font-size:11px;max-width:180px" title="'+escapeHtml(_fornTxt)+'"><div style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(_fornTxt?escapeHtml(_fornTxt):'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+ /* v188 — razão social longa não invade mais Preço/Total (nome completo no tooltip) */
         '<td style="'+td+';text-align:right;white-space:nowrap">'+_puCell+'</td>'+
         '<td style="'+td+';text-align:right;white-space:nowrap">'+_totCell+'</td>'+
         // v159 — botões passam a IDENTIDADE do item (itemId), não a posição: a lista pode ser reordenada
@@ -17821,7 +17906,7 @@ function _embImpConfirmar(){
 // extração textual entrelaça linhas vizinhas neste formato, provado na carga das embalagens de 04/08); a
 // coluna CUSTO é localizada pelo CABEÇALHO de cada página (números são alinhados à direita sob a coluna).
 // REGRA DE OURO: na dúvida (0 ou 2+ candidatos sob a coluna CUSTO), o custo fica VAZIO — nunca se chuta.
-// Markup PADRONIZADO em 400% (5×, regra do dono). Nada é gravado sem confirmação.
+// Markup automático pela CATEGORIA DE CUSTO (v188). Nada é gravado sem confirmação.
 var _insImpStage=null;
 async function _ativosImpLerPDF(file){
   const pdfjsLib=await _ensurePdfJs();
@@ -17925,7 +18010,7 @@ async function importarAtivosPDF(input){
   const nDuv=_insImpStage.filter(x=>x.duvida).length;
   const html='<div class="overlay open" id="ins-imp-overlay" data-dyn="1"><div class="modal" style="width:720px;max-width:95vw;max-height:86vh;display:flex;flex-direction:column">'+
     '<h2 style="font-size:16px;flex-shrink:0">📥 Importar ativos — conferência</h2>'+
-    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;flex-shrink:0">PDF lido: <b>'+itens.length+'</b> ativos · <b>'+jaTem+'</b> já cadastrados · <b style="color:var(--st-mid-tx)">'+faltam.length+' SEM cadastro</b> (listados abaixo). Leitura por posição de coluna; custo do relatório vira o CUSTO BASE; markup padrão <b>400% (5×)</b>.'+(nDuv?' <b style="color:var(--st-mid-tx)">'+nDuv+' linha(s) com leitura ambígua — o custo ficou vazio por segurança (nunca se chuta).</b>':'')+' Desmarque o que não quiser — <b>nada é gravado sem a sua confirmação</b>.</div>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;flex-shrink:0">PDF lido: <b>'+itens.length+'</b> ativos · <b>'+jaTem+'</b> já cadastrados · <b style="color:var(--st-mid-tx)">'+faltam.length+' SEM cadastro</b> (listados abaixo). Leitura por posição de coluna; custo do relatório vira o CUSTO BASE; markup automático pela <b>categoria de custo</b> (faixas da Configuração).'+(nDuv?' <b style="color:var(--st-mid-tx)">'+nDuv+' linha(s) com leitura ambígua — o custo ficou vazio por segurança (nunca se chuta).</b>':'')+' Desmarque o que não quiser — <b>nada é gravado sem a sua confirmação</b>.</div>'+
     '<div style="flex:1;overflow:auto;border:.5px solid var(--border);border-radius:8px"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
     '<th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px">✔</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:left">Código</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:left">Ativo</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:right">Custo (R$)</th>'+
     '</tr></thead><tbody>'+rows+'</tbody></table></div>'+
@@ -17941,16 +18026,16 @@ function _insImpConfirmar(){
   if(!_insImpStage) return;
   const sel=_insImpStage.filter(x=>x.incluir);
   if(!sel.length){ alert('Nenhum ativo selecionado.'); return; }
-  if(!confirm('Cadastrar '+sel.length+' ativo(s) no catálogo?\n\nCusto do relatório = custo base · markup padrão 400% (5×).')) return;
+  if(!confirm('Cadastrar '+sel.length+' ativo(s) no catálogo?\n\nCusto do relatório = custo base · markup automático pela categoria de custo.')) return;
   const now=Date.now();
   sel.forEach((f,i)=>{ insumos.push({ id:'ins'+(now+i), codigo:f.codigo, nome:f.nome, tipo:'insumo', unidade:'g', categoria:'sem categoria', ativo:true,
-    custoBase:(f.custo!=null?f.custo:null), markup:400, custoBaseFonte:(f.custo!=null?'relatorio_ativos_opery':null),
+    custoBase:(f.custo!=null?f.custo:null), custoBaseFonte:(f.custo!=null?'relatorio_ativos_opery':null),
     criadoEm:now+i, criadoPor:(currentUser&&currentUser.name)||'', origem:'import_pdf_opery' }); });
   const ov=document.getElementById('ins-imp-overlay'); if(ov) ov.remove();
   _insImpStage=null;
   saveData();
   try{ renderCatSimples('insumo'); }catch(_e){}
-  alert('✓ '+sel.length+' ativo(s) cadastrado(s) no catálogo (markup 400%).');
+  alert('✓ '+sel.length+' ativo(s) cadastrado(s) no catálogo (markup pela categoria de custo).');
 }
 function _parsePedidoLecarePDF(linhas){
   const txt=linhas.join('\n'); const L=linhas;
@@ -23715,15 +23800,245 @@ function setAgTab(tab){
   const _tp=document.getElementById('ag-tab-pausas'); if(_tp) _tp.style.display=_ehGestorPausa?'':'none';
   if(tab==='pausas' && !_ehGestorPausa) tab='rfv';
   activeAgTab = tab;
-  ['rfv','indicadores','vendas','produtividade','analise','pausas'].forEach(t=>{
+  ['rfv','indicadores','vendas','produtividade','analise','lucr','pausas'].forEach(t=>{
     document.getElementById('ag-tab-'+t)?.classList.toggle('active', t===tab);
     const pg=document.getElementById('ag-pg-'+t);
     if(pg) pg.style.display = t===tab?'':'none';
   });
   if(tab==='produtividade'){ try{ renderProdutividadeProducao(); }catch(_e){} }
   else if(tab==='analise'){ try{ renderAnaliseComercial(); }catch(_e){} }
+  else if(tab==='lucr'){ try{ _alInitMeses(); renderAnaliseLucr(); }catch(_e){} } // v187 — Análise de Lucratividade
   else if(tab==='pausas'){ try{ renderPausasPanel(); }catch(_e){} }
   else renderAgTab();
+}
+// ═══════════ v187 — ANÁLISE DE LUCRATIVIDADE (pedido do dono 04/08) ═══════════
+// Para cada venda do mês (venda, venda mãe/filho e embaixador, valor > 0): o valor LÍQUIDO do pedido é
+// RATEADO entre os itens pelo preço de referência do catálogo (enquanto o pedido não traz preço por
+// item), e o custo vem da fórmula do Catálogo Novo (custo unitário × quantidade) + embalagem. A média
+// por ITEM DE CATÁLOGO no mês pondera pela quantidade vendida. Faixas: <70% baixa · 70–80% média ·
+// >80% alta. Pedido com item sem fórmula vinculada/custeável fica FORA (medido na cobertura) — a aba
+// ganha precisão total quando a entrada de pedidos for vinculada aos produtos do Catálogo Novo.
+var _alSub='media';
+function _alInitMeses(){
+  var sel=document.getElementById('al-mes'); if(!sel) return;
+  var meses={};
+  (orders||[]).forEach(function(o){ var m=String((o&&o.d1)||'').slice(0,7); if(/^\d{4}-\d{2}$/.test(m)) meses[m]=1; });
+  var lista=Object.keys(meses).sort().reverse().slice(0,18);
+  var atual=sel.value;
+  sel.innerHTML=lista.map(function(m){ return '<option value="'+m+'">'+m.slice(5,7)+'/'+m.slice(0,4)+'</option>'; }).join('');
+  if(atual && lista.indexOf(atual)>=0) sel.value=atual;
+}
+function _alTamRef(f){
+  if(f.forma==='capsula') return 60;
+  var q=parseFloat(f.qspValor); if(q>0) return q;
+  if(String(f.categoria||'').toUpperCase()==='SERUM') return 30;
+  return 120;
+}
+// custo E preço de referência da fórmula (referência de tamanho; cascata de custos; markup por insumo,
+// padrão 400% quando vazio). ok=false quando algum componente com dose não tem custo — pedido fica fora.
+function _alCustoPrecoRef(f, embCusto){
+  var tam=_alTamRef(f), custo=0, preco=0, gramas=0, okTudo=true, excip=null;
+  (f.composicao||[]).forEach(function(cp){
+    var x=(insumos||[]).find(function(i){ return i&&i.id===cp.insumoId; });
+    var pg=x?_cnCustoPorG(x):null;
+    var dose=parseFloat(cp.dose)||0, un=cp.unidade||(f.forma==='capsula'?'mg':'%');
+    var g=0;
+    if(un==='%') g=dose/100*tam;
+    else if(un==='g') g=dose;
+    else if(un==='mg') g=dose/1000;
+    else if(un==='mcg') g=dose/1e6;
+    else if(un==='UI') g=(x&&x.fatorUI>0)?dose*x.fatorUI/1000:0;
+    else g=(f.forma==='capsula'?dose/1000:dose/100*tam);
+    if(f.forma==='capsula' && un!=='%') g=g*60;
+    var conc=(x&&parseFloat(x.concentracao)>0)?parseFloat(x.concentracao):100;
+    g=g*(100/conc);
+    var mk=x?_cnMarkupInsumo(x):600; // v188 — markup pela categoria de custo (manual prevalece)
+    if(cp.papel==='excipiente'){ if(pg&&pg.porG>0) excip={porG:pg.porG, mk:mk}; return; }
+    gramas+=g;
+    if(!pg||!(pg.porG>0)){ if(g>0) okTudo=false; return; }
+    custo+=g*pg.porG;
+    preco+=g*pg.porG*(1+mk/100);
+  });
+  if(f.forma!=='capsula' && excip){ var ge=Math.max(tam-gramas,0); custo+=ge*excip.porG; preco+=ge*excip.porG*(1+excip.mk/100); }
+  if(f.forma==='capsula' && f.involucroId){
+    var inv=(insumos||[]).find(function(i){ return i&&i.id===f.involucroId; });
+    var cu=inv?_cnCustoUnit(inv):null;
+    if(cu&&cu.v>0&&String((inv&&inv.unidade)||'').toLowerCase()==='un'){ custo+=60*cu.v; preco+=60*cu.v*(1+_cnMarkupInsumo(inv)/100); }
+  }
+  var e=parseFloat(embCusto)||0;
+  return { ok:(okTudo&&custo>0), custo:custo+e, preco:preco+e*3 };
+}
+function _alSetSub(s){ _alSub=s; renderAnaliseLucr(); }
+// v188 — decomposição do custo de ativos da fórmula POR CATEGORIA DE CUSTO (para a recalibração)
+function _alDecompFaixas(f){
+  var tam=_alTamRef(f), c={1:0,2:0,3:0}, gramas=0, okTudo=true, excip=null;
+  (f.composicao||[]).forEach(function(cp){
+    var x=(insumos||[]).find(function(i){ return i&&i.id===cp.insumoId; });
+    var pg=x?_cnCustoPorG(x):null;
+    var dose=parseFloat(cp.dose)||0, un=cp.unidade||(f.forma==='capsula'?'mg':'%');
+    var g=0;
+    if(un==='%') g=dose/100*tam;
+    else if(un==='g') g=dose;
+    else if(un==='mg') g=dose/1000;
+    else if(un==='mcg') g=dose/1e6;
+    else if(un==='UI') g=(x&&x.fatorUI>0)?dose*x.fatorUI/1000:0;
+    else g=(f.forma==='capsula'?dose/1000:dose/100*tam);
+    if(f.forma==='capsula' && un!=='%') g=g*60;
+    var conc=(x&&parseFloat(x.concentracao)>0)?parseFloat(x.concentracao):100;
+    g=g*(100/conc);
+    if(cp.papel==='excipiente'){ if(pg&&pg.porG>0) excip={porG:pg.porG, x:x}; return; }
+    gramas+=g;
+    if(!pg||!(pg.porG>0)){ if(g>0) okTudo=false; return; }
+    var fx=_cnFaixaDoInsumo(x);
+    c[(fx&&fx.n)||2]+=g*pg.porG;
+  });
+  if(f.forma!=='capsula' && excip){ var ge=Math.max(tam-gramas,0); var fe=_cnFaixaDoInsumo(excip.x); c[(fe&&fe.n)||1]+=ge*excip.porG; }
+  if(f.forma==='capsula' && f.involucroId){
+    var inv=(insumos||[]).find(function(i){ return i&&i.id===f.involucroId; });
+    var cu=inv?_cnCustoUnit(inv):null;
+    if(cu&&cu.v>0&&String((inv&&inv.unidade)||'').toLowerCase()==='un'){ var fi=_cnFaixaDoInsumo(inv); c[(fi&&fi.n)||1]+=60*cu.v; }
+  }
+  var tot=c[1]+c[2]+c[3];
+  return { ok:(okTudo&&tot>0), c1:c[1], c2:c[2], c3:c[3] };
+}
+// v188 — RECALIBRAÇÃO (regra do dono 04/08: janela = ÚLTIMO ANO, não 30 dias — cresce conforme os
+// meses passam): refaz a análise de precificação com o mix real de vendas e compara com a meta.
+function _alRecalibrar(){
+  if(!(currentUser && ['admin','diretor_comercial'].includes(currentUser.perfil))){ alert('Recalibração de precificação: somente administrador/diretor.'); return; }
+  var fx=_cnFaixasCfg();
+  var corte=(function(){ var d=new Date(); d.setDate(d.getDate()-365); return d.toISOString().slice(0,10); })();
+  var TIPOS={venda:1, venda_mae:1, venda_filho:1, embaixador:1};
+  var cache={}, C1=0, C2=0, C3=0, QT=0, nPed=0, nComp=0, valorMes=0, valorComp=0;
+  (orders||[]).forEach(function(o){
+    if(!o || !TIPOS[o.tipo]) return;
+    var d1=String(o.d1||''); if(!d1 || d1<corte) return;
+    var v=parseFloat(o.valor)||0; if(v<=0) return;
+    nPed++; valorMes+=v;
+    var its=(o.itensExpedicao||[]).filter(function(it){ return it && (parseFloat(it.qtd)||0)>0 && it.produtoId; });
+    if(!its.length) return;
+    var calc=[], ok=true;
+    its.forEach(function(it){
+      var f=(catalogoNovo||[]).find(function(x){ return x && x.catalogoId===it.produtoId && x.ativo!==false; });
+      if(!f){ ok=false; return; }
+      var c=cache[f.id]||(cache[f.id]=_alDecompFaixas(f));
+      if(!c.ok){ ok=false; return; }
+      calc.push({it:it, c:c});
+    });
+    if(!ok || calc.length!==its.length) return;
+    nComp++; valorComp+=v;
+    calc.forEach(function(x){ var q=parseFloat(x.it.qtd)||0; QT+=q; C1+=x.c.c1*q; C2+=x.c.c2*q; C3+=x.c.c3*q; });
+  });
+  if(!(QT>0)){ alert('Nenhuma venda computável no último ano (é preciso fórmula do Catálogo Novo vinculada e custos completos).'); return; }
+  var c1=C1/QT, c2=C2/QT, c3=C3/QT;
+  var m1=1+(parseFloat(fx.mk1)||0)/100, m2=1+(parseFloat(fx.mk2)||0)/100, m3=1+(parseFloat(fx.mk3)||0)/100;
+  var e=parseFloat(fx.embCusto)||0, em=parseFloat(fx.embMult)||0, d=(parseFloat(fx.desconto)||0)/100, meta=(parseFloat(fx.meta)||75)/100;
+  var custoUn=c1+c2+c3+e;
+  var precoAtual=c1*m1+c2*m2+c3*m3+e*em;
+  var lucrAtual=(precoAtual>0)?(1-custoUn/((1-d)*precoAtual))*100:0;
+  var alvoAtivos=(custoUn/(1-meta))/(1-d)-e*em;
+  var somaAtual=c1*m1+c2*m2+c3*m3;
+  var k=(somaAtual>0)?alvoAtivos/somaAtual:1;
+  var sug=function(m){ return Math.max(0, Math.round((m*k-1)*100)); };
+  var cob=valorMes>0?Math.round(100*valorComp/valorMes):0;
+  var html='<div class="overlay open" id="al-recal-overlay" data-dyn="1"><div class="modal" style="width:640px;max-width:95vw">'+
+    '<h2 style="font-size:16px">⚙ Recalibração de precificação — último ano</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Janela: '+fmtDate(corte)+' até hoje · '+nComp+' de '+nPed+' vendas computáveis ('+cob+'% do valor) · '+Math.round(QT).toLocaleString('pt-BR')+' unidades</div>'+
+    '<table style="width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:10px">'+
+    '<tr><td style="padding:5px 8px;border-bottom:.5px solid var(--border)">Custo médio de ativos por unidade (por categoria)</td><td style="padding:5px 8px;border-bottom:.5px solid var(--border);text-align:right">Cat.1 '+fmtMoney(c1)+' · Cat.2 '+fmtMoney(c2)+' · Cat.3 '+fmtMoney(c3)+'</td></tr>'+
+    '<tr><td style="padding:5px 8px;border-bottom:.5px solid var(--border)">Custo total médio por unidade (ativos + embalagem '+fmtMoney(e)+')</td><td style="padding:5px 8px;border-bottom:.5px solid var(--border);text-align:right"><b>'+fmtMoney(custoUn)+'</b></td></tr>'+
+    '<tr><td style="padding:5px 8px;border-bottom:.5px solid var(--border)">Lucratividade projetada com os markups VIGENTES ('+fx.mk1+'/'+fx.mk2+'/'+fx.mk3+'%)</td><td style="padding:5px 8px;border-bottom:.5px solid var(--border);text-align:right"><b style="color:'+(lucrAtual<(meta*100-1)?'var(--st-bad-tx)':(lucrAtual>(meta*100+2)?'var(--st-ok-tx)':'var(--text-primary)'))+'">'+lucrAtual.toFixed(1)+'%</b> (meta '+(meta*100).toFixed(0)+'%)</td></tr>'+
+    '<tr><td style="padding:5px 8px">SUGESTÃO para cravar a meta (mesmas proporções entre faixas)</td><td style="padding:5px 8px;text-align:right"><b>Cat.1 '+sug(m1)+'% · Cat.2 '+sug(m2)+'% · Cat.3 '+sug(m3)+'%</b></td></tr>'+
+    '</table>'+
+    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">Premissas da Configuração: embalagem '+fmtMoney(e)+' × '+em+' · desconto médio '+(d*100).toFixed(0)+'% · meta '+(meta*100).toFixed(0)+'% sobre a receita líquida. Para aplicar a sugestão, edite os markups na Configuração do Catálogo Novo — nada é alterado automaticamente.</div>'+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'al-recal-overlay\').remove()">Fechar</button></div>'+
+    '</div></div>';
+  var old=document.getElementById('al-recal-overlay'); if(old) old.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function renderAnaliseLucr(){
+  var el=document.getElementById('al-content'); if(!el) return;
+  var sel=document.getElementById('al-mes');
+  var mes=sel?sel.value:'';
+  if(!mes){ el.innerHTML='<div class="empty">Nenhuma venda registrada.</div>'; return; }
+  var embC=parseFloat((document.getElementById('al-emb')||{}).value)||0;
+  var TIPOS={venda:1, venda_mae:1, venda_filho:1, embaixador:1};
+  var cacheF={}, porProd={}, valorMes=0, valorComp=0, nPed=0, nComp=0;
+  (orders||[]).forEach(function(o){
+    if(!o || String(o.d1||'').slice(0,7)!==mes) return;
+    if(!TIPOS[o.tipo]) return;
+    var v=parseFloat(o.valor)||0; if(v<=0) return;
+    nPed++; valorMes+=v;
+    // v188 — pedido NASCIDO DE ORÇAMENTO: itens já carregam formulaId + PREÇO REAL por item (e custo
+    // congelado no fechamento) → entra DIRETO, sem rateio — a precisão total que o vínculo dá.
+    var itsD=(o.itens||[]).filter(function(it){ return it && it.formulaId && (parseFloat(it.qtd)||0)>0 && (parseFloat(it.precoUnit)||0)>0; });
+    if(itsD.length && itsD.length===(o.itens||[]).length){
+      nComp++; valorComp+=v;
+      itsD.forEach(function(it){
+        var q=parseFloat(it.qtd)||0;
+        var custoU=parseFloat(it.custo)||0;
+        if(!(custoU>0)){ var f2=(catalogoNovo||[]).find(function(x){ return x && x.id===it.formulaId; }); if(f2){ var c2=cacheF[f2.id]||(cacheF[f2.id]=_alCustoPrecoRef(f2, embC)); if(c2.ok) custoU=c2.custo; } }
+        var pid=it.produtoId||it.formulaId;
+        if(!porProd[pid]) porProd[pid]={nome:it.nome||'', codigo:it.codigo||'', qtd:0, receita:0, custo:0};
+        porProd[pid].qtd+=q;
+        porProd[pid].receita+=(parseFloat(it.precoUnit)||0)*q;
+        porProd[pid].custo+=custoU*q;
+      });
+      return;
+    }
+    var its=(o.itensExpedicao||[]).filter(function(it){ return it && (parseFloat(it.qtd)||0)>0 && it.produtoId; });
+    if(!its.length) return;
+    var calc=[], ok=true;
+    its.forEach(function(it){
+      var f=(catalogoNovo||[]).find(function(x){ return x && x.catalogoId===it.produtoId && x.ativo!==false; });
+      if(!f){ ok=false; return; }
+      var c=cacheF[f.id]||(cacheF[f.id]=_alCustoPrecoRef(f, embC));
+      if(!c.ok){ ok=false; return; }
+      calc.push({it:it, c:c});
+    });
+    if(!ok || calc.length!==its.length) return;
+    var peso=calc.reduce(function(s,x){ return s+x.c.preco*(parseFloat(x.it.qtd)||0); },0);
+    if(!(peso>0)) return;
+    nComp++; valorComp+=v;
+    calc.forEach(function(x){
+      var q=parseFloat(x.it.qtd)||0;
+      var pid=x.it.produtoId;
+      if(!porProd[pid]) porProd[pid]={nome:x.it.nome||'', codigo:x.it.codigo||'', qtd:0, receita:0, custo:0};
+      porProd[pid].qtd+=q;
+      porProd[pid].receita+=v*(x.c.preco*q/peso);
+      porProd[pid].custo+=x.c.custo*q;
+    });
+  });
+  var itens=Object.keys(porProd).map(function(k){ var p=porProd[k]; p.lucr=(p.receita>0)?(1-p.custo/p.receita)*100:0; return p; });
+  var recT=0,cusT=0; itens.forEach(function(p){ recT+=p.receita; cusT+=p.custo; });
+  var lucrMes=recT>0?(1-cusT/recT)*100:null;
+  var cob=valorMes>0?100*valorComp/valorMes:0;
+  var baixa=itens.filter(function(p){return p.lucr<70;}), media=itens.filter(function(p){return p.lucr>=70&&p.lucr<=80;}), alta=itens.filter(function(p){return p.lucr>80;});
+  [baixa,media,alta].forEach(function(a){ a.sort(function(x,y){ return y.receita-x.receita; }); });
+  var card=function(tit,val,sub,cor){ return '<div style="flex:1;min-width:170px;border:.5px solid var(--border);border-radius:10px;padding:12px 16px"><div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase">'+tit+'</div><div style="font-size:22px;font-weight:700;'+(cor?('color:'+cor):'')+'">'+val+'</div><div style="font-size:11px;color:var(--text-secondary)">'+sub+'</div></div>'; };
+  var head='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">'+
+    card('Lucratividade média do mês', lucrMes!=null?lucrMes.toFixed(1)+'%':'—', 'receita computável '+fmtMoney(recT)+' · custo '+fmtMoney(cusT), lucrMes!=null?(lucrMes<70?'var(--st-bad-tx)':(lucrMes>80?'var(--st-ok-tx)':'')):'')+
+    card('Cobertura da análise', cob.toFixed(0)+'%', nComp+' de '+nPed+' vendas do mês computáveis ('+fmtMoney(valorComp)+' de '+fmtMoney(valorMes)+')')+
+    card('Itens analisados', String(itens.length), baixa.length+' baixa · '+media.length+' na média · '+alta.length+' alta')+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text-secondary);background:var(--bg-secondary);border-radius:8px;padding:7px 12px;margin-bottom:12px">O valor líquido de cada pedido é rateado entre os itens pelo preço de referência do catálogo; o custo vem da fórmula do Catálogo Novo (custo unitário × quantidade) + embalagem. Pedidos com item sem fórmula vinculada ficam fora (cobertura acima). <b>Esta análise ganha precisão total quando a entrada de pedidos for vinculada aos produtos do Catálogo Novo (preço unitário e quantidade por item).</b></div>';
+  var tb=function(sub,rot,n){ var on=_alSub===sub; return '<button onclick="_alSetSub(\''+sub+'\')" style="font-size:12.5px;padding:6px 16px;border-radius:8px 8px 0 0;border:.5px solid var(--border);border-bottom:'+(on?'2px solid var(--bg-primary)':'0.5px solid var(--border)')+';background:'+(on?'var(--bg-primary)':'var(--bg-secondary)')+';font-weight:'+(on?'700':'400')+';cursor:pointer;margin-bottom:-1px">'+rot+' ('+n+')</button>'; };
+  var lista=_alSub==='baixa'?baixa:(_alSub==='alta'?alta:media);
+  var td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12.5px';
+  var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left';
+  var rows=lista.map(function(p){
+    var pm=p.qtd>0?p.receita/p.qtd:0, cm=p.qtd>0?p.custo/p.qtd:0;
+    var cor=p.lucr<70?'var(--st-bad-tx)':(p.lucr>80?'var(--st-ok-tx)':'var(--text-primary)');
+    return '<tr><td style="'+td+'">'+escapeHtml(p.nome||'—')+(p.codigo?' <span style="font-family:monospace;font-size:10.5px;color:var(--text-tertiary)">'+escapeHtml(p.codigo)+'</span>':'')+'</td>'+
+      '<td style="'+td+';text-align:right">'+p.qtd.toLocaleString('pt-BR')+'</td>'+
+      '<td style="'+td+';text-align:right">'+fmtMoney(p.receita)+'</td>'+
+      '<td style="'+td+';text-align:right">'+fmtMoney(pm)+'</td>'+
+      '<td style="'+td+';text-align:right">'+fmtMoney(cm)+'</td>'+
+      '<td style="'+td+';text-align:right;font-weight:700;color:'+cor+'">'+p.lucr.toFixed(1)+'%</td></tr>';
+  }).join('');
+  el.innerHTML=head+
+    '<div style="display:flex;gap:4px;border-bottom:.5px solid var(--border);margin-bottom:10px">'+tb('baixa','🔻 Baixa lucratividade (< 70%)',baixa.length)+tb('media','◼ Dentro da média (70–80%)',media.length)+tb('alta','🔺 Alta lucratividade (> 80%)',alta.length)+'</div>'+
+    (lista.length?('<div class="table-scroll"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+'">Item do catálogo</th><th style="'+th+';text-align:right">Qtd vendida</th><th style="'+th+';text-align:right">Receita (rateada)</th><th style="'+th+';text-align:right" title="Receita média por unidade — já reflete os descontos médios do mês">Preço médio/un</th><th style="'+th+';text-align:right">Custo médio/un</th><th style="'+th+';text-align:right">Lucratividade</th></tr></thead><tbody>'+rows+'</tbody></table></div>')
+    :'<div class="empty" style="padding:20px">Nenhum item nesta faixa no mês selecionado.</div>');
 }
 // ═══════ v169 — ⏸ painel de PAUSAS (Análise Gerencial, só admin/diretor) ═══════
 // Pausar = escolher UM responsável (obrigatório, regra do dono 23/07). Enquanto a pausa dura:
@@ -23927,9 +24242,10 @@ function renderProdutividadeProducao(){
   const mk=(sel&&sel.value)||(function(){const h=new Date();return h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0');})();
   const qtd={}, itens={}, peds={};
   (orders||[]).forEach(o=>{
-    const ts=(o.statusDates&&o.statusDates.producao&&o.statusDates.producao.ts)||0;
-    const m=ts?new Date(ts).toISOString().slice(0,7):'';
-    if(m!==mk) return;
+    // v188 — regra do dono 04/08: o MÊS da produção é o do PEDIDO (D1, padrão v133 de todas as telas),
+    // NÃO a data em que o status de produção foi movido — pedidos de julho finalizados em agosto
+    // apareciam como produtividade de agosto.
+    if(String((o&&o.d1)||'').slice(0,7)!==mk) return;
     const _its=Array.isArray(o.itens)?o.itens:[]; const _respPed=new Set();
     _its.forEach(it=>{
       const resp=it.prodRespNome || o.producaoExecutorNome || ''; // v119 — POR ITEM; fallback ao executor único (pedidos antigos)
@@ -25110,10 +25426,12 @@ const CLI_SIT_OVERRIDE_PERFIS = ['admin','diretor_comercial'];
 function calcClienteSituacaoAuto(cliente){
   const hoje = new Date(); hoje.setHours(0,0,0,0);
 
-  // Verificar se tem pedidos (tipo venda)
+  // v188 — caso Poliana 04/08: a SITUAÇÃO mede ATIVIDADE DE COMPRA, não faturamento — usa o filtro
+  // canônico rfvRF (venda + venda mãe + VENDA FILHO + embaixador). Com _ehReceita, a embaixadora que
+  // consome o crédito da venda mãe em vendas filho aparecia "Inativa" mesmo comprando todo mês.
   const ordsCli = orders.filter(o=>
     (String(o.clienteId)===String(cliente.id)||o.cliente===cliente.nome) &&
-    (_ehReceita(o)) && o.d1
+    (_rfvRF(o)) && o.d1
   );
 
   if(!ordsCli.length){
@@ -25137,10 +25455,16 @@ function calcClienteSituacaoAuto(cliente){
 }
 
 // Retorna situação final (override manual ou automático)
+// v188 — caso Fabia 04/08: o override manual vale ATÉ A PRÓXIMA COMPRA. Compra de receita com D1
+// POSTERIOR à data do override torna a classificação viva de novo (o cliente que comprou não pode
+// seguir rotulado como adormecido/inativo por um carimbo antigo). Quem quiser re-travar, trava de novo.
 function getClienteSituacao(cliente){
-  // Se tem override válido feito por usuário autorizado, usa ele
   if(cliente.situacaoOverride && cliente.situacaoOverride.sit){
-    return cliente.situacaoOverride.sit;
+    var _ovEm=String(cliente.situacaoOverride.em||'').slice(0,10);
+    var _compraDepois=_ovEm && (orders||[]).some(function(o){
+      return o && (String(o.clienteId)===String(cliente.id)||o.cliente===cliente.nome) && _rfvRF(o) && o.d1 && o.d1>_ovEm; // v188 — mesmo filtro de ATIVIDADE (inclui venda filho)
+    });
+    if(!_compraDepois) return cliente.situacaoOverride.sit;
   }
   return calcClienteSituacaoAuto(cliente);
 }
@@ -26325,7 +26649,7 @@ async function _aprovarCaixaPar(pedidos){
   const _tot=pedidos.reduce((s,o)=>s+(parseFloat(o.valor)||0)+(parseFloat(o.freteCob)||0),0);
   if(!confirm('Aprovar no Caixa o pedido dividido '+_lbl+' ('+fmtMoney(_tot)+')?\n\nConfirma que a forma de pagamento e o plano de contas foram conferidos.\nAs contas a receber das duas partes entram no Financeiro.')) return;
   pedidos.forEach(o=>{
-    o.caixaFinalizado=true; o.caixaReprovado=false; o.caixaAprovadoEm=new Date().toISOString(); o.caixaAprovadoPor=currentUser?.name||'—';
+    o.caixaFinalizado=true; o.caixaReprovado=false; o.caixaAprovadoEm=new Date().toISOString(); o.caixaAprovadoPor=currentUser?.name||'—'; if(o.d1Provisorio){ o.d1=today(); delete o.d1Provisorio; if(!o.urgente && o.tipo!=='venda_mae'){ try{ o.previsao=deadlineDate(o.d1, o.linha==='anestesico'?3:13); }catch(_e){} } } // v188 — pedido de ORÇAMENTO: D1 = data da aprovação no Caixa (regra do dono)
     if(!o.historico) o.historico=[];
     o.historico.push({ts:Date.now(),por:currentUser?.name||'—',acao:`✅ Caixa aprovado por ${currentUser?.name} (pedido dividido ${_lbl}).`});
     if(typeof sincronizarContasReceberDePedidos==='function') sincronizarContasReceberDePedidos(o.id);
@@ -26354,7 +26678,7 @@ async function aprovarCaixa(orderId){
     if(!confirm(`Aprovar Venda Filho ${_rotF}?\n\nVai ABATER ${fmtMoney(_val)} do crédito do cliente${_parF.length>1?' (lançamento ÚNICO do par)':''}.\nSaldo atual: ${fmtMoney(_saldo)} → ficará ${fmtMoney(_saldo-_val)}${(_saldo-_val<0)?' (NEGATIVO)':''}.\n(Não gera conta a receber.)`)) return;
     if(_parF.length>1) _registrarDebitoFilhoPar(_parF, _numBase); else _registrarDebitoFilho(o);
     _parF.forEach(x=>{
-      x.caixaFinalizado=true; x.caixaReprovado=false; x.caixaAprovadoEm=new Date().toISOString(); x.caixaAprovadoPor=currentUser?.name||'—';
+      x.caixaFinalizado=true; x.caixaReprovado=false; x.caixaAprovadoEm=new Date().toISOString(); x.caixaAprovadoPor=currentUser?.name||'—'; if(x.d1Provisorio){ x.d1=today(); delete x.d1Provisorio; if(!x.urgente && x.tipo!=='venda_mae'){ try{ x.previsao=deadlineDate(x.d1, x.linha==='anestesico'?3:13); }catch(_e){} } } // v188 — D1 = aprovação no Caixa
       if(!x.historico) x.historico=[];
       x.historico.push({ts:Date.now(),por:currentUser?.name||'—',acao:`✅ Venda Filho aprovada${_parF.length>1?' (par dividido, abate único)':''} — abatido ${fmtMoney(_val)} do crédito.`});
     });
@@ -26372,7 +26696,7 @@ async function aprovarCaixa(orderId){
     const _rotS=_parS.length>1 ? _parS.map(x=>x.num).join(' + ')+' — par dividido, aprova junto' : o.num;
     if(!confirm(`Aprovar no Caixa o pedido ${_rotS} (${TIPOS_PEDIDO[o.tipo]?.label||o.tipo})?\n\nEste tipo NÃO gera financeiro (sem conta a receber).`)) return;
     _parS.forEach(x=>{
-      x.caixaFinalizado=true; x.caixaReprovado=false; x.caixaAprovadoEm=new Date().toISOString(); x.caixaAprovadoPor=currentUser?.name||'—';
+      x.caixaFinalizado=true; x.caixaReprovado=false; x.caixaAprovadoEm=new Date().toISOString(); x.caixaAprovadoPor=currentUser?.name||'—'; if(x.d1Provisorio){ x.d1=today(); delete x.d1Provisorio; if(!x.urgente && x.tipo!=='venda_mae'){ try{ x.previsao=deadlineDate(x.d1, x.linha==='anestesico'?3:13); }catch(_e){} } } // v188 — D1 = aprovação no Caixa
       if(!x.historico) x.historico=[];
       x.historico.push({ts:Date.now(),por:currentUser?.name||'—',acao:`✅ Caixa aprovado (${TIPOS_PEDIDO[o.tipo]?.label||o.tipo}, sem financeiro${_parS.length>1?', par dividido':''}) por ${currentUser?.name}.`});
       if(typeof sincronizarContasReceberDePedidos==='function') sincronizarContasReceberDePedidos(x.id); // garante que não fica conta a receber órfã
@@ -28077,6 +28401,347 @@ function alterarStatusOrcCrm(id, status){
   saveData(); renderOrcamentosCrm();
 }
 
+// ═══════════ v188 — ORÇAMENTO PELO CATÁLOGO (pedido do dono 04/08 — substitui o fluxo do Mercos) ═══════════
+// Novo orçamento: cliente do cadastro (endereço vinculado) + tipo de pedido (padrão da venda) + itens
+// montados como no SIMULADOR (fórmula → QSP/cápsulas → embalagem → preço/custo pelo motor _cnCalcular,
+// markups por categoria de custo). Ajuste de concentração de ativo salva FÓRMULA NOVA com "AJ " no nome
+// (ajustadaDe = original). Desconto por item + desconto geral + frete + forma de pagamento + observações.
+// Numeração sequencial ORC-#### e 📄 PDF para o comercial enviar ao cliente.
+var _ob=null, _obSelFid=null;
+function _obNextNum(){
+  var mx=0;
+  (orcamentosCrm||[]).forEach(function(o){ var m=String(o.num||'').match(/(\d+)\s*$/); if(m){ var n=parseInt(m[1],10); if(n>mx) mx=n; } });
+  return 'ORC-'+String(mx+1).padStart(4,'0');
+}
+function _obFormulas(){ return (catalogoNovo||[]).filter(function(f){ return f && f.ativo!==false && (f.composicao||[]).length; }); }
+function _obFLabel(f){ return (f.codigo?f.codigo+' — ':'')+(f.nome||''); }
+function _obResolveF(txt){
+  txt=String(txt||'').trim().toLowerCase(); if(!txt) return null;
+  var fs=_obFormulas();
+  return fs.find(function(f){ return _obFLabel(f).toLowerCase()===txt; })
+      || fs.find(function(f){ return String(f.codigo||'').toLowerCase()===txt; })
+      || fs.find(function(f){ return String(f.nome||'').toLowerCase()===txt; }) || null;
+}
+function openOrcBuilder(id){
+  var ex=id?(orcamentosCrm||[]).find(function(o){ return o.id===id; }):null;
+  if(id && (!ex || !ex.detalhado)){ alert('Este orçamento é do registro antigo — use o Editar padrão.'); return; }
+  _ob=ex?JSON.parse(JSON.stringify(ex)):{ id:null, num:null, clienteId:null, clienteNome:'', tipo:'venda', itens:[], frete:0, descGeral:0, formaPag:'PIX', obs:'', status:'aberto' };
+  _obSelFid=null;
+  _obRender();
+}
+function _obCliLabel(c){ return (c.nome||'')+(c.doc?' — '+c.doc:''); }
+function _obResolveCli(txt){
+  txt=String(txt||'').trim().toLowerCase(); if(!txt) return null;
+  var cs=(clients||[]).filter(function(c){ return c && c.interno!==true; });
+  return cs.find(function(c){ return _obCliLabel(c).toLowerCase()===txt; })
+      || cs.find(function(c){ return String(c.nome||'').toLowerCase()===txt; }) || null;
+}
+function _obEnderecoTxt(c){
+  if(!c) return '';
+  var p=[c.rua,c.numero,c.comp,c.bairro,c.cidade,c.uf].filter(Boolean).join(', ');
+  return p+(c.cep?' · CEP '+c.cep:'');
+}
+function _obTotais(){
+  var sub=0, descI=0;
+  (_ob.itens||[]).forEach(function(it){ var b=(parseFloat(it.precoUnit)||0)*(parseFloat(it.qtd)||0); sub+=b; descI+=b*((parseFloat(it.descPct)||0)/100); });
+  var aposI=sub-descI;
+  var dg=aposI*((parseFloat(_ob.descGeral)||0)/100);
+  var tot=aposI-dg+(parseFloat(_ob.frete)||0);
+  return {sub:sub, descI:descI, dg:dg, tot:tot};
+}
+function _obSet(campo, val){ if(!_ob) return; _ob[campo]=(campo==='obs'||campo==='formaPag'||campo==='tipo')?val:(parseFloat(val)||0); if(campo==='tipo'){ _obPgInit(); } else if(campo!=='obs') _obRefreshTotais(); }
+function _obSetCli(txt){
+  var c=_obResolveCli(txt);
+  _ob.clienteId=c?c.id:null; _ob.clienteNome=c?(c.nome||''):String(txt||'').trim();
+  var e=document.getElementById('ob-end'); if(e) e.textContent=c?(_obEnderecoTxt(c)||'cadastro sem endereço'):'— selecione um cliente do cadastro —';
+}
+function _obSetItem(i, campo, val){ var it=_ob.itens[i]; if(!it) return; it[campo]=parseFloat(val)||0; _obRefreshTotais(); }
+function _obRemItem(i){ _ob.itens.splice(i,1); _obRender(); }
+function _obRefreshTotais(){
+  var t=_obTotais(); var el=document.getElementById('ob-totais');
+  if(el) el.innerHTML='Subtotal <b>'+fmtMoney(t.sub)+'</b>'+(t.descI>0?' · desc. itens −'+fmtMoney(t.descI):'')+(t.dg>0?' · desc. geral −'+fmtMoney(t.dg):'')+((parseFloat(_ob.frete)||0)>0?' · frete +'+fmtMoney(_ob.frete):'')+' · <span style="font-size:15px;font-weight:700">TOTAL '+fmtMoney(t.tot)+'</span>';
+  (_ob.itens||[]).forEach(function(it,i){ var el2=document.getElementById('ob-it-tot-'+i); if(el2){ var b=(parseFloat(it.precoUnit)||0)*(parseFloat(it.qtd)||0); el2.textContent=fmtMoney(b*(1-(parseFloat(it.descPct)||0)/100)); } });
+  // v188 — bloco de pagamento simples (1 forma × 1 parcela) acompanha o novo total automaticamente
+  if(document.getElementById('ob-pg-blocos') && Array.isArray(_ob.pgtosBlocos)){
+    if(_ob.pgtosBlocos.length===1 && (_ob.pgtosBlocos[0].parcelas||[]).length===1){ _ob.pgtosBlocos[0].valor=+t.tot.toFixed(2); _ob.pgtosBlocos[0].parcelas[0].valor=+t.tot.toFixed(2); }
+    _peOpen(_ob.pgtosBlocos,'ob-pg-blocos',+t.tot.toFixed(2),_obPgResumo,_obModF(),FORMAS_PAG);
+    _obPgResumo();
+  }
+}
+function _obRender(){
+  var ov=document.getElementById('ob-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='ob-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4200'; document.body.appendChild(ov); }
+  var cli=_ob.clienteId?(clients||[]).find(function(c){ return c.id===_ob.clienteId; }):null;
+  var tiposOpts=Object.keys(TIPO_PEDIDO_CFG).map(function(k){ return '<option value="'+k+'"'+(_ob.tipo===k?' selected':'')+'>'+TIPO_PEDIDO_CFG[k].label+'</option>'; }).join('');
+  var td='padding:6px 8px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
+  var itensRows=(_ob.itens||[]).map(function(it,i){
+    var b=(parseFloat(it.precoUnit)||0)*(parseFloat(it.qtd)||0);
+    return '<tr><td style="'+td+'"><b>'+escapeHtml(it.nome||'')+'</b>'+(String(it.codigo||'').indexOf('AJ')===0?' <span style="font-size:9.5px;padding:1px 6px;border-radius:10px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:700" title="Fórmula ajustada a partir de '+escapeHtml(it.ajustadaDeNome||'')+'">AJ</span>':'')+'<div style="font-size:10.5px;color:var(--text-secondary)">'+escapeHtml(it.detalhe||'')+'</div>'+(it.avisos?'<div style="font-size:10px;color:var(--st-mid-tx)">⚠ '+it.avisos+' aviso(s) no cálculo</div>':'')+'</td>'+
+      '<td style="'+td+';text-align:right"><input type="number" min="0" step="any" value="'+(it.qtd||1)+'" oninput="_obSetItem('+i+',\'qtd\',this.value)" style="width:65px;text-align:right;font-size:12px"></td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+fmtMoney(it.precoUnit)+'</td>'+
+      '<td style="'+td+';text-align:right"><input type="number" min="0" max="100" step="0.01" value="'+(it.descPct||0)+'" oninput="_obSetItem('+i+',\'descPct\',this.value)" style="width:60px;text-align:right;font-size:12px"></td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap;font-weight:600" id="ob-it-tot-'+i+'">'+fmtMoney(b*(1-(it.descPct||0)/100))+'</td>'+
+      '<td style="'+td+';text-align:center"><button onclick="_obRemItem('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer">✕</button></td></tr>';
+  }).join('');
+  ov.innerHTML='<div class="modal" style="width:860px;max-width:96vw;max-height:92vh;overflow-y:auto">'+
+    '<h2 style="font-size:16px">🧾 '+(_ob.id?'Orçamento '+(_ob.num||''):'Novo orçamento')+'</h2>'+
+    '<div class="form-row">'+
+      '<div class="form-group"><label>Cliente * <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(do cadastro)</span></label><input type="text" id="ob-cli" list="ob-cli-dl" value="'+escapeHtml(cli?_obCliLabel(cli):(_ob.clienteNome||''))+'" placeholder="Nome ou CPF/CNPJ..." onchange="_obSetCli(this.value)"><datalist id="ob-cli-dl">'+(clients||[]).filter(function(c){return c&&c.interno!==true;}).slice(0,1500).map(function(c){ return '<option value="'+escapeHtml(_obCliLabel(c))+'">'; }).join('')+'</datalist></div>'+
+      '<div class="form-group"><label>Tipo do pedido *</label><select id="ob-tipo" onchange="_obSet(\'tipo\',this.value)" style="font-size:13px">'+tiposOpts+'</select></div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text-secondary);margin:-4px 0 10px">📍 Endereço: <span id="ob-end">'+escapeHtml(cli?(_obEnderecoTxt(cli)||'cadastro sem endereço'):'— selecione um cliente do cadastro —')+'</span></div>'+
+    '<div class="modal-section"><div class="modal-section-title">Itens do orçamento</div>'+
+    ((_ob.itens||[]).length?('<div class="table-scroll"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:left">Produto</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Qtd</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Preço unit.</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Desc. %</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Total</th><th style="padding:6px 8px;background:var(--bg-secondary)"></th></tr></thead><tbody>'+itensRows+'</tbody></table></div>'):'<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Nenhum item ainda — monte abaixo e insira.</div>')+
+    '</div>'+
+    '<div class="modal-section" style="background:var(--bg-secondary);border-radius:10px;padding:12px"><div class="modal-section-title">Adicionar produto <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(funciona como o simulador: fórmula → QSP/cápsulas → embalagem → preço automático)</span></div>'+
+      '<div class="form-group" style="margin-bottom:8px"><label>Fórmula do catálogo *</label><input type="text" id="ob-f" list="ob-f-dl" placeholder="Código ou nome da fórmula..." onchange="_obPickFormula(this.value)"><datalist id="ob-f-dl">'+_obFormulas().slice(0,1500).map(function(f){ return '<option value="'+escapeHtml(_obFLabel(f))+'">'; }).join('')+'</datalist></div>'+
+      '<div id="ob-f-campos"></div>'+
+    '</div>'+
+    '<div class="form-row">'+
+      '<div class="form-group"><label>Desconto geral (%)</label><input type="number" min="0" max="100" step="0.01" value="'+(_ob.descGeral||0)+'" oninput="_obSet(\'descGeral\',this.value)"></div>'+
+      '<div class="form-group"><label>Frete cobrado (R$)</label><input type="number" min="0" step="0.01" value="'+(_ob.frete||0)+'" oninput="_obSet(\'frete\',this.value)"></div>'+
+    '</div>'+
+    '<div class="modal-section"><div class="modal-section-title">Pagamento <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(formas e parcelas — padrão da venda; vai junto quando o orçamento virar pedido)</span></div>'+
+      '<div id="ob-pg-blocos"></div>'+
+      '<button type="button" id="ob-pg-addforma" onclick="_peAddBloco()" style="font-size:12px;padding:5px 12px;margin-top:4px'+(_obModF()?';display:none':'')+'">+ Adicionar forma de pagamento</button>'+
+      '<div id="ob-pg-resumo" style="font-size:11px;margin:8px 0 2px"></div>'+
+    '</div>'+
+    '<div class="form-group" style="margin-bottom:10px"><label>Observações</label><input type="text" value="'+escapeHtml(_ob.obs||'')+'" oninput="_obSet(\'obs\',this.value)" placeholder="validade do orçamento, condições..."></div>'+
+    '<div id="ob-totais" style="font-size:13px;text-align:right;background:var(--bg-secondary);border-radius:8px;padding:10px 14px;margin-bottom:10px"></div>'+
+    (_ob.pedidoNum?'<div style="font-size:12px;color:var(--st-ok-tx);font-weight:600;margin-bottom:8px">✅ Orçamento FECHADO — virou o pedido '+escapeHtml(_ob.pedidoNum)+' (em Gestão a Vista; D1 será a data da aprovação no Caixa).</div>':'')+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'ob-overlay\').classList.remove(\'open\')">Cancelar</button><button onclick="_obSalvar(false)">💾 Salvar</button><button onclick="_obSalvar(true)">📄 Salvar e gerar PDF</button>'+(_ob.pedidoNum?'':'<button class="btn-primary" onclick="_obFechar()" title="Efetivar a venda: informa o nº do pedido no Opery e o pedido é lançado em Gestão a Vista (entra PENDENTE no Caixa; o D1 será a data da aprovação)">✅ Fechar — virar pedido</button>')+'</div>'+
+  '</div>';
+  ov.classList.add('open');
+  // v188 — pagamento em BLOCOS (padrão _pe, MESMAS formas do pedido/Caixa: FORMAS_PAG + regra de
+  // MODALIDADE dos tipos especiais — bonificação/amostra/venda filho etc. travam a forma na modalidade,
+  // igual ao editor do pedido). 1 bloco simples acompanha o total automaticamente.
+  _obPgInit();
+  _obRefreshTotais();
+  if(_obSelFid) _obPickFormula(null, _obSelFid);
+}
+function _obModF(){ try{ return _formaModalidadeDoTipo(_ob&&_ob.tipo||'venda')||''; }catch(_e){ return ''; } }
+function _obPgInit(){
+  var t=_obTotais(), modF=_obModF(), tot=+t.tot.toFixed(2);
+  if(modF){ _ob.pgtosBlocos=[{forma:modF,valor:tot,nsu:'',parcelas:[{num:1,valor:tot,vencimento:(typeof today==='function'?today():''),pago:false}]}]; }
+  else if(!Array.isArray(_ob.pgtosBlocos)||!_ob.pgtosBlocos.length){
+    _ob.pgtosBlocos=[{forma:_ob.formaPag||'PIX',valor:tot,nsu:'',parcelas:[{num:1,valor:tot,vencimento:(typeof today==='function'?today():''),pago:false}]}];
+  }
+  _peOpen(_ob.pgtosBlocos,'ob-pg-blocos',tot,_obPgResumo,modF,FORMAS_PAG);
+  _obPgResumo();
+}
+function _obPgResumo(){
+  var el=document.getElementById('ob-pg-resumo'); if(!el||!_ob) return;
+  var t=_obTotais();
+  var d=(_ob.pgtosBlocos||[]).reduce(function(s,b){ var pp=b.parcelas||[]; return s+(pp.length?pp.reduce(function(ss,p){return ss+(parseFloat(p.valor)||0);},0):(parseFloat(b.valor)||0)); },0);
+  var ok=Math.abs(d-t.tot)<0.01;
+  el.innerHTML='Configurado <b>'+fmtMoney(d)+'</b> / '+fmtMoney(t.tot)+' — '+(ok?'<span style="color:var(--st-ok-tx)">✓ valor exato</span>':'<span style="color:var(--st-mid-tx)">⚠ diferente do total do orçamento (o financeiro revisa no Caixa)</span>');
+}
+function _obPickFormula(txt, fid){
+  var f=fid?(catalogoNovo||[]).find(function(x){ return x.id===fid; }):_obResolveF(txt);
+  var box=document.getElementById('ob-f-campos'); if(!box) return;
+  if(!f){ box.innerHTML=''; _obSelFid=null; return; }
+  _obSelFid=f.id;
+  var caps=(f.forma==='capsula');
+  var ativos=(f.composicao||[]).filter(function(cp){ return cp.papel!=='excipiente'; });
+  var ajRows=ativos.map(function(cp,i){
+    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:12px"><span style="flex:1;min-width:0">'+escapeHtml(cp.nome||'?')+'</span><input type="number" min="0" step="any" id="ob-aj-'+i+'" value="'+(cp.dose!=null?cp.dose:'')+'" style="width:90px;text-align:right;font-size:12px"><span style="width:36px;color:var(--text-secondary)">'+escapeHtml(cp.unidade||(caps?'mg':'%'))+'</span></div>';
+  }).join('');
+  box.innerHTML='<div class="form-row">'+
+    (caps
+      ? '<div class="form-group"><label>Nº de cápsulas *</label><input type="number" min="1" step="1" id="ob-ncaps" value="60"></div><div class="form-group"><label>Tamanho da cápsula</label><select id="ob-capstam" style="font-size:13px">'+['00','0','1','2','3','4'].map(function(t){ return '<option'+(String(f.capsTam||'0')===t?' selected':'')+'>'+t+'</option>'; }).join('')+'</select></div>'
+      : '<div class="form-group"><label>Quantidade base (QSP) *</label><input type="number" min="0" step="any" id="ob-qspv" value="'+(f.qspValor!=null&&f.qspValor!==''?f.qspValor:120)+'"></div><div class="form-group"><label>Unidade</label><select id="ob-qspu" style="font-size:13px"><option'+((f.qspUn||'g')==='g'?' selected':'')+'>g</option><option'+((f.qspUn||'g')==='mL'?' selected':'')+'>mL</option></select></div>')+
+    '</div>'+
+    '<div class="form-group" style="margin-bottom:8px"><label>Embalagem</label><input type="text" id="ob-emb" list="ob-emb-dl" placeholder="Código ou nome da embalagem..."><datalist id="ob-emb-dl">'+_geEmbs().slice(0,900).map(function(x){ return '<option value="'+escapeHtml(_geLabel(x))+'">'; }).join('')+'</datalist></div>'+
+    '<details style="margin-bottom:8px"><summary style="font-size:12px;cursor:pointer;color:var(--text-info)">⚗ Ajustar concentração dos ativos <span style="color:var(--text-tertiary)">(qualquer alteração salva uma fórmula nova com "AJ" no nome)</span></summary><div style="padding:8px 4px 0">'+ajRows+'</div></details>'+
+    '<div style="display:flex;gap:10px;align-items:center"><label style="font-size:12px">Qtd de unidades <input type="number" min="1" step="1" id="ob-qtd" value="1" style="width:70px;text-align:right;font-size:12px;margin-left:4px"></label><button class="btn-primary" onclick="_obAddItem()" style="font-size:12.5px;padding:6px 16px">+ Inserir no orçamento</button></div>';
+}
+function _obAddItem(){
+  var f=_obSelFid?(catalogoNovo||[]).find(function(x){ return x.id===_obSelFid; }):null;
+  if(!f){ alert('Selecione uma fórmula do catálogo.'); return; }
+  var caps=(f.forma==='capsula');
+  var ativos=(f.composicao||[]).filter(function(cp){ return cp.papel!=='excipiente'; });
+  // ajustes de concentração → fórmula NOVA "AJ " (nunca altera a original)
+  var mudou=false, novasDoses=[];
+  ativos.forEach(function(cp,i){
+    var v=parseFloat((document.getElementById('ob-aj-'+i)||{}).value);
+    novasDoses.push(isNaN(v)?cp.dose:v);
+    if(!isNaN(v) && parseFloat(cp.dose)!==v) mudou=true;
+  });
+  var usada=f, ajustadaDeNome='';
+  if(mudou){
+    var nf=JSON.parse(JSON.stringify(f));
+    nf.id='cn'+Date.now(); nf.codigo='AJ-'+(f.codigo||''); nf.nome='AJ '+(f.nome||'');
+    nf.ajustadaDe=f.id; nf.origem='orcamento_ajuste'; nf.criadoEm=Date.now(); nf.criadoPor=(currentUser&&currentUser.name)||'';
+    var k=0; (nf.composicao||[]).forEach(function(cp){ if(cp.papel!=='excipiente'){ cp.dose=novasDoses[k]; k++; } });
+    catalogoNovo.push(nf);
+    usada=nf; ajustadaDeNome=f.nome||'';
+  }
+  var opts={}, detalhe='';
+  if(caps){
+    var n=parseInt((document.getElementById('ob-ncaps')||{}).value,10)||60;
+    var tam=(document.getElementById('ob-capstam')||{}).value||f.capsTam||'0';
+    opts={nCaps:n, capsTam:tam, involucroId:f.involucroId||null};
+    detalhe=n+' cápsulas · tam. '+tam;
+  } else {
+    var qv=parseFloat((document.getElementById('ob-qspv')||{}).value)||120;
+    var qu=(document.getElementById('ob-qspu')||{}).value||'g';
+    opts={qspValor:qv, qspUn:qu};
+    detalhe='QSP '+qv+' '+qu;
+  }
+  var emb=_geResolve((document.getElementById('ob-emb')||{}).value);
+  if(emb){ opts.embalagemId=emb.id; detalhe+=' · '+(emb.nome||''); }
+  var calc=_cnCalcular(usada, opts);
+  var qtd=parseInt((document.getElementById('ob-qtd')||{}).value,10)||1;
+  _ob.itens.push({ fid:usada.id, codigo:usada.codigo||'', nome:usada.nome||'', forma:f.forma, detalhe:detalhe,
+    opts:opts, embalagemId:emb?emb.id:null, embalagemNome:emb?(emb.nome||''):'',
+    qtd:qtd, precoUnit:+(calc.precoTotal||0).toFixed(2), custoUnit:+(calc.custoTotal||0).toFixed(2),
+    descPct:0, avisos:(calc.avisos||[]).length, ajustadaDeNome:ajustadaDeNome });
+  _obSelFid=null;
+  _obRender();
+}
+function _obSalvar(gerarPdf, silencioso){
+  if(!_ob) return null;
+  if(!_ob.clienteId){ alert('Selecione um CLIENTE do cadastro.'); return null; }
+  if(!(_ob.itens||[]).length){ alert('Insira ao menos um produto no orçamento.'); return null; }
+  var cli=(clients||[]).find(function(c){ return c.id===_ob.clienteId; });
+  var t=_obTotais();
+  var formaSel=(_ob.pgtosBlocos&&_ob.pgtosBlocos[0]&&_ob.pgtosBlocos[0].forma)||_ob.formaPag||'';
+  var _fmMap={'PIX':'pix','Boleto':'boleto','Cartão de Crédito':'cartao','Cartão de Débito':'cartao','Transferência':'transferencia','Cheque':'outro','Convênio':'outro'};
+  var ehAnest=(_ob.itens||[]).some(function(it){ var f=(catalogoNovo||[]).find(function(x){ return x.id===it.fid; }); return f && String(f.categoria||'').toUpperCase().indexOf('ANEST')>=0; });
+  var novo=!_ob.id;
+  var orc={
+    id:_ob.id||('orc'+Date.now()), num:_ob.num||_obNextNum(), detalhado:true,
+    data:_ob.data||(typeof today==='function'?today():new Date().toISOString().slice(0,10)),
+    status:_ob.status||'aberto', pedidoId:_ob.pedidoId||null, pedidoNum:_ob.pedidoNum||null,
+    clienteId:_ob.clienteId, clienteNome:(cli&&cli.nome)||_ob.clienteNome||'', empresa:(cli&&cli.nome)||'',
+    endereco:cli?{rua:cli.rua||'',numero:cli.numero||'',comp:cli.comp||'',bairro:cli.bairro||'',cidade:cli.cidade||'',uf:cli.uf||'',cep:cli.cep||''}:null,
+    tipo:_ob.tipo||'venda', tipoProduto:ehAnest?'anestesico':'linha',
+    itens:_ob.itens, frete:parseFloat(_ob.frete)||0, descGeral:parseFloat(_ob.descGeral)||0,
+    pgtosBlocos:_ob.pgtosBlocos||[],
+    formaPag:formaSel, forma:_fmMap[formaSel]||'outro',
+    obs:_ob.obs||'', valor:+t.tot.toFixed(2),
+    responsavel:_ob.responsavel||((currentUser&&currentUser.name)||''),
+    criadoEm:_ob.criadoEm||Date.now(), criadoPor:_ob.criadoPor||((currentUser&&currentUser.name)||'')
+  };
+  var i=(orcamentosCrm||[]).findIndex(function(o){ return o.id===orc.id; });
+  if(i>=0) orcamentosCrm[i]=orc; else orcamentosCrm.push(orc);
+  _ob=JSON.parse(JSON.stringify(orc));
+  saveData();
+  try{ renderOrcamentosCrm(); }catch(_e){}
+  if(silencioso) return orc;
+  if(gerarPdf){ _obPdfDoc(orc); }
+  else { document.getElementById('ob-overlay').classList.remove('open'); alert('✓ Orçamento '+orc.num+' salvo ('+(novo?'novo':'atualizado')+').'); }
+  return orc;
+}
+// v188 — FECHAR ORÇAMENTO = VIRAR PEDIDO (fluxo do dono 04/08, substitui Mercos+importação p/ estes):
+// pede o Nº DO PEDIDO NO OPERY (a produção continua lá) e cria o pedido em Gestão a Vista pelo
+// CONSTRUTOR CANÔNICO (_construirOrdemNova: statuses, previsão, crédito, auditoria; Caixa entra
+// PENDENTE — NUNCA se pula o Caixa). Cada item leva o produto operacional (catálogo antigo; sem
+// vínculo, inclusive AJ → produto INCOMPLETO, padrão do agente) E o formulaId do Catálogo Novo
+// (vínculo pleno — preço/quantidade reais p/ a Análise de Lucratividade). D1 nasce PROVISÓRIO
+// (data do fechamento) e é CARIMBADO com a data da APROVAÇÃO NO CAIXA (regra do dono).
+// A rotina de importação segue intacta: o PDF do Opery no Drive cai no dedupe por número.
+function _obFechar(){
+  if(!_ob) return;
+  var cats=(_ob.itens||[]).map(function(it){ var f=(catalogoNovo||[]).find(function(x){ return x.id===it.fid; }); return (f&&String(f.categoria||'').toUpperCase().indexOf('ANEST')>=0)?'a':'l'; });
+  var temA=cats.indexOf('a')>=0, temL=cats.indexOf('l')>=0;
+  if(temA&&temL){ alert('Este orçamento mistura ANESTÉSICO e LINHA.\n\nO pedido no sistema é por linha — separe em dois orçamentos (um para o anestésico, outro para a linha).'); return; }
+  var orc=_obSalvar(false, true); if(!orc) return;
+  var num=String(prompt('FECHAR ORÇAMENTO '+orc.num+' — informe o Nº DO PEDIDO NO OPERY:\n\n(o pedido será lançado em Gestão a Vista e entra PENDENTE no Caixa; o D1 será a data da aprovação no Caixa)')||'').trim();
+  if(!num) return;
+  if((orders||[]).some(function(o){ return String(o.num)===num; })){ alert('Já existe pedido com o número '+num+' no sistema — confira o número no Opery.'); return; }
+  var t=_obTotais();
+  var soma=(_ob.pgtosBlocos||[]).reduce(function(s,b){ var pp=b.parcelas||[]; return s+(pp.length?pp.reduce(function(ss,p){return ss+(parseFloat(p.valor)||0);},0):(parseFloat(b.valor)||0)); },0);
+  if(Math.abs(soma-t.tot)>0.01 && !confirm('⚠ As formas de pagamento somam '+fmtMoney(soma)+' e o total do orçamento é '+fmtMoney(t.tot)+'.\n\nFechar mesmo assim? O financeiro revisa no Caixa.')) return;
+  var cli=(clients||[]).find(function(c){ return c.id===_ob.clienteId; });
+  var linha=temA?'anestesico':'personalizada';
+  var equipeId=cli?((linha==='anestesico'?(cli.carteiraAnest||cli.carteiraLinha):(cli.carteiraLinha||cli.carteiraAnest))||''):'';
+  var agora=Date.now(), itensPed=[];
+  (_ob.itens||[]).forEach(function(it,ix){
+    var f=(catalogoNovo||[]).find(function(x){ return x.id===it.fid; });
+    var pid=(f&&f.catalogoId)||null;
+    if(!pid){ // sem vínculo operacional (inclusive fórmulas AJ) → produto incompleto no catálogo antigo (padrão do agente)
+      var np={ id:'p'+(agora+ix), codigo:(f&&f.codigo)||it.codigo||'', nome:(f&&f.nome)||it.nome||'', categoria:linha==='anestesico'?'anestesico':'linha', incompleto:true, ativo:true, criadoEm:agora, origem:'orcamento' };
+      catalogo.push(np); pid=np.id;
+      if(f && !f.catalogoId) f.catalogoId=pid; // vínculo registrado p/ os próximos orçamentos da mesma fórmula
+    }
+    var pu=+(((parseFloat(it.precoUnit)||0)*(1-(parseFloat(it.descPct)||0)/100))).toFixed(2);
+    itensPed.push({ produtoId:pid, formulaId:it.fid, codigo:it.codigo||'', nome:it.nome||'', qtd:parseFloat(it.qtd)||1,
+      precoUnit:pu, precoTabela:+(parseFloat(it.precoUnit)||0).toFixed(2), embalagem:it.embalagemNome||'',
+      custo:parseFloat(it.custoUnit)||0, desconto:+(((parseFloat(it.precoUnit)||0)-pu)).toFixed(2) });
+  });
+  var obsPed=(_ob.itens||[]).filter(function(it){ return it.embalagemNome; }).map(function(it){ return String(it.nome||'').toUpperCase()+': '+String(it.embalagemNome||'').toUpperCase(); }).join(' | ');
+  obsPed=(obsPed?obsPed+' | ':'')+'VENDEDOR: '+String((currentUser&&currentUser.name)||'').toUpperCase()+(_ob.obs?' | '+_ob.obs:'')+' | ORIGEM: ORÇAMENTO '+(orc.num||'');
+  var valorLiq=+(t.tot-(parseFloat(_ob.frete)||0)).toFixed(2);
+  var d1=(typeof today==='function'?today():new Date().toISOString().slice(0,10));
+  // v188 — formas 100% compatíveis com o Caixa: tipos especiais travam na MODALIDADE (mesma regra do saveOrder)
+  var modF=_obModF();
+  var pgB=JSON.parse(JSON.stringify(_ob.pgtosBlocos||[]));
+  if(modF){ pgB=[{forma:modF,valor:+t.tot.toFixed(2),parcelas:[{num:1,valor:+t.tot.toFixed(2),vencimento:d1,pago:false}]}]; }
+  var o=_construirOrdemNova({
+    num:num, cliente:(cli&&cli.nome)||_ob.clienteNome||'', clienteId:_ob.clienteId, doc:(cli&&cli.doc)||'',
+    linha:linha, d1:d1, valor:valorLiq, valorBruto:+t.sub.toFixed(2), freteCob:parseFloat(_ob.frete)||0, freteReal:0,
+    urgente:false, itens:itensPed,
+    extraFields:{ tipo:_ob.tipo||'venda', equipeId:equipeId, atendenteId:(currentUser&&currentUser.id)||null,
+      formaPag:modF||((pgB[0]&&pgB[0].forma)||''),
+      parcelas:String(pgB.reduce(function(s,b){ return s+((b.parcelas||[]).length||1); },0))+'x',
+      pgtosBlocos:pgB,
+      prescritor:'', crmPrescritor:'', obs:obsPed,
+      origemOrcamentoId:orc.id, d1Provisorio:true }
+  });
+  o.itensExpedicao=itensPed.map(function(it){ return {qtd:it.qtd, nome:it.nome, codigo:it.codigo, produtoId:it.produtoId}; });
+  _ob.status='ganho'; _ob.pedidoId=o.id; _ob.pedidoNum=num;
+  _obSalvar(false, true);
+  try{ if(typeof sincronizarContasReceberDePedidos==='function') sincronizarContasReceberDePedidos(o.id); }catch(_e){}
+  saveData();
+  try{ renderOrcamentosCrm(); }catch(_e){}
+  document.getElementById('ob-overlay').classList.remove('open');
+  alert('✓ Orçamento '+orc.num+' FECHADO — pedido '+num+' lançado em Gestão a Vista.\n\n• Entra PENDENTE no Caixa (como sempre).\n• O D1 será carimbado com a data da APROVAÇÃO no Caixa.\n• Quando o PDF do Opery aparecer no Drive, a rotina reconhece o número e não duplica.');
+}
+function _obPdfById(id){ var o=(orcamentosCrm||[]).find(function(x){ return x.id===id; }); if(o) _obPdfDoc(o); }
+function _obPdfDoc(o){
+  var t={sub:0, descI:0};
+  (o.itens||[]).forEach(function(it){ var b=(parseFloat(it.precoUnit)||0)*(parseFloat(it.qtd)||0); t.sub+=b; t.descI+=b*((parseFloat(it.descPct)||0)/100); });
+  var aposI=t.sub-t.descI, dg=aposI*((parseFloat(o.descGeral)||0)/100), tot=aposI-dg+(parseFloat(o.frete)||0);
+  var end=o.endereco?[o.endereco.rua,o.endereco.numero,o.endereco.comp,o.endereco.bairro,o.endereco.cidade,o.endereco.uf].filter(Boolean).join(', ')+(o.endereco.cep?' · CEP '+o.endereco.cep:''):'';
+  var rows=(o.itens||[]).map(function(it,i){
+    var b=(parseFloat(it.precoUnit)||0)*(parseFloat(it.qtd)||0);
+    // v188 — composição no PDF (pedido do dono): ativos da fórmula, EXCETO os marcados "Invisível";
+    // o nome exibido é o NOME COMERCIAL do cadastro do insumo (vazio = nome normal)
+    var compTxt='';
+    var f=(catalogoNovo||[]).find(function(x){ return x && x.id===it.fid; });
+    if(f) compTxt=(f.composicao||[]).filter(function(cp){ return cp && cp.papel!=='excipiente' && !cp.invisivel && (parseFloat(cp.dose)||0)>0; }).map(function(cp){
+      var ins=(insumos||[]).find(function(x){ return x && x.id===cp.insumoId; });
+      var nm=(ins&&(ins.nomeComercial||'').trim())||cp.nome||'';
+      return nm+' '+cp.dose+(cp.unidade||'%');
+    }).join(' · ');
+    // v188 — embalagem no detalhe também sai com o nome comercial, se houver
+    var det=it.detalhe||'';
+    if(it.embalagemId && it.embalagemNome){
+      var eb=(insumos||[]).find(function(x){ return x && x.id===it.embalagemId; });
+      if(eb && (eb.nomeComercial||'').trim() && det.indexOf(it.embalagemNome)>=0) det=det.replace(it.embalagemNome, eb.nomeComercial.trim());
+    }
+    return '<tr><td>'+(i+1)+'</td><td><b>'+escapeHtml(it.nome||'')+'</b><br><span style="font-size:10px;color:#555">'+escapeHtml(det)+'</span>'+(compTxt?'<br><span style="font-size:9.5px;color:#777">Composição: '+escapeHtml(compTxt)+'</span>':'')+'</td><td style="text-align:right">'+(it.qtd||1)+'</td><td style="text-align:right">'+fmtMoney(it.precoUnit)+'</td><td style="text-align:right">'+((parseFloat(it.descPct)||0)>0?(it.descPct+'%'):'—')+'</td><td style="text-align:right"><b>'+fmtMoney(b*(1-(parseFloat(it.descPct)||0)/100))+'</b></td></tr>';
+  }).join('');
+  var w=window.open('','_blank');
+  if(!w){ alert('O navegador bloqueou a janela do PDF — libere pop-ups para este site.'); return; }
+  w.document.write('<html><head><title>Orçamento '+escapeHtml(o.num||'')+'</title><style>'+
+    'body{font-family:Segoe UI,Arial,sans-serif;max-width:800px;margin:24px auto;color:#1a1a1a;font-size:13px}'+
+    'h1{font-size:20px;margin:0}h2{font-size:14px;margin:16px 0 6px}'+
+    'table{width:100%;border-collapse:collapse;margin:8px 0}th,td{border:1px solid #ccc;padding:6px 8px;font-size:12px}th{background:#f0f0f0;text-align:left}'+
+    '.tot{text-align:right;font-size:13px;margin-top:8px}.tot b{font-size:16px}'+
+    '@media print{body{margin:10mm}}</style></head><body>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #333;padding-bottom:10px">'+
+    '<div><h1>LECARE — Farmácia de Manipulação</h1><div style="font-size:11px;color:#555">Orçamento de manipulados</div></div>'+
+    '<div style="text-align:right"><div style="font-size:16px;font-weight:700">'+escapeHtml(o.num||'')+'</div><div style="font-size:11px">'+fmtDate(o.data)+'</div></div></div>'+
+    '<h2>Cliente</h2><div><b>'+escapeHtml(o.clienteNome||'')+'</b>'+(end?'<br>'+escapeHtml(end):'')+'</div>'+
+    '<h2>Itens</h2><table><thead><tr><th>#</th><th>Produto</th><th style="text-align:right">Qtd</th><th style="text-align:right">Preço unit.</th><th style="text-align:right">Desc.</th><th style="text-align:right">Total</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<div class="tot">Subtotal: '+fmtMoney(t.sub)+(t.descI>0?'<br>Desconto por item: −'+fmtMoney(t.descI):'')+((parseFloat(o.descGeral)||0)>0?'<br>Desconto geral ('+o.descGeral+'%): −'+fmtMoney(dg):'')+((parseFloat(o.frete)||0)>0?'<br>Frete: +'+fmtMoney(o.frete):'')+'<br><b>TOTAL: '+fmtMoney(tot)+'</b></div>'+
+    '<h2>Condições</h2><div>Forma de pagamento: <b>'+escapeHtml(o.formaPag||'—')+'</b>'+(o.obs?'<br>Observações: '+escapeHtml(o.obs):'')+'</div>'+
+    '<div style="margin-top:22px;font-size:11px;color:#555">Responsável: '+escapeHtml(o.responsavel||'')+' · Documento gerado pelo sistema Lecare Gestão.</div>'+
+    '<script>window.print();<\/script></body></html>');
+  w.document.close();
+}
 function renderOrcamentosCrm(){
   const tbody = document.getElementById('orc-crm-tbody');
   if(!tbody) return;
@@ -28143,7 +28808,7 @@ function renderOrcamentosCrm(){
     const tp = o.tipoProduto==='linha'?'Linha':'Anestésico';
     const statusOpts = Object.entries(statusCfg).map(([k,v])=>`<option value="${k}" ${o.status===k?'selected':''}>${v.label}</option>`).join('');
     return `<tr style="border-bottom:.5px solid var(--border)">
-      <td style="padding:8px 10px;font-weight:500">${escapeHtml(o.clienteNome||o.empresa)}</td>
+      <td style="padding:8px 10px;font-weight:500">${o.num?'<span style="font-family:monospace;font-size:10.5px;color:var(--text-secondary)">'+escapeHtml(o.num)+'</span> ':''}${escapeHtml(o.clienteNome||o.empresa)}</td>
       <td style="padding:8px 10px"><span style="font-size:10px;padding:1px 7px;border-radius:20px;background:${o.tipoProduto==='linha'?'var(--st-inf-bg)':'var(--st-urg-bg)'};color:${o.tipoProduto==='linha'?'var(--st-inf-tx)':'var(--st-urg-tx)'}">${tp}</span></td>
       <td style="padding:8px 10px;font-weight:500;color:var(--st-ok-tx)">${fmtMoney(o.valor)}</td>
       <td style="padding:8px 10px;color:var(--text-secondary)">${o.frete?fmtMoney(o.frete):'—'}</td>
@@ -28157,7 +28822,7 @@ function renderOrcamentosCrm(){
       </td>
       <td style="padding:8px 10px;font-size:11px">${escapeHtml(o.responsavel||'—')}</td>
       <td style="padding:8px 10px;white-space:nowrap">
-        <button onclick="abrirOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button>
+        ${o.detalhado?`<button onclick="openOrcBuilder('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> <button onclick="_obPdfById('${o.id}')" style="font-size:11px;padding:3px 8px" title="Gerar o PDF do orçamento">📄 PDF</button>`:`<button onclick="abrirOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button>`}
         <button onclick="deleteOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px;color:var(--st-bad-tx)">×</button>
       </td>
     </tr>`;
@@ -33796,6 +34461,7 @@ function openClienteFichaPorId(id){
     <div class="panel-header" style="flex-wrap:wrap;gap:8px">
       <h2>Orçamentos CRM</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn-primary" onclick="openOrcBuilder()" style="font-size:12px;padding:6px 14px" title="Monta o orçamento pelo CATÁLOGO (fórmulas com QSP/embalagem, cálculo automático de preço, descontos, frete) e gera o PDF para enviar ao cliente">+ Novo orçamento</button><!-- v188 -->
         <input type="text" id="orc-crm-search" placeholder="Buscar empresa, produto..." oninput="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px;width:220px">
         <select id="orc-crm-filter-status" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
           <option value="">Todos os status</option>

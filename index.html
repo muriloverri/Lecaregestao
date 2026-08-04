@@ -2736,6 +2736,47 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       <div id="pg-inconsistencias" style="display:none"></div>
       <div id="pg-importacoes" style="display:none"></div>
 
+<!-- PAGE: ORÇAMENTOS CRM (v189 — movida p/ DENTRO do #content: estava no fim do body, fora da área de conteúdo, e a tela abria em branco) -->
+<div id="pg-orcamentos-crm" style="display:none">
+  <div class="summary-cards" id="orc-crm-cards" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px"></div>
+  <div class="panel">
+    <div class="panel-header" style="flex-wrap:wrap;gap:8px">
+      <h2>Orçamentos CRM</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn-primary" onclick="openOrcBuilder()" style="font-size:12px;padding:6px 14px" title="Monta o orçamento pelo CATÁLOGO (fórmulas com QSP/embalagem, cálculo automático de preço, descontos, frete) e gera o PDF para enviar ao cliente">+ Novo orçamento</button><!-- v188 -->
+        <input type="text" id="orc-crm-search" placeholder="Buscar empresa, produto..." oninput="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px;width:220px">
+        <select id="orc-crm-filter-status" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
+          <option value="">Todos os status</option>
+          <option value="aberto">Aberto</option>
+          <option value="ganho">Ganho</option>
+          <option value="perdido">Perdido</option>
+          <option value="expirado">Expirado</option>
+        </select>
+        <select id="orc-crm-filter-tipo" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
+          <option value="">Todos os produtos</option>
+          <option value="linha">Linha Personalizada</option>
+          <option value="anestesico">Anestésico</option>
+        </select>
+        <select id="orc-crm-filter-mes" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
+          <option value="">Todos os meses</option>
+        </select>
+        <span id="orc-crm-count" style="font-size:11px;color:var(--text-tertiary)"></span>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr>
+            <th>Empresa</th><th>Produto</th><th>Valor</th><th>Frete</th>
+            <th>Forma Pgto</th><th>Prev. Pgto</th><th>Data</th><th>Status</th><th>Atendente</th><th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="orc-crm-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
       <div id="pg-pendencias" style="display:none">
         <!-- Tabs -->
         <div class="panel" style="margin-bottom:0;border-radius:var(--r-lg) var(--r-lg) 0 0;border-bottom:none">
@@ -4709,7 +4750,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v188';
+var APP_VERSION = 'v190';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5567,7 +5608,10 @@ function getCreditoSaldo(clienteId){
 function getCreditoUltimaMovimentacao(clienteId){
   const movs = creditosCliente[clienteId]||[];
   if(!movs.length)return null;
-  return movs[movs.length-1].data;
+  // v189 — a "última movimentação" é a MAIOR DATA, não o último elemento do array: o rebuild segue a
+  // ordem de INSERÇÃO dos pedidos, e pedido histórico importado depois entra no fim com d1 antigo
+  // (caso Vanessa Amorim: mãe de 21/11/2025 importada após a mov. de 30/06/2026 → "6 meses parado" falso)
+  return movs.reduce((mx,m)=>{ const d=String(m.data||''); return (!mx||d>mx)?d:mx; }, null);
 }
 function registrarMovimentacaoCredito(order){
   if(!order.clienteId)return;
@@ -12103,31 +12147,55 @@ function complementarLista(listaId){
   if(!pend.length){ alert('Nenhuma solicitação de '+(l.tipo==='ativo'?'ativos':'embalagens')+' pendente para complementar.'); return; }
   var ov=document.getElementById('cpl-sel-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='cpl-sel-overlay'; ov.className='overlay'; ov.style.zIndex='4300'; document.body.appendChild(ov); }
-  var rows=pend.map(function(s){
-    var its=(s.itens||[]).map(function(it){ return escapeHtml(it.nome||'')+' ('+(parseFloat(it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+')'; }).join(' · ');
-    return '<label style="display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border-bottom:.5px solid var(--border);cursor:pointer">'+
-      '<input type="checkbox" class="cpl-sel-chk" value="'+escapeHtml(String(s.id))+'" checked style="margin-top:3px;flex-shrink:0">'+
-      '<div style="min-width:0"><div style="font-weight:600;font-size:13px">Pedido '+escapeHtml(s.orderNum||'—')+'</div>'+
-      '<div style="font-size:11.5px;color:var(--text-secondary)">'+(its||'sem itens')+'</div></div></label>';
-  }).join('');
-  ov.innerHTML='<div class="modal" style="width:600px;max-height:86vh;display:flex;flex-direction:column">'+
+  // v190 — seleção POR ITEM em DOIS GRUPOS (pedido do dono 04/08): 📨 solicitados aguardando lista
+  // e 🚫 fora de estoque (devolvidos). O comprador escolhe item a item o que entra nesta lista.
+  var rowIt=function(s,it,checked){
+    return '<label style="display:flex;gap:10px;align-items:center;padding:7px 11px;border-bottom:.5px solid var(--border);cursor:pointer">'+
+      '<input type="checkbox" class="cpl-sel-it" value="'+escapeHtml(String(s.id))+'::'+escapeHtml(String(it.itemId))+'"'+(checked?' checked':'')+' style="flex-shrink:0">'+
+      '<div style="min-width:0;flex:1"><span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo||'')+'</span> <span style="font-size:12.5px">'+escapeHtml(it.nome||'')+'</span></div>'+
+      '<div style="font-size:12px;white-space:nowrap">'+(parseFloat(it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</div>'+
+      '<div style="font-size:11px;color:var(--text-secondary);white-space:nowrap;min-width:90px;text-align:right">Pedido '+escapeHtml(s.orderNum||'—')+'</div></label>';
+  };
+  var rSolic=[], rFse=[];
+  pend.forEach(function(s){ (s.itens||[]).forEach(function(it){ if(!it) return; if(it.semEstoque) rFse.push(rowIt(s,it,false)); else rSolic.push(rowIt(s,it,true)); }); });
+  var grupo=function(titulo,cor,rows,grpCls,vazio){
+    return '<div style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:4px"><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:'+cor+'">'+titulo+' ('+rows.length+')</div>'+
+      (rows.length?'<button onclick="var cs=document.querySelectorAll(\'.'+grpCls+' .cpl-sel-it\');var all=Array.prototype.every.call(cs,function(c){return c.checked;});Array.prototype.forEach.call(cs,function(c){c.checked=!all;});" style="font-size:10px;padding:2px 8px">Marcar / desmarcar</button>':'')+'</div>'+
+      '<div class="'+grpCls+'" style="border:.5px solid var(--border);border-radius:8px;max-height:32vh;overflow-y:auto">'+(rows.length?rows.join(''):'<div style="font-size:12px;color:var(--text-tertiary);padding:10px;text-align:center">'+vazio+'</div>')+'</div></div>';
+  };
+  ov.innerHTML='<div class="modal" style="width:680px;max-width:95vw;max-height:88vh;display:flex;flex-direction:column">'+
     '<h2 style="margin-bottom:2px">＋ Complementar lista '+_lcCodigo(l)+'</h2>'+
-    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Selecione quais solicitações pendentes entram nesta lista. Itens iguais somam a quantidade; itens novos entram sem cotação; item já COMPRADO/COTADO gera aviso. As não selecionadas continuam pendentes para a próxima lista.</p>'+
-    '<div style="margin-bottom:6px"><button onclick="var cs=document.querySelectorAll(\'.cpl-sel-chk\');var all=Array.prototype.every.call(cs,function(c){return c.checked;});Array.prototype.forEach.call(cs,function(c){c.checked=!all;});" style="font-size:11px;padding:3px 10px">Marcar / desmarcar todas</button></div>'+
-    '<div style="overflow-y:auto;flex:1;min-height:120px;border:.5px solid var(--border);border-radius:8px">'+rows+'</div>'+
+    '<p style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Selecione os ITENS que entram nesta lista. Item igual soma a quantidade; item novo entra sem cotação; item já COMPRADO/COTADO gera aviso. Os não selecionados continuam pendentes para a próxima lista (a solicitação é dividida quando entra só uma parte).</p>'+
+    '<div style="overflow-y:auto;flex:1;min-height:120px">'+
+    grupo('📨 Solicitados aguardando lista','var(--text-secondary)',rSolic,'cpl-grp-sol','Nenhum item solicitado aguardando.')+
+    grupo('🚫 Fora de estoque — entram só se marcados','var(--st-bad-tx)',rFse,'cpl-grp-fse','Nenhum item fora de estoque aguardando.')+
+    '</div>'+
     '<div class="modal-footer"><button onclick="document.getElementById(\'cpl-sel-overlay\').classList.remove(\'open\')">Cancelar</button>'+
-    '<button class="btn-primary" onclick="_cplAplicarSelecao(\''+listaId+'\')">Complementar com as selecionadas</button></div></div>';
+    '<button class="btn-primary" onclick="_cplAplicarSelecao(\''+listaId+'\')">Complementar com os selecionados</button></div></div>';
   ov.classList.add('open');
 }
 function _cplAplicarSelecao(listaId){
   var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return;
   if(!_lcPodeComplementar(l)){ alert('Esta lista já foi FINALIZADA — as pendências entram na próxima lista gerada.'); return; }
-  var sel={}; Array.prototype.forEach.call(document.querySelectorAll('.cpl-sel-chk'), function(c){ if(c.checked) sel[String(c.value)]=true; });
-  var pend=_solicPendentes(l.tipo).filter(function(s){ return sel[String(s.id)]; });
-  if(!pend.length){ alert('Nenhuma solicitação selecionada.'); return; }
+  // v190 — seleção POR ITEM (pedido do dono 04/08): solicitação com seleção PARCIAL é DIVIDIDA —
+  // os itens escolhidos entram na lista e os demais viram solicitação própria que segue pendente
+  // (mesmo padrão de divisão que o Gerar lista usa para os fora-de-estoque desde a v175).
+  var sel={}; Array.prototype.forEach.call(document.querySelectorAll('.cpl-sel-it'), function(c){ if(c.checked) sel[String(c.value)]=true; });
+  var now=Date.now(), _seq=0, pend=[];
+  _solicPendentes(l.tipo).forEach(function(s){
+    var entra=(s.itens||[]).filter(function(it){ return it && sel[String(s.id)+'::'+String(it.itemId)]; });
+    if(!entra.length) return; // nada desta solicitação — segue pendente intacta
+    var fica=(s.itens||[]).filter(function(it){ return it && !sel[String(s.id)+'::'+String(it.itemId)]; });
+    if(fica.length){
+      solicitacoesCompra.push({ id:'solc'+now+'cp'+(_seq++), orderId:s.orderId, orderNum:s.orderNum, cliente:s.cliente, tipo:s.tipo, itens:fica, status:'solicitado', listaId:null, criadoPor:s.criadoPor||'', criadoEm:s.criadoEm||now, atualizadoEm:now });
+      s.itens=entra; s.atualizadoEm=now;
+    }
+    pend.push(s);
+  });
+  if(!pend.length){ alert('Nenhum item selecionado.'); return; }
   var ovS=document.getElementById('cpl-sel-overlay'); if(ovS) ovS.classList.remove('open');
-  _fseLimparMarcas(pend); // v175 — entrou em lista → sai do "Fora de estoque" (só volta se marcado de novo)
-  var now=Date.now(), novos=0, somados=0, avisos=[];
+  _fseLimparMarcas(pend); // v175 — entrou em lista → sai do "Fora de estoque"; v190: após a divisão, aqui só estão os itens que ENTRAM
+  var novos=0, somados=0, avisos=[];
   pend.forEach(function(s){
     (s.itens||[]).forEach(function(it){
       var q=parseFloat(it.qtd)||0; if(q<=0) return;
@@ -12259,7 +12327,7 @@ function _lcItensTableHtml(l){
         // por baixo (complementar em outra tela + re-sync) e a posição apontaria para o item ERRADO.
         '<td style="'+td+';text-align:right;white-space:nowrap">'+_histBtn+'<button onclick="openCotacaoModal(\''+l.id+'\',\''+_ref+'\')" style="font-size:10.5px;padding:3px 7px">Cotar</button> '+
           (_c.comprado
-            ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(_c.recebido?' · recebido':'')+'</span>'+(it.compraParcial?' <span style="font-size:10px;color:var(--st-bad-tx);font-weight:600" title="O solicitado subiu ACIMA do comprado depois da compra (complemento) — para o status conta como NÃO comprado. Estorne e compre o total.">⚠ parcial</span>':'')+(_c.recebido?'':' <button onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" title="Editar a compra / preencher a NF" style="font-size:10.5px;padding:3px 7px">✏</button>')
+            ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ Comprado'+(_c.recebido?' · recebido':'')+'</span>'+(it.compraParcial?' <span style="font-size:10px;color:var(--st-bad-tx);font-weight:600" title="O solicitado subiu ACIMA do comprado depois da compra (complemento) — para o status conta como NÃO comprado. Estorne e compre o total, OU resolva com ↪ Saldo p/ próx. lista.">⚠ parcial</span> <button onclick="_lcParcialSaldo(\''+l.id+'\',\''+_ref+'\')" title="Aceita a compra como FECHADA com a quantidade comprada, rateia o comprado pelos pedidos de origem por D1 (mais antigo primeiro) e devolve o que faltou como solicitação PENDENTE para a próxima lista" style="font-size:10px;padding:2px 6px">↪ Saldo p/ próx. lista</button>':'')+(_c.recebido?'':' <button onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" title="Editar a compra / preencher a NF" style="font-size:10.5px;padding:3px 7px">✏</button>')
             : '<button class="btn-primary" onclick="openComprarModal(\''+l.id+'\',\''+_ref+'\')" style="font-size:10.5px;padding:3px 7px">Comprar</button> <button onclick="naoComprarItem(\''+l.id+'\',\''+_ref+'\')" title="Não comprar este item — as quantidades voltam para a próxima lista" style="font-size:10.5px;padding:3px 7px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">✕ Não comprar</button>')+
         '</td></tr>';
   }).join('');
@@ -12300,15 +12368,17 @@ function closeCotacaoModal(){ document.getElementById('cotacao-modal').classList
 function openHistItemModal(listaId, ref){
   var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return;
   var it=_lcItemByRef(l, ref); if(!it) return;
-  var hist=_histComprasItem(it.itemId, it.codigo);
+  // v190 — o histórico mostra SÓ as COMPRAS efetivadas (pedido do dono 04/08); cotações ficam fora
+  // (continuam visíveis no modal de cotações do item). Estatísticas só quando há compra de verdade.
+  var hist=_histComprasItem(it.itemId, it.codigo).filter(function(hh){ return hh.comprado; });
   var cst=hist.length?_custosItem(it.itemId, it.codigo):null;
   var ov=document.getElementById('hist-item-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='hist-item-overlay'; ov.className='overlay'; document.body.appendChild(ov); }
   ov.innerHTML='<div class="modal" style="width:520px;max-height:80vh;overflow-y:auto">'+
     '<h2 style="font-size:16px">📈 Histórico de compras</h2>'+
     '<div style="font-size:13px;font-weight:600;margin-bottom:2px">'+escapeHtml((it.codigo?it.codigo+' — ':'')+(it.nome||''))+'</div>'+
-    (cst?('<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Preço médio <b>'+fmtMoney(cst.medio)+'</b> · última <b>'+fmtMoney(cst.ultimo)+'</b> · <span style="color:var(--st-ok-tx)">menor <b>'+fmtMoney(cst.minimo)+'</b></span></div>'):'')+
-    (hist.length?hist.slice(0,30).map(function(hh){ return '<div style="font-size:12px;padding:5px 0;border-top:.5px dashed var(--border);color:var(--text-secondary)">'+(hh.em?fmtDate(_dtLocalStr(hh.em)):'—')+' · <b>'+escapeHtml(hh.fornecedor)+'</b> · '+fmtMoney(hh.preco)+(hh.qtd?' · '+hh.qtd.toLocaleString('pt-BR')+' un':'')+(hh.comprado?' · <span style="color:var(--st-ok-tx)">✓ comprada</span>':' · cotada')+'</div>'; }).join(''):'<div style="font-size:12px;color:var(--text-tertiary)">Sem histórico.</div>')+
+    (cst&&!cst.deCotacao?('<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Preço médio <b>'+fmtMoney(cst.medio)+'</b> · última <b>'+fmtMoney(cst.ultimo)+'</b> · <span style="color:var(--st-ok-tx)">menor <b>'+fmtMoney(cst.minimo)+'</b></span></div>'):'')+
+    (hist.length?hist.slice(0,30).map(function(hh){ return '<div style="font-size:12px;padding:5px 0;border-top:.5px dashed var(--border);color:var(--text-secondary)">'+(hh.em?fmtDate(_dtLocalStr(hh.em)):'—')+' · <b>'+escapeHtml(hh.fornecedor)+'</b> · '+fmtMoney(hh.preco)+(hh.qtd?' · '+hh.qtd.toLocaleString('pt-BR')+' un':'')+' · <span style="color:var(--st-ok-tx)">✓ comprada</span></div>'; }).join(''):'<div style="font-size:12px;color:var(--text-tertiary)">Nenhuma compra efetivada deste item no sistema.</div>')+
     (hist.length>30?'<div style="font-size:10px;color:var(--text-tertiary);padding-top:4px">+ '+(hist.length-30)+' mais antiga(s)</div>':'')+
     '<div class="modal-footer"><button onclick="document.getElementById(\'hist-item-overlay\').classList.remove(\'open\')">Fechar</button></div>'+
   '</div>';
@@ -12411,6 +12481,76 @@ function _atualizaStatusLista(l){
 // então ajustado/tinha_estoque satisfazem comprado+recebido sem código extra; sem_estoque mantém o lado
 // aberto pela solicitação devolvida (status 'solicitado' sem listaId).
 var _ncCtx=null;
+// v190 — SALDO DA COMPRA PARCIAL P/ PRÓXIMA LISTA (pedido do dono 04/08, caso gotejador 101439):
+// compra parcial JÁ RECEBIDA não tem estorno — esta resolução aceita a compra como FECHADA com a
+// quantidade real comprada, RATEIA o comprado pelos pedidos de origem por D1 (mais antigo primeiro,
+// regra do dono) e devolve o que faltou como solicitação PENDENTE nova dos pedidos descobertos
+// (entra na próxima lista gerada ou num Complementar). Nenhuma quantidade se perde:
+// solicitado original = comprado (rateado) + saldo devolvido; rastro em it.parcialSaldo + auditoria dos pedidos.
+function _lcParcialSaldo(listaId, ref){
+  var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return;
+  var it=_lcItemByRef(l, ref); if(!it) return;
+  if(!(it.compraParcial && it.compra && it.compra.comprado)){ alert('Este item não está em compra parcial.'); return; }
+  var qc=parseFloat(it.compra.qtdComprada)||0;
+  var qt=parseFloat(it.qtdTotal)||0;
+  if(!(qc>0)){ alert('A compra deste item não tem a QUANTIDADE COMPRADA registrada — edite a compra (✏) e preencha antes de resolver o saldo.'); return; }
+  var falta=+(qt-qc).toFixed(4);
+  if(!(falta>0)){ delete it.compraParcial; renderListaCompra(); saveData(); return; } // a compra já cobre o solicitado — só limpa a marca
+  // rateio por D1 (mais antigo primeiro); pseudo-pedidos (avulsa/anestésico) e pedidos sem D1 vão por último
+  var d1De=function(og){ if(_solEhPseudo(og.orderId)) return '9999-12-30'; var o=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); }); return (o&&o.d1)||'9999-12-31'; };
+  var ordem=(it.origem||[]).slice().sort(function(a,b){ return d1De(a).localeCompare(d1De(b)); });
+  var resta=qc, cobertos=[], saldo=[];
+  ordem.forEach(function(og){
+    var q=parseFloat(og.qtd)||0; if(q<=0) return;
+    var usa=Math.min(q,resta); resta=+(resta-usa).toFixed(4);
+    if(usa>0) cobertos.push({orderId:og.orderId, orderNum:og.orderNum, qtd:usa});
+    var fS=+(q-usa).toFixed(4);
+    if(fS>0) saldo.push({orderId:og.orderId, orderNum:og.orderNum, qtd:fS});
+  });
+  var un=it.unidade||'';
+  var resumo='↪ SALDO PARA A PRÓXIMA LISTA — '+(it.codigo?it.codigo+' — ':'')+(it.nome||'')+'\n\n'+
+    'Solicitado: '+qt.toLocaleString('pt-BR')+' '+un+' · Comprado: '+qc.toLocaleString('pt-BR')+' '+un+'\n'+
+    'A compra fica FECHADA com '+qc.toLocaleString('pt-BR')+' e o item deixa de ser parcial.\n\n'+
+    'Rateio (D1 mais antigo primeiro):\n'+
+    cobertos.map(function(c){ return '  ✓ Pedido '+(c.orderNum||'—')+': coberto com '+c.qtd.toLocaleString('pt-BR'); }).join('\n')+'\n'+
+    saldo.map(function(s){ return '  ↪ Pedido '+(s.orderNum||'—')+': '+s.qtd.toLocaleString('pt-BR')+' voltam como solicitação pendente (próxima lista)'; }).join('\n')+
+    '\n\nConfirmar?';
+  if(!confirm(resumo)) return;
+  var now=Date.now();
+  it.qtdTotal=qc;
+  it.origem=cobertos;
+  delete it.compraParcial;
+  it.parcialSaldo={em:now, por:(currentUser&&currentUser.name)||'', devolvido:saldo.slice()}; // rastro da resolução
+  // devolve o saldo como solicitação pendente (agrupa na aberta do pedido, ou cria — mesmo padrão do sem_estoque)
+  saldo.forEach(function(og,oi){
+    var alvo=(solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(og.orderId) && s.tipo===l.tipo && s.status==='solicitado'; });
+    if(!alvo){
+      var ehPseudoOg=_solEhPseudo(og.orderId);
+      var o=ehPseudoOg?null:(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+      var _piOg=ehPseudoOg?_solPseudoInfo(og.orderId):null;
+      alvo={ id:'solc'+now+'ps'+oi, orderId:og.orderId, orderNum:ehPseudoOg?_piOg.num:((o&&o.num)||og.orderNum||''), cliente:ehPseudoOg?_piOg.cliente:((o&&o.cliente)||''), tipo:l.tipo, itens:[], status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
+      solicitacoesCompra.push(alvo);
+    }
+    var ex=(alvo.itens||[]).find(function(x){ return x.itemId===it.itemId; });
+    if(ex) ex.qtd=(parseFloat(ex.qtd)||0)+og.qtd;
+    else alvo.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:og.qtd, unidade:it.unidade||'UN' });
+    alvo.atualizadoEm=now;
+  });
+  // reavalia os pedidos: os cobertos podem fechar o lado; os do saldo seguem pendentes pela solicitação nova
+  var vistos={};
+  cobertos.concat(saldo).forEach(function(og){
+    if(vistos[String(og.orderId)]) return; vistos[String(og.orderId)]=true;
+    var o=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+    if(o){
+      var sOg=saldo.find(function(s){ return String(s.orderId)===String(og.orderId); });
+      try{ addAudit(o,'compras','compra parcial','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': compra fechada com '+qc.toLocaleString('pt-BR')+' '+un+(sOg?('; saldo de '+sOg.qtd.toLocaleString('pt-BR')+' devolvido p/ próxima lista'):'; pedido coberto pelo rateio (D1)')); }catch(_e){}
+    }
+    try{ _reavaliarComprasPedido(og.orderId); }catch(_e){}
+  });
+  _atualizaStatusLista(l);
+  renderListaCompra(); saveData();
+  alert('✓ Compra parcial resolvida: item fechado com '+qc.toLocaleString('pt-BR')+' '+un+'; saldo devolvido para '+saldo.length+' pedido(s) como solicitação pendente.');
+}
 function naoComprarItem(listaId, idx){
   var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return;
   var it=_lcItemByRef(l, idx); if(!it) return; // v159 — por identidade (idx = itemId ou '#pos')
@@ -21395,7 +21535,7 @@ async function renderImportacoes(){
   el.innerHTML='<div class="panel"><div style="font-weight:600">Importações de Pedidos (agente)</div><div style="color:var(--text-tertiary);font-size:13px">Carregando…</div></div>';
   let rows=[];
   try{
-    const { data, error } = await _sb.from('import_relatorios').select('*').order('criado_em',{ascending:false}).limit(60);
+    const { data, error } = await _sb.from('import_relatorios').select('*').order('criado_em',{ascending:false}).limit(400); // v190 — sub-abas por mês precisam do histórico (era 60)
     if(error) throw error;
     rows=data||[];
   }catch(e){
@@ -21408,6 +21548,17 @@ async function renderImportacoes(){
   html+='<div><div style="font-weight:600;font-size:15px">Importações de Pedidos (agente)</div><div style="color:var(--text-tertiary);font-size:13px">Relatório de cada rodada do agente que lê os PDFs do Drive e lança os pedidos no sistema.</div></div>';
   html+='<button class="btn-primary" style="padding:4px 10px;font-size:13px" onclick="renderImportacoes()">↻ Atualizar</button></div>';
   if(!rows.length){ html+='<div class="panel"><div style="color:var(--text-tertiary)">Nenhuma importação registrada ainda.</div></div>'; el.innerHTML=html; return; }
+  // v190 — SUB-ABAS POR MÊS (pedido do dono 04/08): rodadas agrupadas pelo mês da rodada (criado_em)
+  const _mesDe=r=>{ const d=new Date(r.criado_em); return isNaN(d.getTime())?'':(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); };
+  const meses=[...new Set(rows.map(_mesDe).filter(Boolean))].sort().reverse();
+  if(!window._impMes || meses.indexOf(window._impMes)<0) window._impMes=meses[0]||'';
+  if(meses.length>1){
+    html+='<div class="panel" style="margin-bottom:12px;padding:0"><div class="des-tabs">'+meses.map(m=>{
+      const n=rows.filter(r=>_mesDe(r)===m).length;
+      return '<div class="des-tab'+(m===window._impMes?' active':'')+'" onclick="window._impMes=\''+m+'\';renderImportacoes()">'+monthLabel(m)+' <span style="font-size:10px;color:var(--text-tertiary)">('+n+')</span></div>';
+    }).join('')+'</div></div>';
+  }
+  rows=rows.filter(r=>_mesDe(r)===window._impMes);
   const lista=(titulo,arr,render,cor)=>{ if(!arr||!arr.length) return ''; return '<div style="margin-top:8px"><div style="font-weight:600;font-size:13px;color:'+(cor||'var(--text-secondary)')+'">'+titulo+' ('+arr.length+')</div><div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">'+arr.map(render).join('')+'</div></div>'; };
   // v181 — BLINDAGEM (incidente 03/08: a rodada de 31/07 gravou jaExistiam como TEXTO em vez de lista;
   // o .map estourava e a tela congelava em "Carregando…"). Agora: campo-texto com cara de lista é
@@ -34450,51 +34601,6 @@ function openClienteFichaPorId(id){
             </div>
           </div>
         </div>
-<!-- MODAL CONFIGURAR PAGAMENTO (Orçamento) -->
-
-<!-- MODAL INSUMO -->
-
-<!-- PAGE: ORÇAMENTOS CRM -->
-<div id="pg-orcamentos-crm" style="display:none">
-  <div class="summary-cards" id="orc-crm-cards" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px"></div>
-  <div class="panel">
-    <div class="panel-header" style="flex-wrap:wrap;gap:8px">
-      <h2>Orçamentos CRM</h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button class="btn-primary" onclick="openOrcBuilder()" style="font-size:12px;padding:6px 14px" title="Monta o orçamento pelo CATÁLOGO (fórmulas com QSP/embalagem, cálculo automático de preço, descontos, frete) e gera o PDF para enviar ao cliente">+ Novo orçamento</button><!-- v188 -->
-        <input type="text" id="orc-crm-search" placeholder="Buscar empresa, produto..." oninput="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px;width:220px">
-        <select id="orc-crm-filter-status" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
-          <option value="">Todos os status</option>
-          <option value="aberto">Aberto</option>
-          <option value="ganho">Ganho</option>
-          <option value="perdido">Perdido</option>
-          <option value="expirado">Expirado</option>
-        </select>
-        <select id="orc-crm-filter-tipo" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
-          <option value="">Todos os produtos</option>
-          <option value="linha">Linha Personalizada</option>
-          <option value="anestesico">Anestésico</option>
-        </select>
-        <select id="orc-crm-filter-mes" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
-          <option value="">Todos os meses</option>
-        </select>
-        <span id="orc-crm-count" style="font-size:11px;color:var(--text-tertiary)"></span>
-      </div>
-    </div>
-    <div class="table-scroll">
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead>
-          <tr>
-            <th>Empresa</th><th>Produto</th><th>Valor</th><th>Frete</th>
-            <th>Forma Pgto</th><th>Prev. Pgto</th><th>Data</th><th>Status</th><th>Atendente</th><th>Ações</th>
-          </tr>
-        </thead>
-        <tbody id="orc-crm-tbody"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
 <!-- MODAL: ADICIONAR CONTATO (Lead CRM) -->
 <div class="overlay" id="contato-lead-overlay">
   <div class="modal" style="width:440px">

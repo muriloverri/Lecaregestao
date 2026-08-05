@@ -4740,7 +4740,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v191';
+var APP_VERSION = 'v192';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5431,8 +5431,11 @@ const CRM_FUNIS_SDR = {
   2: {
     nome: 'Repescagem SDR',
     cor: '#E17055',
-    etapas: ['Lead Devolvido','Requalificando','Nova Abordagem','Pronto para Redistribuir','Arquivado'],
-    etapasKanban: ['Lead Devolvido','Requalificando','Nova Abordagem','Pronto para Redistribuir'],
+    // v192 — etapa DESQUALIFICADO criada a pedido do dono (05/08): destino da desqualificação de card
+    // do SDR (antes ia para 'Lead Desqualificado' do funil de VENDAS, que não existe aqui). Fica
+    // VISÍVEL no kanban da Repescagem SDR para a equipe acompanhar/reativar quando fizer sentido.
+    etapas: ['Lead Devolvido','Requalificando','Nova Abordagem','Pronto para Redistribuir','Desqualificado','Arquivado'],
+    etapasKanban: ['Lead Devolvido','Requalificando','Nova Abordagem','Pronto para Redistribuir','Desqualificado'],
     tipo: 'sdr_repescagem'
   },
   3: {
@@ -7455,6 +7458,16 @@ function closeClientModal(){document.getElementById('client-overlay').classList.
 function _sincronizarCardComCarteira(clienteId){ _sincronizarClienteCardConversa(clienteId); }
 
 // v105: formata telefone no padrão BR — celular (XX) XXXXX-XXXX, fixo (XX) XXXX-XXXX (progressivo ao digitar)
+// v192 — EXIBIÇÃO padronizada de telefone (reporte do dono 05/08: um lugar mostrava com 55 e outro sem).
+// Não altera nada gravado: só formata para ler — (DD) XXXXX-XXXX, tirando o 55 do começo quando houver.
+function _telExib(v){
+  let d=String(v||'').replace(/\D/g,'');
+  if(!d) return '';
+  if(d.startsWith('55') && (d.length===12||d.length===13)) d=d.slice(2);
+  if(d.length===11) return '('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7);
+  if(d.length===10) return '('+d.slice(0,2)+') '+d.slice(2,6)+'-'+d.slice(6);
+  return String(v||'').trim(); // formato fora do padrão BR (ex.: internacional) — mostra como está
+}
 function _fmtTelBR(v){
   let d=String(v||'').replace(/\D/g,'').slice(0,11);
   if(!d) return '';
@@ -7574,6 +7587,11 @@ function saveClient(){
   if(editingClientId){const _cEdit = clients.find(x=>x.id===editingClientId);
     if(_cEdit){
       Object.assign(_cEdit, data);
+      // v192 — regra do dono 05/08: cadastro atualizado → CARD atualizado. O nome do card (empresa)
+      // SEGUE o nome completo do cadastro (caso Bruna: card "Bruna" × cadastro "BRUNA GOMES TAVEIRA").
+      // O trigger trg_clients_sync_lead_nome no banco garante o mesmo para QUALQUER outro caminho
+      // (agente de importação, SQL); aqui é o espelho imediato na aba.
+      try{ (crmLeads||[]).forEach(l=>{ if(l && l.clienteId===editingClientId && data.nome && (l.empresa||'')!==data.nome){ l.empresa=data.nome; } }); }catch(_e){}
       // Persist override from modal selector
       const sitSel2 = document.getElementById('cli-sit-override-sel');
       if(sitSel2 && canOverrideSituacao()){
@@ -8247,7 +8265,8 @@ function renderCrm(){
   if(_card4) _card4.style.display=_ehSDRview?'':'none';
   if(_grid) _grid.style.gridTemplateColumns=`repeat(${_ehSDRview?5:4},1fr)`;
   document.getElementById('crm-sc-f1').textContent=visible.filter(l=>l.funil===1&&!['Venda Fechada','Sem Interesse','Não Qualificado'].includes(l.etapa)).length;
-  document.getElementById('crm-sc-f2').textContent=visible.filter(l=>l.funil===2&&l.etapa!=='Sinal de Recompra').length;
+  // v192 — etapas de SAÍDA não contam como "em acompanhamento": Sinal de Recompra (vendas) e, no funil 2 do SDR, Desqualificado/Arquivado
+  document.getElementById('crm-sc-f2').textContent=visible.filter(l=>l.funil===2&&!['Sinal de Recompra','Desqualificado','Arquivado'].includes(l.etapa)).length;
   document.getElementById('crm-sc-f3').textContent=visible.filter(l=>l.funil===3&&l.etapa!=='Reativado').length;
   const _f4=document.getElementById('crm-sc-f4'); if(_f4) _f4.textContent=visible.filter(l=>l.funil===4&&!['Primeira Venda','Não Qualificado','Sem Interesse'].includes(l.etapa)).length;
   document.getElementById('crm-sc-fu').textContent=visible.filter(l=>l.followup&&l.followup<=t).length;
@@ -8505,6 +8524,13 @@ function dropLead(e, etapa){
     moveLead(lead.id, 2, POSVENDA_SEQ[0]);
     return;
   }
+  // v192 — apontamento do dono 05/08: o funil do SDR NÃO tem "Venda Fechada" (a exceção v84 deixava o
+  // card SDR parado numa etapa inválida). Venda pelo SDR = ENCAMINHAR para a vendedora, nunca fechar ali.
+  if(etapa==='Venda Fechada' && isSDREquipe(lead.equipeId)){
+    dragLeadId=null;
+    alert('O funil do SDR não tem a etapa "Venda Fechada".\n\nVenda de cliente do SDR: use "➜ Encaminhar" para a equipe da vendedora — o card segue para o funil de vendas e a carteira é gravada no cadastro.');
+    return;
+  }
   if(lead.etapa===etapa)return;
   const prevEtapa=lead.etapa;
   registrarMovimentacao(lead, lead.funil, etapa, 'Mudança manual de etapa');
@@ -8517,11 +8543,28 @@ function dropLead(e, etapa){
 }
 
 // Quick etapa dropdown toggle
+// v192 — o dropdown abria SEMPRE para cima com position:absolute e era CORTADO pelo overflow das
+// colunas do kanban / topo da tela (reporte do dono 05/08). Agora posiciona FIXO na viewport:
+// abre para BAIXO quando há espaço, senão para CIMA, sempre inteiro e por cima de tudo.
 function toggleEtapaDropdown(leadId){
   const dd=document.getElementById('etdd-'+leadId);if(!dd)return;
   const isOpen=dd.classList.contains('open');
-  document.querySelectorAll('.kc-etapa-dropdown').forEach(d=>d.classList.remove('open'));
-  if(!isOpen)dd.classList.add('open');
+  document.querySelectorAll('.kc-etapa-dropdown').forEach(d=>{ d.classList.remove('open'); d.style.position=''; d.style.top=''; d.style.bottom=''; d.style.left=''; d.style.zIndex=''; });
+  if(!isOpen){
+    dd.classList.add('open');
+    try{
+      const wrap=dd.closest('.kc-etapa-wrap');
+      const btn=(wrap&&wrap.querySelector('button'))||wrap||dd;
+      const r=btn.getBoundingClientRect();
+      const h=Math.min(dd.scrollHeight||240, 240);
+      const cabeAbaixo=(window.innerHeight - r.bottom) >= (h+10);
+      dd.style.position='fixed';
+      dd.style.left=Math.max(6, Math.min(r.left, window.innerWidth-206))+'px';
+      dd.style.bottom='auto';
+      dd.style.top=(cabeAbaixo ? (r.bottom+4) : Math.max(6, r.top-h-4))+'px';
+      dd.style.zIndex='5000';
+    }catch(_e){}
+  }
 }
 document.addEventListener('click',()=>document.querySelectorAll('.kc-etapa-dropdown').forEach(d=>d.classList.remove('open')));
 
@@ -8531,6 +8574,12 @@ function quickMoveEtapa(leadId, etapa){
   if(etapa==='Venda Fechada' && !isSDREquipe(lead.equipeId)){
     document.querySelectorAll('.kc-etapa-dropdown').forEach(d=>d.classList.remove('open'));
     moveLead(leadId, 2, POSVENDA_SEQ[0]);
+    return;
+  }
+  // v192 — funil do SDR não tem "Venda Fechada" (apontamento do dono 05/08): bloqueia e orienta o Encaminhar
+  if(etapa==='Venda Fechada' && isSDREquipe(lead.equipeId)){
+    document.querySelectorAll('.kc-etapa-dropdown').forEach(d=>d.classList.remove('open'));
+    alert('O funil do SDR não tem a etapa "Venda Fechada".\n\nVenda de cliente do SDR: use "➜ Encaminhar" para a equipe da vendedora — o card segue para o funil de vendas e a carteira é gravada no cadastro.');
     return;
   }
   if(lead.etapa===etapa)return;
@@ -8567,7 +8616,20 @@ function renderCrmLista(){
   }
 
   let filtered=visibleLeads;
-  if(q)filtered=filtered.filter(l=>(l.empresa||'').toLowerCase().includes(q)||(l.contatos||[]).some(c=>(c.nome||'').toLowerCase().includes(q)));
+  // v192 — a busca da Lista cruza com o CADASTRO vinculado (caso Bruna Gomes 05/08: card criado pelo
+  // WhatsApp com nome curto "Bruna", cadastro com o nome completo "BRUNA GOMES TAVEIRA" — "bruna gomes"
+  // não achava). Agora: empresa/contatos do card + nome do cadastro + pessoas vinculadas (v186).
+  if(q)filtered=filtered.filter(l=>{
+    if((l.empresa||'').toLowerCase().includes(q)) return true;
+    if((l.contato||'').toLowerCase().includes(q)) return true;
+    if((l.contatos||[]).some(c=>c&&(c.nome||'').toLowerCase().includes(q))) return true;
+    const _cli=l.clienteId?(clients||[]).find(c=>c.id===l.clienteId):null;
+    if(_cli){
+      if((_cli.nome||'').toLowerCase().includes(q)) return true;
+      if((_cli.pessoasVinculadas||[]).some(pv=>pv&&(pv.nome||'').toLowerCase().includes(q))) return true;
+    }
+    return false;
+  });
   if(fFilter)filtered=filtered.filter(l=>String(l.funil)===fFilter);
   if(eFilter)filtered=filtered.filter(l=>l.etapa===eFilter);
   if(rFilter)filtered=filtered.filter(l=>l.responsavel===rFilter);
@@ -8665,18 +8727,22 @@ function removeLeadContato(i){leadContatos.splice(i,1);renderLeadContatosList();
 function renderLeadContatosList(){
   const el=document.getElementById('lead-contatos-list');
   if(!el)return;
+  // v192 — layout do contato (pedido do dono 05/08): cada informação na SUA linha, sem quebrar no meio
+  // (nome/telefone/e-mail com reticências quando não cabem — o texto completo fica no tooltip); os
+  // botões ficam numa coluna fixa à direita e não empurram o texto.
   el.innerHTML=leadContatos.length?leadContatos.map((c,i)=>`
     <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md);margin-bottom:4px">
       <div style="flex:1;min-width:0">
-        <span style="font-size:13px;font-weight:500">${escapeHtml(c.nome)}</span>
-        ${c.cargo?`<span style="font-size:11px;color:var(--text-tertiary);margin-left:6px">${escapeHtml(c.cargo)}</span>`:''}
-        ${c.whats?`<span style="font-size:11px;color:var(--text-secondary);margin-left:8px">📱 ${escapeHtml(c.whats)}</span>`:''}
-        ${c.email?`<span style="font-size:11px;color:var(--text-secondary);margin-left:8px">✉ ${escapeHtml(c.email)}</span>`:''}
+        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(c.nome)}${c.cargo?' · '+escapeHtml(c.cargo):''}">${escapeHtml(c.nome)}${c.cargo?`<span style="font-size:11px;font-weight:400;color:var(--text-tertiary)"> · ${escapeHtml(c.cargo)}</span>`:''}</div>
+        ${c.whats?`<div style="font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(c.whats)}">📱 ${escapeHtml(_telExib(c.whats))}</div>`:''}
+        ${c.email?`<div style="font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(c.email)}">✉ ${escapeHtml(c.email)}</div>`:''}
       </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;white-space:nowrap">
       ${c.whats?`<label title="Número PRINCIPAL — os botões 💬 fora do modal abrem este" style="display:flex;align-items:center;gap:2px;font-size:11px;color:${c.principal?'#B8860B':'var(--text-tertiary)'};cursor:pointer;white-space:nowrap"><input type="checkbox" ${c.principal?'checked':''} onchange="_leadSetContatoPrincipal(${i},this.checked)" style="width:auto;margin:0">★</label>`:''}
       ${c.whats?`<button onclick="_leadAbrirConversaContato(${i})" title="Abrir conversa com ESTE número" style="font-size:11px;padding:2px 8px;color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:var(--r-md);background:transparent;cursor:pointer">💬</button>`:''}
       <button onclick="abrirModalContato(${i})" style="font-size:11px;padding:2px 8px">Editar</button>
       <button onclick="removeLeadContato(${i})" style="font-size:11px;padding:2px 6px;color:var(--st-bad-tx)">×</button>
+      </div>
     </div>`).join(''):'<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">Nenhum contato adicionado.</div>';
 }
 // v176 — número PRINCIPAL (pedido do dono 29/07): ★ marca UM contato; 💬 por contato abre a conversa daquele número
@@ -8854,7 +8920,8 @@ function renderLeadMoveBtns(lead){
   if(!lead){container.innerHTML='';return;}
   const btns=[];
   if(lead.funil===1){
-    if(['Lead Novo','Primeiro Contato'].includes(lead.etapa))btns.push({label:'→ Não Qualificado (F3)',cls:'warn',action:`moveLead('${lead.id}',3,'Lead Desqualificado')`});
+    // v192 — rótulo honesto por carteira: card do SDR sai para "Não Qualificado" do próprio SDR (F1), não para o F3 de vendas
+    if(['Lead Novo','Primeiro Contato','Qualificando','Apresentado'].includes(lead.etapa))btns.push({label:isSDREquipe(lead.equipeId)?'→ Não Qualificado':'→ Não Qualificado (F3)',cls:'warn',action:`moveLead('${lead.id}',3,'Lead Desqualificado')`});
     if(['Em Atendimento','Apresentação de Produtos'].includes(lead.etapa))btns.push({label:'📄 Aguardando documentação',cls:'',action:`quickMoveEtapa('${lead.id}','Aguardando Documentação')`});
     if(lead.etapa==='Negociação'||lead.etapa==='Follow-up'||lead.etapa==='Orçamento Enviado')btns.push({label:'✗ Sem Interesse (F3)',cls:'warn',action:`moveLead('${lead.id}',3,'Orçamento Perdido')`});
     if(lead.etapa==='Negociação')btns.push({label:'✓ Venda Fechada → F2',cls:'ok',action:`moveLead('${lead.id}',2,'Pedido em Produção')`});
@@ -8874,8 +8941,13 @@ function showLossModal(id,toFunil,toEtapa){
 function confirmLoss(){
   const motivo=document.getElementById('loss-motivo').value;
   if(!motivo){alert('Selecione o motivo da perda.');return;}
-  const {id,toFunil,toEtapa}=_pendingLoss;
+  let {id,toFunil,toEtapa}=_pendingLoss;
   const lead=crmLeads.find(x=>x.id===id);if(!lead)return;
+  // v192 — caso do dono 05/08 ("desqualifiquei e continua na mesma etapa"): o destino de perda era
+  // SEMPRE do funil de VENDAS (F3 'Lead Desqualificado'/'Orçamento Perdido'), etapa que NÃO existe no
+  // funil do SDR — o card ficava num estado inválido/sem efeito. Card do SDR vai para a saída dele:
+  // Funil 1 · 'Não Qualificado' (etapa oculta no kanban). O trigger do banco garante o mesmo por fora.
+  if(isSDREquipe(lead.equipeId)){ toFunil=2; toEtapa='Desqualificado'; } // v192 — etapa própria criada pelo dono na Repescagem SDR
   registrarMovimentacao(lead, toFunil, toEtapa, motivo||'Mudança de funil');
   lead.funil=toFunil;lead.etapa=toEtapa;lead.entradaEtapa=today();
   lead.motivoPerda=motivo;
@@ -9028,6 +9100,13 @@ async function saveLead(){
     tasks:JSON.parse(JSON.stringify(leadTasks)),
     entradaEtapa:today(),
   };
+  // v192 — MESMA regra do arrastar/dropdown (v84), que o MODAL furava (era por aqui que cards de
+  // equipes de VENDAS acumulavam parados em "Venda Fechada"): salvar com Funil 1 + "Venda Fechada"
+  // em carteira de vendas ENCAMINHA ao Pós-venda (Funil 2 · primeira etapa). Carteira SDR permanece
+  // em Venda Fechada (desenho do anestésico com SDR — exceção intencional da v84).
+  if(Number(data.funil)===1 && data.etapa==='Venda Fechada' && !isSDREquipe(equipeId)){
+    data.funil=2; data.etapa=POSVENDA_SEQ[0];
+  }
   if(editingLeadId){
     const lead=crmLeads.find(x=>x.id===editingLeadId);
     const prevEtapa=lead.etapa,prevFunil=lead.funil;
@@ -9037,6 +9116,13 @@ async function saveLead(){
       lead.historico.push({ts:Date.now(),tipo:'📝',txt:`Movido de Funil ${prevFunil}/${prevEtapa} para Funil ${funil}/${etapa}`,por:currentUser?.name||'Sistema'});
     }
   }else{
+    // v192 — regra do dono 05/08: UM card por cadastro. Cliente já com card → não cria outro; abre o
+    // existente (índice único crm_leads_um_card_por_cliente_uidx no banco bloqueia qualquer outro caminho).
+    const _cardEx = data.clienteId ? crmLeads.find(l=>l.clienteId===data.clienteId) : null;
+    if(_cardEx){
+      alert('Este cliente já tem um card no CRM — a regra é UM card por cadastro.\n\nO card existente será aberto para você editar.');
+      closeLeadModal(true); openLeadModal(_cardEx.id); return;
+    }
     crmLeads.push({id:'l'+Date.now(),...data,historico:[{ts:Date.now(),tipo:'📝',txt:`Lead criado na etapa ${etapa}`,por:currentUser?.name||'Sistema'}]});
   }
   // v173 — lápide: contato removido no CARD também não volta pela união
@@ -9088,6 +9174,11 @@ function canCreateAgendaForUser(targetUserId){
     if(!target)return false;
     return target.id===currentUser.id||target.coordenadorId===currentUser.id;
   }
+  // v192 — agenda única do SDR: quem é do SDR pode criar/editar evento para qualquer colega do SDR
+  if(currentUser.perfil==='sdr'){
+    const t=users.find(u=>u.id===targetUserId);
+    return !!t && (t.id===currentUser.id || t.perfil==='sdr');
+  }
   if(currentUser.perfil==='atendente') return targetUserId===currentUser.id;
   return false;
 }
@@ -9096,6 +9187,7 @@ function getAgendaTargetUsers(){
   if(!currentUser)return[];
   if(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial')
     return users.filter(u=>PERFIS_COMERCIAIS.includes(u.perfil));
+  if(currentUser.perfil==='sdr') return users.filter(u=>u.perfil==='sdr'); // v192 — agenda única do SDR
   if(currentUser.perfil==='coordenador_comercial')
     return [currentUser,...users.filter(u=>u.coordenadorId===currentUser.id)];
   // atendente: can invite coord/diretor for reuniao, only self for lembrete
@@ -9234,7 +9326,14 @@ function renderAgenda(){
   let eventos=agendaEventos.filter(ev=>{
     if(!currentUser)return false;
     if(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial')return true;
-    return ev.responsaveis.some(r=>r.id===currentUser.id)||ev.criadoPor===currentUser.id;
+    if(ev.responsaveis.some(r=>r.id===currentUser.id)||ev.criadoPor===currentUser.id) return true;
+    // v192 — AGENDA ÚNICA DO SDR (pedido do dono 05/08): quem é do SDR vê os eventos de TODOS os
+    // colegas do SDR (Marina e Sabrina trabalham uma agenda só)
+    if(currentUser.perfil==='sdr'){
+      const _sdrIds=(users||[]).filter(u=>u.perfil==='sdr').map(u=>u.id);
+      if(ev.responsaveis.some(r=>_sdrIds.includes(r.id)) || _sdrIds.includes(ev.criadoPor)) return true;
+    }
+    return false;
   });
   if(tipoF)eventos=eventos.filter(e=>e.tipo===tipoF);
   if(respF)eventos=eventos.filter(e=>e.responsaveis.some(r=>r.name===respF));
@@ -30525,6 +30624,7 @@ function _buildCadenciaDefaults(){
     'sdr-2-Requalificando': 3,
     'sdr-2-Nova Abordagem': 5,
     'sdr-2-Pronto para Redistribuir': 1,
+    'sdr-2-Desqualificado': 0, // v192 — etapa de saída: sem alerta de tempo parado (como Arquivado)
     'sdr-2-Arquivado': 0,
     // Recompra de anestésico (lembrete padrão)
     'anestesico-recompra': 30,
@@ -31476,8 +31576,10 @@ function _waAnexoHtml(a){
   if(isImg && ref) return `<div class="wa-media"><img ${ref} alt="imagem" class="wa-img${_ehSticker?' wa-sticker':''}" onclick="_waAbrirMedia(this)"></div>`;
   if(isAud && ref){
     // v136 — transcrição automática (Whisper via wa-transcribe) exibida abaixo do player
+    // v192 — botão de VELOCIDADE próprio (reporte do dono 05/08): a opção nativa do navegador (menu ⋮)
+    // some conforme a largura/versão do Chrome; o botão 1x→1,5x→2x é nosso e funciona sempre.
     const _tr=(a.transcricao||'').trim();
-    return `<audio ${ref} class="wa-aud" controls preload="none"></audio>`+
+    return `<div style="display:flex;align-items:center;gap:6px"><audio ${ref} class="wa-aud" controls preload="none"></audio><button type="button" onclick="_waAudVel(this)" title="Velocidade de reprodução (1x → 1,5x → 2x)" style="font-size:11px;font-weight:700;padding:3px 8px;border:.5px solid var(--border-md);border-radius:12px;background:var(--bg-secondary);cursor:pointer;flex-shrink:0">1x</button></div>`+
       (_tr?`<div style="font-size:11px;font-style:italic;color:var(--text-secondary);margin-top:3px;max-width:340px;white-space:pre-wrap">🎙 ${escapeHtml(_tr)}</div>`:'');
   }
   if(isVid && ref) return `<video ${ref} class="wa-vid" controls preload="none"></video>`;
@@ -31489,6 +31591,17 @@ function _waAnexoHtml(a){
     <div class="wa-doc-ic">📄</div>
     <div class="wa-doc-info"><div class="wa-doc-nome">${escapeHtml(a.nome||'arquivo')}</div><div class="wa-doc-sub">${a.tamanho?escapeHtml(a.tamanho)+' · ':''}toque para abrir</div></div>
   </div>`;
+}
+// v192 — cicla a velocidade do áudio da bolha (1x → 1,5x → 2x); persiste enquanto a mensagem estiver na tela
+function _waAudVel(btn){
+  try{
+    const aud=btn && btn.parentElement ? btn.parentElement.querySelector('audio') : null; if(!aud) return;
+    const seq=[1,1.5,2];
+    const i=seq.indexOf(aud.playbackRate);
+    const nxt=seq[(i+1)%seq.length]||1;
+    aud.playbackRate=nxt; aud.defaultPlaybackRate=nxt;
+    btn.textContent=String(nxt).replace('.',',')+'x';
+  }catch(_e){}
 }
 function _waKindFromMime(m){ m=(m||'').toString().toLowerCase(); if(m.startsWith('image/')) return 'image'; if(m.startsWith('audio/')) return 'audio'; if(m.startsWith('video/')) return 'video'; return 'document'; }
 function _waAbrirMedia(node){ if(node && node.src) window.open(node.src,'_blank'); }
@@ -31703,7 +31816,8 @@ async function _waEnviarAnexo(conv, msg, file, path){
       return;
     }
     const cli = clients.find(c=>c.id===conv.clienteId);
-    const phone = (conv && conv.telefone && _waFone(conv.telefone).length>=12 ? _waFone(conv.telefone) : '') || _waFoneCliente(cli);
+    // v192 — mesmo fallback do texto: telefone dos CONTATOS quando a conversa não tem número (caso Gisele)
+    const phone = _waFoneDaConversa(conv); // v192 — número DA CONVERSA manda; cadastro/contatos só se a conversa não tiver número
     if(!phone){ console.warn('wa-send-media: cliente sem telefone válido'); alert('⚠ O cliente não tem telefone válido — o anexo ficou só registrado no sistema (não foi enviado pro WhatsApp).'); return; }
     const { error } = await _sb.functions.invoke('wa-send-media', { body:{ convId:conv.id, msgId:msg.id, phone, path, fileName:file.name, mimeType:file.type, caption: msg.texto||'' } });
     if(error) console.warn('wa-send-media retornou erro:', error.message||error);
@@ -32168,7 +32282,7 @@ async function _convEditarMsg(convId, msgId){
   if(!editId){ alert('Não dá para editar: esta mensagem ainda não tem o id do WhatsApp (aguarde a confirmação de envio).'); return; }
   const novo=await _promptTextarea('Editar mensagem:', m.texto||''); if(novo==null) return;
   const t=novo.trim(); if(!t){ alert('A mensagem não pode ficar vazia.'); return; } if(t===m.texto) return;
-  const cli=clients.find(c=>c.id===conv.clienteId); const phone=(typeof _waFoneCliente==='function')?_waFoneCliente(cli):'';
+  const phone=_waFoneDaConversa(conv); // v192 — editar vai para o número DA CONVERSA (não o ★ do cadastro)
   if(!phone){ alert('Cliente sem telefone válido — não dá para editar no WhatsApp.'); return; }
   try{
     const { data, error } = await _sb.functions.invoke('wa-edit', { body:{ convId, msgId, phone, texto:t, editMessageId:editId } });
@@ -32226,7 +32340,7 @@ function _convReenviarMsg(convId, mid){
 async function _convReagirMsg(convId, mid, emoji){
   const conv=(conversas||[]).find(c=>c.id===convId); const m=conv&&(conv.mensagens||[]).find(x=>String(x.id)===String(mid)); if(!m) return;
   const zid=m.zapiMessageId||m.provedorMsgId||m.providerMsgId; if(!zid){ alert('Não dá para reagir: mensagem sem id do WhatsApp.'); return; }
-  const cli=clients.find(c=>c.id===conv.clienteId); const phone=(typeof _waFoneCliente==='function')?_waFoneCliente(cli):''; if(!phone){ alert('Cliente sem telefone válido.'); return; }
+  const phone=_waFoneDaConversa(conv); if(!phone){ alert('Esta conversa não tem número de destino.'); return; } // v192 — vai para o número DA CONVERSA
   const novo = (m.reacaoMinha===emoji) ? '' : emoji; // toggle: clicar de novo remove
   if(novo) m.reacaoMinha=novo; else delete m.reacaoMinha;
   renderConversaTela(convId);
@@ -32238,7 +32352,7 @@ async function _convApagarMsg(convId, mid){
   if(m.de!=='atendente'){ alert('Você só pode apagar para todos as SUAS mensagens.'); return; }
   const zid=m.zapiMessageId||m.provedorMsgId||m.providerMsgId; if(!zid){ alert('Mensagem sem id do WhatsApp — não dá para apagar para todos.'); return; }
   if(!confirm('Apagar esta mensagem para todos? Ela some também no WhatsApp do cliente.')) return;
-  const cli=clients.find(c=>c.id===conv.clienteId); const phone=(typeof _waFoneCliente==='function')?_waFoneCliente(cli):''; if(!phone){ alert('Cliente sem telefone válido.'); return; }
+  const phone=_waFoneDaConversa(conv); if(!phone){ alert('Esta conversa não tem número de destino.'); return; } // v192 — vai para o número DA CONVERSA
   try{
     const { data, error } = await _sb.functions.invoke('wa-delete', { body:{ phone, messageId:zid, owner:true, convId, targetMid:mid } });
     if(error || !data || data.ok!==true){ alert('Não foi possível apagar.\nO WhatsApp só permite "apagar para todos" por um tempo limitado após o envio.'); return; }
@@ -32434,7 +32548,10 @@ function _waDiaLabel(ts){
 function _convMsgsHtml(conv){
   const _now=Date.now();
   const nome=_tituloConversa(conv);
-  const _msgsAll=(conv.mensagens||[]);
+  // v192 — ORDEM CRONOLÓGICA DO WHATSAPP (regra do dono 05/08): a tela ordena por `em` (horário real da
+  // mensagem no WhatsApp), não pela ordem de chegada no array — mensagem restaurada/atrasada entra no
+  // lugar certo da conversa (sort estável; só exibição, o dado não é tocado).
+  const _msgsAll=[...(conv.mensagens||[])].sort((a,b)=>((a&&a.em)||0)-((b&&b.em)||0));
   const _jan=_convJanelaMsgs[conv.id]||150;
   const _msgs=_msgsAll.length>_jan?_msgsAll.slice(-_jan):_msgsAll;
   const _ocultas=_msgsAll.length-_msgs.length;
@@ -32472,7 +32589,7 @@ function _convMsgsHtml(conv){
         ${m.texto?`<span class="wa-txt"${(m.apagada||m.apagadaPeloCliente)?' style="opacity:.55"':''}>${escapeHtml(m.texto)}</span>`:''}
         ${(m.apagada&&!m.texto&&!m.anexo)?`<span class="wa-txt" style="font-style:italic;color:#8696a0">🚫 mensagem apagada (conteúdo não preservado)</span>`:''}
         ${(m.apagada||m.apagadaPeloCliente)?(m.anexo?`<div style="opacity:.55">${_waAnexoHtml(m.anexo)}</div>`:''):_waAnexoHtml(m.anexo)}
-        <span class="wa-time">${m.editada?'editada · ':''}${fmtTs(m.em)}${(m.recebidaEm&&(m.recebidaEm-(m.em||0))>300000)?`<span style="color:#B45309;font-weight:600" title="Enviada pelo contato às ${fmtTs(m.em)}, mas entregue ao sistema somente às ${fmtTs(m.recebidaEm)} (atraso na entrega do WhatsApp)"> · ⏱ chegou ${fmtTs(m.recebidaEm)}</span>`:''}${_waTick(mine,m)}</span>
+        <span class="wa-time">${m.editada?'editada · ':''}${fmtTs(m.em)}${(m.recebidaEm&&(m.recebidaEm-(m.em||0))>420000)?`<span style="font-size:9px;color:#B45309;font-weight:600" title="Horário do WHATSAPP (cinza): ${fmtTs(m.em)} · Horário em que entrou no SISTEMA (laranja): ${fmtTs(m.recebidaEm)} — carimbo exibido quando a diferença passa de 7 minutos"> · ⏱ sistema ${fmtTs(m.recebidaEm)}</span>`:''}${_waTick(mine,m)}</span>
         ${(m.reacaoMinha||m.reacaoCliente)?`<span class="wa-reac">${escapeHtml(m.reacaoMinha||'')}${escapeHtml(m.reacaoCliente||'')}</span>`:''}
         ${(m.id&&!m.apagada)?`<button class="wa-msgmenu" onclick="_convMsgMenu(event,'${conv.id}','${m.id}')" title="Opções da mensagem">⋮</button>`:''}
       </div>
@@ -32505,7 +32622,9 @@ function renderConversaTela(convId, containerId){
   const cli = clients.find(x=>x.id===conv.clienteId);
   const nome = _tituloConversa(conv);
   const _cardLead = crmLeads.find(l=>l.clienteId===conv.clienteId); // v86 — card do CRM deste cliente
-  const tel = cli?(cli.tel1||cli.tel2||''):'';
+  // v192 — o cabeçalho mostra o número DESTA CONVERSA (é com ele que se está falando); só sem ele cai
+  // para o telefone do cadastro. Exibição padronizada — (DD) XXXXX-XXXX, com ou sem 55 no dado.
+  const tel = _telExib(conv.telefone || (cli?(cli.tel1||cli.tel2||''):''));
   const atendente = conv.atendenteId ? users.find(u=>u.id===conv.atendenteId) : null;
   const isGestor = currentUser && (currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial');
   const _eqId = (cli&&cli.carteiraLinha) ? cli.carteiraLinha : (conv.equipeId||'');
@@ -32859,10 +32978,38 @@ function _waFone(raw){
 }
 function _waFoneValido(raw){ const f=_waFone(raw); return f.length>=12 && f.length<=13; }
 // melhor número de WhatsApp do cliente (prefere celular = 13 dígitos)
-function _waFoneCliente(cli){
-  if(!cli) return '';
-  const cands=[cli.tel1,cli.tel2,cli.finTel].filter(Boolean).map(_waFone).filter(f=>f.length>=12);
+// v192 — telefones dos CONTATOS do cadastro + do card (regra do dono 05/08: "o principal campo que
+// usaremos para conversar são os contatos")
+function _waContatosFones(cli, clienteId){
+  const _id=clienteId||(cli&&cli.id)||'';
+  const card=_id?(crmLeads||[]).find(l=>l&&l.clienteId===_id):null;
+  return [...((cli&&cli.contatos)||[]), ...((card&&card.contatos)||[])]
+    .map(c=>({p:!!(c&&c.principal), f:_waFone((c&&(c.telefone||c.whats))||'')}))
+    .filter(x=>x.f.length>=12);
+}
+// v192 — telefone do cliente para CONVERSAR. Ordem definida pelo dono (05/08): os CONTATOS são a fonte
+// principal — ★ principal primeiro; contato único depois; só então Telefone 1/2/financeiro da ficha.
+// Vários contatos sem ★ e sem telefone no topo = AMBÍGUO: devolve vazio de propósito (ordem do dono
+// "cuidado para não mandar para a pessoa errada") e a tela orienta a marcar o ★.
+function _waFoneCliente(cli, clienteId){
+  if(!cli && !clienteId) return '';
+  const cts=_waContatosFones(cli, clienteId);
+  const pri=cts.find(x=>x.p); if(pri) return pri.f;
+  const unicos=[...new Set(cts.map(x=>x.f))];
+  if(unicos.length===1) return unicos[0];
+  const cands=[cli&&cli.tel1,cli&&cli.tel2,cli&&cli.finTel].filter(Boolean).map(_waFone).filter(f=>f.length>=12);
   return cands.find(f=>f.length===13) || cands[0] || '';
+}
+function _waFoneEnvioCliente(cli, clienteId){ return _waFoneCliente(cli, clienteId); }
+// v192 — REGRA DE OURO do dono (05/08): a resposta vai para o NÚMERO DA CONVERSA em que se está falando.
+// Se o cliente tem 3 números e a conversa é com o 2º, responde no 2º — mesmo que outro esteja marcado ★.
+// O telefone do cadastro/contatos só entra quando a conversa NÃO tem número (ex.: veio por @lid de anúncio).
+function _waFoneDaConversa(conv){
+  if(!conv) return '';
+  const doFio=_waFone(conv.telefone||'');
+  if(doFio.length>=12) return doFio;
+  const cli=(clients||[]).find(c=>c.id===conv.clienteId);
+  return _waFoneCliente(cli, conv.clienteId);
 }
 async function _waEnviarMsg(conv, msg){
   try{
@@ -32870,9 +33017,24 @@ async function _waEnviarMsg(conv, msg){
     if(window._authExpirada){ alert('⚠ Sua sessão expirou — a mensagem NÃO foi enviada ao WhatsApp.\n\nRecarregue a página (F5) e entre novamente.'); return; } // v151 : vigia de autenticação (cobre também o "reenviar")
     const cli = clients.find(c=>c.id===conv.clienteId);
     // v106 — envia para o número DA CONVERSA (contato), com fallback para o telefone do cliente
-    const phone = (conv && conv.telefone && _waFone(conv.telefone).length>=12 ? _waFone(conv.telefone) : '') || _waFoneCliente(cli);
-    if(!phone){ console.warn('wa-send: cliente sem telefone válido — mensagem ficou na fila'); alert('⚠ O cliente não tem um telefone válido no cadastro (precisa de DDD + número). A mensagem ficou na fila — corrija o telefone do cliente e reenvie.'); return; }
-    const { data, error } = await _sb.functions.invoke('wa-send', { body:{ convId:conv.id, msgId:msg.id, phone, texto:msg.texto, quotedMsgId: msg._quotedMsgId||undefined } });
+    // v192 — o fallback passou a enxergar também os CONTATOS do cadastro/card (caso Gisele)
+    const phone = _waFoneDaConversa(conv); // v192 — número DA CONVERSA manda; cadastro/contatos só se a conversa não tiver número
+    // v192 — RESPONDER SEMPRE NO MESMO CHAT (caso Gisele 05/08): lead de anúncio chega com identificador
+    // @lid e o WhatsApp NÃO revela o telefone (a Z-API devolve phone vazio) — antes o envio era bloqueado
+    // com um alerta que culpava o cadastro. Sem telefone, o destino passa a ser o PRÓPRIO CHAT (chatLid).
+    const _lid = (!phone && conv && conv.chatLid) ? String(conv.chatLid) : '';
+    if(!phone && !_lid){
+      // v192 — mensagem honesta: se há VÁRIOS contatos e nenhum ★, o sistema não escolhe sozinho (risco de
+      // mandar para a pessoa errada) — orienta marcar o principal em vez de dizer que "não tem telefone".
+      const _nCts=_waContatosFones(cli, conv&&conv.clienteId).length;
+      console.warn('wa-send: sem telefone e sem chat de origem — mensagem ficou na fila');
+      alert(_nCts>1
+        ? '⚠ Este cliente tem mais de um CONTATO com telefone e nenhum marcado como PRINCIPAL (★).\n\nPara o sistema não enviar para a pessoa errada, marque o ★ no contato certo (ficha do cliente) e reenvie.\n\nA mensagem ficou na fila.'
+        : '⚠ Não há para onde enviar: esta conversa não tem telefone nem identificação do chat de origem.\n\nA mensagem ficou na fila — cadastre o telefone em CONTATOS do cliente e reenvie.');
+      return;
+    }
+    const { data, error } = await _sb.functions.invoke('wa-send', { body:{ convId:conv.id, msgId:msg.id, phone: phone||undefined, lid: _lid||undefined, texto:msg.texto, quotedMsgId: msg._quotedMsgId||undefined } });
+    if(error && _lid){ alert('⚠ Não foi possível enviar por este chat.\n\nEste contato veio de anúncio e o WhatsApp não revela o número dele — só dá para responder pelo próprio celular da linha, no chat de "'+escapeHtml((cli&&cli.nome)||'')+'".\n\nA mensagem ficou na fila.'); }
     if(error) console.warn('wa-send retornou erro:', error.message||error);
     // v141 : carimba a copia LOCAL com o id/status devolvidos pelo wa-send (antes so o banco recebia;
     // o commit completo do app sobrescrevia o carimbo → relogio preso + duplicata via webhook fromMe)
@@ -33148,19 +33310,42 @@ function abrirConversaCliente(clienteId, telefone){
     } // fim do else (sem ★ principal — coleta/seletor)
   }
   // v142 : modo dois numeros: se o cliente JA tem conversa COM MENSAGENS em algum numero autorizado,
-  // abre ELA (a mais recente) — em vez de criar uma conversa vazia no numero do menu atual
-  // (era isso que criava conversas E vazias para clientes ativos no T, "sumindo" as mensagens).
+  // abre ELA — v192 (regra do dono 05/08): se houver conversa em MAIS DE UM número que o usuário
+  // acessa, PERGUNTA qual abrir (quem acessa um número só abre direto a dele).
   let conv=null;
   if(_waModoDois()){
     const meus=_waNumsDoUsuario();
     const tk0=_telKey(telefone||'');
-    const cands=(conversas||[]).filter(c=>c.clienteId===clienteId
+    let cands=(conversas||[]).filter(c=>c.clienteId===clienteId
       && meus.includes(_waNumDaConv(c))
-      && (c.mensagens||[]).length>0
-      && (!tk0 || !_telKey(c.telefone) || _telKey(c.telefone)===tk0));
-    if(cands.length) conv=cands.sort((a,b)=>(b.ultimaMsgEm||0)-(a.ultimaMsgEm||0))[0];
+      && (c.mensagens||[]).length>0);
+    // v192 — CUIDADO REDOBRADO (ordem do dono 05/08 — "não abrir conversa errada"): com telefone
+    // definido, só entra no páreo a conversa DAQUELE telefone; conversa legada SEM telefone só é
+    // adotada se o telefone pedido for o PRINCIPAL (tel1) do cliente — mesma regra estrita do
+    // getOuCriarConversa. Nunca se abre o fio de outro contato do mesmo cliente.
+    if(tk0){
+      const _exatas=cands.filter(c=>_telKey(c.telefone)===tk0);
+      if(_exatas.length) cands=_exatas;
+      else {
+        const _cli0=(clients||[]).find(c=>c.id===clienteId);
+        const _tk1=_cli0?_telKey((_cli0.tel1||'')||(typeof _waFoneCliente==='function'?_waFoneCliente(_cli0):'')):'';
+        cands=(_tk1 && tk0===_tk1)?cands.filter(c=>!_telKey(c.telefone)):[];
+      }
+    }
+    if(cands.length){
+      const porNum={};
+      cands.forEach(c=>{ const n=_waNumDaConv(c); if(!porNum[n] || (c.ultimaMsgEm||0)>(porNum[n].ultimaMsgEm||0)) porNum[n]=c; });
+      const nums=Object.keys(porNum);
+      if(nums.length>1){ _abrirSeletorNumeroConversa(clienteId, nums.map(n=>porNum[n])); return; }
+      conv=cands.sort((a,b)=>(b.ultimaMsgEm||0)-(a.ultimaMsgEm||0))[0];
+    }
   }
   if(!conv) conv = getOuCriarConversa(clienteId, telefone);
+  if(!conv) return;
+  _abrirConversaConvModal(conv);
+}
+// v192 — abre a CONVERSA JÁ ESCOLHIDA no modal (miolo comum do abrirConversaCliente e do seletor de número)
+function _abrirConversaConvModal(conv){
   if(!conv) return;
   saveData();
   conversaAtivaId = conv.id;
@@ -33176,6 +33361,32 @@ function abrirConversaCliente(clienteId, telefone){
   </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
   _renderConversaEm('conv-modal-tela', conv.id);
+}
+// v192 — SELETOR DE NÚMERO (regra do dono 05/08): o cliente tem conversa em mais de um número Lecare
+// que o usuário acessa — mostra as opções (rótulo do número, última mensagem, tamanho) e ele escolhe.
+function _abrirSeletorNumeroConversa(clienteId, convs){
+  let ov=document.getElementById('selnum-conv-overlay');
+  if(ov) ov.remove();
+  const nomeCli=(typeof _nomeConversaCli==='function'?_nomeConversaCli(clienteId):'')||'Cliente';
+  const linhas=convs.map(c=>{
+    const nid=_waNumDaConv(c);
+    const ni=_waNumInfo(nid);
+    const rot=(ni&&(ni.rotulo||ni.id))||nid;
+    const ult=c.ultimaMsgEm?new Date(c.ultimaMsgEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+    return `<button onclick="document.getElementById('selnum-conv-overlay').remove();(function(){var cv=(conversas||[]).find(x=>x.id==='${c.id}');if(cv)_abrirConversaConvModal(cv);})()" style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;text-align:left;padding:11px 14px;border:.5px solid var(--border);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;margin-bottom:6px;font-family:inherit">
+      <span style="font-size:13px;font-weight:600">📱 Número ${escapeHtml(rot)}</span>
+      <span style="font-size:11px;color:var(--text-secondary);white-space:nowrap">${(c.mensagens||[]).length} msg(s) · última ${ult}</span>
+    </button>`;
+  }).join('');
+  const html=`<div class="overlay open" id="selnum-conv-overlay" data-dyn="1" style="z-index:4400">
+    <div class="modal" style="width:420px;max-width:92vw">
+      <h2 style="font-size:15px;margin-bottom:4px">💬 Qual conversa abrir?</h2>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">${escapeHtml(nomeCli)} tem conversa em mais de um número Lecare que você acessa.</div>
+      ${linhas}
+      <div class="modal-footer"><button onclick="document.getElementById('selnum-conv-overlay').remove()">Cancelar</button></div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
 }
 
 // Renderiza a tela de conversa num container específico (reuso para modal)
@@ -33972,12 +34183,20 @@ function _ctTombAtualiza(cli, universoAntigo, listaNova){
 }
 function _renderCliContatos(){
   const el=document.getElementById('c-contatos-list'); if(!el) return;
+  // v192 — mesmo layout do modal do lead (pedido do dono 05/08): cada informação na SUA linha,
+  // sem quebra interna (reticências + tooltip); botões em coluna fixa à direita.
   el.innerHTML = _cliContatos.length ? _cliContatos.map((c,i)=>`
     <div style="display:flex;align-items:center;gap:8px;padding:6px 9px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md);margin-bottom:4px;font-size:12px">
-      <span style="flex:1;min-width:0"><strong>${escapeHtml(c.nome||'(sem nome)')}</strong>${c.cargo?` <span style="color:var(--text-tertiary)">· ${escapeHtml(c.cargo)}</span>`:''}${c.telefone?` <span style="color:var(--text-secondary)">· 📱 ${escapeHtml(c.telefone)}</span>`:''}</span>
+      <div style="flex:1;min-width:0">
+        <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(c.nome||'(sem nome)')}${c.cargo?' · '+escapeHtml(c.cargo):''}"><strong>${escapeHtml(c.nome||'(sem nome)')}</strong>${c.cargo?` <span style="color:var(--text-tertiary)">· ${escapeHtml(c.cargo)}</span>`:''}</div>
+        ${c.telefone?`<div style="font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(c.telefone)}">📱 ${escapeHtml(_telExib(c.telefone))}</div>`:''}
+        ${c.email?`<div style="font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(c.email)}">✉ ${escapeHtml(c.email)}</div>`:''}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;white-space:nowrap">
       ${c.telefone?`<label title="Número PRINCIPAL — os botões 💬 fora do cadastro abrem este" style="display:flex;align-items:center;gap:2px;font-size:11px;color:${c.principal?'#B8860B':'var(--text-tertiary)'};cursor:pointer;white-space:nowrap"><input type="checkbox" ${c.principal?'checked':''} onchange="_cliSetContatoPrincipal(${i},this.checked)" style="width:auto;margin:0">★</label>`:''}
       ${(c.telefone&&editingClientId)?`<button type="button" onclick="_cliAbrirConversaContato(${i})" title="Abrir conversa com ESTE número" style="font-size:11px;padding:2px 8px;color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:var(--r-md);background:transparent;cursor:pointer">💬</button>`:''}
       <button type="button" onclick="_delCliContato(${i})" style="border:none;background:none;color:var(--st-bad-tx);cursor:pointer;font-size:15px">×</button>
+      </div>
     </div>`).join('') : '<div style="font-size:11px;color:var(--text-tertiary)">Nenhum contato ainda.</div>';
 }
 // v176 — ★ principal e 💬 por contato também na FICHA do cliente

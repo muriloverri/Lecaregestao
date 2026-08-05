@@ -4740,7 +4740,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v192';
+var APP_VERSION = 'v193';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5187,6 +5187,7 @@ const STATUS_DEADLINES = [
   // Compras
   { linha:'personalizada', setor:'compras', status:'Orçamento feito',   limitDay:2, level:'warn', desc:'Orçamento de embalagem' },
   { linha:'personalizada', setor:'compras', status:'Compra finalizada', limitDay:4, level:'warn', desc:'Compra de embalagem finalizada', ok:['Compra embalagem finalizado'] }, // v156 — o prazo D4 é da EMBALAGEM: o rótulo novo satisfaz; 'Compra ativo finalizado' sozinho NÃO
+  { linha:'personalizada', setor:'compras', status:'Compra ativo finalizado', limitDay:5, level:'warn', desc:'Compra de ativo finalizada' }, // v193 — D5 definido pelo dono 05/08; o lado ATIVO não tinha prazo nenhum (só a embalagem, D4)
   { linha:'personalizada', setor:'compras', status:'Produto entregue',  limitDay:7, level:'crit', desc:'Entrega da embalagem na Lecare' },
   // Designer (ordered by prazo)
   { linha:'personalizada', setor:'designer', status:'Em produção',          limitDay:2,  level:'warn', desc:'Início da produção dos rótulos' },
@@ -6004,6 +6005,16 @@ function ruleIsSatisfied(rule, order){
   // fechado e pode "andar de lado" p/ 'Compra ativo finalizado' (índice menor), reacendendo alerta falso
   // de embalagem já comprada. O selo não regride enquanto o lado estiver fechado.
   if(rule.setor==='compras' && rule.targetStatus==='Compra finalizada' && order.comprasLados && order.comprasLados.embalagem) return true;
+
+  // v193 — lado ATIVO (prazo D5, definido pelo dono 05/08): MESMA blindagem do lado embalagem acima.
+  // Vale o SELO durável do lado (o.comprasLados.ativo), porque o campo de status guarda só o ÚLTIMO
+  // lado fechado e "anda de lado". E pedido LEGADO (pré-virada v156) não tem o conceito de lado: a
+  // regra não se aplica a ele — senão o alerta acenderia RETROATIVO em pedido antigo, cuja escada
+  // só conhece 'Compra finalizada' e que nunca teve prazo de ativo para cumprir.
+  if(rule.setor==='compras' && rule.targetStatus==='Compra ativo finalizado'){
+    if(order.comprasLados && order.comprasLados.ativo) return true;
+    if(typeof _pedidoNovoCompras==='function' && !_pedidoNovoCompras(order)) return true;
+  }
 
   // Paralelos: basta um do grupo estar ativo
   if(rule.parallel) return rule.parallel.includes(st);
@@ -6943,7 +6954,14 @@ function openStatusModal(oid,setor){
   const linha=o.linha||'personalizada';
   // Build deadline map per status
   const sdRules=STATUS_DEADLINES.filter(r=>r.linha===linha&&r.setor===setor);
-  const statusDlMap={};sdRules.forEach(r=>statusDlMap[r.status]=r);
+  // v193 — o mapa é indexado pelo NOME do status EXIBIDO. Regra cadastrada sob um rótulo que a tela
+  // não mostra mais ficava sem "limite Dx" na tela, embora o ALERTA funcionasse (o alerta lê r.ok):
+  // Compras (v156, 'Compra finalizada' virou ativo+embalagem) e Financeiro ('Emitido sem NF', que
+  // divide o prazo com 'Emitido NF' via r.parallel). Agora os rótulos alternativos declarados na
+  // própria regra também apontam p/ ela — em 2 passes, para regra própria vencer o alternativo.
+  const statusDlMap={};
+  sdRules.forEach(r=>statusDlMap[r.status]=r);
+  sdRules.forEach(r=>[...(r.ok||[]),...(r.parallel||[])].forEach(alt=>{ if(alt && !statusDlMap[alt]) statusDlMap[alt]=r; }));
   // Parallel group
   const parallelGroup=sdRules.find(r=>r.parallel)?.parallel||null;
   document.getElementById('sm-title').textContent='Setor: '+setorCfg.label;
@@ -7459,14 +7477,25 @@ function _sincronizarCardComCarteira(clienteId){ _sincronizarClienteCardConversa
 
 // v105: formata telefone no padrão BR — celular (XX) XXXXX-XXXX, fixo (XX) XXXX-XXXX (progressivo ao digitar)
 // v192 — EXIBIÇÃO padronizada de telefone (reporte do dono 05/08: um lugar mostrava com 55 e outro sem).
-// Não altera nada gravado: só formata para ler — (DD) XXXXX-XXXX, tirando o 55 do começo quando houver.
+// Só formata para LER — nada gravado é alterado e NENHUM envio usa esta função (envio usa _waFone).
+// Correção do dono: o DDI NÃO some — chega mensagem de fora do Brasil e o código do país é informação.
+//   BR com DDI  → +55 (11) 97027-3200      BR sem DDI → (11) 97027-3200
+//   Estrangeiro → +595 991938113 (mantido inteiro, só ganha o + para deixar claro que é DDI)
 function _telExib(v){
-  let d=String(v||'').replace(/\D/g,'');
+  const d=String(v||'').replace(/\D/g,'');
   if(!d) return '';
-  if(d.startsWith('55') && (d.length===12||d.length===13)) d=d.slice(2);
-  if(d.length===11) return '('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7);
-  if(d.length===10) return '('+d.slice(0,2)+') '+d.slice(2,6)+'-'+d.slice(6);
-  return String(v||'').trim(); // formato fora do padrão BR (ex.: internacional) — mostra como está
+  const fmtBR=n=> n.length===11 ? '('+n.slice(0,2)+') '+n.slice(2,7)+'-'+n.slice(7)
+              : n.length===10 ? '('+n.slice(0,2)+') '+n.slice(2,6)+'-'+n.slice(6) : n;
+  // só trata como BRASILEIRO quando o padrão é inequívoco (DDD 11-99 + celular com 9 / fixo 2-9);
+  // qualquer outra coisa é mostrada inteira com "+" — evita deturpar número estrangeiro (ex.: EUA
+  // 1-305-555-1234 tem 11 dígitos e NÃO pode virar "(13) 05555-1234")
+  const ehCelBR=n=>/^[1-9][1-9]9\d{8}$/.test(n), ehFixoBR=n=>/^[1-9][1-9][2-9]\d{7}$/.test(n);
+  if(d.startsWith('55') && (d.length===12||d.length===13)){
+    const n=d.slice(2);
+    if(ehCelBR(n)||ehFixoBR(n)) return '+55 '+fmtBR(n);                                     // Brasil com DDI
+  }
+  if(ehCelBR(d)||ehFixoBR(d)) return fmtBR(d);                                              // Brasil sem DDI
+  return '+'+d;                                                                              // estrangeiro/atípico: inteiro
 }
 function _fmtTelBR(v){
   let d=String(v||'').replace(/\D/g,'').slice(0,11);
@@ -11587,6 +11616,36 @@ function renderSolCompra(tab){
 }
 // v171 — bloco de UMA solicitação no modal 👁 (extraído do _solVerPedido p/ reusar no botão
 // "Lista de compra" do status de Compras). _lbl era o _statLbl local (nota v166).
+// v193 — dados de COMPRA de um item da lista (fonte única p/ as colunas do modal): pedido de
+// compra, NF e lançamento do Caixa. A NF mora no pedido de compra (v160); compras antigas/avulsas
+// guardam no próprio item ou só no lançamento (v139 espelho Compra↔Caixa).
+function _solItemCompraInfo(li){
+  var c=(li&&li.compra&&li.compra.comprado)?li.compra:null;
+  if(!c) return {c:null, pc:null, lanc:null, nf:''};
+  var pc=c.pedidoCompraId?(pedidosCompra||[]).find(function(p){ return p&&p.id===c.pedidoCompraId; }):null;
+  var lanc=c.compraLancId?(compras||[]).find(function(x){ return x&&x.id===c.compraLancId; }):null;
+  return {c:c, pc:pc||null, lanc:lanc||null, nf:(pc&&pc.nf)||c.nf||(lanc&&lanc.nf)||''};
+}
+var _SOL_COLS=9; // v193 — nº de colunas da tabela do modal (usado nos <td colspan>)
+// v193 — cabeçalho da tabela do modal (pedido do dono 05/08: colunas com pedido de compra, NF e
+// as datas de compra e de recebimento).
+function _solTabelaHead(){
+  var th='padding:7px 10px;background:var(--bg-secondary);font-size:10.5px;font-weight:600;color:var(--text-secondary);text-align:left;white-space:nowrap;border-bottom:.5px solid var(--border)';
+  return '<thead><tr>'+
+    '<th style="'+th+'">Item</th>'+
+    '<th style="'+th+';text-align:right">Qtd</th>'+
+    '<th style="'+th+'">Situação</th>'+
+    '<th style="'+th+'">Fornecedor</th>'+
+    '<th style="'+th+';text-align:right">R$/un</th>'+
+    '<th style="'+th+'">Pedido de compra</th>'+
+    '<th style="'+th+'">NF</th>'+
+    '<th style="'+th+'">Compra</th>'+
+    '<th style="'+th+'">Recebimento</th></tr></thead>';
+}
+function _solTabelaWrap(corpo){
+  return '<div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;min-width:940px">'+
+    _solTabelaHead()+'<tbody>'+corpo+'</tbody></table></div>';
+}
 function _solVerBlocoSolic(s, tally){
   var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado'};
   var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
@@ -11596,12 +11655,17 @@ function _solVerBlocoSolic(s, tally){
     var li=(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); });
     return li && li.naoComprado;
   });
-  var h='<div style="margin:12px 0 4px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase">'+
-    (_todosNc?'Resolvida — sem compra':(_lbl[_solStatusEfetivo(s)]||s.status))+(s.numSeq?' · '+_solCodSeq(s):'')+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):'')+
-    (s.criadoEm?' · '+fmtDate(_gstDataDe(s.criadoEm)):'')+(s.criadoPor?' · solicitado por <b>'+escapeHtml(s.criadoPor)+'</b>':'')+'</div>';
+  var tdc='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
+  var sub='font-size:10.5px;color:var(--text-tertiary)';
+  // v193 — a data da LISTA (quando entrou em compra) passou a aparecer junto do código, e a data da
+  // solicitação ganhou rótulo — antes as duas apareciam soltas e viravam a mesma coisa aos olhos.
+  var h='<tr><td colspan="'+_SOL_COLS+'" style="padding:14px 10px 5px;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;border-bottom:.5px solid var(--border)">'+
+    (_todosNc?'Resolvida — sem compra':(_lbl[_solStatusEfetivo(s)]||s.status))+(s.numSeq?' · '+_solCodSeq(s):'')+
+    (lst?' · lista '+escapeHtml(_lcCodigo(lst))+(lst.criadoEm?' de '+fmtDate(_gstDataDe(lst.criadoEm)):''):'')+
+    (s.criadoEm?' · solicitada em '+fmtDate(_gstDataDe(s.criadoEm)):'')+(s.criadoPor?' · por <b>'+escapeHtml(s.criadoPor)+'</b>':'')+'</td></tr>';
   (s.itens||[]).forEach(function(it){
     var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
-    var c=(li&&li.compra&&li.compra.comprado)?li.compra:null;
+    var inf=_solItemCompraInfo(li), c=inf.c;
     // v182 — TODO item ganha um status EXPLÍCITO (pedido do dono 03/08: item sem selo parecia
     // comprado/perdido e não dava para saber o que estava só em cotação). Estados possíveis:
     // comprado / cotado aguardando compra / em lista aguardando cotação / aguardando entrar em
@@ -11609,25 +11673,60 @@ function _solVerBlocoSolic(s, tally){
     var st='', k='';
     if(c){
       k = (li&&li.compraParcial)?'parcial':'comprado';
-      st='<span style="color:var(--st-ok-tx)">✔ comprado'+(c.fornecedorNome?' — '+escapeHtml(c.fornecedorNome):'')+((parseFloat(c.precoPago)||0)>0?' · '+fmtMoney(c.precoPago)+'/un':'')+'</span>'+(li&&li.compraParcial?' <span style="color:var(--st-bad-tx);font-weight:600" title="Solicitado subiu acima do comprado — estornar e comprar o total">⚠ parcial</span>':'');
+      st='<span style="color:var(--st-ok-tx);font-weight:600">✔ comprado</span>'+(li&&li.compraParcial?'<br><span style="color:var(--st-bad-tx);font-weight:600;font-size:10.5px" title="Solicitado subiu acima do comprado — estornar e comprar o total">⚠ compra parcial</span>':'');
     } else if(li && li.naoComprado){
       var _r=li.ncResolucao;
       k = _r==='sem_estoque'?'sem_estoque':(_r?'resolvido':'nao_comprado');
-      st = _r==='ajustado' ? '<span style="color:var(--st-ok-tx)">🔧 ajustado'+(li.naoCompradoMotivo?' — '+escapeHtml(li.naoCompradoMotivo):'')+' (conta como entregue)</span>'
-         : _r==='tinha_estoque' ? '<span style="color:var(--st-inf-tx)">📦 tinha estoque (conta como entregue)</span>'
-         : _r==='sem_estoque' ? '<span style="color:var(--st-bad-tx)">🚫 sem estoque — volta na próxima lista</span>'
-         : '<span style="color:var(--st-bad-tx)">✕ não comprado'+(li.naoCompradoMotivo?' — '+escapeHtml(li.naoCompradoMotivo):'')+'</span>';
+      st = _r==='ajustado' ? '<span style="color:var(--st-ok-tx)">🔧 ajustado'+(li.naoCompradoMotivo?'<br><span style="'+sub+'">'+escapeHtml(li.naoCompradoMotivo)+'</span>':'')+'<br><span style="'+sub+'">conta como entregue</span></span>'
+         : _r==='tinha_estoque' ? '<span style="color:var(--st-inf-tx)">📦 tinha estoque<br><span style="'+sub+'">conta como entregue</span></span>'
+         : _r==='sem_estoque' ? '<span style="color:var(--st-bad-tx)">🚫 sem estoque<br><span style="'+sub+'">volta na próxima lista</span></span>'
+         : '<span style="color:var(--st-bad-tx)">✕ não comprado'+(li.naoCompradoMotivo?'<br><span style="'+sub+'">'+escapeHtml(li.naoCompradoMotivo)+'</span>':'')+'</span>';
     } else if(li && ((li.cotacoes||[]).length || li.escolhida!=null)){
-      k='cotado'; st='<span style="color:#B45309;font-weight:600">💰 cotado — aguardando compra</span>';
+      k='cotado'; st='<span style="color:#B45309;font-weight:600">💰 cotado<br><span style="'+sub+'">aguardando compra</span></span>';
     } else if(li){
-      k='aguarda_cot'; st='<span style="color:var(--text-tertiary)">⏳ em lista — aguardando cotação</span>';
+      k='aguarda_cot'; st='<span style="color:var(--text-tertiary)">⏳ em lista<br><span style="'+sub+'">aguardando cotação</span></span>';
     } else {
-      k='aguarda_lista'; st='<span style="color:var(--text-tertiary)">📨 solicitado — aguardando entrar em lista</span>';
+      k='aguarda_lista'; st='<span style="color:var(--text-tertiary)">📨 solicitado<br><span style="'+sub+'">aguardando entrar em lista</span></span>';
     }
     if(tally) tally[k]=(tally[k]||0)+1;
-    h+='<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:.5px solid var(--border);font-size:12px;align-items:baseline;flex-wrap:wrap">'+
-      '<span style="flex:1 1 240px;min-width:200px">'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</span>'+
-      '<span style="text-align:right;flex-shrink:0;max-width:100%">'+(parseFloat(it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+' · '+st+'</span></div>';
+    // v193 — colunas de acompanhamento da compra. Recebimento mostra o PRÓXIMO passo enquanto não
+    // chegou: quando existe pedido de compra, o status dele (aberto → fechado → faturado →
+    // enviado p/ recebimento → recebido); sem pedido de compra (compra antiga/avulsa), o aviso.
+    var _dtC=(c&&c.compradoEm)?fmtDate(_gstDataDe(c.compradoEm)):'';
+    var _qtdC=c?(parseFloat(c.qtdComprada)||0):0, _qtdS=parseFloat(it.qtd)||0;
+    var colCompra = c ? ('<span style="white-space:nowrap">'+(_dtC||'—')+'</span>'+
+        (c.compradoPor?'<br><span style="'+sub+'">'+escapeHtml(c.compradoPor)+'</span>':'')+
+        (_qtdC && Math.abs(_qtdC-_qtdS)>0.001 ? '<br><span style="'+sub+'" title="A compra é feita pela lista consolidada — este volume atende vários pedidos, não só este">compra da lista: '+_qtdC.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</span>' : ''))
+      : '<span style="color:var(--text-tertiary)">—</span>';
+    var colReceb;
+    if(c && c.recebido){
+      colReceb='<span style="color:var(--st-ok-tx);font-weight:600;white-space:nowrap">✔ recebido</span>'+
+        (c.recebidoEm?'<br><span style="'+sub+'">'+fmtDate(_gstDataDe(c.recebidoEm))+'</span>':'')+
+        (c.recebidoDivergente?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="Quantidade ou preço recebidos diferentes do que foi comprado">⚠ divergente</span>':'');
+    } else if(c && inf.pc){
+      colReceb='<span style="color:var(--text-secondary)">'+escapeHtml((typeof _PC_ST_LBL!=='undefined'&&_PC_ST_LBL[inf.pc.status])||inf.pc.status||'—')+'</span>'+
+        '<br><span style="'+sub+'">aguardando recebimento</span>';
+    } else if(c){
+      colReceb='<span style="color:var(--text-tertiary)">aguardando recebimento</span>';
+    } else {
+      colReceb='<span style="color:var(--text-tertiary)">—</span>';
+    }
+    var colPed = c ? (inf.pc ? '<span style="font-family:monospace;font-size:11px;font-weight:600">'+escapeHtml(inf.pc.numero||'—')+'</span>'
+                             : '<span style="'+sub+'">sem pedido de compra</span>')
+                   : '<span style="color:var(--text-tertiary)">—</span>';
+    var colNf = c ? (inf.nf ? '<span style="font-family:monospace;font-size:11px">'+escapeHtml(inf.nf)+'</span>'
+                            : '<span style="color:var(--st-mid-tx);font-size:11px">aguardando NF</span>')
+                  : '<span style="color:var(--text-tertiary)">—</span>';
+    h+='<tr>'+
+      '<td style="'+tdc+';min-width:230px">'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</td>'+
+      '<td style="'+tdc+';text-align:right;white-space:nowrap">'+_qtdS.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
+      '<td style="'+tdc+'">'+st+'</td>'+
+      '<td style="'+tdc+'">'+(c&&c.fornecedorNome?escapeHtml(c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+      '<td style="'+tdc+';text-align:right;white-space:nowrap">'+(c&&(parseFloat(c.precoPago)||0)>0?fmtMoney(c.precoPago):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+      '<td style="'+tdc+'">'+colPed+'</td>'+
+      '<td style="'+tdc+'">'+colNf+'</td>'+
+      '<td style="'+tdc+'">'+colCompra+'</td>'+
+      '<td style="'+tdc+'">'+colReceb+'</td></tr>';
   });
   return h;
 }
@@ -11641,7 +11740,7 @@ function verListaCompraPedido(orderId){
   [['ativo','🧪 Ativos'],['embalagem','📦 Embalagens']].forEach(function(p){
     var todas=_solTodasSolic(orderId, p[0]);
     if(!todas.length) return;
-    secoes+='<div style="margin-top:16px;padding-bottom:2px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700">'+p[1]+'</div>';
+    secoes+='<tr><td colspan="'+_SOL_COLS+'" style="padding:18px 10px 4px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700">'+p[1]+'</td></tr>';
     todas.forEach(function(s){ secoes+=_solVerBlocoSolic(s, tally); });
   });
   if(!secoes){ alert('Nada foi solicitado para este pedido ainda.'); return; }
@@ -11659,11 +11758,11 @@ function verListaCompraPedido(orderId){
   }).join(' ');
   var ov=document.getElementById('sol-ver-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='sol-ver-overlay'; ov.className='overlay'; ov.style.zIndex='465'; document.body.appendChild(ov); }
-  ov.innerHTML='<div class="modal" style="width:820px;max-width:96vw;max-height:88vh;overflow:auto">'+
+  ov.innerHTML='<div class="modal" style="width:1220px;max-width:97vw;max-height:92vh;overflow:auto">'+
     '<h2 style="font-size:16px">📋 Lista de compra — itens solicitados</h2>'+
     '<div style="font-size:12px;color:var(--text-secondary)">Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+' <span style="color:var(--text-tertiary)">· somente leitura</span></div>'+
     (_chips?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+_chips+'</div>':'')+
-    secoes+
+    _solTabelaWrap(secoes)+
     '<div class="modal-footer"><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
   ov.classList.add('open');
 }
@@ -11680,10 +11779,10 @@ function _solVerPedido(orderId, tipo, solicId){
   todas.forEach(function(s){ linhas+=_solVerBlocoSolic(s); });
   var ov=document.getElementById('sol-ver-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='sol-ver-overlay'; ov.className='overlay'; ov.style.zIndex='465'; document.body.appendChild(ov); }
-  ov.innerHTML='<div class="modal" style="width:560px;max-width:95vw;max-height:85vh;overflow:auto">'+
+  ov.innerHTML='<div class="modal" style="width:1160px;max-width:97vw;max-height:92vh;overflow:auto">'+
     '<h2 style="font-size:16px">👁 Itens solicitados — '+(tipo==='ativo'?'Ativos':'Embalagem')+'</h2>'+
     '<div style="font-size:12px;color:var(--text-secondary)">Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+' <span style="color:var(--text-tertiary)">· somente leitura</span></div>'+
-    linhas+
+    _solTabelaWrap(linhas)+
     '<div class="modal-footer"><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
   ov.classList.add('open');
 }

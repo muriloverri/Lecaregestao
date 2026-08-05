@@ -2745,13 +2745,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="btn-primary" onclick="openOrcBuilder()" style="font-size:12px;padding:6px 14px" title="Monta o orçamento pelo CATÁLOGO (fórmulas com QSP/embalagem, cálculo automático de preço, descontos, frete) e gera o PDF para enviar ao cliente">+ Novo orçamento</button><!-- v188 -->
         <input type="text" id="orc-crm-search" placeholder="Buscar empresa, produto..." oninput="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px;width:220px">
-        <select id="orc-crm-filter-status" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
-          <option value="">Todos os status</option>
-          <option value="aberto">Aberto</option>
-          <option value="ganho">Ganho</option>
-          <option value="perdido">Perdido</option>
-          <option value="expirado">Expirado</option>
-        </select>
+        <!-- v191 — o dropdown de status saiu: a etapa muda pelos botões Vendido/Perdido da linha e as sub-abas filtram -->
         <select id="orc-crm-filter-tipo" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
           <option value="">Todos os produtos</option>
           <option value="linha">Linha Personalizada</option>
@@ -2763,14 +2757,10 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <span id="orc-crm-count" style="font-size:11px;color:var(--text-tertiary)"></span>
       </div>
     </div>
+    <div class="des-tabs" id="orc-crm-tabs" style="margin-bottom:0"></div><!-- v191 — sub-abas Orçamentos/Vendidos/Perdidos -->
     <div class="table-scroll">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead>
-          <tr>
-            <th>Empresa</th><th>Produto</th><th>Valor</th><th>Frete</th>
-            <th>Forma Pgto</th><th>Prev. Pgto</th><th>Data</th><th>Status</th><th>Atendente</th><th>Ações</th>
-          </tr>
-        </thead>
+        <thead id="orc-crm-thead"></thead><!-- v191 — colunas de data variam por sub-aba -->
         <tbody id="orc-crm-tbody"></tbody>
       </table>
     </div>
@@ -4750,7 +4740,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v190';
+var APP_VERSION = 'v191';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -28539,7 +28529,10 @@ function salvarOrcamentoCrm(){
 }
 
 function deleteOrcamentoCrm(id){
-  if(!_soAdminApaga()) return;
+  // v191 — regra do dono 04/08: orçamento só é excluído pelo ADMIN ou pela DIRETORA COMERCIAL
+  if(!currentUser || (currentUser.perfil!=='admin' && currentUser.perfil!=='diretor_comercial')){
+    alert('Apenas o administrador e a diretora comercial podem excluir orçamentos.'); return;
+  }
   if(!confirm('Excluir este orçamento?')) return;
   orcamentosCrm = orcamentosCrm.filter(x=>x.id!==id);
   saveData(); renderOrcamentosCrm();
@@ -28558,7 +28551,7 @@ function alterarStatusOrcCrm(id, status){
 // markups por categoria de custo). Ajuste de concentração de ativo salva FÓRMULA NOVA com "AJ " no nome
 // (ajustadaDe = original). Desconto por item + desconto geral + frete + forma de pagamento + observações.
 // Numeração sequencial ORC-#### e 📄 PDF para o comercial enviar ao cliente.
-var _ob=null, _obSelFid=null;
+var _ob=null, _obSelFid=null, _obView=false; // v191 — _obView = "Abrir" (somente leitura)
 function _obNextNum(){
   var mx=0;
   (orcamentosCrm||[]).forEach(function(o){ var m=String(o.num||'').match(/(\d+)\s*$/); if(m){ var n=parseInt(m[1],10); if(n>mx) mx=n; } });
@@ -28573,11 +28566,12 @@ function _obResolveF(txt){
       || fs.find(function(f){ return String(f.codigo||'').toLowerCase()===txt; })
       || fs.find(function(f){ return String(f.nome||'').toLowerCase()===txt; }) || null;
 }
-function openOrcBuilder(id){
+function openOrcBuilder(id, viewOnly){
   var ex=id?(orcamentosCrm||[]).find(function(o){ return o.id===id; }):null;
   if(id && (!ex || !ex.detalhado)){ alert('Este orçamento é do registro antigo — use o Editar padrão.'); return; }
   _ob=ex?JSON.parse(JSON.stringify(ex)):{ id:null, num:null, clienteId:null, clienteNome:'', tipo:'venda', itens:[], frete:0, descGeral:0, formaPag:'PIX', obs:'', status:'aberto' };
   _obSelFid=null;
+  _obView=!!viewOnly; // v191 — "Abrir" = ver tudo sem editar
   _obRender();
 }
 function _obCliLabel(c){ return (c.nome||'')+(c.doc?' — '+c.doc:''); }
@@ -28613,62 +28607,62 @@ function _obRefreshTotais(){
   if(el) el.innerHTML='Subtotal <b>'+fmtMoney(t.sub)+'</b>'+(t.descI>0?' · desc. itens −'+fmtMoney(t.descI):'')+(t.dg>0?' · desc. geral −'+fmtMoney(t.dg):'')+((parseFloat(_ob.frete)||0)>0?' · frete +'+fmtMoney(_ob.frete):'')+' · <span style="font-size:15px;font-weight:700">TOTAL '+fmtMoney(t.tot)+'</span>';
   (_ob.itens||[]).forEach(function(it,i){ var el2=document.getElementById('ob-it-tot-'+i); if(el2){ var b=(parseFloat(it.precoUnit)||0)*(parseFloat(it.qtd)||0); el2.textContent=fmtMoney(b*(1-(parseFloat(it.descPct)||0)/100)); } });
   // v188 — bloco de pagamento simples (1 forma × 1 parcela) acompanha o novo total automaticamente
+  // (v191: no DADO sempre; o editor _pe só re-renderiza se o modal 💳 estiver aberto)
+  if(Array.isArray(_ob.pgtosBlocos) && _ob.pgtosBlocos.length===1 && (_ob.pgtosBlocos[0].parcelas||[]).length===1){
+    _ob.pgtosBlocos[0].valor=+t.tot.toFixed(2); _ob.pgtosBlocos[0].parcelas[0].valor=+t.tot.toFixed(2);
+  }
   if(document.getElementById('ob-pg-blocos') && Array.isArray(_ob.pgtosBlocos)){
-    if(_ob.pgtosBlocos.length===1 && (_ob.pgtosBlocos[0].parcelas||[]).length===1){ _ob.pgtosBlocos[0].valor=+t.tot.toFixed(2); _ob.pgtosBlocos[0].parcelas[0].valor=+t.tot.toFixed(2); }
     _peOpen(_ob.pgtosBlocos,'ob-pg-blocos',+t.tot.toFixed(2),_obPgResumo,_obModF(),FORMAS_PAG);
     _obPgResumo();
   }
+  _obPgSumRefresh();
 }
 function _obRender(){
   var ov=document.getElementById('ob-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='ob-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4200'; document.body.appendChild(ov); }
+  var V=_obView; // v191 — modo "Abrir": tudo visível, nada editável
+  var dis=V?' disabled':'';
   var cli=_ob.clienteId?(clients||[]).find(function(c){ return c.id===_ob.clienteId; }):null;
   var tiposOpts=Object.keys(TIPO_PEDIDO_CFG).map(function(k){ return '<option value="'+k+'"'+(_ob.tipo===k?' selected':'')+'>'+TIPO_PEDIDO_CFG[k].label+'</option>'; }).join('');
   var td='padding:6px 8px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
   var itensRows=(_ob.itens||[]).map(function(it,i){
     var b=(parseFloat(it.precoUnit)||0)*(parseFloat(it.qtd)||0);
     return '<tr><td style="'+td+'"><b>'+escapeHtml(it.nome||'')+'</b>'+(String(it.codigo||'').indexOf('AJ')===0?' <span style="font-size:9.5px;padding:1px 6px;border-radius:10px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:700" title="Fórmula ajustada a partir de '+escapeHtml(it.ajustadaDeNome||'')+'">AJ</span>':'')+'<div style="font-size:10.5px;color:var(--text-secondary)">'+escapeHtml(it.detalhe||'')+'</div>'+(it.avisos?'<div style="font-size:10px;color:var(--st-mid-tx)">⚠ '+it.avisos+' aviso(s) no cálculo</div>':'')+'</td>'+
-      '<td style="'+td+';text-align:right"><input type="number" min="0" step="any" value="'+(it.qtd||1)+'" oninput="_obSetItem('+i+',\'qtd\',this.value)" style="width:65px;text-align:right;font-size:12px"></td>'+
+      '<td style="'+td+';text-align:right">'+(V?String(it.qtd||1):'<input type="number" min="0" step="any" value="'+(it.qtd||1)+'" oninput="_obSetItem('+i+',\'qtd\',this.value)" style="width:65px;text-align:right;font-size:12px">')+'</td>'+
       '<td style="'+td+';text-align:right;white-space:nowrap">'+fmtMoney(it.precoUnit)+'</td>'+
-      '<td style="'+td+';text-align:right"><input type="number" min="0" max="100" step="0.01" value="'+(it.descPct||0)+'" oninput="_obSetItem('+i+',\'descPct\',this.value)" style="width:60px;text-align:right;font-size:12px"></td>'+
+      '<td style="'+td+';text-align:right">'+(V?((it.descPct||0)+'%'):'<input type="number" min="0" max="100" step="0.01" value="'+(it.descPct||0)+'" oninput="_obSetItem('+i+',\'descPct\',this.value)" style="width:60px;text-align:right;font-size:12px">')+'</td>'+
       '<td style="'+td+';text-align:right;white-space:nowrap;font-weight:600" id="ob-it-tot-'+i+'">'+fmtMoney(b*(1-(it.descPct||0)/100))+'</td>'+
-      '<td style="'+td+';text-align:center"><button onclick="_obRemItem('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer">✕</button></td></tr>';
+      (V?'':'<td style="'+td+';text-align:center"><button onclick="_obRemItem('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer">✕</button></td>')+'</tr>';
   }).join('');
   ov.innerHTML='<div class="modal" style="width:860px;max-width:96vw;max-height:92vh;overflow-y:auto">'+
-    '<h2 style="font-size:16px">🧾 '+(_ob.id?'Orçamento '+(_ob.num||''):'Novo orçamento')+'</h2>'+
+    '<h2 style="font-size:16px">'+(V?'👁 ':'🧾 ')+(_ob.id?'Orçamento '+(_ob.num||''):'Novo orçamento')+(V?' <span style="font-size:11px;font-weight:400;color:var(--text-tertiary)">(somente leitura)</span>':'')+'</h2>'+
     '<div class="form-row">'+
-      '<div class="form-group"><label>Cliente * <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(do cadastro)</span></label><input type="text" id="ob-cli" list="ob-cli-dl" value="'+escapeHtml(cli?_obCliLabel(cli):(_ob.clienteNome||''))+'" placeholder="Nome ou CPF/CNPJ..." onchange="_obSetCli(this.value)"><datalist id="ob-cli-dl">'+(clients||[]).filter(function(c){return c&&c.interno!==true;}).slice(0,1500).map(function(c){ return '<option value="'+escapeHtml(_obCliLabel(c))+'">'; }).join('')+'</datalist></div>'+
-      '<div class="form-group"><label>Tipo do pedido *</label><select id="ob-tipo" onchange="_obSet(\'tipo\',this.value)" style="font-size:13px">'+tiposOpts+'</select></div>'+
+      '<div class="form-group"><label>Cliente * <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(do cadastro)</span></label><input type="text" id="ob-cli" list="ob-cli-dl" value="'+escapeHtml(cli?_obCliLabel(cli):(_ob.clienteNome||''))+'" placeholder="Nome ou CPF/CNPJ..." onchange="_obSetCli(this.value)"'+dis+'><datalist id="ob-cli-dl">'+(clients||[]).filter(function(c){return c&&c.interno!==true;}).slice(0,1500).map(function(c){ return '<option value="'+escapeHtml(_obCliLabel(c))+'">'; }).join('')+'</datalist></div>'+
+      '<div class="form-group"><label>Tipo do pedido *</label><select id="ob-tipo" onchange="_obSet(\'tipo\',this.value)" style="font-size:13px"'+dis+'>'+tiposOpts+'</select></div>'+
     '</div>'+
     '<div style="font-size:11px;color:var(--text-secondary);margin:-4px 0 10px">📍 Endereço: <span id="ob-end">'+escapeHtml(cli?(_obEnderecoTxt(cli)||'cadastro sem endereço'):'— selecione um cliente do cadastro —')+'</span></div>'+
-    '<div class="modal-section"><div class="modal-section-title">Itens do orçamento</div>'+
-    ((_ob.itens||[]).length?('<div class="table-scroll"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:left">Produto</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Qtd</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Preço unit.</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Desc. %</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Total</th><th style="padding:6px 8px;background:var(--bg-secondary)"></th></tr></thead><tbody>'+itensRows+'</tbody></table></div>'):'<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Nenhum item ainda — monte abaixo e insira.</div>')+
-    '</div>'+
-    '<div class="modal-section" style="background:var(--bg-secondary);border-radius:10px;padding:12px"><div class="modal-section-title">Adicionar produto <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(funciona como o simulador: fórmula → QSP/cápsulas → embalagem → preço automático)</span></div>'+
-      '<div class="form-group" style="margin-bottom:8px"><label>Fórmula do catálogo *</label><input type="text" id="ob-f" list="ob-f-dl" placeholder="Código ou nome da fórmula..." onchange="_obPickFormula(this.value)"><datalist id="ob-f-dl">'+_obFormulas().slice(0,1500).map(function(f){ return '<option value="'+escapeHtml(_obFLabel(f))+'">'; }).join('')+'</datalist></div>'+
-      '<div id="ob-f-campos"></div>'+
+    '<div class="modal-section"><div class="modal-section-title" style="display:flex;align-items:center;gap:10px">Itens do orçamento'+(V?'':' <button class="btn-primary" onclick="_obAddModal()" style="font-size:12px;padding:5px 14px" title="Abre o modal de inserção: fórmula, composição, QSP/cápsulas, frasco e quantidade">＋ Adicionar produto</button>')+'</div>'+
+    ((_ob.itens||[]).length?('<div class="table-scroll"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:left">Produto</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Qtd</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Preço unit.</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Desc. %</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Total</th>'+(V?'':'<th style="padding:6px 8px;background:var(--bg-secondary)"></th>')+'</tr></thead><tbody>'+itensRows+'</tbody></table></div>'):'<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Nenhum item ainda — use "＋ Adicionar produto".</div>')+
     '</div>'+
     '<div class="form-row">'+
-      '<div class="form-group"><label>Desconto geral (%)</label><input type="number" min="0" max="100" step="0.01" value="'+(_ob.descGeral||0)+'" oninput="_obSet(\'descGeral\',this.value)"></div>'+
-      '<div class="form-group"><label>Frete cobrado (R$)</label><input type="number" min="0" step="0.01" value="'+(_ob.frete||0)+'" oninput="_obSet(\'frete\',this.value)"></div>'+
+      '<div class="form-group"><label>Desconto geral (%)</label><input type="number" min="0" max="100" step="0.01" value="'+(_ob.descGeral||0)+'" oninput="_obSet(\'descGeral\',this.value)"'+dis+'></div>'+
+      '<div class="form-group"><label>Frete cobrado (R$)</label><input type="number" min="0" step="0.01" value="'+(_ob.frete||0)+'" oninput="_obSet(\'frete\',this.value)"'+dis+'></div>'+
     '</div>'+
-    '<div class="modal-section"><div class="modal-section-title">Pagamento <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(formas e parcelas — padrão da venda; vai junto quando o orçamento virar pedido)</span></div>'+
-      '<div id="ob-pg-blocos"></div>'+
-      '<button type="button" id="ob-pg-addforma" onclick="_peAddBloco()" style="font-size:12px;padding:5px 12px;margin-top:4px'+(_obModF()?';display:none':'')+'">+ Adicionar forma de pagamento</button>'+
-      '<div id="ob-pg-resumo" style="font-size:11px;margin:8px 0 2px"></div>'+
+    '<div class="modal-section"><div class="modal-section-title" style="display:flex;align-items:center;gap:10px">Pagamento'+(V?'':' <button onclick="_obPgModal()" style="font-size:12px;padding:5px 14px" title="Abre o modal de condições: formas e parcelas — padrão da venda; vai junto quando o orçamento virar pedido">💳 Condições de pagamento</button>')+'</div>'+
+      '<div id="ob-pg-sum" style="padding:4px 0"></div>'+
     '</div>'+
-    '<div class="form-group" style="margin-bottom:10px"><label>Observações</label><input type="text" value="'+escapeHtml(_ob.obs||'')+'" oninput="_obSet(\'obs\',this.value)" placeholder="validade do orçamento, condições..."></div>'+
+    '<div class="form-group" style="margin-bottom:10px"><label>Observações</label><input type="text" value="'+escapeHtml(_ob.obs||'')+'" oninput="_obSet(\'obs\',this.value)" placeholder="validade do orçamento, condições..."'+dis+'></div>'+
     '<div id="ob-totais" style="font-size:13px;text-align:right;background:var(--bg-secondary);border-radius:8px;padding:10px 14px;margin-bottom:10px"></div>'+
-    (_ob.pedidoNum?'<div style="font-size:12px;color:var(--st-ok-tx);font-weight:600;margin-bottom:8px">✅ Orçamento FECHADO — virou o pedido '+escapeHtml(_ob.pedidoNum)+' (em Gestão a Vista; D1 será a data da aprovação no Caixa).</div>':'')+
-    '<div class="modal-footer"><button onclick="document.getElementById(\'ob-overlay\').classList.remove(\'open\')">Cancelar</button><button onclick="_obSalvar(false)">💾 Salvar</button><button onclick="_obSalvar(true)">📄 Salvar e gerar PDF</button>'+(_ob.pedidoNum?'':'<button class="btn-primary" onclick="_obFechar()" title="Efetivar a venda: informa o nº do pedido no Opery e o pedido é lançado em Gestão a Vista (entra PENDENTE no Caixa; o D1 será a data da aprovação)">✅ Fechar — virar pedido</button>')+'</div>'+
+    (_ob.pedidoNum?'<div style="font-size:12px;color:var(--st-ok-tx);font-weight:600;margin-bottom:8px">✅ Orçamento VENDIDO — virou o pedido '+escapeHtml(_ob.pedidoNum)+' (em Gestão a Vista; D1 será a data da aprovação no Caixa).</div>':'')+
+    (V
+      ? '<div class="modal-footer"><button onclick="document.getElementById(\'ob-overlay\').classList.remove(\'open\')">Fechar</button>'+(_ob.pedidoNum?'':'<button onclick="_obView=false;_obRender()">✏ Editar</button>')+'</div>'
+      : '<div class="modal-footer"><button onclick="document.getElementById(\'ob-overlay\').classList.remove(\'open\')">Cancelar</button><button onclick="_obSalvar(false)">💾 Salvar</button><button onclick="_obSalvar(true)">📄 Salvar e gerar PDF</button>'+(_ob.pedidoNum?'':'<button class="btn-primary" onclick="_obFechar()" title="Efetivar a venda: informa o nº do pedido no Opery e o pedido é lançado em Gestão a Vista (entra PENDENTE no Caixa; o D1 será a data da aprovação)">✅ Vendido — virar pedido</button>')+'</div>')+
   '</div>';
   ov.classList.add('open');
-  // v188 — pagamento em BLOCOS (padrão _pe, MESMAS formas do pedido/Caixa: FORMAS_PAG + regra de
-  // MODALIDADE dos tipos especiais — bonificação/amostra/venda filho etc. travam a forma na modalidade,
-  // igual ao editor do pedido). 1 bloco simples acompanha o total automaticamente.
+  // v188/v191 — pagamento em BLOCOS (padrão _pe, formas do Caixa): os dados são garantidos aqui; o EDITOR
+  // agora vive no modal 💳 (_obPgModal) e a tela mostra o RESUMO (ob-pg-sum), atualizado a cada mudança.
   _obPgInit();
   _obRefreshTotais();
-  if(_obSelFid) _obPickFormula(null, _obSelFid);
 }
 function _obModF(){ try{ return _formaModalidadeDoTipo(_ob&&_ob.tipo||'venda')||''; }catch(_e){ return ''; } }
 function _obPgInit(){
@@ -28677,8 +28671,44 @@ function _obPgInit(){
   else if(!Array.isArray(_ob.pgtosBlocos)||!_ob.pgtosBlocos.length){
     _ob.pgtosBlocos=[{forma:_ob.formaPag||'PIX',valor:tot,nsu:'',parcelas:[{num:1,valor:tot,vencimento:(typeof today==='function'?today():''),pago:false}]}];
   }
-  _peOpen(_ob.pgtosBlocos,'ob-pg-blocos',tot,_obPgResumo,modF,FORMAS_PAG);
-  _obPgResumo();
+  // v191 — o editor _pe vive no MODAL 💳; só renderiza se o container existir (modal aberto)
+  if(document.getElementById('ob-pg-blocos')){
+    _peOpen(_ob.pgtosBlocos,'ob-pg-blocos',tot,_obPgResumo,modF,FORMAS_PAG);
+    _obPgResumo();
+  }
+  _obPgSumRefresh();
+}
+// v191 — MODAL de condições de pagamento (pedido do dono 04/08): o editor _pe sai da tela do orçamento
+// e abre por botão; a tela guarda o RESUMO do que foi configurado (ob-pg-sum).
+function _obPgModal(){
+  var ov=document.getElementById('ob-pg-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='ob-pg-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4300'; document.body.appendChild(ov); }
+  var t=_obTotais();
+  ov.innerHTML='<div class="modal" style="width:640px;max-width:95vw;max-height:88vh;overflow-y:auto">'+
+    '<h2 style="font-size:16px">💳 Condições de pagamento</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">Formas e parcelas — padrão da venda; vai junto quando o orçamento virar pedido. Total do orçamento: <b>'+fmtMoney(t.tot)+'</b></div>'+
+    '<div id="ob-pg-blocos"></div>'+
+    '<button type="button" id="ob-pg-addforma" onclick="_peAddBloco()" style="font-size:12px;padding:5px 12px;margin-top:4px'+(_obModF()?';display:none':'')+'">+ Adicionar forma de pagamento</button>'+
+    '<div id="ob-pg-resumo" style="font-size:11px;margin:8px 0 2px"></div>'+
+    '<div class="modal-footer"><button class="btn-primary" onclick="document.getElementById(\'ob-pg-overlay\').classList.remove(\'open\');_obPgSumRefresh()">✓ OK</button></div></div>';
+  ov.classList.add('open');
+  _obPgInit();
+}
+function _obPgSumHtml(){
+  var bs=(_ob&&Array.isArray(_ob.pgtosBlocos))?_ob.pgtosBlocos:[];
+  if(!bs.length) return '<span style="font-size:12px;color:var(--text-tertiary)">— nenhuma condição configurada ainda —</span>';
+  return bs.map(function(b){
+    var pp=b.parcelas||[];
+    var v=pp.length?pp.reduce(function(s,p){ return s+(parseFloat(p.valor)||0); },0):(parseFloat(b.valor)||0);
+    return '<div style="font-size:12px;padding:2px 0">💳 <b>'+escapeHtml(b.forma||'—')+'</b> — '+fmtMoney(v)+' · '+(pp.length||1)+'×'+(pp[0]&&pp[0].vencimento?' · 1ª parcela '+fmtDate(pp[0].vencimento):'')+'</div>';
+  }).join('');
+}
+function _obPgSumRefresh(){
+  var el=document.getElementById('ob-pg-sum'); if(!el||!_ob) return;
+  var t=_obTotais();
+  var d=(_ob.pgtosBlocos||[]).reduce(function(s,b){ var pp=b.parcelas||[]; return s+(pp.length?pp.reduce(function(ss,p){return ss+(parseFloat(p.valor)||0);},0):(parseFloat(b.valor)||0)); },0);
+  var ok=Math.abs(d-t.tot)<0.01;
+  el.innerHTML=_obPgSumHtml()+'<div style="font-size:11px;margin-top:4px">Configurado <b>'+fmtMoney(d)+'</b> / '+fmtMoney(t.tot)+' — '+(ok?'<span style="color:var(--st-ok-tx)">✓ valor exato</span>':'<span style="color:var(--st-mid-tx)">⚠ diferente do total (o financeiro revisa no Caixa)</span>')+'</div>';
 }
 function _obPgResumo(){
   var el=document.getElementById('ob-pg-resumo'); if(!el||!_ob) return;
@@ -28687,26 +28717,49 @@ function _obPgResumo(){
   var ok=Math.abs(d-t.tot)<0.01;
   el.innerHTML='Configurado <b>'+fmtMoney(d)+'</b> / '+fmtMoney(t.tot)+' — '+(ok?'<span style="color:var(--st-ok-tx)">✓ valor exato</span>':'<span style="color:var(--st-mid-tx)">⚠ diferente do total do orçamento (o financeiro revisa no Caixa)</span>');
 }
+// v191 — MODAL de inserção de produto (pedido do dono 04/08): fórmula → COMPOSIÇÃO já visível (dose
+// editável — alterar salva fórmula nova "AJ") → frasco/QSP ou cápsulas/volumetria → quantidade.
+// "+ Inserir" insere e fecha; "+ Inserir e adicionar outro" insere e reabre o modal limpo.
+function _obAddModal(){
+  var ov=document.getElementById('ob-add-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='ob-add-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4300'; document.body.appendChild(ov); }
+  _obSelFid=null;
+  ov.innerHTML='<div class="modal" style="width:660px;max-width:95vw;max-height:90vh;overflow-y:auto">'+
+    '<h2 style="font-size:16px">＋ Adicionar produto</h2>'+
+    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px">Funciona como o simulador: fórmula → composição → QSP/cápsulas → embalagem → preço automático pelo motor de precificação.</div>'+
+    '<div class="form-group" style="margin-bottom:8px"><label>Fórmula do catálogo *</label><input type="text" id="ob-f" list="ob-f-dl" placeholder="Código ou nome da fórmula..." onchange="_obPickFormula(this.value)"><datalist id="ob-f-dl">'+_obFormulas().slice(0,1500).map(function(f){ return '<option value="'+escapeHtml(_obFLabel(f))+'">'; }).join('')+'</datalist></div>'+
+    '<div id="ob-f-campos"><div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Escolha a fórmula para ver a composição e os campos.</div></div>'+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'ob-add-overlay\').classList.remove(\'open\')">Cancelar</button><button onclick="_obAddItem(false)">+ Inserir</button><button class="btn-primary" onclick="_obAddItem(true)">+ Inserir e adicionar outro</button></div></div>';
+  ov.classList.add('open');
+  var fi=document.getElementById('ob-f'); if(fi) fi.focus();
+}
 function _obPickFormula(txt, fid){
   var f=fid?(catalogoNovo||[]).find(function(x){ return x.id===fid; }):_obResolveF(txt);
   var box=document.getElementById('ob-f-campos'); if(!box) return;
-  if(!f){ box.innerHTML=''; _obSelFid=null; return; }
+  if(!f){ box.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Escolha a fórmula para ver a composição e os campos.</div>'; _obSelFid=null; return; }
   _obSelFid=f.id;
   var caps=(f.forma==='capsula');
   var ativos=(f.composicao||[]).filter(function(cp){ return cp.papel!=='excipiente'; });
+  var exc=(f.composicao||[]).filter(function(cp){ return cp.papel==='excipiente'; });
   var ajRows=ativos.map(function(cp,i){
-    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:12px"><span style="flex:1;min-width:0">'+escapeHtml(cp.nome||'?')+'</span><input type="number" min="0" step="any" id="ob-aj-'+i+'" value="'+(cp.dose!=null?cp.dose:'')+'" style="width:90px;text-align:right;font-size:12px"><span style="width:36px;color:var(--text-secondary)">'+escapeHtml(cp.unidade||(caps?'mg':'%'))+'</span></div>';
+    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:12px"><span style="flex:1;min-width:0">'+escapeHtml(cp.nome||'?')+(cp.invisivel?' <span style="font-size:9px;color:var(--text-tertiary)" title="Não aparece no PDF do cliente">🚫 invisível</span>':'')+'</span><input type="number" min="0" step="any" id="ob-aj-'+i+'" value="'+(cp.dose!=null?cp.dose:'')+'" style="width:90px;text-align:right;font-size:12px"><span style="width:36px;color:var(--text-secondary)">'+escapeHtml(cp.unidade||(caps?'mg':'%'))+'</span></div>';
   }).join('');
-  box.innerHTML='<div class="form-row">'+
+  box.innerHTML=
+    // v191 — a COMPOSIÇÃO abre junto com a fórmula (pedido do dono): dose editável ali mesmo
+    '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-secondary);margin-bottom:6px">Composição <span style="font-weight:400;text-transform:none;color:var(--text-tertiary)">(pode editar as doses — qualquer alteração salva uma fórmula nova com "AJ" no nome; a original não muda)</span></div>'+
+    (ajRows||'<div style="font-size:12px;color:var(--text-tertiary)">Sem ativos cadastrados.</div>')+
+    (exc.length?'<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">Excipiente: '+exc.map(function(cp){ return escapeHtml(cp.nome||'?'); }).join(' · ')+' (qsp)</div>':'')+'</div>'+
+    '<div class="form-row">'+
     (caps
       ? '<div class="form-group"><label>Nº de cápsulas *</label><input type="number" min="1" step="1" id="ob-ncaps" value="60"></div><div class="form-group"><label>Tamanho da cápsula</label><select id="ob-capstam" style="font-size:13px">'+['00','0','1','2','3','4'].map(function(t){ return '<option'+(String(f.capsTam||'0')===t?' selected':'')+'>'+t+'</option>'; }).join('')+'</select></div>'
-      : '<div class="form-group"><label>Quantidade base (QSP) *</label><input type="number" min="0" step="any" id="ob-qspv" value="'+(f.qspValor!=null&&f.qspValor!==''?f.qspValor:120)+'"></div><div class="form-group"><label>Unidade</label><select id="ob-qspu" style="font-size:13px"><option'+((f.qspUn||'g')==='g'?' selected':'')+'>g</option><option'+((f.qspUn||'g')==='mL'?' selected':'')+'>mL</option></select></div>')+
+      : '<div class="form-group"><label>Quantidade base (QSP) * <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(volumetria)</span></label><input type="number" min="0" step="any" id="ob-qspv" value="'+(f.qspValor!=null&&f.qspValor!==''?f.qspValor:120)+'"></div><div class="form-group"><label>Unidade</label><select id="ob-qspu" style="font-size:13px"><option'+((f.qspUn||'g')==='g'?' selected':'')+'>g</option><option'+((f.qspUn||'g')==='mL'?' selected':'')+'>mL</option></select></div>')+
     '</div>'+
-    '<div class="form-group" style="margin-bottom:8px"><label>Embalagem</label><input type="text" id="ob-emb" list="ob-emb-dl" placeholder="Código ou nome da embalagem..."><datalist id="ob-emb-dl">'+_geEmbs().slice(0,900).map(function(x){ return '<option value="'+escapeHtml(_geLabel(x))+'">'; }).join('')+'</datalist></div>'+
-    '<details style="margin-bottom:8px"><summary style="font-size:12px;cursor:pointer;color:var(--text-info)">⚗ Ajustar concentração dos ativos <span style="color:var(--text-tertiary)">(qualquer alteração salva uma fórmula nova com "AJ" no nome)</span></summary><div style="padding:8px 4px 0">'+ajRows+'</div></details>'+
-    '<div style="display:flex;gap:10px;align-items:center"><label style="font-size:12px">Qtd de unidades <input type="number" min="1" step="1" id="ob-qtd" value="1" style="width:70px;text-align:right;font-size:12px;margin-left:4px"></label><button class="btn-primary" onclick="_obAddItem()" style="font-size:12.5px;padding:6px 16px">+ Inserir no orçamento</button></div>';
+    '<div class="form-row">'+
+      '<div class="form-group"><label>Embalagem (frasco)</label><input type="text" id="ob-emb" list="ob-emb-dl" placeholder="Código ou nome da embalagem..."><datalist id="ob-emb-dl">'+_geEmbs().slice(0,900).map(function(x){ return '<option value="'+escapeHtml(_geLabel(x))+'">'; }).join('')+'</datalist></div>'+
+      '<div class="form-group"><label>Qtd de unidades</label><input type="number" min="1" step="1" id="ob-qtd" value="1" style="text-align:right"></div>'+
+    '</div>';
 }
-function _obAddItem(){
+function _obAddItem(outro){
   var f=_obSelFid?(catalogoNovo||[]).find(function(x){ return x.id===_obSelFid; }):null;
   if(!f){ alert('Selecione uma fórmula do catálogo.'); return; }
   var caps=(f.forma==='capsula');
@@ -28748,7 +28801,10 @@ function _obAddItem(){
     qtd:qtd, precoUnit:+(calc.precoTotal||0).toFixed(2), custoUnit:+(calc.custoTotal||0).toFixed(2),
     descPct:0, avisos:(calc.avisos||[]).length, ajustadaDeNome:ajustadaDeNome });
   _obSelFid=null;
+  // v191 — o modal de inserção fecha; "+ Inserir e adicionar outro" reabre limpo para o próximo produto
+  var ao=document.getElementById('ob-add-overlay'); if(ao) ao.classList.remove('open');
   _obRender();
+  if(outro) _obAddModal();
 }
 function _obSalvar(gerarPdf, silencioso){
   if(!_ob) return null;
@@ -28764,6 +28820,7 @@ function _obSalvar(gerarPdf, silencioso){
     id:_ob.id||('orc'+Date.now()), num:_ob.num||_obNextNum(), detalhado:true,
     data:_ob.data||(typeof today==='function'?today():new Date().toISOString().slice(0,10)),
     status:_ob.status||'aberto', pedidoId:_ob.pedidoId||null, pedidoNum:_ob.pedidoNum||null,
+    vendidoEm:_ob.vendidoEm||null, perdidoEm:_ob.perdidoEm||null, // v191 — carimbos das etapas (colunas das sub-abas)
     clienteId:_ob.clienteId, clienteNome:(cli&&cli.nome)||_ob.clienteNome||'', empresa:(cli&&cli.nome)||'',
     endereco:cli?{rua:cli.rua||'',numero:cli.numero||'',comp:cli.comp||'',bairro:cli.bairro||'',cidade:cli.cidade||'',uf:cli.uf||'',cep:cli.cep||''}:null,
     tipo:_ob.tipo||'venda', tipoProduto:ehAnest?'anestesico':'linha',
@@ -28841,13 +28898,14 @@ function _obFechar(){
       origemOrcamentoId:orc.id, d1Provisorio:true }
   });
   o.itensExpedicao=itensPed.map(function(it){ return {qtd:it.qtd, nome:it.nome, codigo:it.codigo, produtoId:it.produtoId}; });
-  _ob.status='ganho'; _ob.pedidoId=o.id; _ob.pedidoNum=num;
+  _ob.status='ganho'; _ob.pedidoId=o.id; _ob.pedidoNum=num; _ob.vendidoEm=Date.now(); // v191 — carimbo da etapa Vendido
   _obSalvar(false, true);
+  window._orcTab='ganho'; // v191 — a lista abre na sub-aba Vendidos, onde o orçamento acabou de entrar
   try{ if(typeof sincronizarContasReceberDePedidos==='function') sincronizarContasReceberDePedidos(o.id); }catch(_e){}
   saveData();
   try{ renderOrcamentosCrm(); }catch(_e){}
-  document.getElementById('ob-overlay').classList.remove('open');
-  alert('✓ Orçamento '+orc.num+' FECHADO — pedido '+num+' lançado em Gestão a Vista.\n\n• Entra PENDENTE no Caixa (como sempre).\n• O D1 será carimbado com a data da APROVAÇÃO no Caixa.\n• Quando o PDF do Opery aparecer no Drive, a rotina reconhece o número e não duplica.');
+  var _ovF=document.getElementById('ob-overlay'); if(_ovF) _ovF.classList.remove('open'); // v191 — o Vendido da LINHA fecha sem o construtor aberto
+  alert('✓ Orçamento '+orc.num+' VENDIDO — pedido '+num+' lançado em Gestão a Vista.\n\n• Entra PENDENTE no Caixa (como sempre).\n• O D1 será carimbado com a data da APROVAÇÃO no Caixa.\n• Quando o PDF do Opery aparecer no Drive, a rotina reconhece o número e não duplica.');
 }
 function _obPdfById(id){ var o=(orcamentosCrm||[]).find(function(x){ return x.id===id; }); if(o) _obPdfDoc(o); }
 function _obPdfDoc(o){
@@ -28872,25 +28930,57 @@ function _obPdfDoc(o){
       var eb=(insumos||[]).find(function(x){ return x && x.id===it.embalagemId; });
       if(eb && (eb.nomeComercial||'').trim() && det.indexOf(it.embalagemNome)>=0) det=det.replace(it.embalagemNome, eb.nomeComercial.trim());
     }
-    return '<tr><td>'+(i+1)+'</td><td><b>'+escapeHtml(it.nome||'')+'</b><br><span style="font-size:10px;color:#555">'+escapeHtml(det)+'</span>'+(compTxt?'<br><span style="font-size:9.5px;color:#777">Composição: '+escapeHtml(compTxt)+'</span>':'')+'</td><td style="text-align:right">'+(it.qtd||1)+'</td><td style="text-align:right">'+fmtMoney(it.precoUnit)+'</td><td style="text-align:right">'+((parseFloat(it.descPct)||0)>0?(it.descPct+'%'):'—')+'</td><td style="text-align:right"><b>'+fmtMoney(b*(1-(parseFloat(it.descPct)||0)/100))+'</b></td></tr>';
+    return '<tr><td style="color:#8A7D75">'+(i+1)+'</td><td><div class="nm">'+escapeHtml(it.nome||'')+'</div>'+(det?'<div class="dt">'+escapeHtml(det)+'</div>':'')+(compTxt?'<div class="cp">Composição: '+escapeHtml(compTxt)+'</div>':'')+'</td><td style="text-align:right">'+(it.qtd||1)+'</td><td style="text-align:right;white-space:nowrap">'+fmtMoney(it.precoUnit)+'</td><td style="text-align:right">'+((parseFloat(it.descPct)||0)>0?(it.descPct+'%'):'—')+'</td><td style="text-align:right;white-space:nowrap"><b>'+fmtMoney(b*(1-(parseFloat(it.descPct)||0)/100))+'</b></td></tr>';
+  }).join('');
+  // v191 — layout no PADRÃO DO PEDIDO DO OPERY (pedido do dono 04/08), mais elegante e leve:
+  // sem imagem/fonte externa (só CSS de impressão inline — arquivo pequeno), leitura em blocos:
+  // cabeçalho → cliente → itens (volumetria/embalagem + composição) → totais → pagamento → observações.
+  var cliCad=o.clienteId?(clients||[]).find(function(c){ return c && c.id===o.clienteId; }):null;
+  var _pgLinhas=(Array.isArray(o.pgtosBlocos)?o.pgtosBlocos:[]).map(function(b){
+    var pp=b.parcelas||[];
+    var v=pp.length?pp.reduce(function(s,p){ return s+(parseFloat(p.valor)||0); },0):(parseFloat(b.valor)||0);
+    var det2=pp.length>1?pp.map(function(p,pi){ return (pi+1)+'ª '+fmtMoney(p.valor)+(p.vencimento?' em '+fmtDate(p.vencimento):''); }).join(' · '):(pp[0]&&pp[0].vencimento?'vencimento '+fmtDate(pp[0].vencimento):'');
+    return '<tr><td>'+escapeHtml(b.forma||'—')+'</td><td style="text-align:center">'+(pp.length||1)+'×</td><td style="text-align:right">'+fmtMoney(v)+'</td><td>'+escapeHtml(det2||'—')+'</td></tr>';
   }).join('');
   var w=window.open('','_blank');
   if(!w){ alert('O navegador bloqueou a janela do PDF — libere pop-ups para este site.'); return; }
-  w.document.write('<html><head><title>Orçamento '+escapeHtml(o.num||'')+'</title><style>'+
-    'body{font-family:Segoe UI,Arial,sans-serif;max-width:800px;margin:24px auto;color:#1a1a1a;font-size:13px}'+
-    'h1{font-size:20px;margin:0}h2{font-size:14px;margin:16px 0 6px}'+
-    'table{width:100%;border-collapse:collapse;margin:8px 0}th,td{border:1px solid #ccc;padding:6px 8px;font-size:12px}th{background:#f0f0f0;text-align:left}'+
-    '.tot{text-align:right;font-size:13px;margin-top:8px}.tot b{font-size:16px}'+
-    '@media print{body{margin:10mm}}</style></head><body>'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #333;padding-bottom:10px">'+
-    '<div><h1>LECARE — Farmácia de Manipulação</h1><div style="font-size:11px;color:#555">Orçamento de manipulados</div></div>'+
-    '<div style="text-align:right"><div style="font-size:16px;font-weight:700">'+escapeHtml(o.num||'')+'</div><div style="font-size:11px">'+fmtDate(o.data)+'</div></div></div>'+
-    '<h2>Cliente</h2><div><b>'+escapeHtml(o.clienteNome||'')+'</b>'+(end?'<br>'+escapeHtml(end):'')+'</div>'+
-    '<h2>Itens</h2><table><thead><tr><th>#</th><th>Produto</th><th style="text-align:right">Qtd</th><th style="text-align:right">Preço unit.</th><th style="text-align:right">Desc.</th><th style="text-align:right">Total</th></tr></thead><tbody>'+rows+'</tbody></table>'+
-    '<div class="tot">Subtotal: '+fmtMoney(t.sub)+(t.descI>0?'<br>Desconto por item: −'+fmtMoney(t.descI):'')+((parseFloat(o.descGeral)||0)>0?'<br>Desconto geral ('+o.descGeral+'%): −'+fmtMoney(dg):'')+((parseFloat(o.frete)||0)>0?'<br>Frete: +'+fmtMoney(o.frete):'')+'<br><b>TOTAL: '+fmtMoney(tot)+'</b></div>'+
-    '<h2>Condições</h2><div>Forma de pagamento: <b>'+escapeHtml(o.formaPag||'—')+'</b>'+(o.obs?'<br>Observações: '+escapeHtml(o.obs):'')+'</div>'+
-    '<div style="margin-top:22px;font-size:11px;color:#555">Responsável: '+escapeHtml(o.responsavel||'')+' · Documento gerado pelo sistema Lecare Gestão.</div>'+
-    '<script>window.print();<\/script></body></html>');
+  w.document.write('<html lang="pt-BR"><head><meta charset="UTF-8"><title>Orçamento '+escapeHtml(o.num||'')+' — Lecare</title><style>'+
+    '@page{size:A4;margin:14mm 12mm}'+
+    '*{box-sizing:border-box}body{font-family:"Segoe UI",Helvetica,Arial,sans-serif;color:#1F1A17;font-size:12px;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}'+
+    '.wrap{max-width:820px;margin:0 auto;padding:18px 6px}'+
+    '.cab{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #72243E;padding-bottom:12px;margin-bottom:14px}'+
+    '.marca{font-size:24px;font-weight:800;letter-spacing:.14em;color:#72243E}.marca small{display:block;font-size:10.5px;font-weight:400;letter-spacing:.02em;color:#6B5E58;margin-top:2px}'+
+    '.docnum{text-align:right}.docnum .t{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6B5E58}.docnum .n{font-size:19px;font-weight:800;color:#72243E}.docnum .d{font-size:11px;color:#4A403B}'+
+    '.sec{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#72243E;margin:16px 0 5px}'+
+    '.cli{background:#FAF6F3;border:1px solid #E9DED7;border-radius:8px;padding:10px 14px;display:flex;gap:24px;flex-wrap:wrap}'+
+    '.cli b{font-size:13px}.cli .lb{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#6B5E58}.cli>div{min-width:200px}'+
+    'table{width:100%;border-collapse:collapse}'+
+    '.itens th{background:#72243E;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:7px 9px;text-align:left;font-weight:600}'+
+    '.itens td{padding:8px 9px;border-bottom:1px solid #EAE2DC;vertical-align:top}'+
+    '.itens tr:nth-child(even) td{background:#FBF8F6}'+
+    '.itens .nm{font-size:12.5px;font-weight:700}.itens .dt{font-size:10.5px;color:#5A4F49;margin-top:1px}.itens .cp{font-size:10px;color:#7A6E67;margin-top:2px}'+
+    '.pg th{background:#F2EAE4;color:#4A403B;font-size:10px;text-transform:uppercase;padding:6px 9px;text-align:left}.pg td{padding:6px 9px;border-bottom:1px solid #EAE2DC;font-size:11.5px}'+
+    '.totbox{margin-left:auto;width:300px;margin-top:10px}.totbox td{padding:4px 9px;font-size:12px}.totbox .tt td{border-top:2px solid #72243E;font-size:15px;font-weight:800;color:#72243E;padding-top:7px}'+
+    '.obs{background:#FAF6F3;border:1px solid #E9DED7;border-radius:8px;padding:9px 14px;font-size:11.5px}'+
+    '.rod{margin-top:20px;border-top:1px solid #E9DED7;padding-top:8px;font-size:10px;color:#8A7D75;display:flex;justify-content:space-between;gap:12px}'+
+    '@media print{.wrap{padding:0}}</style></head><body><div class="wrap">'+
+    '<div class="cab"><div class="marca">LECARE<small>Farmácia de Manipulação — Dermocosméticos Personalizados</small></div>'+
+    '<div class="docnum"><div class="t">Orçamento</div><div class="n">'+escapeHtml(o.num||'')+'</div><div class="d">'+fmtDate(o.data)+'</div></div></div>'+
+    '<div class="sec">Cliente</div>'+
+    '<div class="cli"><div><div class="lb">Nome</div><b>'+escapeHtml(o.clienteNome||'')+'</b>'+((cliCad&&cliCad.doc)?'<div class="lb" style="margin-top:5px">CPF / CNPJ</div><div>'+escapeHtml(cliCad.doc)+'</div>':'')+'</div>'+
+    ((cliCad&&(cliCad.tel||cliCad.email))?('<div>'+(cliCad.tel?'<div class="lb">Telefone</div><div>'+escapeHtml(cliCad.tel)+'</div>':'')+(cliCad.email?'<div class="lb" style="margin-top:5px">E-mail</div><div>'+escapeHtml(cliCad.email)+'</div>':'')+'</div>'):'')+
+    (end?'<div><div class="lb">Endereço</div><div>'+escapeHtml(end)+'</div></div>':'')+'</div>'+
+    '<div class="sec">Itens do orçamento</div>'+
+    '<table class="itens"><thead><tr><th style="width:26px">#</th><th>Produto</th><th style="text-align:right;width:44px">Qtd</th><th style="text-align:right;width:84px">Valor unit.</th><th style="text-align:right;width:52px">Desc.</th><th style="text-align:right;width:92px">Valor total</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<table class="totbox"><tr><td>Subtotal</td><td style="text-align:right">'+fmtMoney(t.sub)+'</td></tr>'+
+    (t.descI>0?'<tr><td>Descontos por item</td><td style="text-align:right">− '+fmtMoney(t.descI)+'</td></tr>':'')+
+    ((parseFloat(o.descGeral)||0)>0?'<tr><td>Desconto geral ('+o.descGeral+'%)</td><td style="text-align:right">− '+fmtMoney(dg)+'</td></tr>':'')+
+    ((parseFloat(o.frete)||0)>0?'<tr><td>Frete</td><td style="text-align:right">+ '+fmtMoney(o.frete)+'</td></tr>':'')+
+    '<tr class="tt"><td>TOTAL</td><td style="text-align:right">'+fmtMoney(tot)+'</td></tr></table>'+
+    (_pgLinhas?('<div class="sec">Condições de pagamento</div><table class="pg"><thead><tr><th>Forma</th><th style="text-align:center;width:56px">Parcelas</th><th style="text-align:right;width:100px">Valor</th><th>Vencimentos</th></tr></thead><tbody>'+_pgLinhas+'</tbody></table>'):('<div class="sec">Condições de pagamento</div><div style="font-size:11.5px">Forma de pagamento: <b>'+escapeHtml(o.formaPag||'a combinar')+'</b></div>'))+
+    (o.obs?'<div class="sec">Observações</div><div class="obs">'+escapeHtml(o.obs)+'</div>':'')+
+    '<div class="rod"><div>Atendimento: <b>'+escapeHtml(o.responsavel||'')+'</b></div><div>Documento gerado pelo sistema Lecare Gestão em '+new Date().toLocaleDateString('pt-BR')+'. Valores sujeitos a confirmação no fechamento do pedido.</div></div>'+
+    '</div><script>window.onload=function(){ setTimeout(function(){ window.print(); }, 200); };<\/script></body></html>');
   w.document.close();
 }
 function renderOrcamentosCrm(){
@@ -28910,16 +29000,25 @@ function renderOrcamentosCrm(){
   }
 
   const search  = (document.getElementById('orc-crm-search')?.value||'').toLowerCase();
-  const fStatus = document.getElementById('orc-crm-filter-status')?.value||'';
   const fTipo   = document.getElementById('orc-crm-filter-tipo')?.value||'';
   const fMes    = document.getElementById('orc-crm-filter-mes')?.value||'';
 
-  let filtered = orcamentosCrm.filter(o=>{
-    if(fStatus && o.status!==fStatus) return false;
+  // v191 — SUB-ABAS por etapa (pedido do dono 04/08): 🧾 Orçamentos (aberto) · ✅ Vendidos (ganho) · ✕ Perdidos.
+  // A etapa muda pelos BOTÕES da linha (Vendido/Perdido), não mais pelo dropdown de status.
+  if(!window._orcTab) window._orcTab='aberto';
+  const tab=window._orcTab;
+  const abertos   = orcamentosCrm.filter(o=>o.status!=='ganho'&&o.status!=='perdido');
+  const ganhos    = orcamentosCrm.filter(o=>o.status==='ganho');
+  const perdidos  = orcamentosCrm.filter(o=>o.status==='perdido');
+  const tabsEl=document.getElementById('orc-crm-tabs');
+  if(tabsEl) tabsEl.innerHTML=[['aberto','🧾 Orçamentos',abertos.length],['ganho','✅ Vendidos',ganhos.length],['perdido','✕ Perdidos',perdidos.length]]
+    .map(t=>'<div class="des-tab'+(tab===t[0]?' active':'')+'" onclick="window._orcTab=\''+t[0]+'\';renderOrcamentosCrm()">'+t[1]+' <span style="font-size:10px;color:var(--text-tertiary)">('+t[2]+')</span></div>').join('');
+
+  let filtered = (tab==='ganho'?ganhos:tab==='perdido'?perdidos:abertos).filter(o=>{
     if(fTipo   && o.tipoProduto!==fTipo) return false;
     if(fMes    && !o.data?.startsWith(fMes)) return false;
     if(search){
-      const hay = (o.clienteNome+o.empresa+o.responsavel+o.obs).toLowerCase();
+      const hay = ((o.clienteNome||'')+(o.empresa||'')+(o.responsavel||'')+(o.obs||'')+(o.num||'')).toLowerCase();
       if(!hay.includes(search)) return false;
     }
     return true;
@@ -28930,54 +29029,70 @@ function renderOrcamentosCrm(){
 
   // Summary cards
   const cards = document.getElementById('orc-crm-cards');
-  const totalVal  = orcamentosCrm.reduce((s,o)=>s+o.valor,0);
-  const abertos   = orcamentosCrm.filter(o=>o.status==='aberto');
-  const ganhos    = orcamentosCrm.filter(o=>o.status==='ganho');
-  const perdidos  = orcamentosCrm.filter(o=>o.status==='perdido');
+  const totalVal  = orcamentosCrm.reduce((s,o)=>s+(parseFloat(o.valor)||0),0);
   if(cards) cards.innerHTML = `
     <div class="s-card"><div class="lbl">Valor total</div><div class="val" style="font-size:18px;color:var(--text-info)">${fmtMoney(totalVal)}</div><div class="sub">${orcamentosCrm.length} orçamento${orcamentosCrm.length!==1?'s':''}</div></div>
-    <div class="s-card"><div class="lbl">Em aberto</div><div class="val" style="color:var(--st-mid-tx)">${abertos.length}</div><div class="sub">${fmtMoney(abertos.reduce((s,o)=>s+o.valor,0))}</div></div>
-    <div class="s-card"><div class="lbl">Ganhos</div><div class="val" style="color:var(--st-ok-tx)">${ganhos.length}</div><div class="sub">${fmtMoney(ganhos.reduce((s,o)=>s+o.valor,0))}</div></div>
-    <div class="s-card"><div class="lbl">Perdidos</div><div class="val" style="color:var(--st-bad-tx)">${perdidos.length}</div><div class="sub">${fmtMoney(perdidos.reduce((s,o)=>s+o.valor,0))}</div></div>`;
+    <div class="s-card"><div class="lbl">Em aberto</div><div class="val" style="color:var(--st-mid-tx)">${abertos.length}</div><div class="sub">${fmtMoney(abertos.reduce((s,o)=>s+(parseFloat(o.valor)||0),0))}</div></div>
+    <div class="s-card"><div class="lbl">Vendidos</div><div class="val" style="color:var(--st-ok-tx)">${ganhos.length}</div><div class="sub">${fmtMoney(ganhos.reduce((s,o)=>s+(parseFloat(o.valor)||0),0))}</div></div>
+    <div class="s-card"><div class="lbl">Perdidos</div><div class="val" style="color:var(--st-bad-tx)">${perdidos.length}</div><div class="sub">${fmtMoney(perdidos.reduce((s,o)=>s+(parseFloat(o.valor)||0),0))}</div></div>`;
 
-  const statusCfg = {
-    aberto:   {label:'Aberto',   bg:'var(--st-mid-bg)',color:'var(--st-mid-tx)'},
-    ganho:    {label:'Ganho',    bg:'var(--st-ok-bg)', color:'var(--st-ok-tx)'},
-    perdido:  {label:'Perdido',  bg:'var(--st-bad-bg)',color:'var(--st-bad-tx)'},
-    expirado: {label:'Expirado', bg:'var(--st-nil-bg)',color:'var(--st-nil-tx)'},
-  };
-  const tipoCfg = {linha:'Linha',anestesico:'Anestésico','':{label:'—'}};
-  const formaCfg = {pix:'PIX',boleto:'Boleto',cartao:'Cartão',transferencia:'Transf.',parcelado:'Parcela.',outro:'Outro','':{label:'—'}};
+  const formaCfg = {pix:'PIX',boleto:'Boleto',cartao:'Cartão',transferencia:'Transf.',parcelado:'Parcela.',outro:'Outro'};
+  // v191 — cabeçalho com as COLUNAS DE DATA da etapa: Criado sempre; Vendido em / Perdido em conforme a sub-aba
+  const thead=document.getElementById('orc-crm-thead');
+  const colEtapa = tab==='ganho' ? '<th>Vendido em</th><th>Pedido</th>' : (tab==='perdido' ? '<th>Perdido em</th>' : '');
+  if(thead) thead.innerHTML='<tr><th>Empresa</th><th>Produto</th><th>Valor</th><th>Frete</th><th>Forma Pgto</th><th>Criado</th>'+colEtapa+'<th>Atendente</th><th>Ações</th></tr>';
 
   if(!filtered.length){
-    tbody.innerHTML='<tr><td colspan="10" class="empty" style="padding:32px;text-align:center">Nenhum orçamento encontrado.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="10" class="empty" style="padding:32px;text-align:center">Nenhum orçamento nesta etapa.</td></tr>';
     return;
   }
 
+  const dtMs=ms=>{ if(!ms) return '—'; try{ return new Date(ms).toLocaleDateString('pt-BR'); }catch(_e){ return '—'; } };
   tbody.innerHTML = filtered.map(o=>{
-    const sc = statusCfg[o.status]||statusCfg.aberto;
     const tp = o.tipoProduto==='linha'?'Linha':'Anestésico';
-    const statusOpts = Object.entries(statusCfg).map(([k,v])=>`<option value="${k}" ${o.status===k?'selected':''}>${v.label}</option>`).join('');
+    const criado = o.criadoEm?dtMs(o.criadoEm):(o.data?fmtDate(o.data):'—');
+    const colE = tab==='ganho' ? `<td style="padding:8px 10px;font-size:11px">${dtMs(o.vendidoEm)}</td><td style="padding:8px 10px;font-size:11px;font-family:monospace">${escapeHtml(o.pedidoNum||'—')}</td>`
+               : (tab==='perdido' ? `<td style="padding:8px 10px;font-size:11px">${dtMs(o.perdidoEm)}</td>` : '');
+    const btnAbrir = o.detalhado?`<button onclick="openOrcBuilder('${o.id}',true)" style="font-size:11px;padding:3px 8px" title="Ver o orçamento completo (somente leitura)">👁 Abrir</button> `:'';
+    const btnEditar = o.detalhado?`<button onclick="openOrcBuilder('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> `:`<button onclick="abrirOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> `;
+    const btnPdf = o.detalhado?`<button onclick="_obPdfById('${o.id}')" style="font-size:11px;padding:3px 8px" title="Gerar o PDF do orçamento">📄</button> `:'';
+    const btnEtapa = tab==='aberto'
+      ? `<button onclick="_orcVendido('${o.id}')" style="font-size:11px;padding:3px 8px;background:var(--st-ok-bg);color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:6px" title="Efetivar a venda — informa o nº do pedido no Opery e lança em Gestão a Vista (entra PENDENTE no Caixa)">✅ Vendido</button> <button onclick="_orcPerdido('${o.id}')" style="font-size:11px;padding:3px 8px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)" title="Marcar como perdido — move para a sub-aba Perdidos">✕ Perdido</button> `
+      : (tab==='perdido' ? `<button onclick="_orcReabrir('${o.id}')" style="font-size:11px;padding:3px 8px" title="Volta para a sub-aba Orçamentos">↩ Reabrir</button> ` : '');
     return `<tr style="border-bottom:.5px solid var(--border)">
       <td style="padding:8px 10px;font-weight:500">${o.num?'<span style="font-family:monospace;font-size:10.5px;color:var(--text-secondary)">'+escapeHtml(o.num)+'</span> ':''}${escapeHtml(o.clienteNome||o.empresa)}</td>
       <td style="padding:8px 10px"><span style="font-size:10px;padding:1px 7px;border-radius:20px;background:${o.tipoProduto==='linha'?'var(--st-inf-bg)':'var(--st-urg-bg)'};color:${o.tipoProduto==='linha'?'var(--st-inf-tx)':'var(--st-urg-tx)'}">${tp}</span></td>
       <td style="padding:8px 10px;font-weight:500;color:var(--st-ok-tx)">${fmtMoney(o.valor)}</td>
       <td style="padding:8px 10px;color:var(--text-secondary)">${o.frete?fmtMoney(o.frete):'—'}</td>
-      <td style="padding:8px 10px;font-size:11px">${formaCfg[o.forma]?.label||o.forma||'—'}</td>
-      <td style="padding:8px 10px;font-size:11px">${o.prevPgto?fmtDate(o.prevPgto):'—'}</td>
-      <td style="padding:8px 10px;font-size:11px">${fmtDate(o.data)}</td>
-      <td style="padding:8px 10px">
-        <select onchange="alterarStatusOrcCrm('${o.id}',this.value)" style="font-size:11px;padding:2px 6px;background:${sc.bg};color:${sc.color};border:.5px solid ${sc.color};border-radius:20px">
-          ${statusOpts}
-        </select>
-      </td>
+      <td style="padding:8px 10px;font-size:11px">${formaCfg[o.forma]||o.formaPag||o.forma||'—'}</td>
+      <td style="padding:8px 10px;font-size:11px">${criado}</td>
+      ${colE}
       <td style="padding:8px 10px;font-size:11px">${escapeHtml(o.responsavel||'—')}</td>
-      <td style="padding:8px 10px;white-space:nowrap">
-        ${o.detalhado?`<button onclick="openOrcBuilder('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> <button onclick="_obPdfById('${o.id}')" style="font-size:11px;padding:3px 8px" title="Gerar o PDF do orçamento">📄 PDF</button>`:`<button onclick="abrirOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button>`}
-        <button onclick="deleteOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px;color:var(--st-bad-tx)">×</button>
-      </td>
+      <td style="padding:8px 10px;white-space:nowrap">${btnAbrir}${btnEditar}${btnPdf}${btnEtapa}${(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial'))?`<button onclick="deleteOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px;color:var(--st-bad-tx)" title="Excluir (admin/diretora comercial)">×</button>`:''}</td>
     </tr>`;
   }).join('');
+}
+// v191 — botões de ETAPA da linha (o status não muda mais pelo dropdown):
+// ✅ Vendido: detalhado → MESMO fluxo do fechamento (nº do pedido Opery → _construirOrdemNova → Caixa PENDENTE);
+// registro antigo → só marca ganho. ✕ Perdido: marca perdido com carimbo. ↩ Reabrir: volta perdido p/ aberto.
+function _orcVendido(id){
+  var o=(orcamentosCrm||[]).find(function(x){ return x.id===id; }); if(!o) return;
+  if(o.status==='ganho') return;
+  if(o.detalhado){ _ob=JSON.parse(JSON.stringify(o)); _obView=false; _obFechar(); return; }
+  if(!confirm('Marcar o orçamento como VENDIDO?')) return;
+  o.status='ganho'; o.vendidoEm=Date.now();
+  saveData(); renderOrcamentosCrm();
+}
+function _orcPerdido(id){
+  var o=(orcamentosCrm||[]).find(function(x){ return x.id===id; }); if(!o) return;
+  if(!confirm('Marcar o orçamento '+(o.num||'')+' como PERDIDO?\n\nEle vai para a sub-aba Perdidos (dá para reabrir depois).')) return;
+  o.status='perdido'; o.perdidoEm=Date.now();
+  saveData(); renderOrcamentosCrm();
+}
+function _orcReabrir(id){
+  var o=(orcamentosCrm||[]).find(function(x){ return x.id===id; }); if(!o) return;
+  o.status='aberto'; delete o.perdidoEm;
+  saveData(); renderOrcamentosCrm();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -31159,6 +31274,16 @@ function _clienteSemCarteira(clienteId){
 }
 function getConversasVisiveis(){
   if(!currentUser) return [];
+  // v191 — GATE DO BOOT (caso "misturou os números" 04/08): sem a config dos números carregada
+  // (_waNumCfg null — 1º acesso no navegador/cache limpo, antes do servidor responder), _waModoDois()
+  // responde 'não' e a lista MISTURAVA os dois números (o admin via tudo junto). Agora, enquanto a
+  // config não chega, a lista mostra SÓ o número padrão — mesmo espírito do gate conservador da v142.
+  if(!_waNumCfg && (conversas||[]).some(c=>c&&c.numeroLecare&&c.numeroLecare!==_waNumPadrao())){
+    const _pad=_waNumPadrao();
+    const _soPadrao=conversas.filter(c=>_waNumDaConv(c)===_pad);
+    if(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial') return _soPadrao;
+    return _soPadrao.filter(c=> c.grupo || _usuarioPertenceEquipe(currentUser.id, c.equipeId) || c.atendenteId===currentUser.id);
+  }
   // v140 : modo DOIS NUMEROS: o menu ativo mostra SO as conversas do seu numero; autorizacao = equipes do numero
   if(_waModoDois()){
     const meus=_waNumsDoUsuario();
@@ -31837,13 +31962,31 @@ function renderConversasLista(){
   let visiveis = getConversasVisiveis();
   if(termo){
     const _dig=termo.replace(/\D/g,''); // v169 — pedido do dono 22/07: buscar também pelo NÚMERO (telefone da conversa/cliente)
+    // v191 — NONO DÍGITO (reporte do dono 04/08: buscou 999608914 e só achou tirando um 9): o WhatsApp
+    // grava muitos números SEM o 9 extra do celular BR. A busca gera as VARIANTES com e sem o 9
+    // (local 8/9 díg., DDD+número 10/11, 55+DDD+número 12/13) e casa qualquer uma delas.
+    const _vars=[_dig];
+    if(/^9\d{8}$/.test(_dig)) _vars.push(_dig.slice(1));                     // 9XXXXXXXX → sem o 9
+    if(/^\d{8}$/.test(_dig)) _vars.push('9'+_dig);                           // XXXXXXXX → com o 9
+    if(/^\d{2}9\d{8}$/.test(_dig)) _vars.push(_dig.slice(0,2)+_dig.slice(3)); // DDD 9XXXXXXXX → sem o 9
+    if(/^\d{10}$/.test(_dig)) _vars.push(_dig.slice(0,2)+'9'+_dig.slice(2));  // DDD XXXXXXXX → com o 9
+    if(/^55\d{2}9\d{8}$/.test(_dig)) _vars.push(_dig.slice(0,4)+_dig.slice(5)); // 55 DDD 9XXXXXXXX → sem o 9
+    if(/^55\d{10}$/.test(_dig)) _vars.push(_dig.slice(0,4)+'9'+_dig.slice(4));  // 55 DDD XXXXXXXX → com o 9
     visiveis = visiveis.filter(c=>{
       const cli=clients.find(x=>x.id===c.clienteId);
       const nm=_nomeConversaCli(c.clienteId)||'';
       if(nm.toLowerCase().includes(termo) || (cli && (cli.nome||'').toLowerCase().includes(termo))) return true;
+      // v191 — busca ampliada (pedido do dono 05/08): TODOS os contatos do cadastro/card e as
+      // PESSOAS VINCULADAS do cadastro (PF/PJ do mesmo cliente) também encontram a conversa.
+      if(cli){
+        if((cli.contatos||[]).some(ct=>ct&&(ct.nome||'').toLowerCase().includes(termo))) return true;
+        if((cli.pessoasVinculadas||[]).some(pv=>pv&&(pv.nome||'').toLowerCase().includes(termo))) return true;
+      }
+      const _card=(crmLeads||[]).find(l=>l&&l.clienteId===c.clienteId);
+      if(_card && (((_card.contato||'').toLowerCase().includes(termo)) || ((_card.empresa||'').toLowerCase().includes(termo)) || ((_card.contatos||[]).some(ct=>ct&&(ct.nome||'').toLowerCase().includes(termo))))) return true;
       if(_dig.length>=3){
         const fones=[c.telefone, cli&&cli.tel, cli&&cli.telefone, cli&&cli.fone, cli&&cli.contatoTel].filter(Boolean).map(t=>String(t).replace(/\D/g,''));
-        if(fones.some(f=>f.includes(_dig))) return true;
+        if(fones.some(f=>_vars.some(v=>f.includes(v)))) return true;
       }
       return false;
     });

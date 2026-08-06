@@ -1475,7 +1475,15 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div class="crm-tab" id="sol-tab-lista" onclick="setSolCompraTab('lista')">Lista de Compra</div>
           <div class="crm-tab" id="sol-tab-recebimento" onclick="setSolCompraTab('recebimento')">Gestão de Pedidos</div><!-- v169 — renomeada (era "Recebimento"); id interno inalterado -->
           <div class="crm-tab" id="sol-tab-acomp" onclick="setSolCompraTab('acomp')">Acompanhamento</div>
+          <div class="crm-tab" id="sol-tab-menos" onclick="setSolCompraTab('menos')">Recebidos a menos</div><!-- v195 -->
           <div class="crm-tab" id="sol-tab-gastos" onclick="setSolCompraTab('gastos')">Gastos</div>
+        </div>
+        <!-- v195 — Seção: RECEBIDOS A MENOS (entrega do fornecedor menor que a compra; decidir recompra) -->
+        <div id="sol-sec-menos" style="display:none">
+          <div class="panel" style="margin-bottom:12px"><div style="padding:10px 14px;font-size:12px;color:var(--text-secondary)">
+            Itens cuja entrega chegou <b>menor que a quantidade comprada</b>. O recebimento seguiu com a quantidade real (estoque e custo já refletem o que chegou); o rateio por D1 mostra quem ficou descoberto. Decida aqui: <b>↪ Incluir na próxima lista</b> (o faltante vira solicitação pendente dos pedidos descobertos) ou <b>✕ Sem recompra</b>.
+          </div></div>
+          <div id="sol-menos-list"></div>
         </div>
         <!-- v164 — Seção: GASTOS (por pedido / por mês) -->
         <div id="sol-sec-gastos" style="display:none">
@@ -1624,7 +1632,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       </div>
       <!-- v160 — MODAL: CONFERÊNCIA do recebimento do pedido (conciliação com a NF; divergência avisa) -->
       <div class="overlay" id="pc-receb-overlay">
-        <div class="modal" style="width:min(1000px,95vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden">
+        <div class="modal" style="width:min(1440px,97vw);max-height:92vh;display:flex;flex-direction:column;overflow:hidden">
           <h2 id="pcr-titulo" style="margin:0 0 4px">Receber pedido</h2>
           <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Confira com a NOTA FISCAL: ajuste quantidade/preço se a nota vier diferente (ex.: embalagem faturada em componentes, ativo em outra fração) e desmarque o que não veio nesta leva (recebe depois). Divergência não trava — fica registrada para questionar o fornecedor.</div>
           <!-- v169 — conciliação pelo XML da NF-e (preenche itens, totais e duplicatas) -->
@@ -1633,6 +1641,16 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <span style="font-size:11px;color:var(--text-tertiary)">O XML preenche qtd/preço unitário de cada item, os totais e as parcelas (duplicatas). A conferência manual continua valendo.</span>
           </div>
           <div id="pcr-xml-info"></div>
+          <!-- v194 — custo GERAL da nota (regra do dono): valor que não é de um item específico é
+               rateado PROPORCIONALMENTE ao valor da mercadoria. Custo de um item só entra na célula dele. -->
+          <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px;padding:8px 10px;background:var(--bg-secondary);border-radius:8px">
+            <span style="font-size:11px;color:var(--text-secondary);font-weight:600">Custo geral da nota — ratear entre os itens:</span>
+            <label style="font-size:11px;color:var(--text-secondary)">Frete (R$)<br><input type="number" min="0" step="0.01" id="pcr-rat-frete" placeholder="0,00" style="width:110px;text-align:right;font-size:12px;padding:3px 6px"></label>
+            <button onclick="_pcRatearManual('frete')" style="font-size:11px;padding:4px 10px">Ratear frete</button>
+            <label style="font-size:11px;color:var(--text-secondary)">Outros custos (R$)<br><input type="number" min="0" step="0.01" id="pcr-rat-outros" placeholder="0,00" style="width:110px;text-align:right;font-size:12px;padding:3px 6px"></label>
+            <button onclick="_pcRatearManual('outros')" style="font-size:11px;padding:4px 10px">Ratear outros</button>
+            <span style="font-size:10.5px;color:var(--text-tertiary);flex:1;min-width:200px">O XML já preenche frete e IPI por item quando a nota traz. Use aqui quando o custo vier só no total da nota; para custo de um item só, digite direto na célula dele.</span>
+          </div>
           <div id="pcr-rows" style="flex:1;overflow:auto"></div>
           <div id="pcr-total" style="font-size:13px;margin-top:10px"></div>
           <div class="modal-footer" style="margin-top:10px"><button onclick="closeReceberPedido()">Cancelar</button><button class="btn-primary" onclick="_pcRecebProsseguir()">Prosseguir → pagamento</button></div>
@@ -4740,7 +4758,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v193';
+var APP_VERSION = 'v196';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6037,6 +6055,25 @@ function ruleIsSatisfied(rule, order){
   return currentIdx >= targetIdx && targetIdx > 0;
 }
 
+// v195 — índice pedido→itens recebidos A MENOS ainda sem resolução (cache 3s: getAlerts roda por
+// linha da Gestão a Vista; varrer listasCompra a cada linha seria caro). Invalidado no registro e
+// na resolução (_rmFaltCache.map=null).
+var _rmFaltCache={t:0, map:null};
+function _rmFaltMap(){
+  if(_rmFaltCache.map && Date.now()-_rmFaltCache.t<3000) return _rmFaltCache.map;
+  var m={};
+  try{
+    (listasCompra||[]).forEach(function(l){ (l.itens||[]).forEach(function(it){
+      var f=it.compra&&it.compra.recebFaltante;
+      if(!f || it.compra.recebFaltanteRes) return;
+      (f.aloc||[]).forEach(function(a){
+        (m[String(a.orderId)]=m[String(a.orderId)]||[]).push({nome:it.nome||'', codigo:it.codigo||'', qtd:parseFloat(a.qtd)||0, un:it.unidade||'', tipo:l.tipo});
+      });
+    }); });
+  }catch(_e){}
+  _rmFaltCache={t:Date.now(), map:m};
+  return m;
+}
 function getAlerts(order){
   const prazoConfig=getTipoPrazoConfig(order.tipo||'venda');
   if(prazoConfig==='none') return []; // venda mãe — sem prazos
@@ -6060,6 +6097,16 @@ function getAlerts(order){
       list.push({level:r.level,setor:r.setor,desc:r.desc,limitDay:r.limitDay,dlDate:deadlineDate(order.d1,r.limitDay),currentStatus:order.statuses[r.setor]});
     }
   });
+  // v195 — RECEBIDO A MENOS (pedido do dono 05/08): a entrega do fornecedor veio menor e o rateio
+  // por D1 deixou ESTE pedido descoberto. Alerta até alguém decidir na sub-aba "Recebidos a menos"
+  // (recomprar → solicitação pendente; ou sem recompra). Independe de prazo — é fato, não atraso.
+  try{
+    (_rmFaltMap()[String(order.id)]||[]).forEach(f=>{
+      list.push({level:'warn', setor:'compras',
+        desc:'Recebido a MENOS: '+(f.codigo?f.codigo+' ':'')+f.nome+' — faltaram '+f.qtd.toLocaleString('pt-BR')+' '+f.un+' (decidir em Solicitação de Compra › Recebidos a menos)',
+        limitDay:(f.tipo==='ativo'?5:4), dlDate:deadlineDate(order.d1, f.tipo==='ativo'?5:4), currentStatus:order.statuses['compras']});
+    });
+  }catch(_e){}
   return list;
 }
 function getCellLevel(order,setor){
@@ -11030,9 +11077,17 @@ function _cnCalcular(f, opts){
       addLinha(excip._x.nome+' (base/QSP)', gB, 'g', cpgB?gB*cpgB.porG:0, _cnMarkupInsumo(excip._x), cpgB?cpgB.fonte:'?', cpgB?'':'sem custo/g');
     } else if(ativos.length) avisos.push('a fórmula não tem BASE/EXCIPIENTE QSP — o restante até '+qspG.toFixed(1)+' g ficou sem custeio');
   }
-  var emb=(insumos||[]).find(function(i){ return i.id===opts.embalagemId; });
-  if(emb){ var cE=_cnCustoUnit(emb); addLinha(emb.nome+' (embalagem)', 1, 'UN', cE.v, _cnMarkupInsumo(emb), cE.fonte); }
-  else avisos.push('escolha a EMBALAGEM para custear');
+  // v196 — a embalagem pode vir DESMEMBRADA (frasco + válvula + tampa, pedido do dono 06/08):
+  // opts.embalagemIds (array) custeia cada parte; opts.embalagemId (singular) segue valendo — o
+  // simulador e os orçamentos antigos não mudam.
+  var _embIds=(opts.embalagemIds&&opts.embalagemIds.length)?opts.embalagemIds:(opts.embalagemId?[opts.embalagemId]:[]);
+  if(_embIds.length){
+    _embIds.forEach(function(eid){
+      var emb=(insumos||[]).find(function(i){ return i.id===eid; });
+      if(emb){ var cE=_cnCustoUnit(emb); addLinha(emb.nome+' (embalagem)', 1, 'UN', cE.v, _cnMarkupInsumo(emb), cE.fonte); }
+      else avisos.push('embalagem do item não encontrada no catálogo (foi excluída?)');
+    });
+  } else avisos.push('escolha a EMBALAGEM para custear');
   if(cat && (parseFloat(cat.custoFixo)||0)>0) addLinha('Custo fixo — categoria '+cat.nome, 1, '', parseFloat(cat.custoFixo)||0, cat.markupFixo, 'config');
   else if(!cat && f.categoria) avisos.push('categoria "'+f.categoria+'" sem configuração (perdas/custo fixo) — cadastre em ⚙ Configuração');
   if((parseFloat(f.custoRotulo)||0)>0) addLinha('Rótulo', 1, '', parseFloat(f.custoRotulo)||0, f.markupRotulo, 'produto');
@@ -11339,18 +11394,139 @@ function _solGetSolic(orderId, tab){
 }
 function setSolCompraTab(tab){
   _solTab=tab;
-  ['ativo','embalagem','lista','recebimento','acomp','gastos'].forEach(function(t){ var b=document.getElementById('sol-tab-'+t); if(b) b.classList.toggle('active', t===tab); });
-  var ehLista=tab==='lista', ehReceb=tab==='recebimento', ehAcomp=tab==='acomp', ehGastos=tab==='gastos', ehSolic=(tab==='ativo'||tab==='embalagem');
+  ['ativo','embalagem','lista','recebimento','acomp','menos','gastos'].forEach(function(t){ var b=document.getElementById('sol-tab-'+t); if(b) b.classList.toggle('active', t===tab); });
+  var ehLista=tab==='lista', ehReceb=tab==='recebimento', ehAcomp=tab==='acomp', ehMenos=tab==='menos', ehGastos=tab==='gastos', ehSolic=(tab==='ativo'||tab==='embalagem');
   var s1=document.getElementById('sol-sec-solicitar'); if(s1) s1.style.display=ehSolic?'':'none';
   var s2=document.getElementById('sol-sec-lista'); if(s2) s2.style.display=ehLista?'':'none';
   var s3=document.getElementById('sol-sec-recebimento'); if(s3) s3.style.display=ehReceb?'':'none';
   var s4=document.getElementById('sol-sec-acomp'); if(s4) s4.style.display=ehAcomp?'':'none';
   var s5=document.getElementById('sol-sec-gastos'); if(s5) s5.style.display=ehGastos?'':'none';
+  var s6=document.getElementById('sol-sec-menos'); if(s6) s6.style.display=ehMenos?'':'none'; // v195
+  try{ _rmAtualizaBadge(); }catch(_e){} // v195 — contador na própria aba
   if(ehLista) setListaSub(_listaTipo||'ativo');
   else if(ehReceb) renderRecebimento();
   else if(ehAcomp) renderSolAcomp();
+  else if(ehMenos) renderSolMenos();
   else if(ehGastos) renderSolGastos();
   else renderSolCompra(tab);
+}
+// ══ v195 — SUB-ABA "RECEBIDOS A MENOS" (pedido do dono 05/08) ═════════════════════════════════
+// Derivada 100% das listas de compra (it.compra.recebFaltante / recebFaltanteRes) — nenhuma tabela
+// nova, nenhum estado paralelo: o registro nasce no recebimento e a resolução grava no MESMO item.
+function _rmPendentes(){
+  var out=[];
+  (listasCompra||[]).forEach(function(l){ (l.itens||[]).forEach(function(it){
+    if(it.compra && it.compra.recebFaltante) out.push({l:l, it:it, res:it.compra.recebFaltanteRes||null});
+  }); });
+  return out;
+}
+function _rmAtualizaBadge(){
+  var n=_rmPendentes().filter(function(x){ return !x.res; }).length;
+  var b=document.getElementById('sol-tab-menos');
+  if(b) b.innerHTML='Recebidos a menos'+(n?' <span style="background:var(--st-bad-tx);color:#fff;border-radius:10px;padding:0 7px;font-size:10.5px;font-weight:700">'+n+'</span>':'');
+}
+function renderSolMenos(){
+  var el=document.getElementById('sol-menos-list'); if(!el) return;
+  var todos=_rmPendentes();
+  var pend=todos.filter(function(x){ return !x.res; }), feitos=todos.filter(function(x){ return !!x.res; });
+  var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
+  var td='padding:8px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
+  var linha=function(x, comAcoes){
+    var l=x.l, it=x.it, c=it.compra, f=c.recebFaltante;
+    var un=it.unidade||'';
+    var vinc=(f.aloc||[]).map(function(a){
+      return '<div style="white-space:nowrap">📋 Pedido <b>'+escapeHtml(a.orderNum||'—')+'</b>: faltam '+(parseFloat(a.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(un)+'</div>';
+    }).join('')+((f.estoqueQtd>0)?'<div style="white-space:nowrap;color:var(--text-secondary)">📦 Estoque: '+f.estoqueQtd.toLocaleString('pt-BR')+' '+escapeHtml(un)+' <span style="font-size:10px;color:var(--text-tertiary)">(sem vínculo com pedido — só registro)</span></div>':'');
+    var acoes;
+    if(comAcoes){
+      acoes='<button class="btn-primary" onclick="_rmIncluirProxima(\''+l.id+'\',\''+escapeHtml(String(it.itemId||''))+'\')" title="O faltante dos pedidos descobertos vira solicitação pendente e entra na próxima lista de compra (ou num Complementar)" style="font-size:11px;padding:4px 10px;white-space:nowrap">↪ Incluir na próxima lista</button> '+
+            '<button onclick="_rmSemRecompra(\''+l.id+'\',\''+escapeHtml(String(it.itemId||''))+'\')" title="Registrar que o faltante NÃO será recomprado (fica auditado)" style="font-size:11px;padding:4px 10px;white-space:nowrap">✕ Sem recompra</button>';
+    } else {
+      var r=x.res;
+      acoes = r.acao==='recompra'
+        ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">↪ re-solicitado</span><br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.por||'')+' · '+(r.em?fmtDate(_gstDataDe(r.em)):'')+'</span>'
+        : '<span style="font-size:11px;color:var(--text-secondary);font-weight:600">✕ sem recompra</span>'+(r.motivo?'<br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.motivo)+'</span>':'')+'<br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.por||'')+' · '+(r.em?fmtDate(_gstDataDe(r.em)):'')+'</span>';
+    }
+    return '<tr>'+
+      '<td style="'+td+'">'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+
+        '<br><span style="font-size:10.5px;color:var(--text-tertiary)">lista '+escapeHtml(_lcCodigo(l))+(c.fornecedorNome?' · '+escapeHtml(c.fornecedorNome):'')+'</span></td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+(parseFloat(c.qtdComprada)||0).toLocaleString('pt-BR')+' '+escapeHtml(un)+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+(parseFloat(c.recebidoQtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(un)+
+        (f.em?'<br><span style="font-size:10px;color:var(--text-tertiary)">'+fmtDate(_gstDataDe(f.em))+'</span>':'')+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap;color:var(--st-bad-tx);font-weight:600">'+(parseFloat(f.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(un)+'</td>'+
+      '<td style="'+td+'">'+vinc+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+acoes+'</td></tr>';
+  };
+  var head='<thead><tr><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Comprado</th><th style="'+th+';text-align:right">Recebido</th><th style="'+th+';text-align:right">Faltante</th><th style="'+th+'">Quem ficou descoberto (rateio por D1)</th><th style="'+th+';text-align:right"></th></tr></thead>';
+  var h='';
+  if(!pend.length) h+='<div class="empty" style="padding:24px">Nenhum item aguardando decisão. Quando uma entrega chegar menor que a compra, ela aparece aqui.</div>';
+  else h+='<div class="panel" style="padding:0"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:860px">'+head+'<tbody>'+pend.map(function(x){ return linha(x,true); }).join('')+'</tbody></table></div></div>';
+  if(feitos.length){
+    h+='<div style="margin:16px 0 6px;font-size:12px;font-weight:600;color:var(--text-secondary)">Resolvidos ('+feitos.length+')</div>'+
+       '<div class="panel" style="padding:0"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:860px">'+head+'<tbody>'+
+       feitos.sort(function(a,b){ return ((b.res&&b.res.em)||0)-((a.res&&a.res.em)||0); }).slice(0,60).map(function(x){ return linha(x,false); }).join('')+'</tbody></table></div></div>';
+  }
+  el.innerHTML=h;
+  _rmAtualizaBadge();
+}
+function _rmItemBusca(listaId, itemId){
+  var l=(listasCompra||[]).find(function(x){ return x.id===listaId; }); if(!l) return null;
+  var it=(l.itens||[]).find(function(x){ return String(x.itemId||'')===String(itemId); });
+  return it?{l:l, it:it}:null;
+}
+// ↪ o faltante dos PEDIDOS descobertos vira solicitação pendente (mesmo mecanismo do sem_estoque
+// v138 e do saldo parcial v190: agrupa na solicitação ABERTA do pedido ou cria uma nova; entra na
+// próxima lista gerada ou num Complementar). Parte de ESTOQUE não realimenta pedido (regra do dono).
+function _rmIncluirProxima(listaId, itemId){
+  var b=_rmItemBusca(listaId, itemId); if(!b){ alert('Item não encontrado (a lista mudou em outra tela).'); return; }
+  var l=b.l, it=b.it, c=it.compra, f=c&&c.recebFaltante;
+  if(!f){ alert('Este item não tem faltante registrado.'); return; }
+  if(c.recebFaltanteRes){ renderSolMenos(); return; }
+  var aloc=(f.aloc||[]).filter(function(a){ return (parseFloat(a.qtd)||0)>0; });
+  if(!aloc.length){ alert('O faltante deste item é só de ESTOQUE (sem pedido descoberto).\nSe quiser recomprar para estoque, use "＋ Solicitar compra avulsa" na aba do tipo — aqui registre "Sem recompra".'); return; }
+  var un=it.unidade||'';
+  if(!confirm('↪ INCLUIR NA PRÓXIMA LISTA\n\n'+(it.codigo?it.codigo+' — ':'')+(it.nome||'')+'\n\n'+
+    aloc.map(function(a){ return '  • Pedido '+(a.orderNum||'—')+': '+(parseFloat(a.qtd)||0).toLocaleString('pt-BR')+' '+un; }).join('\n')+
+    ((f.estoqueQtd>0)?'\n  (parte de estoque — '+f.estoqueQtd.toLocaleString('pt-BR')+' '+un+' — NÃO entra: recompra de estoque é decisão à parte, via compra avulsa)':'')+
+    '\n\nO faltante vira solicitação PENDENTE desses pedidos e entra na próxima lista de compra. Confirmar?')) return;
+  var now=Date.now(), solicIds=[];
+  aloc.forEach(function(og,oi){
+    var alvo=(solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(og.orderId) && s.tipo===l.tipo && s.status==='solicitado'; });
+    if(!alvo){
+      var ehPseudoOg=_solEhPseudo(og.orderId);
+      var o=ehPseudoOg?null:(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+      var _piOg=ehPseudoOg?_solPseudoInfo(og.orderId):null;
+      alvo={ id:'solc'+now+'rm'+oi, orderId:og.orderId, orderNum:ehPseudoOg?_piOg.num:((o&&o.num)||og.orderNum||''), cliente:ehPseudoOg?_piOg.cliente:((o&&o.cliente)||''), tipo:l.tipo, itens:[], status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
+      solicitacoesCompra.push(alvo);
+    }
+    var ex=(alvo.itens||[]).find(function(x){ return x.itemId===it.itemId; });
+    if(ex) ex.qtd=(parseFloat(ex.qtd)||0)+(parseFloat(og.qtd)||0);
+    else alvo.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:(parseFloat(og.qtd)||0), unidade:un||'UN' });
+    alvo.atualizadoEm=now;
+    solicIds.push(alvo.id);
+    var o2=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+    if(o2){ try{ addAudit(o2,'compras','recompra do faltante','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': '+(parseFloat(og.qtd)||0).toLocaleString('pt-BR')+' '+un+' re-solicitados (entrega veio a menos)'); }catch(_e){} }
+    try{ _reavaliarComprasPedido(og.orderId); }catch(_e){}
+  });
+  c.recebFaltanteRes={ acao:'recompra', solicIds:solicIds, em:now, por:(currentUser&&currentUser.name)||'' };
+  _rmFaltCache.map=null;
+  renderSolMenos(); saveData();
+  alert('✓ Faltante re-solicitado para '+aloc.length+' pedido(s) — entra na próxima lista de compra de '+(l.tipo==='ativo'?'ativos':'embalagens')+'.');
+}
+function _rmSemRecompra(listaId, itemId){
+  var b=_rmItemBusca(listaId, itemId); if(!b){ alert('Item não encontrado (a lista mudou em outra tela).'); return; }
+  var it=b.it, c=it.compra, f=c&&c.recebFaltante;
+  if(!f){ alert('Este item não tem faltante registrado.'); return; }
+  if(c.recebFaltanteRes){ renderSolMenos(); return; }
+  var motivo=prompt('✕ SEM RECOMPRA — o faltante de '+(parseFloat(f.qtd)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' de "'+(it.nome||'')+'" NÃO será recomprado.\n\nMotivo (opcional):');
+  if(motivo===null) return; // cancelou
+  c.recebFaltanteRes={ acao:'sem_recompra', motivo:(motivo||'').trim(), em:Date.now(), por:(currentUser&&currentUser.name)||'' };
+  _rmFaltCache.map=null;
+  (f.aloc||[]).forEach(function(og){
+    var o=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+    if(o){ try{ addAudit(o,'compras','faltante sem recompra','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': faltante de '+(parseFloat(og.qtd)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' NÃO será recomprado'+((motivo||'').trim()?' — '+motivo.trim():'')); }catch(_e){} }
+  });
+  renderSolMenos(); saveData();
 }
 // ══════════════════════════════════════════════════════════
 // v164 — GASTOS da Solicitação de Compra (pedido do dono 17/07).
@@ -11700,9 +11876,13 @@ function _solVerBlocoSolic(s, tally){
       : '<span style="color:var(--text-tertiary)">—</span>';
     var colReceb;
     if(c && c.recebido){
+      // v195 — faltante do "recebido a menos" visível também aqui, com o estado da decisão
+      var _rf=c.recebFaltante, _rfr=c.recebFaltanteRes;
       colReceb='<span style="color:var(--st-ok-tx);font-weight:600;white-space:nowrap">✔ recebido</span>'+
         (c.recebidoEm?'<br><span style="'+sub+'">'+fmtDate(_gstDataDe(c.recebidoEm))+'</span>':'')+
-        (c.recebidoDivergente?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="Quantidade ou preço recebidos diferentes do que foi comprado">⚠ divergente</span>':'');
+        (_rf?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="A entrega veio menor que a compra — faltaram '+(parseFloat(_rf.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'">📉 a menos ('+(parseFloat(_rf.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+')</span>'+
+          (_rfr?'<br><span style="'+sub+'">'+(_rfr.acao==='recompra'?'↪ re-solicitado':'✕ sem recompra')+'</span>':'<br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>'):'')+
+        (c.recebidoDivergente&&!_rf?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="Quantidade ou preço recebidos diferentes do que foi comprado">⚠ divergente</span>':'');
     } else if(c && inf.pc){
       colReceb='<span style="color:var(--text-secondary)">'+escapeHtml((typeof _PC_ST_LBL!=='undefined'&&_PC_ST_LBL[inf.pc.status])||inf.pc.status||'—')+'</span>'+
         '<br><span style="'+sub+'">aguardando recebimento</span>';
@@ -13483,6 +13663,44 @@ var _pcRecebId=null, _pcRecebRows=[], _rcbPedidoCtx=null;
 // O XML é ACELERADOR, nunca bloqueio: se não parsear, a conciliação manual segue normal.
 var _pcXml=null;
 function _pcXmlNorm(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+// ══ v194 — CONVERSÃO DE UNIDADE DA NF (pedido do dono 05/08) ══════════════════════════════════
+// A NF fatura em EMBALAGEM ("500 G", "1 KG", "50 ML") enquanto o pedido está na unidade de consumo
+// ("g", "ml"). Ex. real (NF 1038102 Fagron): 2 × "500 G" a R$ 87,50/un = 1.000 g a R$ 0,175/g.
+// REGRA DO DONO: priorizar SEMPRE a unidade DO PEDIDO — a quantidade e o preço unitário são
+// reescritos na unidade em que o pedido foi feito. Até a v193 isto era feito NA MÃO, linha a linha.
+var _PC_UN_BASE={G:'g',GR:'g',GRAMA:'g',GRAMAS:'g',KG:'g',MG:'g',ML:'ml',L:'ml',LT:'ml',LITRO:'ml',UN:'un',UND:'un',UNID:'un',UNIDADE:'un',PC:'un',PCT:'un',CX:'un',FR:'un',FRASCO:'un'};
+var _PC_UN_MULT={G:1,GR:1,GRAMA:1,GRAMAS:1,KG:1000,MG:0.001,ML:1,L:1000,LT:1000,LITRO:1000,UN:1,UND:1,UNID:1,UNIDADE:1,PC:1,PCT:1,CX:1,FR:1,FRASCO:1};
+// "500 G" → {un:'g', fator:500} · "1 KG" → {un:'g', fator:1000} · "g" → {un:'g', fator:1}
+function _pcUnParse(u){
+  var s=String(u||'').trim().toUpperCase().replace(',','.');
+  if(!s) return null;
+  var m=s.match(/^([0-9]*\.?[0-9]+)?\s*([A-Z]+)\.?$/);
+  if(!m) return null;
+  var n=(m[1]!==undefined&&m[1]!=='')?parseFloat(m[1]):1, sig=m[2];
+  if(!n||!(sig in _PC_UN_BASE)) return null;
+  return { un:_PC_UN_BASE[sig], sigla:sig, fator:+(n*_PC_UN_MULT[sig]).toFixed(6) };
+}
+// Sugestão de conversão de UMA linha: quantas unidades DO PEDIDO cabem em 1 unidade comercial da NF.
+// unNF/unPedido na MESMA base (g×g, ml×ml) → fator = fatorNF / fatorPedido (1 KG num pedido em kg = 1).
+// Bases diferentes (cadastro em L e NF em G — caso PIRITIONATO) ou unidade do pedido desconhecida →
+// converte pelo NÚMERO da embalagem e AVISA; quem recebe decide no modal de verificação.
+function _pcConvSugerir(unidadePedido, xmlUn, xmlQtd, xmlUnit){
+  var q=parseFloat(xmlQtd)||0, u=parseFloat(xmlUnit)||0;
+  var out={ fator:1, qtd:q, preco:u, unNF:String(xmlUn||''), qtdNF:q, unitNF:u, tem:false, aviso:'', base:'' };
+  var p=_pcUnParse(xmlUn);
+  if(!p){ out.aviso='não reconheci a unidade "'+(xmlUn||'')+'" da NF — confira na mão'; return out; }
+  var alvo=_pcUnParse(unidadePedido);
+  out.base=p.un;
+  var fator;
+  if(alvo && alvo.un===p.un){ fator=p.fator/alvo.fator; }
+  else { fator=p.fator; if(alvo) out.aviso='a NF está em '+p.un+' e o cadastro do item em '+alvo.un+' — converti pelo número da embalagem'; else if(unidadePedido) out.aviso='não reconheci a unidade "'+unidadePedido+'" do pedido — converti pelo número da embalagem'; }
+  if(!(fator>0)) return out;
+  out.fator=+fator.toFixed(6);
+  out.qtd=+(q*out.fator).toFixed(4);
+  out.preco=+(u/out.fator).toFixed(6);
+  out.tem=Math.abs(out.fator-1)>0.000001; // fator 1 = NF já veio na unidade do pedido, nada a converter
+  return out;
+}
 function _pcXmlLer(input){
   var f=input&&input.files&&input.files[0]; if(input) input.value=''; if(!f) return;
   var rd=new FileReader();
@@ -13507,8 +13725,17 @@ function _pcXmlAplicar(txt){
     if(_ff && _fornGrupoDocs(_ff).length && !_fornGrupoDocs(_ff).some(function(d){ return d.replace(/\D/g,'')===emitCnpj.replace(/\D/g,''); }))
       avisos.push('CNPJ do emitente ('+emitCnpj+') não está no cadastro do fornecedor nem do grupo — se for um CNPJ novo, adicione em Fornecedores › CNPJs adicionais'); }
   var dets=Array.prototype.slice.call(doc.getElementsByTagName('det'));
+  // v194 — além de qtd/preço, o XML traz por ITEM o que soma POR FORA do produto: frete (vFrete),
+  // IPI (imposto/IPI/IPITrib/vIPI) e os "outros" (seguro, despesas acessórias, ICMS-ST/FCP-ST).
+  // Regra do dono: tudo que soma por fora e não tem coluna própria cai em OUTROS (pode somar vários).
   var xitens=dets.map(function(d){ var p=d.getElementsByTagName('prod')[0]; if(!p) return null;
-    return { nome:tag(p,'xProd'), cod:tag(p,'cProd'), qtd:parseFloat(tag(p,'qCom'))||0, unit:parseFloat(tag(p,'vUnCom'))||0, total:parseFloat(tag(p,'vProd'))||0, un:tag(p,'uCom'), _usado:false };
+    var _imp=d.getElementsByTagName('imposto')[0];
+    var _st=(parseFloat(tag(_imp,'vICMSST'))||0)+(parseFloat(tag(_imp,'vFCPST'))||0);
+    return { nome:tag(p,'xProd'), cod:tag(p,'cProd'), qtd:parseFloat(tag(p,'qCom'))||0, unit:parseFloat(tag(p,'vUnCom'))||0, total:parseFloat(tag(p,'vProd'))||0, un:tag(p,'uCom'),
+             frete:parseFloat(tag(p,'vFrete'))||0,
+             ipi:parseFloat(tag(_imp,'vIPI'))||0,
+             outros:+((parseFloat(tag(p,'vSeg'))||0)+(parseFloat(tag(p,'vOutro'))||0)+_st).toFixed(4),
+             _usado:false };
   }).filter(Boolean);
   if(!xitens.length) throw new Error('o XML não traz itens (det/prod)');
   var casados=0;
@@ -13517,12 +13744,27 @@ function _pcXmlAplicar(txt){
     var rn=_pcXmlNorm(r.nome);
     var m=xitens.find(function(x){ return !x._usado && _pcXmlNorm(x.nome)===rn; })
         || xitens.find(function(x){ if(x._usado) return false; var xn=_pcXmlNorm(x.nome); return xn&&rn&&(xn.indexOf(rn)>=0||rn.indexOf(xn)>=0); });
-    if(m){ m._usado=true; r.qtd=m.qtd; r.preco=m.unit; r._xml=true; casados++; }
+    if(m){ m._usado=true;
+      // v194 — converte para a unidade DO PEDIDO e guarda a memória de cálculo p/ o modal de
+      // verificação (obrigatório antes de prosseguir quando houve conversão — regra do dono).
+      var cv=_pcConvSugerir(r.unidade, m.un, m.qtd, m.unit);
+      r.qtd=cv.qtd; r.preco=cv.preco;
+      r.conv={ tem:cv.tem, fator:cv.fator, unNF:cv.unNF, qtdNF:cv.qtdNF, unitNF:cv.unitNF, aviso:cv.aviso, verificada:!cv.tem, origem:'xml' };
+      r.ipi=m.ipi; r.frete=m.frete; r.outros=m.outros;
+      r._xml=true; casados++;
+    }
   });
   var sobraXml=xitens.filter(function(x){ return !x._usado; });
   var semPar=_pcRecebRows.filter(function(r){ return !r._xml; }).length;
   var tot0=doc.getElementsByTagName('ICMSTot')[0];
-  var tot={ vProd:parseFloat(tag(tot0,'vProd'))||0, vFrete:parseFloat(tag(tot0,'vFrete'))||0, vDesc:parseFloat(tag(tot0,'vDesc'))||0, vNF:parseFloat(tag(tot0,'vNF'))||0 };
+  var tot={ vProd:parseFloat(tag(tot0,'vProd'))||0, vFrete:parseFloat(tag(tot0,'vFrete'))||0, vDesc:parseFloat(tag(tot0,'vDesc'))||0, vNF:parseFloat(tag(tot0,'vNF'))||0,
+            vIPI:parseFloat(tag(tot0,'vIPI'))||0, // v194
+            vOutrosGer:+(((parseFloat(tag(tot0,'vSeg'))||0)+(parseFloat(tag(tot0,'vOutro'))||0)+(parseFloat(tag(tot0,'vST'))||0)+(parseFloat(tag(tot0,'vFCPST'))||0))).toFixed(2) };
+  // v194 — nota que só declara frete/outros no TOTAL (sem vFrete por item): rateia proporcionalmente
+  // ao valor da mercadoria de cada item, como o dono definiu. Se veio por item, o valor REAL vence.
+  var _rateados=[], _soCasados=function(r){ return !!r._xml; }; // v195 — rateio do XML só entre itens que ESTÃO na nota
+  if(tot.vFrete>0 && _pcRecebRows.every(function(r){ return !(parseFloat(r.frete)>0); })){ _pcRatearCampo('frete', tot.vFrete, _soCasados); _rateados.push('frete'); }
+  if(tot.vOutrosGer>0 && _pcRecebRows.every(function(r){ return !(parseFloat(r.outros)>0); })){ _pcRatearCampo('outros', tot.vOutrosGer, _soCasados); _rateados.push('outros'); }
   var dups=Array.prototype.slice.call(doc.getElementsByTagName('dup')).map(function(d){ return { venc:tag(d,'dVenc'), valor:parseFloat(tag(d,'vDup'))||0 }; }).filter(function(d){ return d.valor>0; });
   _pcXml={ chave:chave, nNF:nNF, tot:tot, dups:dups, emitCnpj:emitCnpj };
   // vínculo auditável no PC (resumo do XML)
@@ -13533,11 +13775,144 @@ function _pcXmlAplicar(txt){
     '📄 <b>XML da NF-e '+escapeHtml(nNF||'')+'</b> lido: <b>'+casados+'</b> de '+_pcRecebRows.length+' item(ns) do pedido preenchido(s)'+
     (semPar?' · <span style="color:var(--st-mid-tx)">'+semPar+' SEM par no XML — confira manualmente</span>':'')+
     (sobraXml.length?' · <span style="color:var(--st-mid-tx)">'+sobraXml.length+' do XML sem par: '+escapeHtml(sobraXml.slice(0,3).map(function(x){return x.nome;}).join('; ').slice(0,110))+(sobraXml.length>3?'…':'')+'</span>':'')+
-    '<br>Totais da NF: produtos '+fmtMoney(tot.vProd)+(tot.vFrete?' · frete '+fmtMoney(tot.vFrete):'')+(tot.vDesc?' · desconto −'+fmtMoney(tot.vDesc):'')+' · <b>total '+fmtMoney(tot.vNF)+'</b>'+
+    (function(){ var nc=_pcRecebRows.filter(function(r){ return r.conv&&r.conv.tem; }).length; // v194
+       return nc?'<br><span style="color:var(--st-bad-tx);font-weight:600">🔎 '+nc+' item(ns) com UNIDADE CONVERTIDA para a do pedido — clique em "Verificar conversão" em cada linha (obrigatório)</span>':''; })()+
+    (_rateados.length?'<br><span style="color:var(--text-secondary)">'+_rateados.join(' e ')+' da nota rateado(s) proporcionalmente entre os itens (a nota não trouxe por item)</span>':'')+
+    '<br>Totais da NF: produtos '+fmtMoney(tot.vProd)+(tot.vFrete?' · frete '+fmtMoney(tot.vFrete):'')+(tot.vIPI?' · IPI '+fmtMoney(tot.vIPI):'')+(tot.vOutrosGer?' · outros '+fmtMoney(tot.vOutrosGer):'')+(tot.vDesc?' · desconto −'+fmtMoney(tot.vDesc):'')+' · <b>total '+fmtMoney(tot.vNF)+'</b>'+
     (dups.length?' · '+dups.length+' duplicata(s) — parcelas de boleto pré-preenchidas no próximo passo':'')+
     (avisos.length?'<br><span style="color:var(--st-bad-tx);font-weight:600">⚠ '+avisos.map(escapeHtml).join(' · ')+'</span>':'')+
     '</div>';
   saveData();
+}
+// ══ v195 — RECEBIDO A MENOS (pedido do dono 05/08) ═══════════════════════════════════════════
+// "Pedimos uma quantidade porém entregam menos ou mais — não bloquear o processo." O recebimento
+// SEGUE com a quantidade REAL (estoque e custo já usam o que chegou); quando chega A MENOS, este
+// registro rateia o RECEBIDO pelos pedidos de origem por D1 (mais antigo primeiro — mesma regra da
+// compra parcial v190), aponta QUEM ficou descoberto e alimenta: (a) alerta na Gestão a Vista do(s)
+// pedido(s) descoberto(s); (b) a sub-aba "Recebidos a menos" da Solicitação de Compra, onde se
+// decide recomprar (vira solicitação pendente → próxima lista) ou não. Quantidade vinculada só a
+// ESTOQUE (avulsa/anestésico/excedente) não realimenta pedido — só o registro/alerta da sub-aba.
+function _rcbRegistrarFaltante(l, it, qtdRecebida, now){
+  var c=it&&it.compra; if(!c) return;
+  var qc=parseFloat(c.qtdComprada)||0, qr=parseFloat(qtdRecebida)||0;
+  if(!(qc>0) || qr>=qc-0.001) return; // chegou tudo (ou a mais) — nada a registrar
+  var falta=+(qc-qr).toFixed(4);
+  // rateio do RECEBIDO por D1 (pseudo/estoque por último — pedidos têm prioridade, regra do dono)
+  var d1De=function(og){ if(_solEhPseudo(og.orderId)) return '9999-12-30'; var o=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); }); return (o&&o.d1)||'9999-12-31'; };
+  var ordem=(it.origem||[]).slice().sort(function(a,b){ return d1De(a).localeCompare(d1De(b)); });
+  var resta=qr, aloc=[], estoqueFalta=0;
+  ordem.forEach(function(og){
+    var q=parseFloat(og.qtd)||0; if(q<=0) return;
+    var usa=Math.min(q,resta); resta=+(resta-usa).toFixed(4);
+    var fS=+(q-usa).toFixed(4);
+    if(fS>0){
+      if(_solEhPseudo(og.orderId)) estoqueFalta=+(estoqueFalta+fS).toFixed(4);
+      else aloc.push({orderId:og.orderId, orderNum:og.orderNum, qtd:fS});
+    }
+  });
+  // excedente comprado acima do solicitado é estoque (v164): se o corte coube todo nele, ninguém ficou descoberto
+  var somaOrigem=(it.origem||[]).reduce(function(s,og){ return s+(parseFloat(og.qtd)||0); },0);
+  if(qc>somaOrigem && !aloc.length && estoqueFalta<=0) estoqueFalta=+Math.min(falta, qc-somaOrigem).toFixed(4);
+  c.recebFaltante={ qtd:falta, aloc:aloc, estoqueQtd:estoqueFalta, em:now, por:(currentUser&&currentUser.name)||'' };
+  try{ _rmFaltCache.map=null; }catch(_e){}
+  aloc.forEach(function(a){
+    var o=(orders||[]).find(function(x){ return String(x.id)===String(a.orderId); });
+    if(o){ try{ addAudit(o,'compras','recebido a menos','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': faltaram '+a.qtd.toLocaleString('pt-BR')+' '+(it.unidade||'')+' na entrega (rateio por D1) — gerenciar em Solicitação de Compra › Recebidos a menos'); }catch(_e){} }
+  });
+}
+// ══ v194 — CUSTOS QUE SOMAM POR FORA (regra do dono 05/08) ═══════════════════════════════════
+// Frete e IPI têm coluna própria; TODO o resto (seguro, despesas acessórias, ICMS-ST, taxas) vai
+// para OUTROS, que ACUMULA vários custos. Valor de UM item entra só nele; valor GERAL da nota é
+// rateado PROPORCIONALMENTE ao valor da mercadoria de cada item.
+function _pcRatearCampo(campo, valorTotal, filtro){
+  // v195 — `filtro` (opcional): restringe o rateio a um subconjunto das linhas. O rateio automático
+  // do XML usa filtro de item CASADO — custo da nota não pode cair em item do pedido que não está
+  // NESTA nota (achado da revisão 06/08, autorizado pelo dono). O rateio manual segue sem filtro.
+  var v=parseFloat(valorTotal)||0;
+  var alvo=(_pcRecebRows||[]).filter(function(r){ return r.incluir!==false && (!filtro || filtro(r)); });
+  var base=alvo.reduce(function(s,r){ return s+(parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0); },0);
+  if(!alvo.length){ return 0; }
+  if(!(base>0)){ // sem valor de mercadoria: divide igualmente, senão o custo sumiria
+    alvo.forEach(function(r){ r[campo]=+(v/alvo.length).toFixed(4); });
+    return v;
+  }
+  var acc=0;
+  alvo.forEach(function(r,i){
+    var q=(parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0);
+    var x = (i===alvo.length-1) ? +(v-acc).toFixed(4) : +((v*q/base)).toFixed(4); // último absorve o centavo
+    r[campo]=x; acc=+(acc+x).toFixed(4);
+  });
+  return v;
+}
+function _pcRatearManual(campo){
+  var id = campo==='frete' ? 'pcr-rat-frete' : 'pcr-rat-outros';
+  var el=document.getElementById(id); var v=parseFloat(el&&el.value)||0;
+  if(!(v>0)){ alert('Informe o valor a ratear.'); return; }
+  _pcRatearCampo(campo, v);
+  _pcRecebRender();
+}
+// Custo extra TOTAL de uma linha (o que soma por fora do produto) e o PREÇO NF TOTAL — o custo
+// unitário de verdade da mercadoria, que é o que o sistema passa a usar (decisão do dono).
+function _pcExtrasLinha(r){ return +(((parseFloat(r.ipi)||0)+(parseFloat(r.frete)||0)+(parseFloat(r.outros)||0))).toFixed(4); }
+function _pcPrecoNFTotal(r){
+  var q=parseFloat(r.qtd)||0, p=parseFloat(r.preco)||0;
+  return q>0 ? +((p+_pcExtrasLinha(r)/q)).toFixed(6) : p;
+}
+// ── Modal VERIFICAR CONVERSÃO (obrigatório antes de prosseguir quando houve conversão) ──
+var _pcConvIdx=null;
+function _pcConvAbrir(i){
+  var r=_pcRecebRows[i]; if(!r) return;
+  _pcConvIdx=i;
+  var cv=r.conv||{};
+  var unPed=escapeHtml(r.unidade||'(sem unidade)');
+  var ov=document.getElementById('pc-conv-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='pc-conv-overlay'; ov.className='overlay'; ov.style.zIndex='480'; document.body.appendChild(ov); }
+  var lin='display:flex;justify-content:space-between;gap:16px;padding:6px 0;border-bottom:.5px solid var(--border);font-size:13px';
+  ov.innerHTML='<div class="modal" style="width:640px;max-width:96vw">'+
+    '<h2 style="font-size:16px;margin:0 0 2px">🔎 Verificar conversão</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">'+escapeHtml(r.nome||'')+'</div>'+
+    (cv.aviso?'<div style="font-size:12px;color:var(--st-mid-tx);background:var(--st-mid-bg);border-radius:6px;padding:8px 10px;margin-bottom:10px">⚠ '+escapeHtml(cv.aviso)+'</div>':'')+
+    '<div style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;margin-bottom:2px">Como veio na nota fiscal</div>'+
+    '<div style="'+lin+'"><span>Quantidade faturada</span><b>'+(parseFloat(cv.qtdNF)||0).toLocaleString('pt-BR')+' × '+escapeHtml(cv.unNF||'')+'</b></div>'+
+    '<div style="'+lin+'"><span>Preço por '+escapeHtml(cv.unNF||'unidade')+'</span><b>'+fmtMoney(cv.unitNF||0)+'</b></div>'+
+    '<div style="'+lin+'"><span>Total do item na nota</span><b>'+fmtMoney((parseFloat(cv.qtdNF)||0)*(parseFloat(cv.unitNF)||0))+'</b></div>'+
+    '<div style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;margin:14px 0 2px">Convertido para a unidade do pedido ('+unPed+')</div>'+
+    '<div style="'+lin+'"><span>Cada '+escapeHtml(cv.unNF||'unidade')+' equivale a</span>'+
+      '<span><input type="number" step="any" min="0" id="pcconv-fator" value="'+(parseFloat(cv.fator)||1)+'" style="width:120px;text-align:right;font-size:13px;padding:3px 6px"> '+unPed+'</span></div>'+
+    '<div style="'+lin+'"><span>Quantidade recebida</span><b id="pcconv-qtd"></b></div>'+
+    '<div style="'+lin+'"><span>Preço por '+unPed+'</span><b id="pcconv-preco"></b></div>'+
+    '<div style="'+lin+';border-bottom:none"><span>Total (não muda com a conversão)</span><b id="pcconv-tot"></b></div>'+
+    '<div style="font-size:11px;color:var(--text-tertiary);margin-top:8px">A conversão reescreve quantidade e preço unitário na unidade do pedido. O valor total do item é o mesmo da nota — só muda a forma de medir.</div>'+
+    '<div class="modal-footer" style="margin-top:14px">'+
+      '<button onclick="_pcConvFechar()">Cancelar</button>'+
+      '<button class="btn-primary" onclick="_pcConvAceitar()">Confirmar conversão</button>'+
+    '</div></div>';
+  ov.classList.add('open');
+  var inp=document.getElementById('pcconv-fator');
+  if(inp) inp.oninput=_pcConvPreview;
+  _pcConvPreview();
+}
+function _pcConvPreview(){
+  var r=_pcRecebRows[_pcConvIdx]; if(!r) return;
+  var cv=r.conv||{}, f=parseFloat(document.getElementById('pcconv-fator')?.value)||0;
+  var q=(parseFloat(cv.qtdNF)||0), u=(parseFloat(cv.unitNF)||0);
+  var nq=f>0?+(q*f).toFixed(4):0, np=f>0?+(u/f).toFixed(6):0;
+  var el;
+  if(el=document.getElementById('pcconv-qtd')) el.textContent=nq.toLocaleString('pt-BR')+' '+(r.unidade||'');
+  if(el=document.getElementById('pcconv-preco')) el.textContent=fmtMoney(np);
+  if(el=document.getElementById('pcconv-tot')) el.textContent=fmtMoney(nq*np);
+}
+function _pcConvFechar(){ var ov=document.getElementById('pc-conv-overlay'); if(ov) ov.classList.remove('open'); _pcConvIdx=null; }
+function _pcConvAceitar(){
+  var r=_pcRecebRows[_pcConvIdx]; if(!r){ _pcConvFechar(); return; }
+  var f=parseFloat(document.getElementById('pcconv-fator')?.value)||0;
+  if(!(f>0)){ alert('O fator de conversão precisa ser maior que zero.'); return; }
+  var cv=r.conv||{};
+  r.conv=Object.assign({}, cv, {fator:+f.toFixed(6), verificada:true, verificadaPor:(currentUser&&currentUser.name)||'', verificadaEm:Date.now()});
+  r.qtd=+(((parseFloat(cv.qtdNF)||0)*f)).toFixed(4);
+  r.preco=+(((parseFloat(cv.unitNF)||0)/f)).toFixed(6);
+  _pcConvFechar();
+  _pcRecebRender();
 }
 function openReceberPedido(pcId){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
@@ -13548,7 +13923,8 @@ function openReceberPedido(pcId){
   _pcRecebRows=_pcItens(pc).filter(function(x){ return !x.it.compra.recebido; }).map(function(x){
     return { listaId:x.listaId, ref:x.ref, nome:x.it.nome||'', codigo:x.it.codigo||'', unidade:x.it.unidade||'', tipo:x.tipo,
              qtdPedido:(parseFloat(x.it.compra.qtdComprada)||0), precoPedido:(parseFloat(x.it.compra.precoPago)||0),
-             qtd:(parseFloat(x.it.compra.qtdComprada)||0), preco:(parseFloat(x.it.compra.precoPago)||0), incluir:true };
+             qtd:(parseFloat(x.it.compra.qtdComprada)||0), preco:(parseFloat(x.it.compra.precoPago)||0), incluir:true,
+             ipi:0, frete:0, outros:0, conv:null }; // v194 — custos por fora + memória da conversão
   });
   if(!_pcRecebRows.length){ alert('Todos os itens deste pedido já foram recebidos.'); return; }
   var tt=document.getElementById('pcr-titulo'); if(tt) tt.textContent='Receber '+(pc.numero||'')+' — '+(pc.fornecedorNome||'')+' · NF '+(pc.nf||'');
@@ -13556,29 +13932,74 @@ function openReceberPedido(pcId){
   var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.add('open');
 }
 function closeReceberPedido(){ _pcRecebId=null; _pcRecebRows=[]; var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.remove('open'); }
-function _pcRecebSet(i, campo, val){ if(_pcRecebRows[i]){ _pcRecebRows[i][campo]=(campo==='incluir')?!!val:(parseFloat(val)||0); _pcRecebTotais(); } }
+function _pcRecebSet(i, campo, val){
+  var r=_pcRecebRows[i]; if(!r) return;
+  r[campo]=(campo==='incluir')?!!val:(parseFloat(val)||0);
+  // v194 — atualiza SÓ as células calculadas da linha (re-render completo tiraria o foco do campo
+  // enquanto a pessoa digita) e depois os totais do rodapé.
+  var el;
+  if(el=document.getElementById('pcr-pnt-'+i)) el.textContent=r.incluir?fmtMoney(_pcPrecoNFTotal(r)):'—';
+  if(el=document.getElementById('pcr-tot-'+i)) el.textContent=r.incluir?fmtMoney((parseFloat(r.qtd)||0)*_pcPrecoNFTotal(r)):'—';
+  _pcRecebTotais();
+}
 function _pcRecebTotais(){
   var el=document.getElementById('pcr-total'); if(!el) return;
-  var tot=0, div=0;
-  _pcRecebRows.forEach(function(r){ if(!r.incluir) return; tot+=r.qtd*r.preco; if(Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009) div++; });
-  el.innerHTML='Total desta leva: <b>'+fmtMoney(tot)+'</b>'+(div?' · <span style="color:var(--st-mid-tx)">⚠ '+div+' item(ns) com divergência do pedido</span>':' · <span style="color:var(--st-ok-tx)">✓ tudo confere com o pedido</span>');
+  // v194 — o total da leva passou a incluir o que soma POR FORA (IPI + frete + outros), para bater
+  // com o TOTAL DA NOTA e com as duplicatas do boleto. A DIVERGÊNCIA continua sendo medida no preço
+  // PURO da mercadoria contra o preço do pedido (decisão do dono) — custo extra não é divergência.
+  var mercad=0, extras=0, div=0, naoVerif=0;
+  _pcRecebRows.forEach(function(r){
+    if(!r.incluir) return;
+    mercad+=(parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0);
+    extras+=_pcExtrasLinha(r);
+    if(Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009) div++;
+    if(r.conv && r.conv.tem && !r.conv.verificada) naoVerif++;
+  });
+  var tot=+(mercad+extras).toFixed(2);
+  el.innerHTML='Total desta leva: <b>'+fmtMoney(tot)+'</b>'+
+    (extras>0?' <span style="font-size:11.5px;color:var(--text-secondary)">(mercadoria '+fmtMoney(mercad)+' + custos por fora '+fmtMoney(extras)+')</span>':'')+
+    (div?' · <span style="color:var(--st-mid-tx)">⚠ '+div+' item(ns) com divergência do pedido</span>':' · <span style="color:var(--st-ok-tx)">✓ tudo confere com o pedido</span>')+
+    (naoVerif?'<br><span style="color:var(--st-bad-tx);font-weight:600;font-size:12px">🔎 '+naoVerif+' conversão(ões) aguardando verificação — obrigatório antes de prosseguir</span>':'')+
+    ((_pcXml&&_pcXml.tot&&_pcXml.tot.vNF)?'<br><span style="font-size:11.5px;color:'+(Math.abs(_pcXml.tot.vNF-tot)<=0.02?'var(--st-ok-tx)':'var(--st-mid-tx)')+'">'+(Math.abs(_pcXml.tot.vNF-tot)<=0.02?'✓ bate com o total da NF ('+fmtMoney(_pcXml.tot.vNF)+')':'⚠ total da NF é '+fmtMoney(_pcXml.tot.vNF)+' — diferença de '+fmtMoney(Math.abs(_pcXml.tot.vNF-tot))+' (confira itens fora desta leva, desconto ou custo não lançado)')+'</span>':'');
 }
 function _pcRecebRender(){
   var c=document.getElementById('pcr-rows'); if(!c) return;
   var th='padding:6px 7px;background:var(--bg-secondary);font-size:10px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
   var td='padding:5px 7px;border-bottom:.5px solid var(--border);font-size:12px';
-  c.innerHTML='<table style="width:100%;border-collapse:collapse"><thead><tr>'+
-    '<th style="'+th+';text-align:center">Nesta leva</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd pedido</th><th style="'+th+';text-align:right">Qtd recebida</th><th style="'+th+';text-align:right">Preço pedido</th><th style="'+th+';text-align:right">Preço NF</th><th style="'+th+';text-align:right">Total</th>'+
+  // v194 — colunas de custo que soma POR FORA (IPI, frete rateado, outros) + PREÇO NF TOTAL, que é
+  // o custo unitário real da mercadoria e o que o sistema passa a usar. Ver comentário em _pcRatearCampo.
+  var _inp='text-align:right;font-size:12px;padding:3px 5px';
+  c.innerHTML='<table style="width:100%;border-collapse:collapse;min-width:1180px"><thead><tr>'+
+    '<th style="'+th+';text-align:center">Nesta leva</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd pedido</th><th style="'+th+';text-align:right">Qtd recebida</th><th style="'+th+';text-align:right">Preço pedido</th><th style="'+th+';text-align:right">Preço NF</th>'+
+    '<th style="'+th+';text-align:right" title="IPI do item (vem do XML quando existe)">IPI</th>'+
+    '<th style="'+th+';text-align:right" title="Frete do item — valor real da nota quando ela traz por item; senão, rateio proporcional ao valor da mercadoria">Frete rateado</th>'+
+    '<th style="'+th+';text-align:right" title="Todos os demais custos que somam por fora e não têm coluna própria (seguro, despesas acessórias, ICMS-ST, taxas) — pode somar mais de um">Outros</th>'+
+    '<th style="'+th+';text-align:right" title="Custo unitário REAL: preço da NF + (IPI + frete + outros) ÷ quantidade. É o custo que o sistema passa a usar.">Preço NF total</th>'+
+    '<th style="'+th+';text-align:right">Total</th>'+
     '</tr></thead><tbody>'+_pcRecebRows.map(function(r,i){
       var divQ=Math.abs(r.qtd-r.qtdPedido)>0.001, divP=Math.abs(r.preco-r.precoPedido)>0.009;
-      return '<tr'+((divQ||divP)&&r.incluir?' style="background:var(--st-mid-bg)"':'')+'>'+
-        '<td style="'+td+';text-align:center"><input type="checkbox" '+(r.incluir?'checked':'')+' onchange="_pcRecebSet('+i+',\'incluir\',this.checked);_pcRecebRender()" style="width:15px;height:15px"></td>'+
-        '<td style="'+td+'">'+escapeHtml(r.nome)+' <span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.codigo||'')+'</span></td>'+
-        '<td style="'+td+';text-align:right;color:var(--text-secondary)">'+r.qtdPedido.toLocaleString('pt-BR')+' '+escapeHtml(r.unidade)+'</td>'+
-        '<td style="'+td+';text-align:right"><input type="number" min="0" step="any" value="'+r.qtd+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'qtd\',this.value)" style="width:80px;text-align:right;font-size:12px;padding:3px 5px'+(divQ?';border-color:var(--st-mid-bd)':'')+'"></td>'+
-        '<td style="'+td+';text-align:right;color:var(--text-secondary)">'+fmtMoney(r.precoPedido)+'</td>'+
-        '<td style="'+td+';text-align:right"><input type="number" min="0" step="0.0001" value="'+r.preco+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'preco\',this.value)" style="width:95px;text-align:right;font-size:12px;padding:3px 5px'+(divP?';border-color:var(--st-mid-bd)':'')+'"></td>'+
-        '<td style="'+td+';text-align:right;font-weight:600">'+(r.incluir?fmtMoney(r.qtd*r.preco):'—')+'</td>'+
+      var cv=r.conv, pendente=!!(cv&&cv.tem&&!cv.verificada);
+      var convHtml='';
+      if(cv&&cv.tem){
+        convHtml='<div style="margin-top:3px;font-size:10px;white-space:nowrap">'+
+          '<span style="color:var(--text-tertiary)" title="Como o item veio faturado na nota">NF: '+(parseFloat(cv.qtdNF)||0).toLocaleString('pt-BR')+' × '+escapeHtml(cv.unNF||'')+'</span> '+
+          '<button onclick="_pcConvAbrir('+i+')" title="Conferir a conversão de unidade e de custo unitário" style="font-size:10px;padding:1px 7px;'+(pendente?'border-color:var(--st-bad-tx);color:var(--st-bad-tx);font-weight:600':'')+'">'+(pendente?'🔎 Verificar conversão':'✓ conversão verificada')+'</button>'+
+          (cv.aviso?'<br><span style="color:var(--st-mid-tx)" title="'+escapeHtml(cv.aviso)+'">⚠ conferir unidade</span>':'')+
+        '</div>';
+      }
+      var _bg = pendente&&r.incluir ? 'background:var(--st-bad-bg,#FEF3F2)' : (((divQ||divP)&&r.incluir)?'background:var(--st-mid-bg)':'');
+      return '<tr'+(_bg?' style="'+_bg+'"':'')+'>'+
+        '<td style="'+td+';text-align:center;vertical-align:top"><input type="checkbox" '+(r.incluir?'checked':'')+' onchange="_pcRecebSet('+i+',\'incluir\',this.checked);_pcRecebRender()" style="width:15px;height:15px"></td>'+
+        '<td style="'+td+';vertical-align:top">'+escapeHtml(r.nome)+' <span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.codigo||'')+'</span></td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-secondary);vertical-align:top">'+r.qtdPedido.toLocaleString('pt-BR')+' '+escapeHtml(r.unidade)+'</td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="any" value="'+r.qtd+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'qtd\',this.value)" style="width:80px;'+_inp+(divQ?';border-color:var(--st-mid-bd)':'')+'">'+convHtml+'</td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-secondary);vertical-align:top">'+fmtMoney(r.precoPedido)+'</td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.0001" value="'+r.preco+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'preco\',this.value)" style="width:95px;'+_inp+(divP?';border-color:var(--st-mid-bd)':'')+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.ipi)||0)+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'ipi\',this.value)" style="width:72px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.frete)||0)+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'frete\',this.value)" style="width:78px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.outros)||0)+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'outros\',this.value)" style="width:78px;'+_inp+'"></td>'+
+        '<td id="pcr-pnt-'+i+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;color:var(--st-inf-tx)" title="Preço da NF + custos por fora ÷ quantidade">'+(r.incluir?fmtMoney(_pcPrecoNFTotal(r)):'—')+'</td>'+
+        '<td id="pcr-tot-'+i+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600">'+(r.incluir?fmtMoney((parseFloat(r.qtd)||0)*_pcPrecoNFTotal(r)):'—')+'</td>'+
       '</tr>';
     }).join('')+'</tbody></table>';
   _pcRecebTotais();
@@ -13587,19 +14008,44 @@ function _pcRecebProsseguir(){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
   var leva=_pcRecebRows.filter(function(r){ return r.incluir && r.qtd>0; });
   if(!leva.length){ alert('Marque ao menos um item (com quantidade) para receber nesta leva.'); return; }
+  // v194 — regra do dono: conversão de unidade JÁ VEM APLICADA, mas quem recebe é OBRIGADO a abrir
+  // "Verificar conversão" e confirmar antes de prosseguir. Sem isso o custo unitário do sistema
+  // poderia nascer errado (ex.: R$ 87,50 por 500 g lançado como R$ 87,50 por grama).
+  var _semVer=leva.filter(function(r){ return r.conv && r.conv.tem && !r.conv.verificada; });
+  if(_semVer.length){
+    alert('🔎 '+_semVer.length+' item(ns) tiveram a unidade CONVERTIDA e ainda não foram verificados:\n\n'+
+      _semVer.slice(0,8).map(function(r){ return '• '+r.nome+' — NF: '+(parseFloat(r.conv.qtdNF)||0).toLocaleString('pt-BR')+' × '+(r.conv.unNF||'')+''; }).join('\n')+
+      (_semVer.length>8?'\n…':'')+
+      '\n\nClique em "Verificar conversão" na linha de cada um para conferir a quantidade e o custo unitário.');
+    return;
+  }
   var divergentes=leva.filter(function(r){ return Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009; });
   if(divergentes.length){
     var det=divergentes.slice(0,6).map(function(r){ return '• '+r.nome+': pedido '+r.qtdPedido.toLocaleString('pt-BR')+' × '+fmtMoney(r.precoPedido)+' → NF '+r.qtd.toLocaleString('pt-BR')+' × '+fmtMoney(r.preco); }).join('\n');
-    if(!confirm('⚠ '+divergentes.length+' item(ns) DIVERGEM do pedido:\n\n'+det+(divergentes.length>6?'\n…':'')+'\n\nReceber assim mesmo? (fica registrado para questionar o fornecedor)')) return;
+    // v195 — advertência SEM bloquear (regra do dono): quantidade a MENOS segue, mas avisa o destino
+    var _aMenos=leva.filter(function(r){ return (parseFloat(r.qtd)||0) < (parseFloat(r.qtdPedido)||0)-0.001; }).length;
+    if(!confirm('⚠ '+divergentes.length+' item(ns) DIVERGEM do pedido:\n\n'+det+(divergentes.length>6?'\n…':'')+
+      (_aMenos?'\n\n📉 '+_aMenos+' item(ns) chegaram A MENOS: o recebimento segue com a quantidade REAL (estoque e custo usam o que chegou). O faltante é rateado pelos pedidos por D1, os descobertos ganham ALERTA na Gestão a Vista e a decisão de recomprar fica em Solicitação de Compra › Recebidos a menos.':'')+
+      '\n\nReceber assim mesmo? (fica registrado para questionar o fornecedor)')) return;
   }
-  var total=+(leva.reduce(function(s,r){ return s+r.qtd*r.preco; },0)).toFixed(2);
+  // v194 — o total que segue para o pagamento inclui os custos POR FORA (IPI+frete+outros), para
+  // bater com o TOTAL DA NOTA e com as duplicatas do boleto. A mercadoria pura (_mercad) continua
+  // sendo a base do lançamento; os extras vão nos campos próprios (sem dupla contagem).
+  var _mercad=+(leva.reduce(function(s,r){ return s+(parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0); },0)).toFixed(2);
+  var _exIpi=+(leva.reduce(function(s,r){ return s+(parseFloat(r.ipi)||0); },0)).toFixed(2);
+  var _exFre=+(leva.reduce(function(s,r){ return s+(parseFloat(r.frete)||0); },0)).toFixed(2);
+  var _exOut=+(leva.reduce(function(s,r){ return s+(parseFloat(r.outros)||0); },0)).toFixed(2);
+  var total=+(_mercad+_exIpi+_exFre+_exOut).toFixed(2);
   // v169 — itens conferidos = pedido CONCILIADO (carimbo; o status recua p/ em_recebimento se a leva for parcial)
   if(pc.status==='em_recebimento'){
     pc.status='conciliado'; pc.conciliadoEm=Date.now(); pc.conciliadoPor=(currentUser&&currentUser.name)||'';
     try{ renderRecebimento(); }catch(_e){} try{ if(typeof renderCompRecebimento==='function') renderCompRecebimento(); }catch(_e){}
     saveData();
   }
-  _rcbPedidoCtx={ pcId:pc.id, leva:leva, divergentes:divergentes.length, total:total };
+  // v194 — `total` do contexto = MERCADORIA PURA. _rcbExtrasBase() usa este número e soma os campos
+  // de frete/impostos/outros por cima; se guardássemos aqui o total já com extras, o passo de
+  // pagamento somaria os custos por fora DUAS vezes.
+  _rcbPedidoCtx={ pcId:pc.id, leva:leva, divergentes:divergentes.length, total:_mercad };
   // reusa o modal de pagamento do recebimento (blocos/plano/emissão) com o total da LEVA
   document.getElementById('rcb-nf-title').textContent=pc.nf||'—';
   document.getElementById('rcb-info').innerHTML='Pedido de compra <b>'+escapeHtml(pc.numero||'')+'</b> · Fornecedor <b>'+escapeHtml(pc.fornecedorNome||'')+'</b> · '+leva.length+' item(ns) nesta leva'+(divergentes.length?' · <span style="color:var(--st-mid-tx)">⚠ '+divergentes.length+' divergência(s)</span>':'')
@@ -13607,6 +14053,13 @@ function _pcRecebProsseguir(){
   document.getElementById('rcb-total').textContent='Total a lançar: '+fmtMoney(total);
   document.getElementById('rcb-dataemissao').value='';
   _rcbExtrasReset(); // v187 — frete/impostos/outros começam zerados a cada recebimento
+  // v194 — e são REPREENCHIDOS com o que foi conferido item a item na tela anterior. Sem isto o
+  // frete/IPI apareceria DUAS vezes (uma nas colunas da conciliação, outra digitada aqui). O rateio
+  // deixa de ser proporcional-estimado e passa a ser o valor REAL da nota por item.
+  try{
+    var _sf=function(id,v){ var e=document.getElementById(id); if(e) e.value=(v>0?String(v):''); };
+    _sf('rcb-frete',_exFre); _sf('rcb-impostos',_exIpi); _sf('rcb-outros',_exOut);
+  }catch(_e){}
   document.getElementById('rcb-blocos-wrap').style.display='';
   // v169 — duplicatas do XML pré-preenchem o BOLETO (vencimentos/valores); sem XML, padrão PIX
   if(_pcXml && _pcXml.dups && _pcXml.dups.length){
@@ -13617,6 +14070,7 @@ function _pcRecebProsseguir(){
   }
   _peOpen(_rcbBlocos,'rcb-blocos',total,_rcbDistrib,'',_COMPRAS_PE_FORMAS_BON);
   _rcbDistrib();
+  try{ _rcbExtrasChange(); }catch(_e){} // v194 — reflete no "Total a lançar" os extras já preenchidos
   _planoAcSet('rcb-plano',''); // v161 — busca com autocomplete
   _rcbCnpjSetup(pc.fornecedorId, (_pcXml&&_pcXml.emitCnpj)||(pc.nfXml&&pc.nfXml.emitCnpj)||''); // v171 — CNPJ faturado
   document.getElementById('receber-modal').classList.add('open');
@@ -13752,10 +14206,17 @@ function saveRecebimento(){
       it.compra.recebido=true; it.compra.recebidoEm=now; it.compra.recebidoPor=(currentUser&&currentUser.name)||''; it.compra.compraLancId=compra.id; it.compra.formaPag=forma;
       // divergência da NF fica registrada SEM sobrescrever o que o comprador comprou
       if(Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009){ it.compra.recebidoQtd=r.qtd; it.compra.recebidoPreco=r.preco; it.compra.recebidoDivergente=true; }
-      // v187 — RATEIO dos custos da nota proporcional ao valor do item → CUSTO UNITÁRIO REAL
-      var _vI=r.qtd*r.preco, _shr=(_valorItens>0?_vI/_valorItens:0), _exI=+((_exNF.total*_shr)).toFixed(4);
+      // v194 — o custo por fora agora é conferido ITEM A ITEM na conciliação (IPI/frete/outros vindos
+      // do XML ou digitados). Quando a linha traz esses valores, usa o REAL do fornecedor; sem eles
+      // (compra manual antiga), cai no rateio proporcional da v187 — que segue intacto como fallback.
+      var _exLinha=(parseFloat(r.ipi)||0)+(parseFloat(r.frete)||0)+(parseFloat(r.outros)||0);
+      var _vI=r.qtd*r.preco, _shr=(_valorItens>0?_vI/_valorItens:0);
+      var _exI = _exLinha>0 ? +(_exLinha).toFixed(4) : +((_exNF.total*_shr)).toFixed(4);
       it.compra.custoExtras=_exI;
       it.compra.custoUnitReal=+((r.preco+(r.qtd>0?_exI/r.qtd:0))).toFixed(4);
+      if(_exLinha>0){ it.compra.custoIPI=+(parseFloat(r.ipi)||0).toFixed(4); it.compra.custoFrete=+(parseFloat(r.frete)||0).toFixed(4); it.compra.custoOutros=+(parseFloat(r.outros)||0).toFixed(4); }
+      if(r.conv && r.conv.tem) it.compra.conversaoNF={ fator:r.conv.fator, unNF:r.conv.unNF, qtdNF:r.conv.qtdNF, unitNF:r.conv.unitNF, por:r.conv.verificadaPor||'', em:r.conv.verificadaEm||now }; // v194 — auditoria da conversão
+      try{ _rcbRegistrarFaltante(l, it, r.qtd, now); }catch(_e){} // v195 — chegou a menos: rateia por D1 e registra
       _afx.push(it); _evx.push({itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:r.qtd});
       (it.origem||[]).forEach(function(og){ orderIds[og.orderId]=1; });
     });
@@ -28825,12 +29286,26 @@ function _obRender(){
   var td='padding:6px 8px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
   var itensRows=(_ob.itens||[]).map(function(it,i){
     var b=(parseFloat(it.precoUnit)||0)*(parseFloat(it.qtd)||0);
-    return '<tr><td style="'+td+'"><b>'+escapeHtml(it.nome||'')+'</b>'+(String(it.codigo||'').indexOf('AJ')===0?' <span style="font-size:9.5px;padding:1px 6px;border-radius:10px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:700" title="Fórmula ajustada a partir de '+escapeHtml(it.ajustadaDeNome||'')+'">AJ</span>':'')+'<div style="font-size:10.5px;color:var(--text-secondary)">'+escapeHtml(it.detalhe||'')+'</div>'+(it.avisos?'<div style="font-size:10px;color:var(--st-mid-tx)">⚠ '+it.avisos+' aviso(s) no cálculo</div>':'')+'</td>'+
+    // v196 — COMPOSIÇÃO visível na linha (pedido do dono 06/08): derivada ao vivo da fórmula (mesma
+    // fonte do PDF), com os invisíveis marcados 🚫 (só aqui — o PDF do cliente continua sem eles)
+    var _fIt=(catalogoNovo||[]).find(function(x){ return x && x.id===it.fid; });
+    var compTxt=_fIt?(_fIt.composicao||[]).filter(function(cp){ return cp && cp.papel!=='excipiente' && (parseFloat(cp.dose)||0)>0; }).map(function(cp){
+      return escapeHtml((cp.nome||'?')+' '+cp.dose+(cp.unidade||'%'))+(cp.invisivel?' <span title="Não aparece no PDF do cliente">🚫</span>':'');
+    }).join(' · '):'';
+    // v196 — o TEXTO dos avisos do motor (antes só saía a contagem, sem dizer o quê)
+    var avTxt=(it.avisosTxt&&it.avisosTxt.length)?it.avisosTxt:null;
+    var avHtml = avTxt
+      ? '<div style="font-size:10px;color:var(--st-mid-tx)" title="'+escapeHtml(avTxt.join(' | '))+'">'+avTxt.map(function(a){ return '⚠ '+escapeHtml(a); }).join('<br>')+'</div>'
+      : (it.avisos?'<div style="font-size:10px;color:var(--st-mid-tx)" title="Item inserido antes da v196 — reabra com ✏ Editar e salve para ver o texto dos avisos">⚠ '+it.avisos+' aviso(s) no cálculo — edite e salve p/ detalhar</div>':'');
+    return '<tr><td style="'+td+'"><b>'+escapeHtml(it.nome||'')+'</b>'+(String(it.codigo||'').indexOf('AJ')===0?' <span style="font-size:9.5px;padding:1px 6px;border-radius:10px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:700" title="Fórmula ajustada a partir de '+escapeHtml(it.ajustadaDeNome||'')+'">AJ</span>':'')+
+      '<div style="font-size:10.5px;color:var(--text-secondary)">'+escapeHtml(it.detalhe||'')+'</div>'+
+      (compTxt?'<div style="font-size:10px;color:var(--text-tertiary)">'+compTxt+'</div>':'')+
+      avHtml+'</td>'+
       '<td style="'+td+';text-align:right">'+(V?String(it.qtd||1):'<input type="number" min="0" step="any" value="'+(it.qtd||1)+'" oninput="_obSetItem('+i+',\'qtd\',this.value)" style="width:65px;text-align:right;font-size:12px">')+'</td>'+
       '<td style="'+td+';text-align:right;white-space:nowrap">'+fmtMoney(it.precoUnit)+'</td>'+
       '<td style="'+td+';text-align:right">'+(V?((it.descPct||0)+'%'):'<input type="number" min="0" max="100" step="0.01" value="'+(it.descPct||0)+'" oninput="_obSetItem('+i+',\'descPct\',this.value)" style="width:60px;text-align:right;font-size:12px">')+'</td>'+
       '<td style="'+td+';text-align:right;white-space:nowrap;font-weight:600" id="ob-it-tot-'+i+'">'+fmtMoney(b*(1-(it.descPct||0)/100))+'</td>'+
-      (V?'':'<td style="'+td+';text-align:center"><button onclick="_obRemItem('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer">✕</button></td>')+'</tr>';
+      (V?'':'<td style="'+td+';text-align:center;white-space:nowrap"><button onclick="_obEditItem('+i+')" title="Editar este item (fórmula, QSP, embalagens, quantidade — recalcula o preço)" style="background:none;border:none;cursor:pointer;font-size:13px">✏</button> <button onclick="_obRemItem('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer">✕</button></td>')+'</tr>';
   }).join('');
   ov.innerHTML='<div class="modal" style="width:860px;max-width:96vw;max-height:92vh;overflow-y:auto">'+
     '<h2 style="font-size:16px">'+(V?'👁 ':'🧾 ')+(_ob.id?'Orçamento '+(_ob.num||''):'Novo orçamento')+(V?' <span style="font-size:11px;font-weight:400;color:var(--text-tertiary)">(somente leitura)</span>':'')+'</h2>'+
@@ -28918,20 +29393,35 @@ function _obPgResumo(){
 // v191 — MODAL de inserção de produto (pedido do dono 04/08): fórmula → COMPOSIÇÃO já visível (dose
 // editável — alterar salva fórmula nova "AJ") → frasco/QSP ou cápsulas/volumetria → quantidade.
 // "+ Inserir" insere e fecha; "+ Inserir e adicionar outro" insere e reabre o modal limpo.
-function _obAddModal(){
+var _obEditIdx=null; // v196 — índice do item em EDIÇÃO (null = inserção nova)
+function _obAddModal(editIdx){
   var ov=document.getElementById('ob-add-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='ob-add-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4300'; document.body.appendChild(ov); }
   _obSelFid=null;
+  _obEditIdx=(editIdx==null?null:editIdx);
+  var editing=(_obEditIdx!=null)?(_ob.itens||[])[_obEditIdx]:null;
+  if(_obEditIdx!=null && !editing){ _obEditIdx=null; }
   ov.innerHTML='<div class="modal" style="width:660px;max-width:95vw;max-height:90vh;overflow-y:auto">'+
-    '<h2 style="font-size:16px">＋ Adicionar produto</h2>'+
-    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px">Funciona como o simulador: fórmula → composição → QSP/cápsulas → embalagem → preço automático pelo motor de precificação.</div>'+
+    '<h2 style="font-size:16px">'+(editing?'✏ Editar produto':'＋ Adicionar produto')+'</h2>'+
+    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px">Funciona como o simulador: fórmula → composição → QSP/cápsulas → embalagem → preço automático pelo motor de precificação.'+(editing?' <b>Editando um item já inserido</b> — ao salvar, o item é recalculado (o desconto % da linha é mantido).':'')+'</div>'+
     '<div class="form-group" style="margin-bottom:8px"><label>Fórmula do catálogo *</label><input type="text" id="ob-f" list="ob-f-dl" placeholder="Código ou nome da fórmula..." onchange="_obPickFormula(this.value)"><datalist id="ob-f-dl">'+_obFormulas().slice(0,1500).map(function(f){ return '<option value="'+escapeHtml(_obFLabel(f))+'">'; }).join('')+'</datalist></div>'+
     '<div id="ob-f-campos"><div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Escolha a fórmula para ver a composição e os campos.</div></div>'+
-    '<div class="modal-footer"><button onclick="document.getElementById(\'ob-add-overlay\').classList.remove(\'open\')">Cancelar</button><button onclick="_obAddItem(false)">+ Inserir</button><button class="btn-primary" onclick="_obAddItem(true)">+ Inserir e adicionar outro</button></div></div>';
+    '<div class="modal-footer"><button onclick="document.getElementById(\'ob-add-overlay\').classList.remove(\'open\')">Cancelar</button>'+
+      (editing?'<button class="btn-primary" onclick="_obAddItem(false)">✓ Salvar alterações</button>'
+              :'<button onclick="_obAddItem(false)">+ Inserir</button><button class="btn-primary" onclick="_obAddItem(true)">+ Inserir e adicionar outro</button>')+'</div></div>';
   ov.classList.add('open');
-  var fi=document.getElementById('ob-f'); if(fi) fi.focus();
+  if(editing){
+    // v196 — pré-carrega a fórmula e os campos do item (fid aponta p/ a fórmula usada, inclusive "AJ")
+    var fE=(catalogoNovo||[]).find(function(x){ return x.id===editing.fid; });
+    var fi0=document.getElementById('ob-f'); if(fi0 && fE) fi0.value=_obFLabel(fE);
+    _obPickFormula('', editing.fid, editing);
+  } else {
+    var fi=document.getElementById('ob-f'); if(fi) fi.focus();
+  }
 }
-function _obPickFormula(txt, fid){
+function _obEditItem(i){ _obAddModal(i); }
+function _obPickFormula(txt, fid, pre){
+  // v196 — `pre` (opcional) = item existente em EDIÇÃO: pré-carrega QSP/cápsulas, embalagens e qtd
   var f=fid?(catalogoNovo||[]).find(function(x){ return x.id===fid; }):_obResolveF(txt);
   var box=document.getElementById('ob-f-campos'); if(!box) return;
   if(!f){ box.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Escolha a fórmula para ver a composição e os campos.</div>'; _obSelFid=null; return; }
@@ -28953,9 +29443,39 @@ function _obPickFormula(txt, fid){
       : '<div class="form-group"><label>Quantidade base (QSP) * <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(volumetria)</span></label><input type="number" min="0" step="any" id="ob-qspv" value="'+(f.qspValor!=null&&f.qspValor!==''?f.qspValor:120)+'"></div><div class="form-group"><label>Unidade</label><select id="ob-qspu" style="font-size:13px"><option'+((f.qspUn||'g')==='g'?' selected':'')+'>g</option><option'+((f.qspUn||'g')==='mL'?' selected':'')+'>mL</option></select></div>')+
     '</div>'+
     '<div class="form-row">'+
-      '<div class="form-group"><label>Embalagem (frasco)</label><input type="text" id="ob-emb" list="ob-emb-dl" placeholder="Código ou nome da embalagem..."><datalist id="ob-emb-dl">'+_geEmbs().slice(0,900).map(function(x){ return '<option value="'+escapeHtml(_geLabel(x))+'">'; }).join('')+'</datalist></div>'+
+      // v196 — embalagem DESMEMBRADA (pedido do dono 06/08): frasco + válvula + tampa etc., uma linha por parte
+      '<div class="form-group"><label>Embalagem <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(uma linha por parte: frasco, válvula, tampa...)</span></label>'+
+        '<div id="ob-embs"></div>'+
+        '<button type="button" onclick="_obEmbAdd()" style="font-size:11px;padding:3px 10px;margin-top:2px">+ adicionar embalagem</button>'+
+        '<datalist id="ob-emb-dl">'+_geEmbs().slice(0,900).map(function(x){ return '<option value="'+escapeHtml(_geLabel(x))+'">'; }).join('')+'</datalist></div>'+
       '<div class="form-group"><label>Qtd de unidades</label><input type="number" min="1" step="1" id="ob-qtd" value="1" style="text-align:right"></div>'+
     '</div>';
+  // v196 — edição: pré-carrega campos e embalagens do item; inserção nova: uma linha vazia
+  if(pre){
+    if(caps){
+      var eN=document.getElementById('ob-ncaps'); if(eN && pre.opts && pre.opts.nCaps) eN.value=pre.opts.nCaps;
+      var eT=document.getElementById('ob-capstam'); if(eT && pre.opts && pre.opts.capsTam) eT.value=pre.opts.capsTam;
+    } else {
+      var eV=document.getElementById('ob-qspv'); if(eV && pre.opts && pre.opts.qspValor!=null) eV.value=pre.opts.qspValor;
+      var eU=document.getElementById('ob-qspu'); if(eU && pre.opts && pre.opts.qspUn) eU.value=pre.opts.qspUn;
+    }
+    var _ids=(pre.embalagemIds&&pre.embalagemIds.length)?pre.embalagemIds:(pre.embalagemId?[pre.embalagemId]:[]);
+    if(_ids.length) _ids.forEach(function(eid){ var e=(insumos||[]).find(function(x){ return x.id===eid; }); _obEmbAdd(e?_geLabel(e):''); });
+    else _obEmbAdd();
+    var eQ=document.getElementById('ob-qtd'); if(eQ && pre.qtd) eQ.value=pre.qtd;
+  } else {
+    _obEmbAdd(); // primeira linha já aberta
+  }
+}
+// v196 — linhas dinâmicas de embalagem do modal de inserção
+function _obEmbAdd(val){
+  var c=document.getElementById('ob-embs'); if(!c) return;
+  var d=document.createElement('div');
+  d.style.cssText='display:flex;gap:6px;align-items:center;margin-bottom:4px';
+  d.innerHTML='<input type="text" class="ob-emb-inp" list="ob-emb-dl" placeholder="Código ou nome da embalagem..." style="flex:1;font-size:13px">'+
+    '<button type="button" onclick="this.parentNode.remove()" title="Remover esta parte" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button>';
+  c.appendChild(d);
+  if(val!=null) d.querySelector('.ob-emb-inp').value=val;
 }
 function _obAddItem(outro){
   var f=_obSelFid?(catalogoNovo||[]).find(function(x){ return x.id===_obSelFid; }):null;
@@ -28990,14 +29510,30 @@ function _obAddItem(outro){
     opts={qspValor:qv, qspUn:qu};
     detalhe='QSP '+qv+' '+qu;
   }
-  var emb=_geResolve((document.getElementById('ob-emb')||{}).value);
-  if(emb){ opts.embalagemId=emb.id; detalhe+=' · '+(emb.nome||''); }
+  // v196 — VÁRIAS embalagens (frasco + válvula + tampa): resolve cada linha; texto que não casa
+  // com o catálogo BARRA a inserção (senão o custo da parte sumiria em silêncio)
+  var embIds=[], embNomes=[], embErro=null;
+  Array.prototype.forEach.call(document.querySelectorAll('#ob-embs .ob-emb-inp'), function(inp){
+    var v=String(inp.value||'').trim(); if(!v) return;
+    var e=_geResolve(v);
+    if(e){ embIds.push(e.id); embNomes.push(e.nome||''); }
+    else if(!embErro) embErro=v;
+  });
+  if(embErro){ alert('Embalagem não encontrada no catálogo: "'+embErro+'".\nEscolha uma opção da lista (ou apague a linha).'); return; }
+  if(embIds.length){ opts.embalagemIds=embIds; opts.embalagemId=embIds[0]; detalhe+=' · '+embNomes.join(' + '); }
   var calc=_cnCalcular(usada, opts);
   var qtd=parseInt((document.getElementById('ob-qtd')||{}).value,10)||1;
-  _ob.itens.push({ fid:usada.id, codigo:usada.codigo||'', nome:usada.nome||'', forma:f.forma, detalhe:detalhe,
-    opts:opts, embalagemId:emb?emb.id:null, embalagemNome:emb?(emb.nome||''):'',
+  var item={ fid:usada.id, codigo:usada.codigo||'', nome:usada.nome||'', forma:f.forma, detalhe:detalhe,
+    opts:opts, embalagemId:embIds[0]||null, embalagemIds:embIds, embalagemNome:embNomes.join(' + '), embalagemNomes:embNomes,
     qtd:qtd, precoUnit:+(calc.precoTotal||0).toFixed(2), custoUnit:+(calc.custoTotal||0).toFixed(2),
-    descPct:0, avisos:(calc.avisos||[]).length, ajustadaDeNome:ajustadaDeNome });
+    descPct:0, avisos:(calc.avisos||[]).length, avisosTxt:(calc.avisos||[]).slice(), ajustadaDeNome:ajustadaDeNome };
+  if(_obEditIdx!=null && _ob.itens[_obEditIdx]){
+    item.descPct=_ob.itens[_obEditIdx].descPct||0; // edição preserva o desconto da linha
+    _ob.itens[_obEditIdx]=item;
+    _obEditIdx=null;
+  } else {
+    _ob.itens.push(item);
+  }
   _obSelFid=null;
   // v191 — o modal de inserção fecha; "+ Inserir e adicionar outro" reabre limpo para o próximo produto
   var ao=document.getElementById('ob-add-overlay'); if(ao) ao.classList.remove('open');
@@ -29123,11 +29659,13 @@ function _obPdfDoc(o){
       return nm+' '+cp.dose+(cp.unidade||'%');
     }).join(' · ');
     // v188 — embalagem no detalhe também sai com o nome comercial, se houver
+    // v196 — vale para CADA parte quando a embalagem é desmembrada (frasco + válvula + tampa)
     var det=it.detalhe||'';
-    if(it.embalagemId && it.embalagemNome){
-      var eb=(insumos||[]).find(function(x){ return x && x.id===it.embalagemId; });
-      if(eb && (eb.nomeComercial||'').trim() && det.indexOf(it.embalagemNome)>=0) det=det.replace(it.embalagemNome, eb.nomeComercial.trim());
-    }
+    var _ebIds=(it.embalagemIds&&it.embalagemIds.length)?it.embalagemIds:(it.embalagemId?[it.embalagemId]:[]);
+    _ebIds.forEach(function(ebid){
+      var eb=(insumos||[]).find(function(x){ return x && x.id===ebid; });
+      if(eb && (eb.nomeComercial||'').trim() && (eb.nome||'') && det.indexOf(eb.nome)>=0) det=det.replace(eb.nome, eb.nomeComercial.trim());
+    });
     return '<tr><td style="color:#8A7D75">'+(i+1)+'</td><td><div class="nm">'+escapeHtml(it.nome||'')+'</div>'+(det?'<div class="dt">'+escapeHtml(det)+'</div>':'')+(compTxt?'<div class="cp">Composição: '+escapeHtml(compTxt)+'</div>':'')+'</td><td style="text-align:right">'+(it.qtd||1)+'</td><td style="text-align:right;white-space:nowrap">'+fmtMoney(it.precoUnit)+'</td><td style="text-align:right">'+((parseFloat(it.descPct)||0)>0?(it.descPct+'%'):'—')+'</td><td style="text-align:right;white-space:nowrap"><b>'+fmtMoney(b*(1-(parseFloat(it.descPct)||0)/100))+'</b></td></tr>';
   }).join('');
   // v191 — layout no PADRÃO DO PEDIDO DO OPERY (pedido do dono 04/08), mais elegante e leve:

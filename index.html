@@ -4758,7 +4758,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v198';
+var APP_VERSION = 'v199';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -16478,6 +16478,7 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
     <button class="btn-primary" onclick="_finBaixarSelecionadas('${tipo}')" style="font-size:12px;padding:5px 12px">💵 ${tipo==='pagar'?'Baixar':'Receber'} selecionada(s)</button>
     <button onclick="_finEstornarSelecionada('${tipo}')" title="Estornar 1 ${tipo==='pagar'?'pagamento':'recebimento'} já baixado (volta para em aberto)" style="font-size:12px;padding:5px 12px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">↩ Estornar selecionada</button>
     <button onclick="_finAbrirFiltro('${tipo}')" style="font-size:12px;padding:5px 12px;${_finFiltroAtivo(tipo)?'background:var(--text-info);color:#fff;border-color:var(--text-info)':''}">⚙ Filtro${_finFiltroAtivo(tipo)?' ✓':''}</button>
+    <span id="fin-sel-tot-${tipo}" style="display:none;font-size:12.5px;font-weight:700;color:${tipo==='pagar'?'var(--st-bad-tx)':'var(--st-ok-tx)'};background:var(--bg-secondary);border:.5px solid var(--border);border-radius:14px;padding:3px 12px"></span><!-- v199 — somatório dos marcados -->
     <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">${rows.length} parcela(s)${_finFiltroAtivo(tipo)?' · filtrado':''}</span>
   </div>`;
   if(!rows.length){ container.innerHTML=toolbar+'<div class="empty" style="padding:20px">Nenhuma conta '+(tipo==='pagar'?'a pagar':'a receber')+' aprovada.</div>'; return; }
@@ -16507,8 +16508,8 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
         <td style="${td};text-align:center">${r.st==='bonificacao'
           ? '' /* v127 — bonificação não baixa nem estorna */
           : (r.st==='pago'
-            ? `<input type="checkbox" class="finest-${tipo}" data-conta="${r.c.id}" data-parc="${r.pi}" title="selecionar para estornar" style="width:auto;margin:0;accent-color:var(--st-bad-tx)">`
-            : `<input type="checkbox" class="finsel-${tipo}" data-conta="${r.c.id}" data-parc="${r.pi}" style="width:auto;margin:0">`)}</td>
+            ? `<input type="checkbox" class="finest-${tipo}" data-conta="${r.c.id}" data-parc="${r.pi}" onchange="_finSelTot('${tipo}')" title="selecionar para estornar" style="width:auto;margin:0;accent-color:var(--st-bad-tx)">`
+            : `<input type="checkbox" class="finsel-${tipo}" data-conta="${r.c.id}" data-parc="${r.pi}" onchange="_finSelTot('${tipo}')" style="width:auto;margin:0">`)}</td>
         <td style="${td};font-weight:600">${escapeHtml(r.id)}${(()=>{ const _o=orders.find(x=>String(x.id)===String(r.c.origemId)); return (_o&&_o.splitGrupo)?` <span style="font-size:9px;padding:0 5px;border-radius:20px;background:#EEF;color:#55a;font-weight:500" title="Pedido dividido — ${escapeHtml(_splitLabel(_o))}">dividido</span>`:''; })()}</td>
         <td style="${td}">${escapeHtml(r.nome)}</td>
         ${tipo==='pagar'?`<td style="${td};font-family:monospace;font-size:11px">${r.c.notaFiscal?escapeHtml(r.c.notaFiscal):'—'}</td>`:''}
@@ -16561,6 +16562,20 @@ function _finEditarSelecionada(tipo){
   if(c.origem==='manual'){ openLancManual(tipo, id); }
   else openContaDetalhe(tipo, id);
 }
+// v199 — "Valor selecionado" no cabeçalho (pedido do dono 07/08): soma AO VIVO das parcelas
+// marcadas (baixa e estorno) em Contas a Pagar / a Receber; some quando nada está marcado.
+function _finSelTot(tipo){
+  var el=document.getElementById('fin-sel-tot-'+tipo); if(!el) return;
+  var arr=(tipo==='pagar')?contasPagar:contasReceber;
+  var tot=0, n=0;
+  document.querySelectorAll('.finsel-'+tipo+':checked, .finest-'+tipo+':checked').forEach(function(cb){
+    var c=(arr||[]).find(function(x){ return String(x.id)===String(cb.getAttribute('data-conta')); });
+    var p=c&&(c.parcelas||[])[parseInt(cb.getAttribute('data-parc'),10)];
+    if(p){ tot+=(parseFloat(p.valor)||0); n++; }
+  });
+  if(n){ el.style.display=''; el.textContent='Valor selecionado: '+fmtMoney(tot)+' · '+n+' parcela(s)'; }
+  else { el.style.display='none'; el.textContent=''; }
+}
 function _finBaixarSelecionadas(tipo){
   const sel=_finSelecionadas(tipo);
   if(!sel.length){ alert('Selecione a(s) conta(s) que quer '+(tipo==='pagar'?'baixar':'receber')+' (checkbox).'); return; }
@@ -16598,8 +16613,9 @@ function _finBaixarSelecionadas(tipo){
 var _loteState=null;
 function _finBaixarLote(selInfo, tipo){
   tipo=(tipo==='pagar')?'pagar':'receber'; // v174 — lote também no PAGAR (fatura de cartão com N fornecedores)
-  // v187 — a receber aceita 50 por lote (pedido do dono; baixa é UPDATE — a trava de exclusão em massa não se aplica)
-  var _max=(tipo==='pagar')?20:50;
+  // v187 — a receber aceita 50 por lote; v199 — a PAGAR também 50 (pedido do dono 07/08).
+  // Seguro por desenho: baixa é UPDATE em contas — a trava de exclusão em massa (DELETE) não se aplica.
+  var _max=50;
   if(selInfo.length>_max){ alert('O lote aceita até '+_max+' parcelas por vez (você marcou '+selInfo.length+').\nDesmarque algumas e repita o lote.'); return; }
   var _lst=(tipo==='pagar')?contasPagar:contasReceber;
   var rows=selInfo.map(function(x){
@@ -32381,6 +32397,80 @@ function _waAudVel(btn){
   }catch(_e){}
 }
 function _waKindFromMime(m){ m=(m||'').toString().toLowerCase(); if(m.startsWith('image/')) return 'image'; if(m.startsWith('audio/')) return 'audio'; if(m.startsWith('video/')) return 'video'; return 'document'; }
+// ══ v199 — ÁUDIO NO SAFARI/MAC (reporte do dono 07/08: MacBooks não ouvem os áudios) ══════════
+// Causa: o WhatsApp entrega voz em OGG/Opus (conferido no banco: todos os áudios são
+// "audio/ogg; codecs=opus") e o Safari NÃO reproduz esse formato — Chrome/Windows/Linux sim.
+// Solução: no navegador que não toca OGG (canPlayType vazio), o PRIMEIRO clique no player baixa o
+// áudio, decodifica Opus→PCM em WASM (lib ogg-opus-decoder, carregada só nesse caso) e toca um WAV
+// gerado na hora (formato universal). Conversão fica em cache na sessão; qualquer falha volta ao
+// comportamento antigo (src direto + transcrição 🎙 continua embaixo). Navegadores que já tocam
+// OGG não passam por nada disso.
+var _waOggOk=null;
+function _waPodeOgg(){
+  if(_waOggOk===null){ try{ _waOggOk=!!document.createElement('audio').canPlayType('audio/ogg; codecs=opus'); }catch(_e){ _waOggOk=true; } }
+  return _waOggOk;
+}
+var _waOpusLibP=null;
+function _waOpusLib(){ // carrega o decodificador (2 CDNs, versão pinada) uma única vez
+  if(_waOpusLibP) return _waOpusLibP;
+  _waOpusLibP=new Promise(function(res,rej){
+    if(window['ogg-opus-decoder']) return res(window['ogg-opus-decoder']);
+    var urls=['https://cdn.jsdelivr.net/npm/ogg-opus-decoder@1.6.14/dist/ogg-opus-decoder.min.js',
+              'https://unpkg.com/ogg-opus-decoder@1.6.14/dist/ogg-opus-decoder.min.js'];
+    (function tenta(i){
+      if(i>=urls.length){ _waOpusLibP=null; return rej(new Error('decodificador indisponível')); }
+      var s=document.createElement('script'); s.src=urls[i];
+      s.onload=function(){ window['ogg-opus-decoder']?res(window['ogg-opus-decoder']):rej(new Error('lib sem export')); };
+      s.onerror=function(){ tenta(i+1); };
+      document.head.appendChild(s);
+    })(0);
+  });
+  return _waOpusLibP;
+}
+// PCM float → WAV 16-bit (testado em Node contra Opus real antes de entrar aqui)
+function _waPcm16Wav(chs, rate){
+  var nCh=chs.length, n=chs[0].length;
+  var buf=new ArrayBuffer(44+n*nCh*2), v=new DataView(buf);
+  var ws=function(o,s){ for(var i=0;i<s.length;i++) v.setUint8(o+i,s.charCodeAt(i)); };
+  ws(0,'RIFF'); v.setUint32(4,36+n*nCh*2,true); ws(8,'WAVE'); ws(12,'fmt ');
+  v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,nCh,true);
+  v.setUint32(24,rate,true); v.setUint32(28,rate*nCh*2,true);
+  v.setUint16(32,nCh*2,true); v.setUint16(34,16,true); ws(36,'data'); v.setUint32(40,n*nCh*2,true);
+  var o=44;
+  for(var i=0;i<n;i++) for(var c=0;c<nCh;c++){ var x=Math.max(-1,Math.min(1,chs[c][i])); v.setInt16(o,x<0?x*32768:x*32767,true); o+=2; }
+  return new Blob([buf],{type:'audio/wav'});
+}
+var _waWavCache={};
+async function _waOggParaWav(chave, url){
+  if(_waWavCache[chave]) return _waWavCache[chave];
+  var resp=await fetch(url); if(!resp.ok) throw new Error('download '+resp.status);
+  var dados=new Uint8Array(await resp.arrayBuffer());
+  var NS=await _waOpusLib();
+  var dec=new NS.OggOpusDecoder();
+  await dec.ready;
+  try{
+    var r=await dec.decodeFile(dados);
+    if(!r || !r.channelData || !r.channelData.length || !r.samplesDecoded) throw new Error('decodificação vazia');
+    var u=URL.createObjectURL(_waPcm16Wav(r.channelData, r.sampleRate||48000));
+    _waWavCache[chave]=u;
+    return u;
+  } finally { try{ dec.free(); }catch(_e){} }
+}
+// prepara o <audio> no navegador SEM suporte a OGG: 1º clique converte e toca; falha → src direto
+function _waAudSafariPrep(node, chave, url){
+  if(_waWavCache[chave]){ if(node.src!==_waWavCache[chave]) node.src=_waWavCache[chave]; return; }
+  if(node.dataset.wavPrep===chave) return;
+  node.dataset.wavPrep=chave;
+  node.removeAttribute('src');
+  var h=function(){
+    node.removeEventListener('click',h);
+    node.style.opacity='.55';
+    _waOggParaWav(chave,url)
+      .then(function(w){ node.style.opacity=''; node.src=w; try{ node.play(); }catch(_e){} })
+      .catch(function(){ node.style.opacity=''; node.src=url; try{ node.play(); }catch(_e){} });
+  };
+  node.addEventListener('click',h);
+}
 function _waAbrirMedia(node){ if(node && node.src) window.open(node.src,'_blank'); }
 // preenche os src das mídias após render (bucket privado → URL assinada; ou url direta de fallback)
 // v145 : cache de links assinados — o MESMO link entre re-renders faz o navegador reaproveitar a
@@ -32388,13 +32478,17 @@ function _waAbrirMedia(node){ if(node && node.src) window.open(node.src,'_blank'
 var _waSignedCache={};
 async function _waLoadMedia(el){
   if(!el) return;
-  el.querySelectorAll('[data-anexo-url]').forEach(node=>{ const u=node.getAttribute('data-anexo-url'); if(u && u!=='null' && node.src!==u) node.src=u; });
+  // v199 — áudio OGG em navegador sem suporte (Safari/Mac): converte no clique em vez de src direto
+  const _ehOggSemSuporte=(node,ref)=>node.tagName==='AUDIO' && !_waPodeOgg() && /\.(ogg|oga)(\?|$)/i.test(ref||'');
+  el.querySelectorAll('[data-anexo-url]').forEach(node=>{ const u=node.getAttribute('data-anexo-url'); if(!u || u==='null') return;
+    if(_ehOggSemSuporte(node,u)){ _waAudSafariPrep(node,u,u); return; }
+    if(node.src!==u) node.src=u; });
   const nodes=[...el.querySelectorAll('[data-anexo-path]')];
   for(const node of nodes){
     const p=node.getAttribute('data-anexo-path'); if(!p||!_sb) continue;
     const c=_waSignedCache[p];
-    if(c && c.exp>Date.now()){ if(node.src!==c.url) node.src=c.url; continue; }
-    try{ const {data}=await _sb.storage.from('anexos').createSignedUrl(p, 3600); if(data && data.signedUrl){ _waSignedCache[p]={url:data.signedUrl, exp:Date.now()+50*60000}; node.src=data.signedUrl; } }catch(_){}
+    if(c && c.exp>Date.now()){ if(_ehOggSemSuporte(node,p)) _waAudSafariPrep(node,p,c.url); else if(node.src!==c.url) node.src=c.url; continue; }
+    try{ const {data}=await _sb.storage.from('anexos').createSignedUrl(p, 3600); if(data && data.signedUrl){ _waSignedCache[p]={url:data.signedUrl, exp:Date.now()+50*60000}; if(_ehOggSemSuporte(node,p)) _waAudSafariPrep(node,p,data.signedUrl); else node.src=data.signedUrl; } }catch(_){}
   }
 }
 // v145 : boot leve — mapa id→total de msgs no servidor e hidratação sob demanda ao abrir a conversa

@@ -4758,7 +4758,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v199';
+var APP_VERSION = 'v200';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7255,7 +7255,14 @@ function confirmStatus(){
       return;
     }
     if(!(_cla.recebidoOk && _cle.recebidoOk)){
-      alert('🚫 "Produto entregue" só quando TUDO estiver recebido nos dois lados (ou marcado "Não necessário").\n\nAtivos: '+(_cla.recebidoOk?'ok':'pendente')+' · Embalagem: '+(_cle.recebidoOk?'ok':'pendente')+'\n\nConfira a sub-aba Recebimento na Solicitação de Compra.');
+      // v200 — pedido do dono 07/08: a mensagem lista ITEM A ITEM o que está pendente e em que pé
+      var _det='';
+      try{
+        var _cap=function(arr){ return arr.slice(0,10).join('\n')+(arr.length>10?'\n… e mais '+(arr.length-10)+' item(ns)':''); };
+        if(!_cla.recebidoOk){ var _pa=_ladoComprasPendentes(o,'ativo'); if(_pa.length) _det+='\n\nATIVOS pendentes:\n'+_cap(_pa); }
+        if(!_cle.recebidoOk){ var _pe2=_ladoComprasPendentes(o,'embalagem'); if(_pe2.length) _det+='\n\nEMBALAGEM pendente:\n'+_cap(_pe2); }
+      }catch(_e){}
+      alert('🚫 "Produto entregue" só quando TUDO estiver recebido nos dois lados (ou marcado "Não necessário").\n\nAtivos: '+(_cla.recebidoOk?'ok':'pendente')+' · Embalagem: '+(_cle.recebidoOk?'ok':'pendente')+_det+'\n\nConfira a sub-aba Gestão de Pedidos na Solicitação de Compra.');
       return;
     }
   }
@@ -11722,7 +11729,20 @@ function _solStatusEfetivo(s){
       algum=true;
     }
   }
-  return algum?'comprado':s.status;
+  // v200 — TODOS os itens resolvidos pelo "✕ Não comprar" (tinha estoque/ajustado/sem estoque) ficava
+  // 'em_lista' PARA SEMPRE (caso 102798: solicitação de devolução com 2 itens "tinha estoque" segurava
+  // o status do pedido; a v174 já tratava isso no cabeçalho do MODAL, mas não aqui).
+  return algum?'comprado':'resolvido';
+}
+// v200 — status DO PEDIDO na aba (caso 102798): a linha mostrava o status da ÚLTIMA solicitação;
+// agora agrega TODAS as do tipo — qualquer pendência vence; tudo fechado mostra o melhor rótulo.
+function _solStatusPedido(orderId, tab){
+  var efs=_solTodasSolic(orderId, tab).map(_solStatusEfetivo);
+  if(!efs.length) return '';
+  if(efs.indexOf('solicitado')>=0) return 'solicitado';
+  if(efs.indexOf('em_lista')>=0) return 'em_lista';
+  if(efs.indexOf('comprado')>=0) return 'comprado';
+  return 'resolvido';
 }
 function renderSolCompra(tab){
   var el=document.getElementById('sol-list'); if(!el) return;
@@ -11731,8 +11751,8 @@ function renderSolCompra(tab){
   var lista=_solPedidosLinha();
   if(busca) lista=lista.filter(function(o){ return ((o.num||'')+' '+(o.cliente||'')).toLowerCase().indexOf(busca)>=0; });
   lista.sort(function(a,b){ return String(b.d1||'').localeCompare(String(a.d1||'')); });
-  var _statLbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado'};
-  var _statCor={solicitado:'var(--text-info)', em_lista:'var(--st-mid-tx)', comprado:'var(--st-ok-tx)'};
+  var _statLbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado', resolvido:'Resolvido s/ compra'}; // v200
+  var _statCor={solicitado:'var(--text-info)', em_lista:'var(--st-mid-tx)', comprado:'var(--st-ok-tx)', resolvido:'var(--st-inf-tx)'};
   var rows=[];
   // v155 — "só sem solicitação" também esconde os marcados "não necessário" (já estão resolvidos)
   lista.forEach(function(o){ var s=_solGetSolic(o.id, tab); var nn=o.compraNaoNec&&o.compraNaoNec[tab]; if(soPend && (s||nn)) return; rows.push({o:o, s:s}); });
@@ -11775,7 +11795,7 @@ function renderSolCompra(tab){
       var nn=o.compraNaoNec&&o.compraNaoNec[tab];
       var stTxt;
       if(s){
-        var _stEf=_solStatusEfetivo(s); // v168 — comprado derivado dos itens da lista
+        var _stEf=_solStatusPedido(o.id, tab); // v200 — agrega TODAS as solicitações (era só a última)
         stTxt='<span style="font-size:11px;font-weight:600;color:'+(_statCor[_stEf]||'')+'">'+(_statLbl[_stEf]||_stEf)+'</span>';
         if(s.status==='solicitado' && temTravada) stTxt='<span style="font-size:11px;font-weight:600;color:var(--st-mid-tx)">Em lista</span> <span style="font-size:11px;font-weight:600;color:var(--text-info)">+ complementar aberta</span>';
       } else if(nn){
@@ -11841,7 +11861,7 @@ function _solTabelaWrap(corpo){
     _solTabelaHead()+'<tbody>'+corpo+'</tbody></table></div>';
 }
 function _solVerBlocoSolic(s, tally){
-  var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado'};
+  var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado', resolvido:'Resolvida — sem compra'}; // v200
   var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
   // v174 — solicitação com TODOS os itens resolvidos pelo "✕ Não comprar" (ajustado/tinha estoque/sem
   // estoque) ficava como "EM LISTA" no cabeçalho e parecia pendente (caso EDULCORANTE 102707, 28/07)
@@ -13053,11 +13073,13 @@ function renderSolAcomp(){
     if(fTipo && s.tipo!==fTipo) return;
     var mesS=s.criadoEm?_mesLocalStr(s.criadoEm):''; // v159 — mês LOCAL
     if(fMes && mesS!==fMes) return;
+    // v200 — código da lista (LA/LE-xxx) p/ aparecer sob o status "Em lista" (pedido do dono 07/08)
+    var _codL=''; if(s.listaId){ var _lS=(listasCompra||[]).find(function(x){ return x.id===s.listaId; }); if(_lS){ try{ _codL=_lcCodigo(_lS); }catch(_e){} } }
     s.itens.forEach(function(it){
       var r=_acompStatusItem(s, it), cmp=(r.li&&r.li.compra)||{};
       var linha={
         tipo:s.tipo, codigo:it.codigo||'', nome:it.nome||'', qtd:parseFloat(it.qtd)||0, unidade:it.unidade||'UN',
-        pedido:s.orderNum||'—', status:r.st,
+        pedido:s.orderNum||'—', status:r.st, lista:_codL,
         fornecedor:(r.st==='Comprado'||r.st==='Recebido')?(cmp.fornecedorNome||''):'',
         dtSolic:s.criadoEm||null, dtCompra:(cmp.comprado&&cmp.compradoEm)||null,
         nf:(cmp.comprado&&cmp.nf)||'', preco:(cmp.comprado?parseFloat(cmp.precoPago)||0:0),
@@ -13085,7 +13107,8 @@ function renderSolAcomp(){
         '<td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.codigo||'—')+'</td>'+
         '<td style="'+td+';text-align:right">'+x.qtd.toLocaleString('pt-BR')+' '+escapeHtml(x.unidade)+'</td>'+
         '<td style="'+td+(x.pedido==='Produtos gerais'?';color:var(--text-info);font-weight:600':';font-weight:600')+'">'+escapeHtml(x.pedido)+'</td>'+
-        '<td style="'+td+'"><span style="font-size:11px;font-weight:600;color:'+(_cor[x.status]||'')+'">'+x.status+'</span>'+(x.motivo?' <span style="font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(x.motivo)+'">ⓘ</span>':'')+'</td>'+
+        '<td style="'+td+'"><span style="font-size:11px;font-weight:600;color:'+(_cor[x.status]||'')+'">'+x.status+'</span>'+(x.motivo?' <span style="font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(x.motivo)+'">ⓘ</span>':'')+
+          ((x.lista&&(x.status==='Em lista'||x.status==='Orçado'))?'<div style="font-size:9.5px;font-family:monospace;color:var(--text-tertiary)" title="Lista de compra em que o item está">'+escapeHtml(x.lista)+'</div>':'')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(x.fornecedor||'—')+'</td>'+
         '<td style="'+td+'">'+(x.dtSolic?fmtDate(_dtLocalStr(x.dtSolic)):'—')+'</td>'+
         '<td style="'+td+'">'+(x.dtCompra?fmtDate(_dtLocalStr(x.dtCompra)):'—')+'</td>'+
@@ -13141,6 +13164,37 @@ function _ladoComprasEstado(o, tipo, cutTs){
     }
   }
   return {definido:true, compradoOk:compradoOk, recebidoOk:recebidoOk};
+}
+// v200 — DETALHE do que segura um lado (pedido do dono 07/08: a trava do "Produto entregue" dizia
+// só "Ativos: pendente" — agora lista ITEM A ITEM o que falta e em que pé está). Espelha fielmente
+// a varredura do _ladoComprasEstado acima; qualquer divergência entre os dois é bug.
+function _ladoComprasPendentes(o, tipo){
+  var out=[];
+  var solics=_solTodasSolic(o.id, tipo).filter(function(s){ return (s.itens||[]).length; });
+  var fmtIt=function(it){ return (it.codigo?it.codigo+' ':'')+(it.nome||'?')+' ('+((parseFloat(it.qtd)||0).toLocaleString('pt-BR'))+' '+(it.unidade||'')+')'; };
+  solics.forEach(function(s){
+    if(!s.listaId || s.status==='solicitado'){
+      (s.itens||[]).forEach(function(it){ out.push('• '+fmtIt(it)+' — SOLICITADO, ainda não entrou em lista de compra (gerar lista ou Complementar)'); });
+      return;
+    }
+    var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; });
+    if(!l){ (s.itens||[]).forEach(function(it){ out.push('• '+fmtIt(it)+' — lista da solicitação não encontrada (avisar o suporte)'); }); return; }
+    var cod=''; try{ cod=_lcCodigo(l); }catch(_e){}
+    (s.itens||[]).forEach(function(it){
+      var lis=_lcPartesDoItem(l, it.itemId);
+      if(!lis.length){ out.push('• '+fmtIt(it)+' — sem par na lista '+cod+' (avisar o suporte)'); return; }
+      lis.forEach(function(li){
+        if(li.naoComprado) return; // resolvido sem compra — não segura
+        if(!li.compra || !li.compra.comprado || li.compraParcial){
+          out.push('• '+fmtIt(it)+(li.compraParcial?' — COMPRA PARCIAL (estornar e comprar o total)':' — aguardando COMPRA')+' · lista '+cod);
+        } else if(!li.compra.recebido){
+          var pc=li.compra.pedidoCompraId?(pedidosCompra||[]).find(function(p){ return p&&p.id===li.compra.pedidoCompraId; }):null;
+          out.push('• '+fmtIt(it)+' — comprado'+(li.compra.fornecedorNome?' de '+li.compra.fornecedorNome:'')+(pc&&pc.numero?' ('+pc.numero+')':'')+' — aguardando RECEBIMENTO');
+        }
+      });
+    });
+  });
+  return out;
 }
 // Avança o campo de status (escada nova); entre os dois "finalizado" o movimento é LATERAL
 // (mesmo degrau — o campo mostra o último lado fechado; os selos mostram os dois).
@@ -13351,6 +13405,11 @@ function _salvarCompraDual(l, it){
   var f1=(fornecedores||[]).find(function(x){ return (x.nome||'').toLowerCase()===f1nome.toLowerCase(); });
   var f2nome=c2.fornecedorNome||'';
   var f2=(fornecedores||[]).find(function(x){ return (x.nome||'').toLowerCase()===f2nome.toLowerCase(); });
+  // v200 — mesma trava do vínculo da compra normal (caso RICARO "LTDA3"): os DOIS lados precisam
+  // resolver para fornecedor do cadastro (por nome ou pelo id gravado na cotação) — senão nasceria
+  // pedido de compra fantasma com o nome digitado.
+  if(!f1 && !esc.fornecedorId){ alert('Fornecedor 1 ("'+f1nome+'") não está no cadastro.\nEscolha um fornecedor da lista ou cadastre antes em Financeiro › Fornecedores.'); return; }
+  if(!f2 && !c2.fornecedorId){ alert('Fornecedor 2 ("'+f2nome+'") não está no cadastro.\nEscolha um fornecedor da lista ou cadastre antes em Financeiro › Fornecedores.'); return; }
   var agora=Date.now(), quem=(currentUser&&currentUser.name)||'';
   // parte 2 = linha irmã (cópia profunda; cotações preservadas; escolhida aponta p/ o fornecedor 2)
   var it2=JSON.parse(JSON.stringify(it));
@@ -13410,6 +13469,15 @@ function saveCompraItem(){
   // preencher a NF depois pelo ✏ da lista; a linha fica com aviso "NF pendente" até preencher.
   var f=(fornecedores||[]).find(function(x){return (x.nome||'').toLowerCase()===forn.toLowerCase();});
   var _eraComprado=!!(it.compra&&it.compra.comprado);
+  // v200 — TRAVA do vínculo (caso RICARO "LTDA3", 07/08): compra NOVA com fornecedor que não casa
+  // com o cadastro seguia com fornecedorId NULO e o texto digitado — nascia um pedido de compra
+  // FANTASMA agrupado pelo nome errado (PC-025 ao lado do PC-024 do mesmo fornecedor). Compra nova
+  // agora EXIGE fornecedor do cadastro; edição de compra antiga (✏, ex.: preencher NF de legado com
+  // nome fora do cadastro) segue permitida — edição não cria pedido de compra.
+  if(!f && !_eraComprado){
+    alert('Fornecedor "'+forn+'" não está no cadastro.\n\nEscolha um fornecedor DA LISTA (comece a digitar e selecione). Se for fornecedor novo, cadastre antes em Financeiro › Fornecedores.\n\nSem o vínculo, a compra criaria um pedido de compra separado com o nome errado.');
+    return;
+  }
   // v165 — decisão do dono 20/07: compra registrada NÃO muda qtd/preço pelo ✏ (o save força os
   // valores originais mesmo que o campo tenha sido alterado — cinto e suspensório). EXCEÇÃO:
   // modo 🔓 CORRIGIR (só admin) aceita os novos valores MANTENDO a data original da compra.
@@ -13486,7 +13554,8 @@ function _pcSecaoHtml(){
     return '<tr>'+
       '<td style="'+td+';font-weight:600;font-family:monospace">'+escapeHtml(pc.numero||'')+'</td>'+
       '<td style="'+td+'">'+escapeHtml(pc.fornecedorNome||'—')+'</td>'+
-      '<td style="'+td+'">'+_pcStatusBadge(pc)+'</td>'+
+      '<td style="'+td+'">'+_pcStatusBadge(pc)+
+        (function(){ var ts=_pcStatusEmData(pc); return ts?'<div style="font-size:9.5px;color:var(--text-tertiary);margin-top:2px" title="Data em que o pedido entrou neste status">'+new Date(ts).toLocaleDateString('pt-BR')+'</div>':''; })()+'</td>'+
       '<td style="'+td+';text-align:right">'+t.n+(t.pendentes&&t.pendentes<t.n?' <span style="font-size:10px;color:var(--text-tertiary)">('+t.pendentes+' pend.)</span>':'')+'</td>'+
       '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(t.total)+'</td>'+
       '<td style="'+td+'">'+(pc.nf?('NF '+escapeHtml(pc.nf)):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
@@ -13562,12 +13631,39 @@ function _pcTotais(pc){
   return { n:itens.length, total:total, pendentes:pend };
 }
 var _PC_ST_LBL={aberto:'Aberto', fechado:'Fechado', faturado:'Faturado (NF)', em_recebimento:'Enviado p/ recebimento', conciliado:'Conciliado', recebido:'Recebido'}; // v169 — fluxo Recebimento de Pedido
+// v200 — data em que o pedido de compra ENTROU no status atual (pedido do dono 07/08: aparece
+// pequena embaixo do badge na Gestão de Pedidos). Os carimbos já existiam desde v160/v169.
+function _pcStatusEmData(pc){
+  var st=pc.status||'aberto';
+  var ts = st==='aberto' ? (pc.reabertoEm||pc.criadoEm)
+    : st==='fechado' ? pc.fechadoEm
+    : st==='faturado' ? pc.nfEm
+    : st==='em_recebimento' ? pc.envRecebEm
+    : st==='conciliado' ? pc.conciliadoEm
+    : st==='recebido' ? pc.recebidoEm : null;
+  return ts||null;
+}
+// v200 — cronologia das movimentações do pedido de compra (rodapé discreto do modal Abrir)
+function _pcCronologia(pc){
+  var out=[], add=function(rot, em, por){ if(em) out.push({rot:rot, em:em, por:por||''}); };
+  add('Criado', pc.criadoEm, pc.criadoPor);
+  add('Fechado', pc.fechadoEm, pc.fechadoPor);
+  add('Reaberto', pc.reabertoEm, pc.reabertoPor);
+  add('NF informada'+(pc.nf?' ('+pc.nf+')':''), pc.nfEm, pc.nfPor);
+  add('Enviado p/ recebimento', pc.envRecebEm, pc.envRecebPor);
+  add('Conciliado', pc.conciliadoEm, pc.conciliadoPor);
+  (pc.recebimentos||[]).forEach(function(r,i){ add('Leva '+(i+1)+' recebida', r.em, r.por); });
+  add('Recebido (completo)', pc.recebidoEm, pc.recebidoPor);
+  return out.sort(function(a,b){ return (a.em||0)-(b.em||0); });
+}
 function _pcStatusBadge(pc){
   var st=pc.status||'aberto';
   var t=_pcTotais(pc);
   var lbl=_PC_ST_LBL[st]||st;
   if(st==='faturado' && (pc.recebimentos||[]).length && t.pendentes>0) lbl='Faturado · parcial';
-  var cfg = st==='recebido' ? ['var(--st-ok-bg)','var(--st-ok-tx)'] : st==='faturado' ? ['var(--st-inf-bg)','var(--st-inf-tx)'] : st==='fechado' ? ['var(--st-mid-bg)','var(--st-mid-tx)'] : ['var(--bg-secondary)','var(--text-secondary)'];
+  // v200 — cores por status (pedido do dono 07/08): ABERTO amarelo (pede ação de fechar) e
+  // ENVIADO P/ RECEBIMENTO verde (do lado das compras está encaminhado)
+  var cfg = (st==='recebido'||st==='em_recebimento') ? ['var(--st-ok-bg)','var(--st-ok-tx)'] : st==='faturado' ? ['var(--st-inf-bg)','var(--st-inf-tx)'] : (st==='fechado'||st==='aberto') ? ['var(--st-mid-bg)','var(--st-mid-tx)'] : ['var(--bg-secondary)','var(--text-secondary)'];
   return '<span style="font-size:11px;padding:2px 10px;border-radius:20px;background:'+cfg[0]+';color:'+cfg[1]+';font-weight:500;white-space:nowrap">'+lbl+'</span>';
 }
 var _pcAbertoId=null;
@@ -13605,7 +13701,13 @@ function _renderPedidoCompraModal(){
     '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+'">Tipo</th><th style="'+th+';text-align:right">Qtd</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th><th style="'+th+';text-align:center">Recebimento</th>'+
     '</tr></thead><tbody>'+(rows||'<tr><td colspan="7" style="'+td+';color:var(--text-tertiary)">Nenhum item ainda — os itens entram aqui automaticamente ao serem comprados deste fornecedor.</td></tr>')+'</tbody>'+
     '<tfoot><tr><td colspan="5" style="padding:8px;text-align:right;font-weight:600;font-size:12px">Total do pedido</td><td style="padding:8px;text-align:right;font-weight:700;font-size:13px">'+fmtMoney(t.total)+'</td><td></td></tr></tfoot></table></div>'+
-    (levas?('<div style="margin-top:10px">'+levas+'</div>'):'');
+    (levas?('<div style="margin-top:10px">'+levas+'</div>'):'')+
+    // v200 — cronologia das movimentações (pedido do dono 07/08): rodapé discreto com data/hora e autor
+    (function(){
+      var cr=_pcCronologia(pc); if(!cr.length) return '';
+      return '<div style="margin-top:12px;padding-top:8px;border-top:.5px dashed var(--border);font-size:10.5px;color:var(--text-tertiary)" title="Cronologia das movimentações deste pedido de compra">🕓 '+
+        cr.map(function(e){ return escapeHtml(e.rot)+' '+new Date(e.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+(e.por?' ('+escapeHtml(e.por)+')':''); }).join(' → ')+'</div>';
+    })();
   var ac=document.getElementById('pc-ab-acoes');
   if(ac){
     var btns=[];
@@ -17842,14 +17944,18 @@ function renderMonthTabs(){
   const mesesDoAno=months.filter(m=>m.slice(0,4)===activeAno);
   const anosHtml=anos.map(a=>`<div class="month-tab ${a===activeAno?'active':''}" style="font-weight:600" onclick="setAno('${a}')">${a}</div>`).join('');
   // v112 — semáforo nos meses: amarelo escuro = mês atual; verde = tudo entregue; vermelho = mês passado com pendência
+  // v200 — VENDA MÃE fica FORA da conta do semáforo (caso 102382/Pietra, 07/08: ela nunca é
+  // despachada — o crédito sai pelas vendas FILHO — e deixava o mês vermelho para sempre).
+  // Mesma régua canônica dos prazos: getTipoPrazoConfig==='none' = pedido sem envio físico.
   const _d=new Date(); const _mesAtual=_d.getFullYear()+'-'+String(_d.getMonth()+1).padStart(2,'0');
   const _entregue=o=>_expSaiu(o);
   const mesesHtml=mesesDoAno.map(m=>{
     const ordsM=linhaOrders.filter(o=>monthKey(o.d1)===m);
+    const ordsSem=ordsM.filter(o=>getTipoPrazoConfig(o.tipo||'venda')!=='none'); // v200 — só quem TEM envio
     let cor='', dica='';
     if(m===_mesAtual){ cor='background:#B8860B;color:#fff;border-color:#B8860B'; dica=' · mês atual'; }
-    else if(ordsM.length && ordsM.every(_entregue)){ cor='background:var(--st-ok-bg);color:var(--st-ok-tx);border-color:var(--st-ok-bd)'; dica=' · tudo entregue'; }
-    else if(m<_mesAtual && ordsM.some(o=>!_entregue(o))){ cor='background:var(--st-bad-bg);color:var(--st-bad-tx);border-color:var(--st-bad-bd)'; dica=' · com pendência (passou do mês)'; }
+    else if(ordsSem.length && ordsSem.every(_entregue)){ cor='background:var(--st-ok-bg);color:var(--st-ok-tx);border-color:var(--st-ok-bd)'; dica=' · tudo entregue'; }
+    else if(m<_mesAtual && ordsSem.some(o=>!_entregue(o))){ cor='background:var(--st-bad-bg);color:var(--st-bad-tx);border-color:var(--st-bad-bd)'; dica=' · com pendência (passou do mês)'; }
     const ativo=m===activeMonth; const ring=ativo?';box-shadow:0 0 0 2px var(--text-primary);font-weight:700':'';
     return `<div class="month-tab ${ativo&&!cor?'active':''}" onclick="setMonth('${m}')" style="${cor}${ring}" title="${ordsM.length} pedido(s)${dica}">${MESES_ABREV[parseInt(m.slice(5,7),10)-1]}</div>`;
   }).join('');

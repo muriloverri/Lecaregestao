@@ -1653,7 +1653,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </div>
           <div id="pcr-rows" style="flex:1;overflow:auto"></div>
           <div id="pcr-total" style="font-size:13px;margin-top:10px"></div>
-          <div class="modal-footer" style="margin-top:10px"><button onclick="closeReceberPedido()">Cancelar</button><button onclick="_pcConcDraftSave(true)" title="Guarda o XML importado, as conversões verificadas e os valores digitados — ao reabrir este recebimento, tudo volta como está">💾 Salvar conciliação</button><button class="btn-primary" onclick="_pcRecebProsseguir()">Prosseguir → pagamento</button></div>
+          <div class="modal-footer" style="margin-top:10px"><button onclick="closeReceberPedido()">Cancelar</button><button onclick="_pcConcReset()" title="Apaga o rascunho salvo e zera a tela (XML, conversões e valores digitados). Itens já recebidos não são afetados." style="color:var(--st-bad-tx);border-color:var(--st-bad-bd)">↺ Reset</button><button onclick="_pcConcDraftSave(true)" title="Guarda o XML importado, as conversões verificadas e os valores digitados — ao reabrir este recebimento, tudo volta como está">💾 Salvar conciliação</button><button class="btn-primary" onclick="_pcRecebProsseguir()">Prosseguir → pagamento</button></div>
         </div>
       </div>
       <!-- v130 — MODAL: cotação de um item da lista -->
@@ -4758,7 +4758,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v200';
+var APP_VERSION = 'v201';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -13853,6 +13853,7 @@ function _pcXmlAplicar(txt){
     var _imp=d.getElementsByTagName('imposto')[0];
     var _st=(parseFloat(tag(_imp,'vICMSST'))||0)+(parseFloat(tag(_imp,'vFCPST'))||0);
     return { nome:tag(p,'xProd'), cod:tag(p,'cProd'), qtd:parseFloat(tag(p,'qCom'))||0, unit:parseFloat(tag(p,'vUnCom'))||0, total:parseFloat(tag(p,'vProd'))||0, un:tag(p,'uCom'),
+             nomeAlt:tag(d,'infAdProd'), // v201 — apelido interno que alguns fornecedores gravam no complemento (caso Biovital: "BIOEX CAPILAR" no infAdProd do NATUPLEX)
              frete:parseFloat(tag(p,'vFrete'))||0,
              ipi:parseFloat(tag(_imp,'vIPI'))||0,
              outros:+((parseFloat(tag(p,'vSeg'))||0)+(parseFloat(tag(p,'vOutro'))||0)+_st).toFixed(4),
@@ -13867,13 +13868,54 @@ function _pcXmlAplicar(txt){
   // Regras: ignora DE/DA/DO...; token casa por igualdade, prefixo ou radical (≥4 letras contidas);
   // TODOS os tokens de um dos lados precisam casar (evita par errado entre dois "MAGNESIO ...").
   var _tok=function(s){ return _pcXmlNorm(s).split(' ').filter(function(t){ return t && !/^\d+$/.test(t) && ['DE','DA','DO','DAS','DOS','E','COM','EM','P','PARA'].indexOf(t)<0; }); };
-  var _tokCasa=function(ta,tb){ return ta===tb || (ta.length>=4 && tb.length>=4 && (ta.indexOf(tb)>=0 || tb.indexOf(ta)>=0)); };
+  // v201 — token casa também por PREFIXO ≥3 letras (caso "ALC" × "ALCOOL"); radical ≥4 contido segue valendo
+  var _tokCasa=function(ta,tb){
+    if(ta===tb) return true;
+    var c=ta.length<=tb.length?ta:tb, g=ta.length<=tb.length?tb:ta;
+    if(c.length>=3 && g.indexOf(c)===0) return true;
+    return c.length>=4 && g.indexOf(c)>=0;
+  };
   var _tokSubset=function(a,b){ return a.length>0 && b.length>0 && a.every(function(ta){ return b.some(function(tb){ return _tokCasa(ta,tb); }); }); };
+  // v201 — cada nível da cascata testa o xProd E o apelido do infAdProd (nomeAlt)
+  var _nomesDe=function(x){ return x.nomeAlt?[x.nome,x.nomeAlt]:[x.nome]; };
+  // v201 — DE-PARA DO FORNECEDOR (pedido do dono 07/08: "o XML é padrão, preciso de algo mais
+  // ajustado"): casar por NOME é heurística; o determinístico do padrão NF-e é o CÓDIGO do produto
+  // no fornecedor (cProd). Cada conciliação CONFIRMADA grava no insumo o de-para {cnpj, cProd, un,
+  // fator} — e este pré-passe casa por código ANTES de qualquer heurística. Fator memorizado com a
+  // MESMA unidade da NF entra já VERIFICADO ("✓ conversão memorizada"); unidade mudou → sugere e
+  // exige verificação de novo.
+  var _mem={};
+  try{
+    var _cnpjNF=(emitCnpj||'').replace(/\D/g,'');
+    if(_cnpjNF) (insumos||[]).forEach(function(ins){ (ins.deParaNF||[]).forEach(function(mp){
+      if(String(mp.cnpj||'').replace(/\D/g,'')===_cnpjNF && mp.cProd) _mem[String(mp.cProd)]={insumoId:ins.id, fator:parseFloat(mp.fator)||1, un:String(mp.un||''), em:mp.em, por:mp.por||''};
+    }); });
+  }catch(_e){}
   _pcRecebRows.forEach(function(r){
+    if(r.itemId==null) return;
+    var m=xitens.find(function(x){ return !x._usado && x.cod && _mem[String(x.cod)] && String(_mem[String(x.cod)].insumoId)===String(r.itemId); });
+    if(!m) return;
+    m._usado=true;
+    var mp=_mem[String(m.cod)];
+    var mesmaUn=String(m.un||'').trim().toUpperCase()===String(mp.un||'').trim().toUpperCase();
+    if(mesmaUn && mp.fator>0){
+      r.qtd=+((m.qtd*mp.fator)).toFixed(4);
+      r.preco=+((m.unit/mp.fator)).toFixed(6);
+      r.conv={ tem:Math.abs(mp.fator-1)>0.000001, fator:mp.fator, unNF:m.un, qtdNF:m.qtd, unitNF:m.unit, verificada:true, origem:'memoria', memoriaDe:mp.por||'', memoriaEm:mp.em||null };
+    } else {
+      var cvM=_pcConvSugerir(r.unidade, m.un, m.qtd, m.unit);
+      r.qtd=cvM.qtd; r.preco=cvM.preco;
+      r.conv={ tem:cvM.tem, fator:cvM.fator, unNF:cvM.unNF, qtdNF:cvM.qtdNF, unitNF:cvM.unitNF, aviso:(cvM.aviso?cvM.aviso+' · ':'')+'unidade da NF mudou desde a última conciliação — verifique', verificada:!cvM.tem, origem:'xml' };
+    }
+    r.ipi=m.ipi; r.frete=m.frete; r.outros=m.outros;
+    r.xmlCod=m.cod||''; r._xml=true; casados++;
+  });
+  _pcRecebRows.forEach(function(r){
+    if(r._xml) return; // v201 — já casado pelo de-para
     var rn=_pcXmlNorm(r.nome), rt=_tok(r.nome);
-    var m=xitens.find(function(x){ return !x._usado && _pcXmlNorm(x.nome)===rn; })
-        || xitens.find(function(x){ if(x._usado) return false; var xn=_pcXmlNorm(x.nome); return xn&&rn&&(xn.indexOf(rn)>=0||rn.indexOf(xn)>=0); })
-        || xitens.find(function(x){ if(x._usado) return false; var xt=_tok(x.nome); return _tokSubset(rt,xt)||_tokSubset(xt,rt); });
+    var m=xitens.find(function(x){ return !x._usado && _nomesDe(x).some(function(n){ return _pcXmlNorm(n)===rn; }); })
+        || xitens.find(function(x){ if(x._usado) return false; return _nomesDe(x).some(function(n){ var xn=_pcXmlNorm(n); return xn&&rn&&(xn.indexOf(rn)>=0||rn.indexOf(xn)>=0); }); })
+        || xitens.find(function(x){ if(x._usado) return false; return _nomesDe(x).some(function(n){ var xt=_tok(n); return _tokSubset(rt,xt)||_tokSubset(xt,rt); }); });
     if(m){ m._usado=true;
       // v194 — converte para a unidade DO PEDIDO e guarda a memória de cálculo p/ o modal de
       // verificação (obrigatório antes de prosseguir quando houve conversão — regra do dono).
@@ -13881,13 +13923,14 @@ function _pcXmlAplicar(txt){
       r.qtd=cv.qtd; r.preco=cv.preco;
       r.conv={ tem:cv.tem, fator:cv.fator, unNF:cv.unNF, qtdNF:cv.qtdNF, unitNF:cv.unitNF, aviso:cv.aviso, verificada:!cv.tem, origem:'xml' };
       r.ipi=m.ipi; r.frete=m.frete; r.outros=m.outros;
+      r.xmlCod=m.cod||''; // v201 — cProd do fornecedor (alimenta o de-para na confirmação do recebimento)
       r._xml=true; casados++;
     }
   });
   var sobraXml=xitens.filter(function(x){ return !x._usado; });
   // v198 — sobra do XML fica disponível para VÍNCULO MANUAL (pedido do dono 06/08): item do pedido
   // sem par ganha o botão "🔗 Vincular item da NF" na linha
-  _pcXmlSobra=sobraXml.map(function(x){ return { nome:x.nome, un:x.un, qtd:x.qtd, unit:x.unit, total:x.total, frete:x.frete, ipi:x.ipi, outros:x.outros }; });
+  _pcXmlSobra=sobraXml.map(function(x){ return { nome:x.nome, nomeAlt:x.nomeAlt||'', cod:x.cod||'', un:x.un, qtd:x.qtd, unit:x.unit, total:x.total, frete:x.frete, ipi:x.ipi, outros:x.outros, incluir:true, insumoId:null, insumoNome:'', insumoUn:'', recQtd:null, recPreco:null, conv:null }; }); // v201 — sobra vira LINHA "na NF fora do pedido" na tabela, e leva o cProd p/ o de-para
   var semPar=_pcRecebRows.filter(function(r){ return !r._xml; }).length;
   var tot0=doc.getElementsByTagName('ICMSTot')[0];
   var tot={ vProd:parseFloat(tag(tot0,'vProd'))||0, vFrete:parseFloat(tag(tot0,'vFrete'))||0, vDesc:parseFloat(tag(tot0,'vDesc'))||0, vNF:parseFloat(tag(tot0,'vNF'))||0,
@@ -13983,6 +14026,7 @@ function _pcRatearManual(campo){
   if(!(v>0)){ alert('Informe o valor a ratear.'); return; }
   _pcRatearCampo(campo, v);
   _pcRecebRender();
+  _pcConcDraftAgendar(); // v201 — rateio manual também persiste no rascunho
 }
 // Custo extra TOTAL de uma linha (o que soma por fora do produto) e o PREÇO NF TOTAL — o custo
 // unitário de verdade da mercadoria, que é o que o sistema passa a usar (decisão do dono).
@@ -14001,48 +14045,134 @@ function _pcVincAbrir(i){
   _pcVincIdx=i;
   var ov=document.getElementById('pc-vinc-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='pc-vinc-overlay'; ov.className='overlay'; ov.style.zIndex='480'; document.body.appendChild(ov); }
+  // v201 — MÚLTIPLA escolha (caso Biovital 07/08: pedido de 40 kg atendido por "20KG a granel" +
+  // "4 × balde de 5KG" — DOIS itens da nota para UMA linha do pedido). Checkbox em vez de radio;
+  // as partes somam quantidade (cada uma com a própria conversão) e o preço vira a média ponderada.
   ov.innerHTML='<div class="modal" style="width:620px;max-width:96vw;max-height:88vh;overflow-y:auto">'+
-    '<h2 style="font-size:16px;margin:0 0 2px">🔗 Vincular item da NF</h2>'+
-    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Item do pedido: <b>'+escapeHtml(r.nome||'')+'</b> ('+(parseFloat(r.qtdPedido)||0).toLocaleString('pt-BR')+' '+escapeHtml(r.unidade||'')+' comprados). Escolha o item da nota que corresponde a ele:</div>'+
+    '<h2 style="font-size:16px;margin:0 0 2px">🔗 Vincular item(ns) da NF</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Item do pedido: <b>'+escapeHtml(r.nome||'')+'</b> ('+(parseFloat(r.qtdPedido)||0).toLocaleString('pt-BR')+' '+escapeHtml(r.unidade||'')+' comprados). Marque o(s) item(ns) da nota que correspondem a ele — pode ser MAIS DE UM (ex.: granel + baldes):</div>'+
     (_pcXmlSobra||[]).map(function(x,xi){
       var extras=(parseFloat(x.ipi)||0)+(parseFloat(x.frete)||0)+(parseFloat(x.outros)||0);
       return '<label style="display:flex;gap:8px;align-items:flex-start;border:.5px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;margin-bottom:6px">'+
-        '<input type="radio" name="pcv-op" value="'+xi+'" style="width:auto;margin-top:2px">'+
-        '<span style="flex:1"><b style="font-size:13px">'+escapeHtml(x.nome||'')+'</b><br>'+
+        '<input type="checkbox" name="pcv-op" value="'+xi+'" style="width:auto;margin-top:2px">'+
+        '<span style="flex:1"><b style="font-size:13px">'+escapeHtml(x.nome||'')+'</b>'+(x.nomeAlt?' <span style="font-size:10px;color:var(--text-tertiary)">('+escapeHtml(x.nomeAlt)+')</span>':'')+'<br>'+
         '<span style="font-size:11.5px;color:var(--text-secondary)">'+(parseFloat(x.qtd)||0).toLocaleString('pt-BR')+' × '+escapeHtml(x.un||'')+' @ '+fmtMoney(x.unit)+' = '+fmtMoney((parseFloat(x.qtd)||0)*(parseFloat(x.unit)||0))+
         (extras>0?' · por fora: '+((parseFloat(x.ipi)||0)>0?'IPI '+fmtMoney(x.ipi)+' ':'')+((parseFloat(x.frete)||0)>0?'frete '+fmtMoney(x.frete)+' ':'')+((parseFloat(x.outros)||0)>0?'outros '+fmtMoney(x.outros):''):'')+'</span></span></label>';
     }).join('')+
-    '<div style="font-size:11px;color:var(--text-tertiary);margin-top:6px">Ao vincular, quantidade e preço são convertidos para a unidade do pedido e a conversão entra na verificação obrigatória (🔎), como no casamento automático.</div>'+
+    '<div style="font-size:11px;color:var(--text-tertiary);margin-top:6px">Ao vincular, quantidade e preço são convertidos para a unidade do pedido e a conversão entra na verificação obrigatória (🔎) — com mais de um item, cada parte tem o próprio fator de conversão lá.</div>'+
     '<div class="modal-footer" style="margin-top:12px"><button onclick="document.getElementById(\'pc-vinc-overlay\').classList.remove(\'open\')">Cancelar</button><button class="btn-primary" onclick="_pcVincAplicar()">🔗 Vincular</button></div></div>';
   ov.classList.add('open');
 }
+// v201 — monta a linha a partir das PARTES vinculadas (1 ou N itens da NF): qtd = Σ(qtd×fator),
+// preço = total da mercadoria ÷ qtd (média ponderada — o valor total é o da nota, sempre)
+function _pcVincRecalc(r){
+  var partes=(r.conv&&r.conv.partes)||[];
+  var q=0, v=0;
+  partes.forEach(function(p){ var qi=(parseFloat(p.qtdNF)||0)*(parseFloat(p.fator)||0); q+=qi; v+=(parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0); });
+  r.qtd=+q.toFixed(4);
+  r.preco=q>0?+(v/q).toFixed(6):0;
+}
 function _pcVincAplicar(){
   var r=_pcRecebRows[_pcVincIdx]; if(!r){ document.getElementById('pc-vinc-overlay').classList.remove('open'); return; }
-  var sel=document.querySelector('input[name="pcv-op"]:checked');
-  if(!sel){ alert('Escolha um item da nota.'); return; }
-  var xi=parseInt(sel.value,10), x=(_pcXmlSobra||[])[xi];
-  if(!x){ alert('Item não disponível mais (vinculado em outra tela?).'); return; }
-  var cv=_pcConvSugerir(r.unidade, x.un, x.qtd, x.unit);
-  r.qtd=cv.qtd; r.preco=cv.preco;
-  r.conv={ tem:cv.tem, fator:cv.fator, unNF:cv.unNF, qtdNF:cv.qtdNF, unitNF:cv.unitNF, aviso:cv.aviso, verificada:!cv.tem, origem:'manual' };
-  r.ipi=(parseFloat(x.ipi)||0); r.frete=(parseFloat(x.frete)||0); r.outros=(parseFloat(x.outros)||0);
+  var sels=Array.prototype.slice.call(document.querySelectorAll('input[name="pcv-op"]:checked'));
+  if(!sels.length){ alert('Marque ao menos um item da nota.'); return; }
+  var idxs=sels.map(function(s){ return parseInt(s.value,10); }).sort(function(a,b){ return b-a; }); // decrescente p/ splice seguro
+  var partes=[], somaIpi=0, somaFre=0, somaOut=0, temConv=false, avisos=[];
+  idxs.slice().reverse().forEach(function(xi){
+    var x=(_pcXmlSobra||[])[xi]; if(!x) return;
+    var cv=_pcConvSugerir(r.unidade, x.un, x.qtd, x.unit);
+    partes.push({ nome:x.nome, cProd:x.cod||'', unNF:cv.unNF, qtdNF:cv.qtdNF, unitNF:cv.unitNF, fator:cv.fator, aviso:cv.aviso });
+    if(cv.tem||partes.length>1) temConv=true;
+    if(cv.aviso) avisos.push(cv.aviso);
+    somaIpi+=(parseFloat(x.ipi)||0); somaFre+=(parseFloat(x.frete)||0); somaOut+=(parseFloat(x.outros)||0);
+  });
+  if(!partes.length){ alert('Itens não disponíveis mais (vinculados em outra tela?).'); return; }
+  r.conv={ tem:temConv, verificada:!temConv, origem:'manual', multi:partes.length>1, partes:partes, aviso:avisos.join(' · '),
+           fator:partes[0].fator, unNF:partes.length>1?(partes.length+' itens da NF'):partes[0].unNF, qtdNF:partes[0].qtdNF, unitNF:partes[0].unitNF };
+  _pcVincRecalc(r);
+  r.ipi=+somaIpi.toFixed(2); r.frete=+somaFre.toFixed(2); r.outros=+somaOut.toFixed(2);
   r._xml=true;
-  _pcXmlSobra.splice(xi,1);
+  idxs.forEach(function(xi){ _pcXmlSobra.splice(xi,1); });
   document.getElementById('pc-vinc-overlay').classList.remove('open');
   _pcVincIdx=null;
   _pcRecebRender();
   try{ _pcConcDraftSave(false); }catch(_e){}
 }
+// ══ v201 — ITEM DA NF FORA DO PEDIDO (pedido do dono 07/08) ═══════════════════════════════════
+// A sobra do XML aparece como LINHA EXTRA destacada na conciliação: dados do pedido zerados, e é
+// OBRIGATÓRIO conciliar com um item do SISTEMA (catálogo de insumos) antes de prosseguir — sem
+// isso o estoque não saberia onde dar entrada. O extra entra no total, no lançamento do Caixa, no
+// estoque e SEMPRE na tela de divergências (pedido 0 × NF cheio).
+function _pcXtraSet(si, campo, val){
+  var x=(_pcXmlSobra||[])[si]; if(!x) return;
+  if(campo==='incluir') x.incluir=!!val;
+  else x[campo]=(String(val).trim()==='')?null:(parseFloat(val)||0);
+  _pcRecebTotais();
+  _pcConcDraftAgendar();
+}
+function _pcXtraConciliar(si, txt){
+  var x=(_pcXmlSobra||[])[si]; if(!x) return;
+  txt=String(txt||'').trim(); if(!txt) return;
+  var low=txt.toLowerCase();
+  var lbl=function(i){ return ((i.codigo?i.codigo+' — ':'')+(i.nome||'')); };
+  var ins=(insumos||[]).find(function(i){ return i && lbl(i).toLowerCase()===low; })
+       || (insumos||[]).find(function(i){ return i && String(i.codigo||'').toLowerCase()===low; })
+       || (insumos||[]).find(function(i){ return i && String(i.nome||'').toLowerCase()===low; });
+  if(!ins){ alert('Item do sistema não encontrado: "'+txt+'".\nEscolha uma opção da lista (código ou nome exato do catálogo de insumos).'); return; }
+  x.insumoId=ins.id; x.insumoNome=ins.nome||''; x.insumoUn=ins.unidade||'un';
+  var cv=_pcConvSugerir(x.insumoUn, x.un, x.qtd, x.unit);
+  x.recQtd=cv.qtd; x.recPreco=cv.preco;
+  x.conv={ tem:cv.tem, verificada:!cv.tem, origem:'extra', aviso:cv.aviso, multi:false,
+           partes:[{ nome:x.nome, cProd:x.cod||'', unNF:cv.unNF, qtdNF:cv.qtdNF, unitNF:cv.unitNF, fator:cv.fator }] };
+  _pcRecebRender();
+  try{ _pcConcDraftSave(false); }catch(_e){}
+}
+// v201 — alvo genérico do modal de verificação: linhas do pedido (idx < 1000) e extras (1000+si)
+function _pcConvTarget(){
+  if(_pcConvIdx!=null && _pcConvIdx>=1000){
+    var x=(_pcXmlSobra||[])[_pcConvIdx-1000]; if(!x) return null;
+    return { extra:true, x:x, nome:(x.insumoNome||x.nome), unidade:(x.insumoUn||''), qtdPedido:0, conv:x.conv };
+  }
+  var r=_pcRecebRows[_pcConvIdx]; if(!r) return null;
+  return { extra:false, r:r, nome:r.nome, unidade:r.unidade, qtdPedido:r.qtdPedido, conv:r.conv };
+}
 // ── Modal VERIFICAR CONVERSÃO (obrigatório antes de prosseguir quando houve conversão) ──
 var _pcConvIdx=null;
 function _pcConvAbrir(i){
-  var r=_pcRecebRows[i]; if(!r) return;
   _pcConvIdx=i;
+  var t=_pcConvTarget(); if(!t){ _pcConvIdx=null; return; }
+  var r=t; // r.nome/r.unidade/r.qtdPedido/r.conv — vale p/ linha do pedido E extra (v201)
   var cv=r.conv||{};
   var unPed=escapeHtml(r.unidade||'(sem unidade)');
   var ov=document.getElementById('pc-conv-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='pc-conv-overlay'; ov.className='overlay'; ov.style.zIndex='480'; document.body.appendChild(ov); }
   var lin='display:flex;justify-content:space-between;gap:16px;padding:6px 0;border-bottom:.5px solid var(--border);font-size:13px';
+  // v201 — VÍNCULO COM VÁRIAS PARTES da NF (granel + baldes): cada parte tem o próprio fator editável
+  if(cv.partes && cv.partes.length){
+    ov.innerHTML='<div class="modal" style="width:680px;max-width:96vw;max-height:88vh;overflow-y:auto">'+
+      '<h2 style="font-size:16px;margin:0 0 2px">🔎 Verificar conversão'+(cv.partes.length>1?' — '+cv.partes.length+' itens da NF':'')+'</h2>'+
+      '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">'+escapeHtml(r.nome||'')+' · pedido em <b>'+unPed+'</b> ('+(parseFloat(r.qtdPedido)||0).toLocaleString('pt-BR')+' '+unPed+' comprados)</div>'+
+      (cv.aviso?'<div style="font-size:12px;color:var(--st-mid-tx);background:var(--st-mid-bg);border-radius:6px;padding:8px 10px;margin-bottom:10px">⚠ '+escapeHtml(cv.aviso)+'</div>':'')+
+      cv.partes.map(function(p,pi){
+        return '<div style="border:.5px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px">'+
+          '<div style="font-size:12.5px;font-weight:600;margin-bottom:4px">'+escapeHtml(p.nome||('Parte '+(pi+1)))+'</div>'+
+          '<div style="'+lin+'"><span>Na nota</span><b>'+(parseFloat(p.qtdNF)||0).toLocaleString('pt-BR')+' × '+escapeHtml(p.unNF||'')+' @ '+fmtMoney(p.unitNF)+'</b></div>'+
+          '<div style="'+lin+';border-bottom:none"><span>Cada '+escapeHtml(p.unNF||'unidade')+' equivale a</span>'+
+            '<span><input type="number" step="any" min="0" class="pcconv-fator" data-pi="'+pi+'" value="'+(parseFloat(p.fator)||1)+'" style="width:110px;text-align:right;font-size:13px;padding:3px 6px"> '+unPed+' → <b class="pcconv-parte" data-pi="'+pi+'"></b></span></div>'+
+        '</div>';
+      }).join('')+
+      '<div style="background:var(--bg-secondary);border-radius:8px;padding:8px 12px">'+
+        '<div style="'+lin+'"><span>Quantidade recebida (soma)</span><b id="pcconv-qtd"></b></div>'+
+        '<div style="'+lin+'"><span>Preço médio por '+unPed+'</span><b id="pcconv-preco"></b></div>'+
+        '<div style="'+lin+';border-bottom:none"><span>Total (o da nota, não muda)</span><b id="pcconv-tot"></b></div>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--text-tertiary);margin-top:8px">A soma deve bater com o que foi comprado ('+(parseFloat(r.qtdPedido)||0).toLocaleString('pt-BR')+' '+unPed+') — se a entrega veio menor/maior, o valor real prevalece.</div>'+
+      '<div class="modal-footer" style="margin-top:14px"><button onclick="_pcConvFechar()">Cancelar</button><button class="btn-primary" onclick="_pcConvAceitar()">Confirmar conversão</button></div></div>';
+    ov.classList.add('open');
+    Array.prototype.forEach.call(ov.querySelectorAll('.pcconv-fator'), function(inp){ inp.oninput=_pcConvPreview; });
+    _pcConvPreview();
+    return;
+  }
   ov.innerHTML='<div class="modal" style="width:640px;max-width:96vw">'+
     '<h2 style="font-size:16px;margin:0 0 2px">🔎 Verificar conversão</h2>'+
     '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">'+escapeHtml(r.nome||'')+'</div>'+
@@ -14068,21 +14198,60 @@ function _pcConvAbrir(i){
   _pcConvPreview();
 }
 function _pcConvPreview(){
-  var r=_pcRecebRows[_pcConvIdx]; if(!r) return;
-  var cv=r.conv||{}, f=parseFloat(document.getElementById('pcconv-fator')?.value)||0;
-  var q=(parseFloat(cv.qtdNF)||0), u=(parseFloat(cv.unitNF)||0);
-  var nq=f>0?+(q*f).toFixed(4):0, np=f>0?+(u/f).toFixed(6):0;
-  var el;
+  var r=_pcConvTarget(); if(!r) return; // v201 — linha do pedido ou extra
+  var cv=r.conv||{}, el;
+  // v201 — multi-partes: soma das partes com os fatores digitados
+  if(cv.partes && cv.partes.length){
+    var q=0, v=0;
+    Array.prototype.forEach.call(document.querySelectorAll('.pcconv-fator'), function(inp){
+      var pi=parseInt(inp.getAttribute('data-pi'),10), p=cv.partes[pi]; if(!p) return;
+      var f=parseFloat(inp.value)||0, qi=f>0?(parseFloat(p.qtdNF)||0)*f:0;
+      q+=qi; v+=(parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0);
+      var pe=document.querySelector('.pcconv-parte[data-pi="'+pi+'"]'); if(pe) pe.textContent=qi.toLocaleString('pt-BR')+' '+(r.unidade||'');
+    });
+    if(el=document.getElementById('pcconv-qtd')) el.textContent=q.toLocaleString('pt-BR')+' '+(r.unidade||'');
+    if(el=document.getElementById('pcconv-preco')) el.textContent=q>0?fmtMoney(v/q):'—';
+    if(el=document.getElementById('pcconv-tot')) el.textContent=fmtMoney(v);
+    return;
+  }
+  var f=parseFloat(document.getElementById('pcconv-fator')?.value)||0;
+  var q1=(parseFloat(cv.qtdNF)||0), u=(parseFloat(cv.unitNF)||0);
+  var nq=f>0?+(q1*f).toFixed(4):0, np=f>0?+(u/f).toFixed(6):0;
   if(el=document.getElementById('pcconv-qtd')) el.textContent=nq.toLocaleString('pt-BR')+' '+(r.unidade||'');
   if(el=document.getElementById('pcconv-preco')) el.textContent=fmtMoney(np);
   if(el=document.getElementById('pcconv-tot')) el.textContent=fmtMoney(nq*np);
 }
 function _pcConvFechar(){ var ov=document.getElementById('pc-conv-overlay'); if(ov) ov.classList.remove('open'); _pcConvIdx=null; }
 function _pcConvAceitar(){
-  var r=_pcRecebRows[_pcConvIdx]; if(!r){ _pcConvFechar(); return; }
+  var t=_pcConvTarget(); if(!t){ _pcConvFechar(); return; }
+  var cv=t.conv||{};
+  // v201 — multi-partes: valida e grava o fator de CADA parte, recalcula soma + média ponderada
+  if(cv.partes && cv.partes.length){
+    var fatores=[];
+    var inps=document.querySelectorAll('.pcconv-fator');
+    for(var k=0;k<inps.length;k++){
+      var f2=parseFloat(inps[k].value)||0;
+      if(!(f2>0)){ alert('O fator de conversão de cada parte precisa ser maior que zero.'); return; }
+      fatores[parseInt(inps[k].getAttribute('data-pi'),10)]=f2;
+    }
+    cv.partes.forEach(function(p,pi){ if(fatores[pi]!=null) p.fator=+fatores[pi].toFixed(6); });
+    var novo=Object.assign({}, cv, {verificada:true, verificadaPor:(currentUser&&currentUser.name)||'', verificadaEm:Date.now()});
+    if(t.extra){ // v201 — extra ("na NF fora do pedido"): grava na sobra
+      t.x.conv=novo;
+      var q=0,v=0; novo.partes.forEach(function(p){ var qi=(parseFloat(p.qtdNF)||0)*(parseFloat(p.fator)||0); q+=qi; v+=(parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0); });
+      t.x.recQtd=+q.toFixed(4); t.x.recPreco=q>0?+(v/q).toFixed(6):0;
+    } else {
+      t.r.conv=novo;
+      _pcVincRecalc(t.r);
+    }
+    _pcConvFechar();
+    _pcRecebRender();
+    try{ _pcConcDraftSave(false); }catch(_e){}
+    return;
+  }
+  var r=t.r; if(!r){ _pcConvFechar(); return; }
   var f=parseFloat(document.getElementById('pcconv-fator')?.value)||0;
   if(!(f>0)){ alert('O fator de conversão precisa ser maior que zero.'); return; }
-  var cv=r.conv||{};
   r.conv=Object.assign({}, cv, {fator:+f.toFixed(6), verificada:true, verificadaPor:(currentUser&&currentUser.name)||'', verificadaEm:Date.now()});
   r.qtd=+(((parseFloat(cv.qtdNF)||0)*f)).toFixed(4);
   r.preco=+(((parseFloat(cv.unitNF)||0)/f)).toFixed(6);
@@ -14097,11 +14266,30 @@ function _pcConvAceitar(){
 function _pcConcDraftSave(fechar){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
   pc.conciliacaoDraft={ em:Date.now(), por:(currentUser&&currentUser.name)||'', xml:_pcXml||null, xmlSobra:(_pcXmlSobra||[]).slice(),
-    rows:(_pcRecebRows||[]).map(function(r){ return { listaId:r.listaId, ref:r.ref, incluir:r.incluir!==false,
+    rows:(_pcRecebRows||[]).map(function(r){ return { listaId:r.listaId, ref:r.ref, codigo:r.codigo||'', nome:r.nome||'', incluir:r.incluir!==false,
       qtd:r.qtd, preco:r.preco, ipi:(parseFloat(r.ipi)||0), frete:(parseFloat(r.frete)||0), outros:(parseFloat(r.outros)||0),
-      conv:r.conv||null, _xml:!!r._xml }; }) };
+      conv:r.conv||null, _xml:!!r._xml, xmlCod:r.xmlCod||'' }; }) };
   saveData();
   if(fechar){ closeReceberPedido(); alert('✓ Conciliação salva. Ao reabrir o recebimento deste pedido, tudo volta como está — sem reimportar o XML.'); }
+}
+// v201 — AUTO-SAVE do rascunho (caso PC-018, 07/08: edição de célula só ia ao rascunho quando o
+// usuário clicava 💾 — digitou e saiu, perdeu). Toda digitação agenda a gravação (0,8s de folga).
+var _pcDraftT=null;
+function _pcConcDraftAgendar(){
+  if(_pcDraftT) clearTimeout(_pcDraftT);
+  _pcDraftT=setTimeout(function(){ _pcDraftT=null; try{ _pcConcDraftSave(false); }catch(_e){} }, 800);
+}
+// v201 — RESET da conciliação (pedido do dono 07/08): apaga o rascunho e reabre a tela zerada.
+// Só existe nesta tela — que por definição é PRÉ-pagamento (o recebimento confirmado apaga o
+// rascunho sozinho e os itens recebidos saem da conciliação).
+function _pcConcReset(){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
+  if(!confirm('↺ RESET da conciliação do '+(pc.numero||'pedido')+'?\n\nApaga o rascunho salvo (XML importado, conversões, valores digitados) e a tela volta ao estado inicial.\nItens já RECEBIDOS não são afetados.')) return;
+  delete pc.conciliacaoDraft;
+  saveData();
+  var id=_pcRecebId;
+  closeReceberPedido();
+  openReceberPedido(id);
 }
 function openReceberPedido(pcId){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
@@ -14117,19 +14305,23 @@ function openReceberPedido(pcId){
              // com o preço da COMPRA (precoPago), o que parecia conciliado sem estar — a coluna
              // "Preço pedido" continua mostrando o da compra como referência da divergência.
              qtd:(parseFloat(x.it.compra.qtdComprada)||0), preco:null, incluir:true,
+             itemId:(x.it.itemId!=null?x.it.itemId:null), // v201 — insumo do sistema (chave do de-para NF)
              ipi:0, frete:0, outros:0, conv:null }; // v194 — custos por fora + memória da conversão
   });
   if(!_pcRecebRows.length){ alert('Todos os itens deste pedido já foram recebidos.'); return; }
   // v198 — restaura o RASCUNHO salvo (XML + valores + conversões), casando por listaId+ref
   if(pc.conciliacaoDraft && (pc.conciliacaoDraft.rows||[]).length){
-    var _d=pc.conciliacaoDraft, _byKey={};
-    _d.rows.forEach(function(dr){ _byKey[String(dr.listaId)+'|'+String(dr.ref)]=dr; });
+    var _d=pc.conciliacaoDraft, _byKey={}, _byNome={};
+    _d.rows.forEach(function(dr){
+      _byKey[String(dr.listaId)+'|'+String(dr.ref)]=dr;
+      _byNome[String(dr.listaId)+'|'+String(dr.codigo||'')+'|'+String(dr.nome||'')]=dr; // v201 — chave reserva (ref posicional pode mudar)
+    });
     var _rest=0;
     _pcRecebRows.forEach(function(r){
-      var dr=_byKey[String(r.listaId)+'|'+String(r.ref)]; if(!dr) return;
+      var dr=_byKey[String(r.listaId)+'|'+String(r.ref)] || _byNome[String(r.listaId)+'|'+String(r.codigo||'')+'|'+String(r.nome||'')]; if(!dr) return;
       r.incluir=dr.incluir!==false; r.qtd=dr.qtd; r.preco=dr.preco;
       r.ipi=dr.ipi||0; r.frete=dr.frete||0; r.outros=dr.outros||0;
-      r.conv=dr.conv||null; if(dr._xml) r._xml=true; _rest++;
+      r.conv=dr.conv||null; if(dr._xml) r._xml=true; if(dr.xmlCod) r.xmlCod=dr.xmlCod; _rest++;
     });
     _pcXml=_d.xml||null;
     _pcXmlSobra=(_d.xmlSobra||[]).slice(); // v198 — sobra do XML volta junto (vínculo manual segue possível)
@@ -14150,32 +14342,51 @@ function _pcRecebSet(i, campo, val){
   // v194 — atualiza SÓ as células calculadas da linha (re-render completo tiraria o foco do campo
   // enquanto a pessoa digita) e depois os totais do rodapé.
   var el, _tem=(r.preco!=null);
-  if(el=document.getElementById('pcr-pnt-'+i)) el.textContent=(r.incluir&&_tem)?fmtMoney(_pcPrecoNFTotal(r)):'—';
+  if(el=document.getElementById('pcr-pnt-'+i)) el.textContent=(r.incluir&&_tem)?fmtMoney((parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0)):'—'; // v201 — Total NF (sem adicionais)
   if(el=document.getElementById('pcr-tot-'+i)) el.textContent=(r.incluir&&_tem)?fmtMoney((parseFloat(r.qtd)||0)*_pcPrecoNFTotal(r)):'—';
   _pcRecebTotais();
+  _pcConcDraftAgendar(); // v201 — toda edição vai para o rascunho sozinha
 }
 function _pcRecebTotais(){
   var el=document.getElementById('pcr-total'); if(!el) return;
   // v194 — o total da leva passou a incluir o que soma POR FORA (IPI + frete + outros), para bater
   // com o TOTAL DA NOTA e com as duplicatas do boleto. A DIVERGÊNCIA continua sendo medida no preço
   // PURO da mercadoria contra o preço do pedido (decisão do dono) — custo extra não é divergência.
-  var mercad=0, extras=0, div=0, naoVerif=0, sIpi=0, sFre=0, sOut=0, semPreco=0;
+  var mercad=0, extras=0, div=0, naoVerif=0, sIpi=0, sFre=0, sOut=0, semPreco=0, sTotPed=0;
   _pcRecebRows.forEach(function(r){
     if(!r.incluir) return;
     if(r.preco==null){ semPreco++; } // v198 — Preço NF ainda não veio da nota
     mercad+=(parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0);
     extras+=_pcExtrasLinha(r);
+    sTotPed+=(parseFloat(r.qtdPedido)||0)*(parseFloat(r.precoPedido)||0); // v201 — Total pedido
     sIpi+=(parseFloat(r.ipi)||0); sFre+=(parseFloat(r.frete)||0); sOut+=(parseFloat(r.outros)||0);
     if(Math.abs(r.qtd-r.qtdPedido)>0.001||(r.preco!=null&&Math.abs(r.preco-r.precoPedido)>0.009)) div++;
     if(r.conv && r.conv.tem && !r.conv.verificada) naoVerif++;
   });
+  // v201 — EXTRAS ("na NF fora do pedido") somam nos totais; sem conciliar com item do sistema, contam como pendência
+  var xSemConc=0, xNaoVerif=0;
+  (_pcXmlSobra||[]).forEach(function(x,si){
+    if(x.incluir===false) return;
+    if(!x.insumoId){ xSemConc++; return; }
+    if(x.conv && x.conv.tem && !x.conv.verificada) xNaoVerif++;
+    var q=(parseFloat(x.recQtd)||0), p=(parseFloat(x.recPreco)||0);
+    mercad+=q*p;
+    var exX=(parseFloat(x.ipi)||0)+(parseFloat(x.frete)||0)+(parseFloat(x.outros)||0);
+    extras+=exX; sIpi+=(parseFloat(x.ipi)||0); sFre+=(parseFloat(x.frete)||0); sOut+=(parseFloat(x.outros)||0);
+    div++; // extra é divergência por definição (pedido 0 × NF cheio)
+    var el2;
+    if(el2=document.getElementById('pcr-xpnt-'+si)) el2.textContent=(x.recQtd!=null&&x.recPreco!=null)?fmtMoney(q*p):'—';
+    if(el2=document.getElementById('pcr-xtot-'+si)) el2.textContent=(x.recQtd!=null&&x.recPreco!=null)?fmtMoney(q*p+exX):'—';
+  });
+  naoVerif+=xNaoVerif;
   var tot=+(mercad+extras).toFixed(2);
   // v198 — linha de totais da tabela (atualiza ao digitar)
   var _s=function(id,v){ var e=document.getElementById(id); if(e) e.textContent=fmtMoney(v); };
-  _s('pcr-sum-mercad',mercad); _s('pcr-sum-ipi',sIpi); _s('pcr-sum-frete',sFre); _s('pcr-sum-outros',sOut); _s('pcr-sum-total',tot);
+  _s('pcr-sum-mercad',mercad); _s('pcr-sum-totped',sTotPed); _s('pcr-sum-ipi',sIpi); _s('pcr-sum-frete',sFre); _s('pcr-sum-outros',sOut); _s('pcr-sum-total',tot);
   el.innerHTML='Total desta leva: <b>'+fmtMoney(tot)+'</b>'+
     (extras>0?' <span style="font-size:11.5px;color:var(--text-secondary)">(mercadoria '+fmtMoney(mercad)+' + custos por fora '+fmtMoney(extras)+')</span>':'')+
     (semPreco?'<br><span style="color:var(--st-bad-tx);font-weight:600;font-size:12px">✏ '+semPreco+' item(ns) sem o PREÇO DA NF — digite da nota, use o XML ou o vínculo 🔗 (obrigatório antes de prosseguir)</span>':'')+
+    (xSemConc?'<br><span style="color:var(--st-bad-tx);font-weight:600;font-size:12px">🧩 '+xSemConc+' item(ns) da NF FORA DO PEDIDO sem conciliação com item do sistema — concilie ou desmarque (obrigatório antes de prosseguir)</span>':'')+
     (div?' · <span style="color:var(--st-mid-tx)">⚠ '+div+' item(ns) com divergência do pedido</span>':(semPreco?'':' · <span style="color:var(--st-ok-tx)">✓ tudo confere com o pedido</span>'))+
     (naoVerif?'<br><span style="color:var(--st-bad-tx);font-weight:600;font-size:12px">🔎 '+naoVerif+' conversão(ões) aguardando verificação — obrigatório antes de prosseguir</span>':'')+
     ((_pcXml&&_pcXml.tot&&_pcXml.tot.vNF)?'<br><span style="font-size:11.5px;color:'+(Math.abs(_pcXml.tot.vNF-tot)<=0.02?'var(--st-ok-tx)':'var(--st-mid-tx)')+'">'+(Math.abs(_pcXml.tot.vNF-tot)<=0.02?'✓ bate com o total da NF ('+fmtMoney(_pcXml.tot.vNF)+')':'⚠ total da NF é '+fmtMoney(_pcXml.tot.vNF)+' — diferença de '+fmtMoney(Math.abs(_pcXml.tot.vNF-tot))+' (confira itens fora desta leva, desconto ou custo não lançado)')+'</span>':'');
@@ -14187,60 +14398,106 @@ function _pcRecebRender(){
   // v194 — colunas de custo que soma POR FORA (IPI, frete rateado, outros) + PREÇO NF TOTAL, que é
   // o custo unitário real da mercadoria e o que o sistema passa a usar. Ver comentário em _pcRatearCampo.
   var _inp='text-align:right;font-size:12px;padding:3px 5px';
-  c.innerHTML='<table style="width:100%;border-collapse:collapse;min-width:1180px"><thead><tr>'+
-    '<th style="'+th+';text-align:center">Nesta leva</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd pedido</th><th style="'+th+';text-align:right">Qtd recebida</th><th style="'+th+';text-align:right">Preço pedido</th><th style="'+th+';text-align:right">Preço NF</th>'+
+  c.innerHTML='<table style="width:100%;border-collapse:collapse;min-width:1280px"><thead><tr>'+
+    /* v201 — ordem definida pelo dono 07/08: qtd pedido · preço pedido · qtd recebida (c/ unidade) ·
+       preço NF · total pedido · total NF (sem adicionais) · IPI · frete · outros · Total (com adicionais) */
+    '<th style="'+th+';text-align:center">Nesta leva</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd pedido</th><th style="'+th+';text-align:right">Preço pedido</th><th style="'+th+';text-align:right">Qtd recebida</th><th style="'+th+';text-align:right">Preço NF</th>'+
+    '<th style="'+th+';text-align:right" title="Quantidade comprada × preço da compra — para comparar com a mercadoria da NF antes de impostos e frete">Total pedido</th>'+
+    '<th style="'+th+';text-align:right" title="Quantidade recebida × preço NF — mercadoria da nota, SEM impostos e frete">Total NF</th>'+
     '<th style="'+th+';text-align:right" title="IPI do item (vem do XML quando existe)">IPI</th>'+
     '<th style="'+th+';text-align:right" title="Frete do item — valor real da nota quando ela traz por item; senão, rateio proporcional ao valor da mercadoria">Frete rateado</th>'+
     '<th style="'+th+';text-align:right" title="Todos os demais custos que somam por fora e não têm coluna própria (seguro, despesas acessórias, ICMS-ST, taxas) — pode somar mais de um">Outros</th>'+
-    '<th style="'+th+';text-align:right" title="Custo unitário REAL: preço da NF + (IPI + frete + outros) ÷ quantidade. É o custo que o sistema passa a usar.">Preço NF total</th>'+
-    '<th style="'+th+';text-align:right">Total</th>'+
+    '<th style="'+th+';text-align:right" title="Total NF + IPI + frete + outros">Total</th>'+
     '</tr></thead><tbody>'+_pcRecebRows.map(function(r,i){
       var _temPreco=(r.preco!=null); // v198 — Preço NF vazio até vir DA NOTA (XML/vínculo/digitado)
       var divQ=Math.abs(r.qtd-r.qtdPedido)>0.001, divP=_temPreco && Math.abs(r.preco-r.precoPedido)>0.009;
       var cv=r.conv, pendente=!!(cv&&cv.tem&&!cv.verificada);
-      var convHtml='';
+      // v201 — chips numa COLUNA flex com respiro (o aviso "conferir unidade" encostava/cobria o
+      // botão 🔗 da linha de baixo, print do dono 07/08); vínculo e conversão podem COEXISTIR
+      var _chips=[];
+      if(cv&&cv.tem){
+        _chips.push('<span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="Como o item veio faturado na nota">NF: '+(cv.multi?escapeHtml(cv.unNF||''):((parseFloat(cv.qtdNF)||0).toLocaleString('pt-BR')+' × '+escapeHtml(cv.unNF||'')))+'</span>');
+        _chips.push('<button onclick="_pcConvAbrir('+i+')" title="Conferir a conversão de unidade e de custo unitário'+(cv.multi?' (várias partes da NF nesta linha)':'')+'" style="font-size:10px;padding:1px 7px;white-space:nowrap;'+(pendente?'border-color:var(--st-bad-tx);color:var(--st-bad-tx);font-weight:600':'')+'">'+(pendente?'🔎 Verificar conversão':'✓ conversão verificada')+'</button>');
+        if(cv.aviso) _chips.push('<span style="font-size:10px;color:var(--st-mid-tx);white-space:nowrap" title="'+escapeHtml(cv.aviso)+'">⚠ conferir unidade</span>');
+      }
       // v198 — item SEM par no XML com sobra disponível: oferece o VÍNCULO MANUAL na própria linha
       if(!r._xml && (_pcXmlSobra||[]).length){
-        convHtml='<div style="margin-top:3px;white-space:nowrap"><button onclick="_pcVincAbrir('+i+')" title="O casamento automático não achou este item na NF — escolha manualmente qual item da nota corresponde a ele (aplica quantidade, preço convertido, IPI e frete)" style="font-size:10px;padding:1px 7px;border-color:var(--st-mid-tx);color:var(--st-mid-tx);font-weight:600">🔗 Vincular item da NF</button></div>';
+        _chips.push('<button onclick="_pcVincAbrir('+i+')" title="O casamento automático não achou este item na NF — escolha manualmente o(s) item(ns) da nota que correspondem a ele (aplica quantidade, preço convertido, IPI e frete)" style="font-size:10px;padding:1px 7px;white-space:nowrap;border-color:var(--st-mid-tx);color:var(--st-mid-tx);font-weight:600">🔗 Vincular item da NF</button>');
       }
-      if(cv&&cv.tem){
-        convHtml='<div style="margin-top:3px;font-size:10px;white-space:nowrap">'+
-          '<span style="color:var(--text-tertiary)" title="Como o item veio faturado na nota">NF: '+(parseFloat(cv.qtdNF)||0).toLocaleString('pt-BR')+' × '+escapeHtml(cv.unNF||'')+'</span> '+
-          '<button onclick="_pcConvAbrir('+i+')" title="Conferir a conversão de unidade e de custo unitário" style="font-size:10px;padding:1px 7px;'+(pendente?'border-color:var(--st-bad-tx);color:var(--st-bad-tx);font-weight:600':'')+'">'+(pendente?'🔎 Verificar conversão':'✓ conversão verificada')+'</button>'+
-          (cv.aviso?'<br><span style="color:var(--st-mid-tx)" title="'+escapeHtml(cv.aviso)+'">⚠ conferir unidade</span>':'')+
-        '</div>';
-      }
+      var convHtml=_chips.length?'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin-top:4px;padding-bottom:2px">'+_chips.join('')+'</div>':'';
       var _bg = pendente&&r.incluir ? 'background:var(--st-bad-bg,#FEF3F2)' : (((divQ||divP)&&r.incluir)?'background:var(--st-mid-bg)':'');
       return '<tr'+(_bg?' style="'+_bg+'"':'')+'>'+
         '<td style="'+td+';text-align:center;vertical-align:top"><input type="checkbox" '+(r.incluir?'checked':'')+' onchange="_pcRecebSet('+i+',\'incluir\',this.checked);_pcRecebRender()" style="width:15px;height:15px"></td>'+
         '<td style="'+td+';vertical-align:top">'+escapeHtml(r.nome)+' <span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.codigo||'')+'</span></td>'+
         '<td style="'+td+';text-align:right;color:var(--text-secondary);vertical-align:top">'+r.qtdPedido.toLocaleString('pt-BR')+' '+escapeHtml(r.unidade)+'</td>'+
-        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="any" value="'+r.qtd+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'qtd\',this.value)" style="width:80px;'+_inp+(divQ?';border-color:var(--st-mid-bd)':'')+'">'+convHtml+'</td>'+
         '<td style="'+td+';text-align:right;color:var(--text-secondary);vertical-align:top">'+fmtMoney(r.precoPedido)+'</td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><span style="white-space:nowrap"><input type="number" min="0" step="any" value="'+r.qtd+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'qtd\',this.value)" style="width:80px;'+_inp+(divQ?';border-color:var(--st-mid-bd)':'')+'"> <span style="font-size:11px;color:var(--text-secondary)">'+escapeHtml(r.unidade||'')+'</span></span>'+convHtml+'</td>'+/* v201 — unidade ao lado da qtd recebida */
         '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.0001" value="'+(_temPreco?r.preco:'')+'" placeholder="da NF" title="Preço unitário DA NOTA FISCAL — preenchido pelo XML, pelo vínculo manual ou digitado da nota em papel" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'preco\',this.value)" style="width:95px;'+_inp+(divP?';border-color:var(--st-mid-bd)':(_temPreco?'':';border-color:var(--st-mid-bd);background:var(--st-mid-bg)'))+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top;color:var(--text-secondary);white-space:nowrap" title="Quantidade comprada × preço da compra">'+fmtMoney(r.qtdPedido*r.precoPedido)+'</td>'+/* v201 — Total pedido */
+        '<td id="pcr-pnt-'+i+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;color:var(--st-inf-tx);white-space:nowrap" title="Quantidade recebida × preço NF (mercadoria da nota, sem adicionais)">'+((r.incluir&&_temPreco)?fmtMoney((parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0)):'—')+'</td>'+/* v201 — Total NF */
         '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.ipi)||0)+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'ipi\',this.value)" style="width:72px;'+_inp+'"></td>'+
         '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.frete)||0)+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'frete\',this.value)" style="width:78px;'+_inp+'"></td>'+
         '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.outros)||0)+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'outros\',this.value)" style="width:78px;'+_inp+'"></td>'+
-        '<td id="pcr-pnt-'+i+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;color:var(--st-inf-tx)" title="Preço da NF + custos por fora ÷ quantidade">'+((r.incluir&&_temPreco)?fmtMoney(_pcPrecoNFTotal(r)):'—')+'</td>'+
-        '<td id="pcr-tot-'+i+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600">'+((r.incluir&&_temPreco)?fmtMoney((parseFloat(r.qtd)||0)*_pcPrecoNFTotal(r)):'—')+'</td>'+
+        '<td id="pcr-tot-'+i+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;white-space:nowrap" title="Total NF + IPI + frete + outros">'+((r.incluir&&_temPreco)?fmtMoney((parseFloat(r.qtd)||0)*_pcPrecoNFTotal(r)):'—')+'</td>'+
+      '</tr>';
+    }).join('')+
+    // v201 — ITENS DA NF FORA DO PEDIDO (sobra do XML): linha destacada; conciliar com item do
+    // sistema é OBRIGATÓRIO p/ prosseguir; dados do pedido zerados; sempre entram na divergência
+    (_pcXmlSobra||[]).map(function(x,si){
+      var conc=!!x.insumoId, pendX=!!(x.conv&&x.conv.tem&&!x.conv.verificada);
+      var chipsX=[];
+      if(conc&&x.conv){
+        chipsX.push('<span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap">NF: '+(parseFloat(x.qtd)||0).toLocaleString('pt-BR')+' × '+escapeHtml(x.un||'')+'</span>');
+        if(x.conv.tem) chipsX.push('<button onclick="_pcConvAbrir('+(1000+si)+')" style="font-size:10px;padding:1px 7px;white-space:nowrap;'+(pendX?'border-color:var(--st-bad-tx);color:var(--st-bad-tx);font-weight:600':'')+'">'+(pendX?'🔎 Verificar conversão':'✓ conversão verificada')+'</button>');
+        if(x.conv.aviso) chipsX.push('<span style="font-size:10px;color:var(--st-mid-tx);white-space:nowrap" title="'+escapeHtml(x.conv.aviso)+'">⚠ conferir unidade</span>');
+      }
+      var chipsHtmlX=chipsX.length?'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin-top:4px;padding-bottom:2px">'+chipsX.join('')+'</div>':'';
+      return '<tr style="background:var(--st-inf-bg,#EFF4FF)">'+
+        '<td style="'+td+';text-align:center;vertical-align:top"><input type="checkbox" '+(x.incluir!==false?'checked':'')+' onchange="_pcXtraSet('+si+',\'incluir\',this.checked);_pcRecebRender()" style="width:15px;height:15px"></td>'+
+        '<td style="'+td+';vertical-align:top"><span style="font-size:9px;font-weight:700;color:var(--st-inf-tx);text-transform:uppercase">Na nota, fora do pedido</span><br>'+escapeHtml(x.nome||'')+(x.nomeAlt?' <span style="font-size:10px;color:var(--text-tertiary)">('+escapeHtml(x.nomeAlt)+')</span>':'')+(x.cod?' <span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(x.cod)+'</span>':'')+
+          (conc
+            ? '<div style="font-size:11px;color:var(--st-ok-tx);margin-top:3px">🧩 = '+escapeHtml((x.insumoNome||''))+' <button onclick="_pcXtraConciliar('+si+', prompt(\'Item do sistema (código ou nome):\', \'\')||\'\')" title="Trocar o item do sistema" style="font-size:9px;padding:0 5px">✎</button></div>'
+            : '<div style="margin-top:3px;white-space:nowrap"><input type="text" list="pcr-ins-dl" placeholder="Conciliar com item do sistema…" onchange="_pcXtraConciliar('+si+', this.value)" style="font-size:11px;padding:3px 6px;width:220px;border-color:var(--st-bad-tx)"></div>')+
+        '</td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-tertiary);vertical-align:top">—</td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-tertiary);vertical-align:top">—</td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><span style="white-space:nowrap"><input type="number" min="0" step="any" value="'+(x.recQtd!=null?x.recQtd:'')+'" '+(conc&&x.incluir!==false?'':'disabled')+' oninput="_pcXtraSet('+si+',\'recQtd\',this.value)" style="width:80px;'+_inp+'"> <span style="font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.insumoUn||x.un||'')+'</span></span>'+chipsHtmlX+'</td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.0001" value="'+(x.recPreco!=null?x.recPreco:'')+'" placeholder="da NF" '+(conc&&x.incluir!==false?'':'disabled')+' oninput="_pcXtraSet('+si+',\'recPreco\',this.value)" style="width:95px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-tertiary);vertical-align:top">—</td>'+
+        '<td id="pcr-xpnt-'+si+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;color:var(--st-inf-tx);white-space:nowrap">'+((x.incluir!==false&&x.recQtd!=null&&x.recPreco!=null)?fmtMoney(x.recQtd*x.recPreco):'—')+'</td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(x.ipi)||0)+'" '+(x.incluir!==false?'':'disabled')+' oninput="_pcXtraSet('+si+',\'ipi\',this.value)" style="width:72px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(x.frete)||0)+'" '+(x.incluir!==false?'':'disabled')+' oninput="_pcXtraSet('+si+',\'frete\',this.value)" style="width:78px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(x.outros)||0)+'" '+(x.incluir!==false?'':'disabled')+' oninput="_pcXtraSet('+si+',\'outros\',this.value)" style="width:78px;'+_inp+'"></td>'+
+        '<td id="pcr-xtot-'+si+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;white-space:nowrap">'+((x.incluir!==false&&x.recQtd!=null&&x.recPreco!=null)?fmtMoney(x.recQtd*x.recPreco+(parseFloat(x.ipi)||0)+(parseFloat(x.frete)||0)+(parseFloat(x.outros)||0)):'—')+'</td>'+
       '</tr>';
     }).join('')+'</tbody>'+
     // v198 — linha de TOTAIS (pedido do dono 06/08): soma das colunas de custo e do Total, ao vivo
     '<tfoot><tr style="background:var(--bg-secondary);font-weight:700">'+
-      '<td style="'+td+';text-align:right" colspan="5">Totais (itens marcados)</td>'+
-      '<td style="'+td+';text-align:right" id="pcr-sum-mercad" title="Valor da mercadoria (qtd × preço NF)"></td>'+
+      '<td style="'+td+';text-align:right" colspan="6">Totais (itens marcados)</td>'+
+      '<td style="'+td+';text-align:right" id="pcr-sum-totped" title="Soma dos totais do pedido (qtd comprada × preço da compra)"></td>'+
+      '<td style="'+td+';text-align:right" id="pcr-sum-mercad" title="Mercadoria da nota (qtd recebida × preço NF, sem adicionais)"></td>'+
       '<td style="'+td+';text-align:right" id="pcr-sum-ipi"></td>'+
       '<td style="'+td+';text-align:right" id="pcr-sum-frete"></td>'+
       '<td style="'+td+';text-align:right" id="pcr-sum-outros"></td>'+
-      '<td style="'+td+'"></td>'+
       '<td style="'+td+';text-align:right" id="pcr-sum-total"></td>'+
-    '</tr></tfoot></table>';
+    '</tr></tfoot></table>'+
+    // v201 — datalist do "conciliar com item do sistema" (uma vez por render)
+    ((_pcXmlSobra||[]).length?'<datalist id="pcr-ins-dl">'+(insumos||[]).filter(function(i){ return i&&i.ativo!==false; }).slice(0,2500).map(function(i){ return '<option value="'+escapeHtml((i.codigo?i.codigo+' — ':'')+(i.nome||''))+'">'; }).join('')+'</datalist>':'');
   _pcRecebTotais();
 }
 function _pcRecebProsseguir(){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
   var leva=_pcRecebRows.filter(function(r){ return r.incluir && r.qtd>0; });
-  if(!leva.length){ alert('Marque ao menos um item (com quantidade) para receber nesta leva.'); return; }
+  var xtras=(_pcXmlSobra||[]).filter(function(x){ return x.incluir!==false; });
+  if(!leva.length && !xtras.length){ alert('Marque ao menos um item (com quantidade) para receber nesta leva.'); return; }
+  // v201 — extra da NF (fora do pedido) precisa estar conciliado com item do SISTEMA (senão o
+  // estoque não sabe onde entrar) e com quantidade/preço definidos
+  var _xSem=xtras.filter(function(x){ return !x.insumoId || !(parseFloat(x.recQtd)>0) || x.recPreco==null; });
+  if(_xSem.length){
+    alert('🧩 '+_xSem.length+' item(ns) da NF FORA DO PEDIDO ainda sem conciliação completa:\n\n'+_xSem.slice(0,8).map(function(x){ return '• '+x.nome+(x.insumoId?' (sem qtd/preço)':' (sem item do sistema)'); }).join('\n')+
+      '\n\nConcilie cada um com um item do catálogo (campo na própria linha) ou DESMARQUE os que não entram nesta leva.');
+    return;
+  }
   // v198 — ordem do dono: "Preço NF tem que ser o preço unitário vindo da NF" — item sem preço da
   // nota NÃO prossegue (o custo do sistema nasceria do preço da compra, não do real faturado)
   var _semP=leva.filter(function(r){ return r.preco==null; });
@@ -14252,7 +14509,8 @@ function _pcRecebProsseguir(){
   // v194 — regra do dono: conversão de unidade JÁ VEM APLICADA, mas quem recebe é OBRIGADO a abrir
   // "Verificar conversão" e confirmar antes de prosseguir. Sem isso o custo unitário do sistema
   // poderia nascer errado (ex.: R$ 87,50 por 500 g lançado como R$ 87,50 por grama).
-  var _semVer=leva.filter(function(r){ return r.conv && r.conv.tem && !r.conv.verificada; });
+  var _semVer=leva.filter(function(r){ return r.conv && r.conv.tem && !r.conv.verificada; })
+    .concat(xtras.filter(function(x){ return x.conv && x.conv.tem && !x.conv.verificada; })); // v201 — extras também
   if(_semVer.length){
     alert('🔎 '+_semVer.length+' item(ns) tiveram a unidade CONVERTIDA e ainda não foram verificados:\n\n'+
       _semVer.slice(0,8).map(function(r){ return '• '+r.nome+' — NF: '+(parseFloat(r.conv.qtdNF)||0).toLocaleString('pt-BR')+' × '+(r.conv.unNF||'')+''; }).join('\n')+
@@ -14261,21 +14519,70 @@ function _pcRecebProsseguir(){
     return;
   }
   var divergentes=leva.filter(function(r){ return Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009; });
-  if(divergentes.length){
-    var det=divergentes.slice(0,6).map(function(r){ return '• '+r.nome+': pedido '+r.qtdPedido.toLocaleString('pt-BR')+' × '+fmtMoney(r.precoPedido)+' → NF '+r.qtd.toLocaleString('pt-BR')+' × '+fmtMoney(r.preco); }).join('\n');
-    // v195 — advertência SEM bloquear (regra do dono): quantidade a MENOS segue, mas avisa o destino
-    var _aMenos=leva.filter(function(r){ return (parseFloat(r.qtd)||0) < (parseFloat(r.qtdPedido)||0)-0.001; }).length;
-    if(!confirm('⚠ '+divergentes.length+' item(ns) DIVERGEM do pedido:\n\n'+det+(divergentes.length>6?'\n…':'')+
-      (_aMenos?'\n\n📉 '+_aMenos+' item(ns) chegaram A MENOS: o recebimento segue com a quantidade REAL (estoque e custo usam o que chegou). O faltante é rateado pelos pedidos por D1, os descobertos ganham ALERTA na Gestão a Vista e a decisão de recomprar fica em Solicitação de Compra › Recebidos a menos.':'')+
-      '\n\nReceber assim mesmo? (fica registrado para questionar o fornecedor)')) return;
-  }
+  // v201 — TELA DE DIVERGÊNCIAS (pedido do dono 07/08): com tudo conciliado, a próxima tela é a de
+  // divergências — tabela item a item comparando pedido × NF (quantidade e preço unitário), no lugar
+  // do confirm() cru. Sem divergência, vai direto ao pagamento; divergência NÃO trava (regra v160),
+  // é conferida e confirmada.
+  if(divergentes.length || xtras.length){ _pcDivAbrir(leva, divergentes, xtras); return; } // v201 — extra sempre passa pela tela de divergências
+  _pcRecebProsseguir2(leva, 0);
+}
+function _pcDivAbrir(leva, divergentes, xtras){
+  var ov=document.getElementById('pc-div-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='pc-div-overlay'; ov.className='overlay'; ov.style.zIndex='475'; document.body.appendChild(ov); }
+  var th='padding:7px 10px;background:var(--bg-secondary);font-size:10.5px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
+  var td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
+  var _aMenos=leva.filter(function(r){ return (parseFloat(r.qtd)||0) < (parseFloat(r.qtdPedido)||0)-0.001; }).length;
+  // v201 — itens da NF fora do pedido: divergência total por definição (pedido zerado)
+  var xrows=(xtras||[]).map(function(x){
+    var q=(parseFloat(x.recQtd)||0), p=(parseFloat(x.recPreco)||0);
+    return '<tr style="background:var(--st-inf-bg,#EFF4FF)">'+
+      '<td style="'+td+'"><span style="font-size:9px;font-weight:700;color:var(--st-inf-tx);text-transform:uppercase">Fora do pedido</span> '+escapeHtml(x.insumoNome||x.nome||'')+'</td>'+
+      '<td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
+      '<td style="'+td+';text-align:right;color:var(--st-bad-tx);font-weight:700;white-space:nowrap">'+q.toLocaleString('pt-BR')+' '+escapeHtml(x.insumoUn||'')+' <span style="font-size:10px">(+'+q.toLocaleString('pt-BR')+')</span></td>'+
+      '<td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
+      '<td style="'+td+';text-align:right;color:var(--st-bad-tx);font-weight:700;white-space:nowrap">'+fmtMoney(p)+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap;font-weight:600">'+fmtMoney(0)+' → '+fmtMoney(q*p)+'</td>'+
+    '</tr>';
+  }).join('');
+  var rows=divergentes.map(function(r){
+    var dQ=Math.abs(r.qtd-r.qtdPedido)>0.001, dP=Math.abs(r.preco-r.precoPedido)>0.009;
+    var deltaQ=+(r.qtd-r.qtdPedido).toFixed(4), deltaP=+((r.preco-r.precoPedido)).toFixed(4);
+    return '<tr>'+
+      '<td style="'+td+'">'+(r.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.codigo)+'</span> ':'')+escapeHtml(r.nome||'')+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+r.qtdPedido.toLocaleString('pt-BR')+' '+escapeHtml(r.unidade||'')+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap;'+(dQ?'color:var(--st-bad-tx);font-weight:700':'color:var(--text-secondary)')+'">'+r.qtd.toLocaleString('pt-BR')+' '+escapeHtml(r.unidade||'')+(dQ?' <span style="font-size:10px">('+(deltaQ>0?'+':'')+deltaQ.toLocaleString('pt-BR')+')</span>':'')+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+fmtMoney(r.precoPedido)+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap;'+(dP?'color:var(--st-bad-tx);font-weight:700':'color:var(--text-secondary)')+'">'+fmtMoney(r.preco)+(dP?' <span style="font-size:10px">('+(deltaP>0?'+':'')+fmtMoney(deltaP)+')</span>':'')+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap;font-weight:600">'+fmtMoney(r.qtdPedido*r.precoPedido)+' → '+fmtMoney(r.qtd*r.preco)+'</td>'+
+    '</tr>';
+  }).join('');
+  ov.innerHTML='<div class="modal" style="width:900px;max-width:96vw;max-height:90vh;overflow-y:auto">'+
+    '<h2 style="font-size:16px;margin:0 0 2px">⚠ Divergências entre pedido e nota — '+(divergentes.length+((xtras||[]).length))+' item(ns)</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Confira antes de seguir ao pagamento. O vermelho marca ONDE diverge (quantidade ou preço unitário); azul = item que está NA NOTA mas fora do pedido. Divergência não trava — fica registrada para questionar o fornecedor.</div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:780px"><thead><tr>'+
+      '<th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd pedido</th><th style="'+th+';text-align:right">Qtd NF</th><th style="'+th+';text-align:right">Preço unit. pedido</th><th style="'+th+';text-align:right">Preço unit. NF</th><th style="'+th+';text-align:right">Total pedido → NF</th>'+
+    '</tr></thead><tbody>'+rows+xrows+'</tbody></table></div>'+
+    (_aMenos?'<div style="font-size:12px;color:var(--st-mid-tx);background:var(--st-mid-bg);border-radius:8px;padding:8px 12px;margin-top:10px">📉 '+_aMenos+' item(ns) chegaram A MENOS: o recebimento segue com a quantidade REAL (estoque e custo usam o que chegou). O faltante é rateado pelos pedidos por D1, os descobertos ganham alerta na Gestão a Vista e a decisão de recomprar fica em Solicitação de Compra › Recebidos a menos.</div>':'')+
+    '<div class="modal-footer" style="margin-top:14px">'+
+      '<button onclick="document.getElementById(\'pc-div-overlay\').classList.remove(\'open\')">↩ Voltar e corrigir</button>'+
+      '<button class="btn-primary" onclick="document.getElementById(\'pc-div-overlay\').classList.remove(\'open\');_pcRecebProsseguir2(null,'+divergentes.length+')">Confirmar divergências → pagamento</button>'+
+    '</div></div>';
+  ov.classList.add('open');
+}
+function _pcRecebProsseguir2(levaIn, nDiv){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
+  var leva=levaIn||_pcRecebRows.filter(function(r){ return r.incluir && r.qtd>0; });
+  // v201 — extras da NF (fora do pedido), já conciliados (gates do Prosseguir garantem)
+  var xtras=(_pcXmlSobra||[]).filter(function(x){ return x.incluir!==false && x.insumoId && (parseFloat(x.recQtd)>0) && x.recPreco!=null; });
+  var divergentes={length:nDiv||0};
   // v194 — o total que segue para o pagamento inclui os custos POR FORA (IPI+frete+outros), para
   // bater com o TOTAL DA NOTA e com as duplicatas do boleto. A mercadoria pura (_mercad) continua
   // sendo a base do lançamento; os extras vão nos campos próprios (sem dupla contagem).
-  var _mercad=+(leva.reduce(function(s,r){ return s+(parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0); },0)).toFixed(2);
-  var _exIpi=+(leva.reduce(function(s,r){ return s+(parseFloat(r.ipi)||0); },0)).toFixed(2);
-  var _exFre=+(leva.reduce(function(s,r){ return s+(parseFloat(r.frete)||0); },0)).toFixed(2);
-  var _exOut=+(leva.reduce(function(s,r){ return s+(parseFloat(r.outros)||0); },0)).toFixed(2);
+  var _mercad=+(leva.reduce(function(s,r){ return s+(parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0); },0)
+               +xtras.reduce(function(s,x){ return s+(parseFloat(x.recQtd)||0)*(parseFloat(x.recPreco)||0); },0)).toFixed(2);
+  var _exIpi=+(leva.reduce(function(s,r){ return s+(parseFloat(r.ipi)||0); },0)+xtras.reduce(function(s,x){ return s+(parseFloat(x.ipi)||0); },0)).toFixed(2);
+  var _exFre=+(leva.reduce(function(s,r){ return s+(parseFloat(r.frete)||0); },0)+xtras.reduce(function(s,x){ return s+(parseFloat(x.frete)||0); },0)).toFixed(2);
+  var _exOut=+(leva.reduce(function(s,r){ return s+(parseFloat(r.outros)||0); },0)+xtras.reduce(function(s,x){ return s+(parseFloat(x.outros)||0); },0)).toFixed(2);
   var total=+(_mercad+_exIpi+_exFre+_exOut).toFixed(2);
   // v169 — itens conferidos = pedido CONCILIADO (carimbo; o status recua p/ em_recebimento se a leva for parcial)
   if(pc.status==='em_recebimento'){
@@ -14286,7 +14593,7 @@ function _pcRecebProsseguir(){
   // v194 — `total` do contexto = MERCADORIA PURA. _rcbExtrasBase() usa este número e soma os campos
   // de frete/impostos/outros por cima; se guardássemos aqui o total já com extras, o passo de
   // pagamento somaria os custos por fora DUAS vezes.
-  _rcbPedidoCtx={ pcId:pc.id, leva:leva, divergentes:divergentes.length, total:_mercad };
+  _rcbPedidoCtx={ pcId:pc.id, leva:leva, xtras:xtras, divergentes:divergentes.length, total:_mercad }; // v201 — extras da NF vão junto
   // reusa o modal de pagamento do recebimento (blocos/plano/emissão) com o total da LEVA
   document.getElementById('rcb-nf-title').textContent=pc.nf||'—';
   document.getElementById('rcb-info').innerHTML='Pedido de compra <b>'+escapeHtml(pc.numero||'')+'</b> · Fornecedor <b>'+escapeHtml(pc.fornecedorNome||'')+'</b> · '+leva.length+' item(ns) nesta leva'+(divergentes.length?' · <span style="color:var(--st-mid-tx)">⚠ '+divergentes.length+' divergência(s)</span>':'')
@@ -14461,7 +14768,35 @@ function saveRecebimento(){
       _afx.push(it); _evx.push({itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:r.qtd});
       (it.origem||[]).forEach(function(og){ orderIds[og.orderId]=1; });
     });
-    (pc.recebimentos=pc.recebimentos||[]).push({ em:now, por:(currentUser&&currentUser.name)||'', valor:valor, valorItens:_valorItens, frete:_exNF.frete, impostos:_exNF.impostos, outros:_exNF.outros, compraLancId:compra.id, divergentes:_pcx.divergentes||0, itens:_pcx.leva.map(function(r){ return {listaId:r.listaId, itemId:r.ref, nome:r.nome, qtd:r.qtd, preco:r.preco}; }) });
+    // v201 — EXTRAS da NF (fora do pedido): entram no estoque (insumo conciliado) e no registro da leva
+    (_pcx.xtras||[]).forEach(function(x){
+      _evx.push({ itemId:x.insumoId, splitDe:null, codigo:'', qtd:(parseFloat(x.recQtd)||0) });
+    });
+    (pc.recebimentos=pc.recebimentos||[]).push({ em:now, por:(currentUser&&currentUser.name)||'', valor:valor, valorItens:_valorItens, frete:_exNF.frete, impostos:_exNF.impostos, outros:_exNF.outros, compraLancId:compra.id, divergentes:_pcx.divergentes||0,
+      itens:_pcx.leva.map(function(r){ return {listaId:r.listaId, itemId:r.ref, nome:r.nome, qtd:r.qtd, preco:r.preco}; })
+        .concat((_pcx.xtras||[]).map(function(x){ return {foraPedido:true, insumoId:x.insumoId, nome:(x.insumoNome||x.nome), nomeNF:x.nome, cProd:x.cod||'', qtd:(parseFloat(x.recQtd)||0), preco:(parseFloat(x.recPreco)||0)}; })) });
+    // v201 — APRENDIZADO DO DE-PARA (pedido do dono: "o XML é padrão, preciso de algo mais ajustado"):
+    // cada item CONFIRMADO grava no cadastro do insumo o vínculo {cnpj do emitente, cProd, unidade da
+    // NF, fator} — a próxima nota deste fornecedor concilia por CÓDIGO, determinístico, sem heurística.
+    try{
+      var _cnpjL=String((_pcXml&&_pcXml.emitCnpj)||(pc.nfXml&&pc.nfXml.emitCnpj)||'').replace(/\D/g,'');
+      if(_cnpjL){
+        var _aprende=function(insumoId, cProd, unNF, fator){
+          if(!insumoId || !cProd || !(fator>0)) return;
+          var ins=(insumos||[]).find(function(i){ return i && String(i.id)===String(insumoId); }); if(!ins) return;
+          ins.deParaNF=(ins.deParaNF||[]).filter(function(m){ return !(String(m.cnpj||'').replace(/\D/g,'')===_cnpjL && String(m.cProd)===String(cProd)); });
+          ins.deParaNF.push({ cnpj:_cnpjL, cProd:String(cProd), un:String(unNF||''), fator:+(+fator).toFixed(6), em:now, por:(currentUser&&currentUser.name)||'' });
+        };
+        _pcx.leva.forEach(function(r){
+          if(!r._xml || r.itemId==null || !r.conv) return;
+          if(r.conv.partes && r.conv.partes.length) r.conv.partes.forEach(function(p){ _aprende(r.itemId, p.cProd, p.unNF, p.fator); });
+          else if(r.xmlCod) _aprende(r.itemId, r.xmlCod, r.conv.unNF, r.conv.fator||1);
+        });
+        (_pcx.xtras||[]).forEach(function(x){
+          if(x.conv && x.conv.partes && x.conv.partes.length) x.conv.partes.forEach(function(p){ _aprende(x.insumoId, p.cProd||x.cod, p.unNF, p.fator); });
+        });
+      }
+    }catch(_e){ console.warn('de-para NF não gravado:', _e&&_e.message); }
     delete pc.conciliacaoDraft; // v198 — recebimento confirmado: o rascunho da conciliação cumpriu o papel
     try{ _syncCustosInsumo(_afx); }catch(_e){} // v187 — custoUltimo/custoMedio/custoMenor12m agora com o custo REAL (rateio incluso)
     try{ _rcbEstoqueEntrada(_evx); }catch(_e){} // v187 — entrada no estoque + reconhecimento de grupo de embalagem (com confirmação)

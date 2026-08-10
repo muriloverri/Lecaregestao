@@ -4758,7 +4758,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v201';
+var APP_VERSION = 'v202';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -13805,21 +13805,52 @@ function _pcUnParse(u){
 // unNF/unPedido na MESMA base (g×g, ml×ml) → fator = fatorNF / fatorPedido (1 KG num pedido em kg = 1).
 // Bases diferentes (cadastro em L e NF em G — caso PIRITIONATO) ou unidade do pedido desconhecida →
 // converte pelo NÚMERO da embalagem e AVISA; quem recebe decide no modal de verificação.
-function _pcConvSugerir(unidadePedido, xmlUn, xmlQtd, xmlUnit){
+// v202 — TAMANHO DA EMBALAGEM ESCRITO NO NOME ("ALCOOL CETO. (1KG)", "BB 5 KG", "(250G)"): quando a
+// NF fatura em UN, o tamanho real costuma estar no xProd — lê a ÚLTIMA ocorrência número+unidade.
+function _pcPackDoNome(nome){
+  var s=String(nome||'').toUpperCase();
+  var re=/(\d+(?:[\.,]\d+)?)\s*(KG|GR|G|MG|LT|L|ML)(?![A-Z0-9])/g, m, ult=null;
+  while((m=re.exec(s))) ult=m;
+  if(!ult) return null;
+  var n=parseFloat(ult[1].replace(',','.'));
+  var base={KG:'g',GR:'g',G:'g',MG:'g',LT:'ml',L:'ml',ML:'ml'}[ult[2]];
+  var mult={KG:1000,GR:1,G:1,MG:0.001,LT:1000,L:1000,ML:1}[ult[2]];
+  if(!(n>0)) return null;
+  return { qtdBase:n*mult, base:base, txt:ult[1]+' '+ult[2] };
+}
+function _pcConvSugerir(unidadePedido, xmlUn, xmlQtd, xmlUnit, xmlNome){
   var q=parseFloat(xmlQtd)||0, u=parseFloat(xmlUnit)||0;
   var out={ fator:1, qtd:q, preco:u, unNF:String(xmlUn||''), qtdNF:q, unitNF:u, tem:false, aviso:'', base:'' };
   var p=_pcUnParse(xmlUn);
   if(!p){ out.aviso='não reconheci a unidade "'+(xmlUn||'')+'" da NF — confira na mão'; return out; }
   var alvo=_pcUnParse(unidadePedido);
   out.base=p.un;
+  // v202 — massa↔volume equivalem 1:1 (densidade padrão do sistema, mesma regra do _cnCustoPorG)
+  var eqBase=function(a,b){ return a===b || (a==='g'&&b==='ml') || (a==='ml'&&b==='g'); };
   var fator;
   if(alvo && alvo.un===p.un){ fator=p.fator/alvo.fator; }
+  else if(alvo && eqBase(p.un,alvo.un) && p.un!=='un'){
+    // caso ESPUMA (NF em KG, cadastro em L): 1 kg ≡ 1 L — não mais "1 KG = 1000 L"
+    fator=p.fator/alvo.fator;
+    out.aviso='NF em '+p.un+' e cadastro em '+alvo.un+' — equivalência 1:1 (densidade padrão), confira';
+  }
+  else if(p.un==='un'){
+    // caso ALCOOL CETO (NF "1 UN", nome "...(1KG)"): o tamanho vem do NOME do produto
+    var pk=_pcPackDoNome(xmlNome);
+    if(pk && alvo && alvo.un!=='un'){
+      fator=pk.qtdBase/alvo.fator; // massa↔volume já equivalidos 1:1
+      out.aviso='tamanho da embalagem lido do NOME ("'+pk.txt+'") — confira';
+    } else {
+      fator=1;
+      out.aviso='NF em UN sem tamanho identificável no nome — defina o fator na verificação 🔎';
+    }
+  }
   else { fator=p.fator; if(alvo) out.aviso='a NF está em '+p.un+' e o cadastro do item em '+alvo.un+' — converti pelo número da embalagem'; else if(unidadePedido) out.aviso='não reconheci a unidade "'+unidadePedido+'" do pedido — converti pelo número da embalagem'; }
   if(!(fator>0)) return out;
   out.fator=+fator.toFixed(6);
   out.qtd=+(q*out.fator).toFixed(4);
   out.preco=+(u/out.fator).toFixed(6);
-  out.tem=Math.abs(out.fator-1)>0.000001; // fator 1 = NF já veio na unidade do pedido, nada a converter
+  out.tem=Math.abs(out.fator-1)>0.000001 || p.un==='un'; // v202 — UN sempre passa pela verificação
   return out;
 }
 function _pcXmlLer(input){
@@ -13903,7 +13934,7 @@ function _pcXmlAplicar(txt){
       r.preco=+((m.unit/mp.fator)).toFixed(6);
       r.conv={ tem:Math.abs(mp.fator-1)>0.000001, fator:mp.fator, unNF:m.un, qtdNF:m.qtd, unitNF:m.unit, verificada:true, origem:'memoria', memoriaDe:mp.por||'', memoriaEm:mp.em||null };
     } else {
-      var cvM=_pcConvSugerir(r.unidade, m.un, m.qtd, m.unit);
+      var cvM=_pcConvSugerir(r.unidade, m.un, m.qtd, m.unit, m.nome);
       r.qtd=cvM.qtd; r.preco=cvM.preco;
       r.conv={ tem:cvM.tem, fator:cvM.fator, unNF:cvM.unNF, qtdNF:cvM.qtdNF, unitNF:cvM.unitNF, aviso:(cvM.aviso?cvM.aviso+' · ':'')+'unidade da NF mudou desde a última conciliação — verifique', verificada:!cvM.tem, origem:'xml' };
     }
@@ -13919,7 +13950,7 @@ function _pcXmlAplicar(txt){
     if(m){ m._usado=true;
       // v194 — converte para a unidade DO PEDIDO e guarda a memória de cálculo p/ o modal de
       // verificação (obrigatório antes de prosseguir quando houve conversão — regra do dono).
-      var cv=_pcConvSugerir(r.unidade, m.un, m.qtd, m.unit);
+      var cv=_pcConvSugerir(r.unidade, m.un, m.qtd, m.unit, m.nome);
       r.qtd=cv.qtd; r.preco=cv.preco;
       r.conv={ tem:cv.tem, fator:cv.fator, unNF:cv.unNF, qtdNF:cv.qtdNF, unitNF:cv.unitNF, aviso:cv.aviso, verificada:!cv.tem, origem:'xml' };
       r.ipi=m.ipi; r.frete=m.frete; r.outros=m.outros;
@@ -13930,7 +13961,10 @@ function _pcXmlAplicar(txt){
   var sobraXml=xitens.filter(function(x){ return !x._usado; });
   // v198 — sobra do XML fica disponível para VÍNCULO MANUAL (pedido do dono 06/08): item do pedido
   // sem par ganha o botão "🔗 Vincular item da NF" na linha
-  _pcXmlSobra=sobraXml.map(function(x){ return { nome:x.nome, nomeAlt:x.nomeAlt||'', cod:x.cod||'', un:x.un, qtd:x.qtd, unit:x.unit, total:x.total, frete:x.frete, ipi:x.ipi, outros:x.outros, incluir:true, insumoId:null, insumoNome:'', insumoUn:'', recQtd:null, recPreco:null, conv:null }; }); // v201 — sobra vira LINHA "na NF fora do pedido" na tabela, e leva o cProd p/ o de-para
+  // v202 — qtd/preço do extra NASCEM PREENCHIDOS com os valores DA NOTA (ordem do dono 07/08:
+  // "independente do vínculo, valor unitário e totais são iguais"); a conciliação com item do
+  // sistema depois só converte para a unidade do catálogo (o total não muda)
+  _pcXmlSobra=sobraXml.map(function(x){ return { nome:x.nome, nomeAlt:x.nomeAlt||'', cod:x.cod||'', un:x.un, qtd:x.qtd, unit:x.unit, total:x.total, frete:x.frete, ipi:x.ipi, outros:x.outros, incluir:true, insumoId:null, insumoNome:'', insumoUn:'', recQtd:x.qtd, recPreco:x.unit, conv:null }; }); // v201 — sobra vira LINHA "na NF fora do pedido" na tabela, e leva o cProd p/ o de-para
   var semPar=_pcRecebRows.filter(function(r){ return !r._xml; }).length;
   var tot0=doc.getElementsByTagName('ICMSTot')[0];
   var tot={ vProd:parseFloat(tag(tot0,'vProd'))||0, vFrete:parseFloat(tag(tot0,'vFrete'))||0, vDesc:parseFloat(tag(tot0,'vDesc'))||0, vNF:parseFloat(tag(tot0,'vNF'))||0,
@@ -14063,6 +14097,20 @@ function _pcVincAbrir(i){
     '<div class="modal-footer" style="margin-top:12px"><button onclick="document.getElementById(\'pc-vinc-overlay\').classList.remove(\'open\')">Cancelar</button><button class="btn-primary" onclick="_pcVincAplicar()">🔗 Vincular</button></div></div>';
   ov.classList.add('open');
 }
+// v202 — DE-PARA gravado JÁ NO VÍNCULO (pedido do dono: "se fiz um vínculo, na próxima vez que vier
+// o mesmo produto no xml, já importar vinculado"): não espera mais o recebimento confirmar. O mesmo
+// item do sistema pode ter de-paras de VÁRIOS fornecedores (a lista é por cnpj+cProd). A verificação
+// da conversão ATUALIZA o fator memorizado. O reforço no confirmar recebimento continua.
+function _pcDeParaGravar(insumoId, cProd, unNF, fator){
+  try{
+    var cnpj=String((_pcXml&&_pcXml.emitCnpj)||'').replace(/\D/g,'');
+    if(!cnpj){ var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); cnpj=String((pc&&pc.nfXml&&pc.nfXml.emitCnpj)||'').replace(/\D/g,''); }
+    if(!cnpj || !insumoId || !cProd || !(fator>0)) return;
+    var ins=(insumos||[]).find(function(i){ return i && String(i.id)===String(insumoId); }); if(!ins) return;
+    ins.deParaNF=(ins.deParaNF||[]).filter(function(m){ return !(String(m.cnpj||'').replace(/\D/g,'')===cnpj && String(m.cProd)===String(cProd)); });
+    ins.deParaNF.push({ cnpj:cnpj, cProd:String(cProd), un:String(unNF||''), fator:+(+fator).toFixed(6), em:Date.now(), por:(currentUser&&currentUser.name)||'' });
+  }catch(_e){}
+}
 // v201 — monta a linha a partir das PARTES vinculadas (1 ou N itens da NF): qtd = Σ(qtd×fator),
 // preço = total da mercadoria ÷ qtd (média ponderada — o valor total é o da nota, sempre)
 function _pcVincRecalc(r){
@@ -14080,7 +14128,7 @@ function _pcVincAplicar(){
   var partes=[], somaIpi=0, somaFre=0, somaOut=0, temConv=false, avisos=[];
   idxs.slice().reverse().forEach(function(xi){
     var x=(_pcXmlSobra||[])[xi]; if(!x) return;
-    var cv=_pcConvSugerir(r.unidade, x.un, x.qtd, x.unit);
+    var cv=_pcConvSugerir(r.unidade, x.un, x.qtd, x.unit, x.nome);
     partes.push({ nome:x.nome, cProd:x.cod||'', unNF:cv.unNF, qtdNF:cv.qtdNF, unitNF:cv.unitNF, fator:cv.fator, aviso:cv.aviso });
     if(cv.tem||partes.length>1) temConv=true;
     if(cv.aviso) avisos.push(cv.aviso);
@@ -14092,6 +14140,7 @@ function _pcVincAplicar(){
   _pcVincRecalc(r);
   r.ipi=+somaIpi.toFixed(2); r.frete=+somaFre.toFixed(2); r.outros=+somaOut.toFixed(2);
   r._xml=true;
+  if(r.itemId!=null) partes.forEach(function(p){ _pcDeParaGravar(r.itemId, p.cProd, p.unNF, p.fator); }); // v202 — memoriza JÁ no vínculo
   idxs.forEach(function(xi){ _pcXmlSobra.splice(xi,1); });
   document.getElementById('pc-vinc-overlay').classList.remove('open');
   _pcVincIdx=null;
@@ -14103,6 +14152,10 @@ function _pcVincAplicar(){
 // OBRIGATÓRIO conciliar com um item do SISTEMA (catálogo de insumos) antes de prosseguir — sem
 // isso o estoque não saberia onde dar entrada. O extra entra no total, no lançamento do Caixa, no
 // estoque e SEMPRE na tela de divergências (pedido 0 × NF cheio).
+// v202 — CONCILIADO = TRAVADO: libera/trava a edição de uma linha (não vai ao rascunho — reabrir
+// volta travado; os VALORES editados sim persistem, pelo auto-save normal)
+function _pcRowEditar(i){ var r=_pcRecebRows[i]; if(!r) return; r.editLivre=!r.editLivre; _pcRecebRender(); }
+function _pcXtraEditar(si){ var x=(_pcXmlSobra||[])[si]; if(!x) return; x.editLivre=!x.editLivre; _pcRecebRender(); }
 function _pcXtraSet(si, campo, val){
   var x=(_pcXmlSobra||[])[si]; if(!x) return;
   if(campo==='incluir') x.incluir=!!val;
@@ -14115,15 +14168,32 @@ function _pcXtraConciliar(si, txt){
   txt=String(txt||'').trim(); if(!txt) return;
   var low=txt.toLowerCase();
   var lbl=function(i){ return ((i.codigo?i.codigo+' — ':'')+(i.nome||'')); };
+  // v202 — busca TOLERANTE (caso 55700/PROPILENOGLICOL, 07/08: código exato existia no cadastro e a
+  // tela disse "não encontrado"): exatos primeiro; senão candidatos por código/nome que começam ou
+  // contêm o texto — 1 candidato usa, vários pergunta, zero DIAGNOSTICA (inclusive quantos itens o
+  // navegador tem em memória, para pegar catálogo truncado).
   var ins=(insumos||[]).find(function(i){ return i && lbl(i).toLowerCase()===low; })
-       || (insumos||[]).find(function(i){ return i && String(i.codigo||'').toLowerCase()===low; })
-       || (insumos||[]).find(function(i){ return i && String(i.nome||'').toLowerCase()===low; });
-  if(!ins){ alert('Item do sistema não encontrado: "'+txt+'".\nEscolha uma opção da lista (código ou nome exato do catálogo de insumos).'); return; }
+       || (insumos||[]).find(function(i){ return i && String(i.codigo||'').trim().toLowerCase()===low; })
+       || (insumos||[]).find(function(i){ return i && String(i.nome||'').trim().toLowerCase()===low; });
+  if(!ins){
+    var cand=(insumos||[]).filter(function(i){ return i && (String(i.codigo||'').toLowerCase().indexOf(low)===0 || String(i.nome||'').toLowerCase().indexOf(low)>=0); });
+    if(cand.length===1) ins=cand[0];
+    else if(cand.length>1 && cand.length<=8){
+      var esc=prompt('Vários itens combinam com "'+txt+'" — digite o NÚMERO da opção:\n\n'+cand.map(function(i,ci){ return (ci+1)+') '+lbl(i); }).join('\n'));
+      var ei=parseInt(esc,10); if(ei>=1 && ei<=cand.length) ins=cand[ei-1];
+      if(!ins) return;
+    }
+  }
+  if(!ins){
+    alert('Item do sistema não encontrado: "'+txt+'".\n\nCatálogo carregado neste navegador: '+((insumos||[]).length)+' item(ns).\nSe o item existe no cadastro e não aparece aqui, recarregue a página (F5) e tente de novo — e se persistir, me avise informando o código.');
+    return;
+  }
   x.insumoId=ins.id; x.insumoNome=ins.nome||''; x.insumoUn=ins.unidade||'un';
-  var cv=_pcConvSugerir(x.insumoUn, x.un, x.qtd, x.unit);
+  var cv=_pcConvSugerir(x.insumoUn, x.un, x.qtd, x.unit, x.nome);
   x.recQtd=cv.qtd; x.recPreco=cv.preco;
   x.conv={ tem:cv.tem, verificada:!cv.tem, origem:'extra', aviso:cv.aviso, multi:false,
            partes:[{ nome:x.nome, cProd:x.cod||'', unNF:cv.unNF, qtdNF:cv.qtdNF, unitNF:cv.unitNF, fator:cv.fator }] };
+  _pcDeParaGravar(ins.id, x.cod, cv.unNF, cv.fator); // v202 — memoriza JÁ na conciliação do extra
   _pcRecebRender();
   try{ _pcConcDraftSave(false); }catch(_e){}
 }
@@ -14240,9 +14310,11 @@ function _pcConvAceitar(){
       t.x.conv=novo;
       var q=0,v=0; novo.partes.forEach(function(p){ var qi=(parseFloat(p.qtdNF)||0)*(parseFloat(p.fator)||0); q+=qi; v+=(parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0); });
       t.x.recQtd=+q.toFixed(4); t.x.recPreco=q>0?+(v/q).toFixed(6):0;
+      novo.partes.forEach(function(p){ _pcDeParaGravar(t.x.insumoId, p.cProd||t.x.cod, p.unNF, p.fator); }); // v202 — fator VERIFICADO atualiza a memória
     } else {
       t.r.conv=novo;
       _pcVincRecalc(t.r);
+      if(t.r.itemId!=null) novo.partes.forEach(function(p){ _pcDeParaGravar(t.r.itemId, p.cProd, p.unNF, p.fator); }); // v202
     }
     _pcConvFechar();
     _pcRecebRender();
@@ -14255,6 +14327,7 @@ function _pcConvAceitar(){
   r.conv=Object.assign({}, cv, {fator:+f.toFixed(6), verificada:true, verificadaPor:(currentUser&&currentUser.name)||'', verificadaEm:Date.now()});
   r.qtd=+(((parseFloat(cv.qtdNF)||0)*f)).toFixed(4);
   r.preco=+(((parseFloat(cv.unitNF)||0)/f)).toFixed(6);
+  if(r.itemId!=null && r.xmlCod) _pcDeParaGravar(r.itemId, r.xmlCod, cv.unNF, f); // v202 — fator VERIFICADO atualiza a memória
   _pcConvFechar();
   _pcRecebRender();
   try{ _pcConcDraftSave(false); }catch(_e){} // v198 — verificação de conversão fica salva no rascunho
@@ -14294,7 +14367,9 @@ function _pcConcReset(){
 function openReceberPedido(pcId){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
   if(!(pc.nf||'').trim()){ alert('Informe a NF do pedido antes de receber.'); return; }
-  if(pc.status==='aberto'||pc.status==='fechado'){ alert('Feche o pedido, informe a NF e use "Enviar para recebimento" na Gestão de Pedidos.'); return; } // v169
+  // v202 — conciliação SÓ após o "📤 Enviar para recebimento" (ordem do dono: fechado→faturado→enviado;
+  // antes disso o pedido aparece no menu Compras apenas para ACOMPANHAMENTO). Faturado também bloqueia.
+  if(pc.status!=='em_recebimento' && pc.status!=='conciliado'){ alert('Este pedido ainda não foi ENVIADO PARA RECEBIMENTO.\n\nO fluxo é na Solicitação de Compra › Gestão de Pedidos: fechar o pedido → informar a NF → 📤 Enviar para recebimento. Só então a conciliação libera aqui.'); return; }
   _pcRecebId=pcId;
   _pcXml=null; _pcXmlSobra=[]; try{ var _xi=document.getElementById('pcr-xml-info'); if(_xi) _xi.innerHTML=''; }catch(_e){} // v169 — limpa o XML da conciliação anterior (v198: sobra junto)
   _pcRecebRows=_pcItens(pc).filter(function(x){ return !x.it.compra.recebido; }).map(function(x){
@@ -14304,7 +14379,7 @@ function openReceberPedido(pcId){
              // DA NOTA (XML, vínculo manual ou digitado da nota em papel). Antes vinha pré-preenchido
              // com o preço da COMPRA (precoPago), o que parecia conciliado sem estar — a coluna
              // "Preço pedido" continua mostrando o da compra como referência da divergência.
-             qtd:(parseFloat(x.it.compra.qtdComprada)||0), preco:null, incluir:true,
+             qtd:null, preco:null, incluir:true, // v202 — qtd recebida TAMBÉM nasce vazia (ordem do dono: sem conciliação, nada preenchido)
              itemId:(x.it.itemId!=null?x.it.itemId:null), // v201 — insumo do sistema (chave do de-para NF)
              ipi:0, frete:0, outros:0, conv:null }; // v194 — custos por fora + memória da conversão
   });
@@ -14325,6 +14400,8 @@ function openReceberPedido(pcId){
     });
     _pcXml=_d.xml||null;
     _pcXmlSobra=(_d.xmlSobra||[]).slice(); // v198 — sobra do XML volta junto (vínculo manual segue possível)
+    // v202 — rascunho salvo antes desta versão: extras sem qtd/preço ganham os valores DA NOTA
+    _pcXmlSobra.forEach(function(x){ if(x){ if(x.recQtd==null) x.recQtd=x.qtd; if(x.recPreco==null) x.recPreco=x.unit; if(x.incluir===undefined) x.incluir=true; x.editLivre=false; } }); // v202 — reabrir volta travado
     if(_rest){ try{ var _xi2=document.getElementById('pcr-xml-info');
       if(_xi2) _xi2.innerHTML='<div style="font-size:12px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px">💾 <b>Conciliação salva restaurada</b> — '+_rest+' item(ns) como '+escapeHtml(_d.por||'')+' deixou em '+(_d.em?new Date(_d.em).toLocaleString('pt-BR'):'')+(_pcXml?' · XML da NF-e '+escapeHtml(_pcXml.nNF||'')+' já importado (não precisa reimportar)':'')+'</div>';
     }catch(_e){} }
@@ -14336,8 +14413,8 @@ function openReceberPedido(pcId){
 function closeReceberPedido(){ _pcRecebId=null; _pcRecebRows=[]; var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.remove('open'); }
 function _pcRecebSet(i, campo, val){
   var r=_pcRecebRows[i]; if(!r) return;
-  // v198 — Preço NF vazio = AINDA NÃO CONCILIADO (null); apagar o campo volta a "sem preço"
-  if(campo==='preco') r.preco=(String(val).trim()==='')?null:(parseFloat(val)||0);
+  // v198/v202 — Preço NF e QTD RECEBIDA vazios = AINDA NÃO CONCILIADO (null); apagar volta a vazio
+  if(campo==='preco'||campo==='qtd') r[campo]=(String(val).trim()==='')?null:(parseFloat(val)||0);
   else r[campo]=(campo==='incluir')?!!val:(parseFloat(val)||0);
   // v194 — atualiza SÓ as células calculadas da linha (re-render completo tiraria o foco do campo
   // enquanto a pessoa digita) e depois os totais do rodapé.
@@ -14355,7 +14432,7 @@ function _pcRecebTotais(){
   var mercad=0, extras=0, div=0, naoVerif=0, sIpi=0, sFre=0, sOut=0, semPreco=0, sTotPed=0;
   _pcRecebRows.forEach(function(r){
     if(!r.incluir) return;
-    if(r.preco==null){ semPreco++; } // v198 — Preço NF ainda não veio da nota
+    if(r.preco==null || r.qtd==null){ semPreco++; } // v198/v202 — preço OU qtd ainda não vieram da nota
     mercad+=(parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0);
     extras+=_pcExtrasLinha(r);
     sTotPed+=(parseFloat(r.qtdPedido)||0)*(parseFloat(r.precoPedido)||0); // v201 — Total pedido
@@ -14367,7 +14444,7 @@ function _pcRecebTotais(){
   var xSemConc=0, xNaoVerif=0;
   (_pcXmlSobra||[]).forEach(function(x,si){
     if(x.incluir===false) return;
-    if(!x.insumoId){ xSemConc++; return; }
+    if(!x.insumoId) xSemConc++; // v202 — continua pendência p/ prosseguir, mas os VALORES DA NOTA já contam nos totais
     if(x.conv && x.conv.tem && !x.conv.verificada) xNaoVerif++;
     var q=(parseFloat(x.recQtd)||0), p=(parseFloat(x.recPreco)||0);
     mercad+=q*p;
@@ -14385,7 +14462,7 @@ function _pcRecebTotais(){
   _s('pcr-sum-mercad',mercad); _s('pcr-sum-totped',sTotPed); _s('pcr-sum-ipi',sIpi); _s('pcr-sum-frete',sFre); _s('pcr-sum-outros',sOut); _s('pcr-sum-total',tot);
   el.innerHTML='Total desta leva: <b>'+fmtMoney(tot)+'</b>'+
     (extras>0?' <span style="font-size:11.5px;color:var(--text-secondary)">(mercadoria '+fmtMoney(mercad)+' + custos por fora '+fmtMoney(extras)+')</span>':'')+
-    (semPreco?'<br><span style="color:var(--st-bad-tx);font-weight:600;font-size:12px">✏ '+semPreco+' item(ns) sem o PREÇO DA NF — digite da nota, use o XML ou o vínculo 🔗 (obrigatório antes de prosseguir)</span>':'')+
+    (semPreco?'<br><span style="color:var(--st-bad-tx);font-weight:600;font-size:12px">✏ '+semPreco+' item(ns) sem QUANTIDADE ou PREÇO da NF — digite da nota, use o XML ou o vínculo 🔗 (obrigatório antes de prosseguir)</span>':'')+
     (xSemConc?'<br><span style="color:var(--st-bad-tx);font-weight:600;font-size:12px">🧩 '+xSemConc+' item(ns) da NF FORA DO PEDIDO sem conciliação com item do sistema — concilie ou desmarque (obrigatório antes de prosseguir)</span>':'')+
     (div?' · <span style="color:var(--st-mid-tx)">⚠ '+div+' item(ns) com divergência do pedido</span>':(semPreco?'':' · <span style="color:var(--st-ok-tx)">✓ tudo confere com o pedido</span>'))+
     (naoVerif?'<br><span style="color:var(--st-bad-tx);font-weight:600;font-size:12px">🔎 '+naoVerif+' conversão(ões) aguardando verificação — obrigatório antes de prosseguir</span>':'')+
@@ -14409,14 +14486,18 @@ function _pcRecebRender(){
     '<th style="'+th+';text-align:right" title="Todos os demais custos que somam por fora e não têm coluna própria (seguro, despesas acessórias, ICMS-ST, taxas) — pode somar mais de um">Outros</th>'+
     '<th style="'+th+';text-align:right" title="Total NF + IPI + frete + outros">Total</th>'+
     '</tr></thead><tbody>'+_pcRecebRows.map(function(r,i){
-      var _temPreco=(r.preco!=null); // v198 — Preço NF vazio até vir DA NOTA (XML/vínculo/digitado)
-      var divQ=Math.abs(r.qtd-r.qtdPedido)>0.001, divP=_temPreco && Math.abs(r.preco-r.precoPedido)>0.009;
+      var _temPreco=(r.preco!=null), _temQtd=(r.qtd!=null); // v198/v202 — vazios até vir DA NOTA
+      var divQ=_temQtd && Math.abs(r.qtd-r.qtdPedido)>0.001, divP=_temPreco && Math.abs(r.preco-r.precoPedido)>0.009;
       var cv=r.conv, pendente=!!(cv&&cv.tem&&!cv.verificada);
       // v201 — chips numa COLUNA flex com respiro (o aviso "conferir unidade" encostava/cobria o
       // botão 🔗 da linha de baixo, print do dono 07/08); vínculo e conversão podem COEXISTIR
       var _chips=[];
       if(cv&&cv.tem){
-        _chips.push('<span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="Como o item veio faturado na nota">NF: '+(cv.multi?escapeHtml(cv.unNF||''):((parseFloat(cv.qtdNF)||0).toLocaleString('pt-BR')+' × '+escapeHtml(cv.unNF||'')))+'</span>');
+        // v202 — o chip mostra a CONVERSÃO INTEIRA de relance: unidade real da nota → unidade do pedido
+        var _convTxt = cv.multi ? escapeHtml(cv.unNF||'')
+          : ((parseFloat(cv.qtdNF)||0).toLocaleString('pt-BR')+' × '+escapeHtml(cv.unNF||'')+
+             ((cv.fator&&Math.abs(cv.fator-1)>0.000001)?' → '+(((parseFloat(cv.qtdNF)||0)*cv.fator)).toLocaleString('pt-BR')+' '+escapeHtml(r.unidade||''):''));
+        _chips.push('<span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="Como o item veio faturado na nota (unidade uCom do XML) e a conversão para a unidade do pedido">NF: '+_convTxt+'</span>');
         _chips.push('<button onclick="_pcConvAbrir('+i+')" title="Conferir a conversão de unidade e de custo unitário'+(cv.multi?' (várias partes da NF nesta linha)':'')+'" style="font-size:10px;padding:1px 7px;white-space:nowrap;'+(pendente?'border-color:var(--st-bad-tx);color:var(--st-bad-tx);font-weight:600':'')+'">'+(pendente?'🔎 Verificar conversão':'✓ conversão verificada')+'</button>');
         if(cv.aviso) _chips.push('<span style="font-size:10px;color:var(--st-mid-tx);white-space:nowrap" title="'+escapeHtml(cv.aviso)+'">⚠ conferir unidade</span>');
       }
@@ -14425,27 +14506,37 @@ function _pcRecebRender(){
         _chips.push('<button onclick="_pcVincAbrir('+i+')" title="O casamento automático não achou este item na NF — escolha manualmente o(s) item(ns) da nota que correspondem a ele (aplica quantidade, preço convertido, IPI e frete)" style="font-size:10px;padding:1px 7px;white-space:nowrap;border-color:var(--st-mid-tx);color:var(--st-mid-tx);font-weight:600">🔗 Vincular item da NF</button>');
       }
       var convHtml=_chips.length?'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin-top:4px;padding-bottom:2px">'+_chips.join('')+'</div>':'';
+      // v202 — CONCILIADO = TRAVADO (ordem do dono: "quantidade recebida tem que ser a quantidade
+      // recebida"): linha preenchida pela NF (XML/memória/vínculo) fica bloqueada; o botão ✎ Editar
+      // libera conscientemente (não persiste — reabrir volta travado). Linha SEM XML (digitação da
+      // nota em papel) segue editável, é o caminho manual.
+      var _trav = !!(r._xml && !r.editLivre);
+      if(r._xml){
+        _chips.push('<button onclick="_pcRowEditar('+i+')" title="'+(r.editLivre?'Voltar a travar os campos desta linha':'Liberar a edição dos campos desta linha (veio da NF — só edite se tiver certeza)')+'" style="font-size:10px;padding:1px 7px;white-space:nowrap'+(r.editLivre?';background:var(--st-mid-bg);border-color:var(--st-mid-bd);color:var(--st-mid-tx);font-weight:600':'')+'">'+(r.editLivre?'🔓 Editando — travar':'✎ Editar')+'</button>');
+        convHtml=_chips.length?'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin-top:4px;padding-bottom:2px">'+_chips.join('')+'</div>':'';
+      }
       var _bg = pendente&&r.incluir ? 'background:var(--st-bad-bg,#FEF3F2)' : (((divQ||divP)&&r.incluir)?'background:var(--st-mid-bg)':'');
       return '<tr'+(_bg?' style="'+_bg+'"':'')+'>'+
         '<td style="'+td+';text-align:center;vertical-align:top"><input type="checkbox" '+(r.incluir?'checked':'')+' onchange="_pcRecebSet('+i+',\'incluir\',this.checked);_pcRecebRender()" style="width:15px;height:15px"></td>'+
         '<td style="'+td+';vertical-align:top">'+escapeHtml(r.nome)+' <span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.codigo||'')+'</span></td>'+
         '<td style="'+td+';text-align:right;color:var(--text-secondary);vertical-align:top">'+r.qtdPedido.toLocaleString('pt-BR')+' '+escapeHtml(r.unidade)+'</td>'+
         '<td style="'+td+';text-align:right;color:var(--text-secondary);vertical-align:top">'+fmtMoney(r.precoPedido)+'</td>'+
-        '<td style="'+td+';text-align:right;vertical-align:top"><span style="white-space:nowrap"><input type="number" min="0" step="any" value="'+r.qtd+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'qtd\',this.value)" style="width:80px;'+_inp+(divQ?';border-color:var(--st-mid-bd)':'')+'"> <span style="font-size:11px;color:var(--text-secondary)">'+escapeHtml(r.unidade||'')+'</span></span>'+convHtml+'</td>'+/* v201 — unidade ao lado da qtd recebida */
-        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.0001" value="'+(_temPreco?r.preco:'')+'" placeholder="da NF" title="Preço unitário DA NOTA FISCAL — preenchido pelo XML, pelo vínculo manual ou digitado da nota em papel" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'preco\',this.value)" style="width:95px;'+_inp+(divP?';border-color:var(--st-mid-bd)':(_temPreco?'':';border-color:var(--st-mid-bd);background:var(--st-mid-bg)'))+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><span style="white-space:nowrap"><input type="number" min="0" step="any" value="'+(_temQtd?r.qtd:'')+'" placeholder="da NF" title="Quantidade RECEBIDA — preenchida pelo XML, pelo vínculo ou digitada da nota em papel" '+((r.incluir&&!_trav)?'':'disabled')+' oninput="_pcRecebSet('+i+',\'qtd\',this.value)" style="width:80px;'+_inp+(divQ?';border-color:var(--st-mid-bd)':(_temQtd?'':';border-color:var(--st-mid-bd);background:var(--st-mid-bg)'))+'"> <span style="font-size:11px;color:var(--text-secondary)">'+escapeHtml(r.unidade||'')+'</span></span>'+convHtml+'</td>'+/* v201 — unidade ao lado da qtd recebida */
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.0001" value="'+(_temPreco?r.preco:'')+'" placeholder="da NF" title="Preço unitário DA NOTA FISCAL — preenchido pelo XML, pelo vínculo manual ou digitado da nota em papel" '+((r.incluir&&!_trav)?'':'disabled')+' oninput="_pcRecebSet('+i+',\'preco\',this.value)" style="width:95px;'+_inp+(divP?';border-color:var(--st-mid-bd)':(_temPreco?'':';border-color:var(--st-mid-bd);background:var(--st-mid-bg)'))+'"></td>'+
         '<td style="'+td+';text-align:right;vertical-align:top;color:var(--text-secondary);white-space:nowrap" title="Quantidade comprada × preço da compra">'+fmtMoney(r.qtdPedido*r.precoPedido)+'</td>'+/* v201 — Total pedido */
-        '<td id="pcr-pnt-'+i+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;color:var(--st-inf-tx);white-space:nowrap" title="Quantidade recebida × preço NF (mercadoria da nota, sem adicionais)">'+((r.incluir&&_temPreco)?fmtMoney((parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0)):'—')+'</td>'+/* v201 — Total NF */
-        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.ipi)||0)+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'ipi\',this.value)" style="width:72px;'+_inp+'"></td>'+
-        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.frete)||0)+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'frete\',this.value)" style="width:78px;'+_inp+'"></td>'+
-        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.outros)||0)+'" '+(r.incluir?'':'disabled')+' oninput="_pcRecebSet('+i+',\'outros\',this.value)" style="width:78px;'+_inp+'"></td>'+
-        '<td id="pcr-tot-'+i+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;white-space:nowrap" title="Total NF + IPI + frete + outros">'+((r.incluir&&_temPreco)?fmtMoney((parseFloat(r.qtd)||0)*_pcPrecoNFTotal(r)):'—')+'</td>'+
+        '<td id="pcr-pnt-'+i+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;color:var(--st-inf-tx);white-space:nowrap" title="Quantidade recebida × preço NF (mercadoria da nota, sem adicionais)">'+((r.incluir&&_temPreco&&_temQtd)?fmtMoney((parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0)):'—')+'</td>'+/* v201 — Total NF */
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.ipi)||0)+'" '+((r.incluir&&!_trav)?'':'disabled')+' oninput="_pcRecebSet('+i+',\'ipi\',this.value)" style="width:72px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.frete)||0)+'" '+((r.incluir&&!_trav)?'':'disabled')+' oninput="_pcRecebSet('+i+',\'frete\',this.value)" style="width:78px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(r.outros)||0)+'" '+((r.incluir&&!_trav)?'':'disabled')+' oninput="_pcRecebSet('+i+',\'outros\',this.value)" style="width:78px;'+_inp+'"></td>'+
+        '<td id="pcr-tot-'+i+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;white-space:nowrap" title="Total NF + IPI + frete + outros">'+((r.incluir&&_temPreco&&_temQtd)?fmtMoney((parseFloat(r.qtd)||0)*_pcPrecoNFTotal(r)):'—')+'</td>'+
       '</tr>';
     }).join('')+
     // v201 — ITENS DA NF FORA DO PEDIDO (sobra do XML): linha destacada; conciliar com item do
     // sistema é OBRIGATÓRIO p/ prosseguir; dados do pedido zerados; sempre entram na divergência
     (_pcXmlSobra||[]).map(function(x,si){
       var conc=!!x.insumoId, pendX=!!(x.conv&&x.conv.tem&&!x.conv.verificada);
-      var chipsX=[];
+      var _travX=!x.editLivre; // v202 — valores da NOTA nascem travados; ✎ Editar libera
+      var chipsX=['<button onclick="_pcXtraEditar('+si+')" title="'+(x.editLivre?'Voltar a travar os campos desta linha':'Liberar a edição dos campos desta linha (valores vieram da NF — só edite se tiver certeza)')+'" style="font-size:10px;padding:1px 7px;white-space:nowrap'+(x.editLivre?';background:var(--st-mid-bg);border-color:var(--st-mid-bd);color:var(--st-mid-tx);font-weight:600':'')+'">'+(x.editLivre?'🔓 Editando — travar':'✎ Editar')+'</button>'];
       if(conc&&x.conv){
         chipsX.push('<span style="font-size:10px;color:var(--text-tertiary);white-space:nowrap">NF: '+(parseFloat(x.qtd)||0).toLocaleString('pt-BR')+' × '+escapeHtml(x.un||'')+'</span>');
         if(x.conv.tem) chipsX.push('<button onclick="_pcConvAbrir('+(1000+si)+')" style="font-size:10px;padding:1px 7px;white-space:nowrap;'+(pendX?'border-color:var(--st-bad-tx);color:var(--st-bad-tx);font-weight:600':'')+'">'+(pendX?'🔎 Verificar conversão':'✓ conversão verificada')+'</button>');
@@ -14461,13 +14552,13 @@ function _pcRecebRender(){
         '</td>'+
         '<td style="'+td+';text-align:right;color:var(--text-tertiary);vertical-align:top">—</td>'+
         '<td style="'+td+';text-align:right;color:var(--text-tertiary);vertical-align:top">—</td>'+
-        '<td style="'+td+';text-align:right;vertical-align:top"><span style="white-space:nowrap"><input type="number" min="0" step="any" value="'+(x.recQtd!=null?x.recQtd:'')+'" '+(conc&&x.incluir!==false?'':'disabled')+' oninput="_pcXtraSet('+si+',\'recQtd\',this.value)" style="width:80px;'+_inp+'"> <span style="font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.insumoUn||x.un||'')+'</span></span>'+chipsHtmlX+'</td>'+
-        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.0001" value="'+(x.recPreco!=null?x.recPreco:'')+'" placeholder="da NF" '+(conc&&x.incluir!==false?'':'disabled')+' oninput="_pcXtraSet('+si+',\'recPreco\',this.value)" style="width:95px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><span style="white-space:nowrap"><input type="number" min="0" step="any" value="'+(x.recQtd!=null?x.recQtd:'')+'" '+((x.incluir!==false&&!_travX)?'':'disabled')+' oninput="_pcXtraSet('+si+',\'recQtd\',this.value)" style="width:80px;'+_inp+'"> <span style="font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.insumoUn||x.un||'')+'</span></span>'+chipsHtmlX+'</td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.0001" value="'+(x.recPreco!=null?x.recPreco:'')+'" placeholder="da NF" '+((x.incluir!==false&&!_travX)?'':'disabled')+' oninput="_pcXtraSet('+si+',\'recPreco\',this.value)" style="width:95px;'+_inp+'"></td>'+
         '<td style="'+td+';text-align:right;color:var(--text-tertiary);vertical-align:top">—</td>'+
         '<td id="pcr-xpnt-'+si+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;color:var(--st-inf-tx);white-space:nowrap">'+((x.incluir!==false&&x.recQtd!=null&&x.recPreco!=null)?fmtMoney(x.recQtd*x.recPreco):'—')+'</td>'+
-        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(x.ipi)||0)+'" '+(x.incluir!==false?'':'disabled')+' oninput="_pcXtraSet('+si+',\'ipi\',this.value)" style="width:72px;'+_inp+'"></td>'+
-        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(x.frete)||0)+'" '+(x.incluir!==false?'':'disabled')+' oninput="_pcXtraSet('+si+',\'frete\',this.value)" style="width:78px;'+_inp+'"></td>'+
-        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(x.outros)||0)+'" '+(x.incluir!==false?'':'disabled')+' oninput="_pcXtraSet('+si+',\'outros\',this.value)" style="width:78px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(x.ipi)||0)+'" '+((x.incluir!==false&&!_travX)?'':'disabled')+' oninput="_pcXtraSet('+si+',\'ipi\',this.value)" style="width:72px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(x.frete)||0)+'" '+((x.incluir!==false&&!_travX)?'':'disabled')+' oninput="_pcXtraSet('+si+',\'frete\',this.value)" style="width:78px;'+_inp+'"></td>'+
+        '<td style="'+td+';text-align:right;vertical-align:top"><input type="number" min="0" step="0.01" value="'+(parseFloat(x.outros)||0)+'" '+((x.incluir!==false&&!_travX)?'':'disabled')+' oninput="_pcXtraSet('+si+',\'outros\',this.value)" style="width:78px;'+_inp+'"></td>'+
         '<td id="pcr-xtot-'+si+'" style="'+td+';text-align:right;vertical-align:top;font-weight:600;white-space:nowrap">'+((x.incluir!==false&&x.recQtd!=null&&x.recPreco!=null)?fmtMoney(x.recQtd*x.recPreco+(parseFloat(x.ipi)||0)+(parseFloat(x.frete)||0)+(parseFloat(x.outros)||0)):'—')+'</td>'+
       '</tr>';
     }).join('')+'</tbody>'+
@@ -14482,7 +14573,7 @@ function _pcRecebRender(){
       '<td style="'+td+';text-align:right" id="pcr-sum-total"></td>'+
     '</tr></tfoot></table>'+
     // v201 — datalist do "conciliar com item do sistema" (uma vez por render)
-    ((_pcXmlSobra||[]).length?'<datalist id="pcr-ins-dl">'+(insumos||[]).filter(function(i){ return i&&i.ativo!==false; }).slice(0,2500).map(function(i){ return '<option value="'+escapeHtml((i.codigo?i.codigo+' — ':'')+(i.nome||''))+'">'; }).join('')+'</datalist>':'');
+    ((_pcXmlSobra||[]).length?'<datalist id="pcr-ins-dl">'+(insumos||[]).filter(function(i){ return i&&i.ativo!==false; }).slice(0,6000).map(function(i){ return '<option value="'+escapeHtml((i.codigo?i.codigo+' — ':'')+(i.nome||''))+'">'; }).join('')+'</datalist>':''); // v202 — catálogo inteiro (o corte em 2500 deixava itens de fora do dropdown)
   _pcRecebTotais();
 }
 function _pcRecebProsseguir(){
@@ -14500,10 +14591,12 @@ function _pcRecebProsseguir(){
   }
   // v198 — ordem do dono: "Preço NF tem que ser o preço unitário vindo da NF" — item sem preço da
   // nota NÃO prossegue (o custo do sistema nasceria do preço da compra, não do real faturado)
-  var _semP=leva.filter(function(r){ return r.preco==null; });
+  var _semP=leva.filter(function(r){ return r.preco==null || r.qtd==null; })
+    .concat(_pcRecebRows.filter(function(r){ return r.incluir && r.qtd==null; })); // v202 — incluído sem qtd não entra na leva (qtd>0) mas é pendência
+  _semP=_semP.filter(function(r,ix){ return _semP.indexOf(r)===ix; });
   if(_semP.length){
-    alert('✏ '+_semP.length+' item(ns) estão SEM o preço da NF:\n\n'+_semP.slice(0,8).map(function(r){ return '• '+r.nome; }).join('\n')+(_semP.length>8?'\n…':'')+
-      '\n\nDigite o preço unitário da nota em cada um, use "Conciliar com XML" ou o vínculo 🔗.');
+    alert('✏ '+_semP.length+' item(ns) estão SEM a quantidade ou o preço da NF:\n\n'+_semP.slice(0,8).map(function(r){ return '• '+r.nome; }).join('\n')+(_semP.length>8?'\n…':'')+
+      '\n\nDigite da nota em cada um, use "Conciliar com XML" ou o vínculo 🔗 — ou DESMARQUE o que não veio nesta leva.');
     return;
   }
   // v194 — regra do dono: conversão de unidade JÁ VEM APLICADA, mas quem recebe é OBRIGADO a abrir
@@ -15472,8 +15565,15 @@ const _COMP_TIPO_LABEL={
 function renderCompRecebimento(){
   var el=document.getElementById('comp-receb-list'); if(!el) return;
   var mostrar=document.getElementById('comp-receb-mostrar')?.checked;
-  var lst=(pedidosCompra||[]).filter(function(p){ return p && (p.status==='em_recebimento'||p.status==='conciliado'||(mostrar&&p.status==='recebido')); })
-    .sort(function(a,b){ return (b.envRecebEm||b.criadoEm||0)-(a.envRecebEm||a.criadoEm||0); });
+  // v202 — pedido FECHADO/FATURADO já aparece aqui para ACOMPANHAMENTO (ordem do dono 07/08: o
+  // responsável vê que tem pedido fechado vindo), mas a CONCILIAÇÃO só libera depois do "📤 Enviar
+  // para recebimento" na Gestão de Pedidos (fechado → faturado → enviado). A fila acionável vem
+  // primeiro; os de acompanhamento ficam abaixo, sem botão de conciliar.
+  var lst=(pedidosCompra||[]).filter(function(p){ return p && (p.status==='em_recebimento'||p.status==='conciliado'||p.status==='fechado'||p.status==='faturado'||(mostrar&&p.status==='recebido')); })
+    .sort(function(a,b){
+      var g=function(p){ return (p.status==='em_recebimento'||p.status==='conciliado')?0:(p.status==='recebido'?2:1); };
+      return g(a)-g(b) || (b.envRecebEm||b.nfEm||b.fechadoEm||b.criadoEm||0)-(a.envRecebEm||a.nfEm||a.fechadoEm||a.criadoEm||0);
+    });
   var th='padding:8px 12px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
   var td='padding:8px 12px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
   if(!lst.length){ el.innerHTML='<div class="empty" style="padding:26px">Nenhum pedido aguardando recebimento.<br><span style="font-size:11px;color:var(--text-tertiary)">Os pedidos chegam aqui pelo botão "📤 Enviar para recebimento" da Gestão de Pedidos.</span></div>'; return; }
@@ -15481,10 +15581,17 @@ function renderCompRecebimento(){
     var t=_pcTotais(pc);
     var envInfo=pc.envRecebEm?new Date(pc.envRecebEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+(pc.envRecebPor?' · '+escapeHtml(pc.envRecebPor):''):'—';
     var xml=pc.nfXml?'<span title="XML da NF-e '+escapeHtml(pc.nfXml.nNF||'')+' conciliado por '+escapeHtml(pc.nfXml.por||'')+' — chave '+escapeHtml(pc.nfXml.chave||'')+'" style="font-size:10px;color:var(--st-ok-tx);font-weight:600">📄 XML ✓</span>':'<span style="font-size:10px;color:var(--text-tertiary)">—</span>';
-    var acao=(pc.status==='recebido')
-      ? '<button onclick="openPedidoCompraModal(\''+pc.id+'\')" style="font-size:11px;padding:4px 12px">Abrir</button>'
-      : '<button onclick="openPedidoCompraModal(\''+pc.id+'\')" style="font-size:11px;padding:4px 10px;margin-right:4px">👁</button>'+
+    var acao;
+    if(pc.status==='recebido'){
+      acao='<button onclick="openPedidoCompraModal(\''+pc.id+'\')" style="font-size:11px;padding:4px 12px">Abrir</button>';
+    } else if(pc.status==='fechado'||pc.status==='faturado'){
+      // v202 — ACOMPANHAMENTO: visível, mas a conciliação só libera após o envio na Gestão de Pedidos
+      acao='<button onclick="openPedidoCompraModal(\''+pc.id+'\')" style="font-size:11px;padding:4px 10px;margin-right:4px">👁</button>'+
+        '<span style="font-size:10px;color:var(--text-tertiary)" title="A conciliação libera quando a Solicitação de Compra faturar (NF) e usar o botão 📤 Enviar para recebimento">'+(pc.status==='fechado'?'aguardando NF + envio':'aguardando envio p/ recebimento')+'</span>';
+    } else {
+      acao='<button onclick="openPedidoCompraModal(\''+pc.id+'\')" style="font-size:11px;padding:4px 10px;margin-right:4px">👁</button>'+
         '<button class="btn-primary" onclick="openReceberPedido(\''+pc.id+'\')" style="font-size:11px;padding:4px 12px">🧾 Conciliar / Receber</button>';
+    }
     return '<tr>'+
       '<td style="'+td+';font-weight:600;font-family:monospace">'+escapeHtml(pc.numero||'')+'</td>'+
       '<td style="'+td+'">'+escapeHtml(pc.fornecedorNome||'—')+'</td>'+

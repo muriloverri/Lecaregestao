@@ -4795,7 +4795,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v205';
+var APP_VERSION = 'v206';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -14507,10 +14507,11 @@ function _pcConcDraftAgendar(){
 // rascunho sozinho e os itens recebidos saem da conciliação).
 function _pcConcReset(){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
-  if(!confirm('↺ RESET da conciliação do '+(pc.numero||'pedido')+'?\n\nApaga o rascunho salvo (XML importado, conversões, valores digitados) e a tela volta ao estado inicial.\nItens já RECEBIDOS não são afetados.')) return;
+  if(!confirm('↺ RESET da conciliação do '+(pc.numero||'pedido')+'?\n\nApaga o rascunho salvo (XML importado, conversões, valores digitados) e a tela volta TODA VAZIA — o XML da fila NÃO é reaplicado sozinho (use o botão "Aplicar XML" se quiser importar de novo).\nItens já RECEBIDOS não são afetados.')) return;
   delete pc.conciliacaoDraft;
   saveData();
   var id=_pcRecebId;
+  _pcResetSemXml=id; // v206 — ordem do dono 11/08: Reset zera TUDO que veio do XML e NÃO reaplica sozinho
   closeReceberPedido();
   openReceberPedido(id);
 }
@@ -14562,10 +14563,28 @@ function openReceberPedido(pcId){
   var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.add('open');
   // v204 — XML da FILA DO DRIVE: sem XML no rascunho, busca o desta NF e aplica sozinho (cobre
   // também o caso "pedido fechou depois do XML chegar" — o vínculo acontece agora, pela NF)
+  // v206 — EXCEÇÃO pós-Reset (ordem do dono 11/08): depois do ↺ a tela fica TODA VAZIA; o XML da
+  // fila NÃO é reaplicado sozinho — fica um botão para a pessoa aplicar QUANDO quiser.
   if(!_pcXml && typeof _nfFilaPorNf==='function'){
     var _fe=_nfFilaPorNf(pc.nf);
-    if(_fe) _nfFilaAplicar(_fe, pc);
+    if(_fe){
+      if(_pcResetSemXml===pc.id){
+        _pcResetSemXml=null;
+        try{ var _xi3=document.getElementById('pcr-xml-info');
+          if(_xi3) _xi3.innerHTML='<div style="font-size:12px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px">↺ Conciliação zerada. O XML da NF-e '+escapeHtml(_fe.nnf||'')+' continua disponível na fila — <button class="btn-primary" onclick="_nfFilaReaplicar()" style="font-size:11px;padding:3px 10px">📥 Aplicar XML da fila</button></div>';
+        }catch(_e){}
+      } else {
+        _nfFilaAplicar(_fe, pc);
+      }
+    }
   }
+}
+var _pcResetSemXml=null; // v206 — pedido recém-resetado (não reaplicar o XML da fila nessa reabertura)
+function _nfFilaReaplicar(){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
+  var fe=(typeof _nfFilaPorNf==='function')?_nfFilaPorNf(pc.nf):null;
+  if(!fe){ alert('Não há XML desta NF na fila.'); return; }
+  _nfFilaAplicar(fe, pc);
 }
 function closeReceberPedido(){ _pcRecebId=null; _pcRecebRows=[]; var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.remove('open'); }
 function _pcRecebSet(i, campo, val){
@@ -15789,6 +15808,26 @@ function _nfReceberSemPedido(filaId){
   saveData();
   openReceberPedido(pc.id);
 }
+// v206 — CORRIGIR NF DO PEDIDO DE COMPRA (pedido do dono 11/08, caso AQIA: NF digitada 754946,
+// XML real 724946 — um dígito errado e o casamento pela NF nunca acontece). Corrige com registro
+// de quem/quando/valor anterior; se o XML da NF corrigida estiver na fila, avisa que casou.
+function _pcNfEditar(pcId){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
+  if(pc.status==='recebido'){ alert('Pedido já recebido — a NF é registro fiscal fechado.'); return; }
+  var atual=String(pc.nf||'');
+  var novo=prompt('Corrigir o número da NF do '+(pc.numero||'pedido')+' — '+(pc.fornecedorNome||'')+'.\n\nNF atual: '+(atual||'(vazia)')+'\nDigite o número CORRETO (como está na nota/XML):', atual);
+  if(novo==null) return;
+  novo=String(novo).trim();
+  if(!novo){ alert('A NF não pode ficar vazia.'); return; }
+  if(novo===atual) return;
+  if(!confirm('Trocar a NF do '+(pc.numero||'')+' de "'+(atual||'—')+'" para "'+novo+'"?')) return;
+  pc.nfAnterior=atual||''; pc.nfCorrigidaPor=(currentUser&&currentUser.name)||''; pc.nfCorrigidaEm=Date.now();
+  pc.nf=novo;
+  saveData();
+  try{ renderCompRecebimento(); }catch(_e){}
+  var fe=(typeof _nfFilaPorNf==='function')?_nfFilaPorNf(novo):null;
+  if(fe) alert('NF corrigida. O XML da NF '+novo+' está na fila — será aplicado sozinho ao abrir a conciliação.');
+}
 function renderCompRecebimento(){
   var el=document.getElementById('comp-receb-list'); if(!el) return;
   _nfFilaLoad(); // v204 — fila de XML do Drive (re-renderiza sozinha se mudar)
@@ -15838,7 +15877,7 @@ function renderCompRecebimento(){
     return '<tr>'+
       '<td style="'+td+';font-weight:600;font-family:monospace">'+escapeHtml(pc.numero||'')+'</td>'+
       '<td style="'+td+'">'+escapeHtml(pc.fornecedorNome||'—')+'</td>'+
-      '<td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(pc.nf||'—')+'</td>'+
+      '<td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(pc.nf||'—')+(pc.status!=='recebido'?' <button onclick="_pcNfEditar(\''+pc.id+'\')" title="Corrigir o número da NF digitado no pedido (ex.: um dígito errado impede o XML da fila de casar — caso AQIA 724946×754946, 11/08)" style="font-size:10px;padding:1px 6px">✏</button>':'')+'</td>'+
       '<td style="'+td+';text-align:right">'+t.n+(t.pendentes&&t.pendentes<t.n?' <span style="font-size:10px;color:var(--text-tertiary)">('+t.pendentes+' pend.)</span>':'')+'</td>'+
       '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(t.total)+'</td>'+
       '<td style="'+td+'">'+_pcStatusBadge(pc)+'</td>'+

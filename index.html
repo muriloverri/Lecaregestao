@@ -1653,7 +1653,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </div>
           <div id="pcr-rows" style="flex:1;overflow:auto"></div>
           <div id="pcr-total" style="font-size:13px;margin-top:10px"></div>
-          <div class="modal-footer" style="margin-top:10px"><button onclick="closeReceberPedido()">Cancelar</button><button onclick="_pcConcReset()" title="Apaga o rascunho salvo e zera a tela (XML, conversões e valores digitados). Itens já recebidos não são afetados." style="color:var(--st-bad-tx);border-color:var(--st-bad-bd)">↺ Reset</button><button onclick="_pcConcDraftSave(true)" title="Guarda o XML importado, as conversões verificadas e os valores digitados — ao reabrir este recebimento, tudo volta como está">💾 Salvar conciliação</button><button class="btn-primary" onclick="_pcRecebProsseguir()">Prosseguir → pagamento</button></div>
+          <div class="modal-footer" style="margin-top:10px"><button onclick="closeReceberPedido()">Cancelar</button><button onclick="_pcConcReset()" title="Apaga o rascunho salvo e zera a tela (XML, conversões e valores digitados). Itens já recebidos não são afetados." style="color:var(--st-bad-tx);border-color:var(--st-bad-bd)">↺ Reset</button><button onclick="_pcConcDraftSave(true)" title="Guarda o XML importado, as conversões verificadas e os valores digitados — ao reabrir este recebimento, tudo volta como está">💾 Salvar conciliação</button><button class="btn-primary" id="pcr-prosseguir-btn" onclick="_pcRecebProsseguir()">Prosseguir → pagamento</button></div>
         </div>
       </div>
       <!-- v130 — MODAL: cotação de um item da lista -->
@@ -1782,9 +1782,14 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div class="panel">
             <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
               <h2>📥 Recebimento de Pedido</h2>
-              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--text-secondary)"><input type="checkbox" id="comp-receb-mostrar" onchange="renderCompRecebimento()" style="width:14px;height:14px"> mostrar recebidos</label>
+              <!-- v207 — sub-abas (ordem do dono 11/08): RECEBER primeiro (financeiro confirma nota+produtos e lança no Caixa); a CONCILIAÇÃO vira checagem posterior, sem travar o recebimento -->
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                <button id="comp-receb-sub-receber" onclick="_compRecebSubSet('receber')" style="font-size:12px;padding:5px 14px">📦 Receber</button>
+                <button id="comp-receb-sub-checagem" onclick="_compRecebSubSet('checagem')" style="font-size:12px;padding:5px 14px">🧾 Conciliação (checagem)</button>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--text-secondary);margin-left:8px"><input type="checkbox" id="comp-receb-mostrar" onchange="renderCompRecebimento()" style="width:14px;height:14px"> mostrar recebidos</label>
+              </div>
             </div>
-            <div style="padding:8px 16px;font-size:12px;color:var(--text-secondary);border-bottom:.5px solid var(--border)">Pedidos enviados pela <b>Gestão de Pedidos</b> (Solicitação de Compra). Concilie os itens com a NF — manualmente ou pelo <b>XML da NF-e</b> —, depois os totais e a forma de pagamento. "Receber mercadoria" cria o lançamento em <b>Lançamentos</b> e envia ao <b>Caixa</b> (aguardando aprovação).</div>
+            <div id="comp-receb-intro" style="padding:8px 16px;font-size:12px;color:var(--text-secondary);border-bottom:.5px solid var(--border)">Pedidos enviados pela <b>Gestão de Pedidos</b> (Solicitação de Compra). Concilie os itens com a NF — manualmente ou pelo <b>XML da NF-e</b> —, depois os totais e a forma de pagamento. "Receber mercadoria" cria o lançamento em <b>Lançamentos</b> e envia ao <b>Caixa</b> (aguardando aprovação).</div>
             <div id="comp-receb-list" style="overflow-x:auto"></div>
           </div>
         </div>
@@ -4034,9 +4039,9 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
 
 <!-- MODAL CRM LEAD -->
 <div class="overlay crm-modal" id="lead-overlay">
-  <div class="modal" style="width:720px;max-height:90vh">
+  <div class="modal" style="width:900px;max-width:94vw;max-height:90vh"><!-- v207 — era 720px: a faixa do cliente (razão social+CNPJ, sem quebra) inflava a coluna esquerda e espremia a direita -->
     <h2 id="lead-modal-title">Novo Lead</h2>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px"><!-- v207 — minmax(0,1fr): nenhuma coluna rouba espaço da outra por conteúdo largo -->
       <!-- Coluna esquerda -->
       <div>
         <div class="modal-section">
@@ -4795,7 +4800,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v206';
+var APP_VERSION = 'v207';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -8991,10 +8996,12 @@ function openLeadModal(id, funil, etapa){
     }}
 
   document.getElementById('lead-obs').value=lead?lead.obs||'':'';
+  // v207 — padrão do dono (11/08, caso Karllayne): os campos de próxima ação abrem SEMPRE VAZIOS —
+  // são formulário. Retorno já salvo aparece como CHIP acima (agenda ou do próprio card), nunca nos campos.
   const _drEl=document.getElementById('lead-data-retorno');
-  if(_drEl) _drEl.value=lead?.dataRetorno||'';
+  if(_drEl) _drEl.value='';
   const _paEl=document.getElementById('lead-proxima-acao');
-  if(_paEl) _paEl.value=lead?.proximaAcao||'';
+  if(_paEl) _paEl.value='';
   // v151 : PRÓXIMAS AÇÕES AGENDADAS no modal do card — mostra as 2 mais próximas (pendentes, de hoje em diante).
   // v152 : quando JÁ HÁ ação agendada (o quadro mostra), os campos de registro abrem VAZIOS — livres para a
   // próxima ação/compromisso (pedido do dono 13/07). Sem nada agendado, o preenchimento antigo continua.
@@ -9258,8 +9265,10 @@ async function saveLead(){
     followup:document.getElementById('lead-followup').value||null,
     valor:parseFloat(document.getElementById('lead-valor').value)||0,
     obs:document.getElementById('lead-obs').value.trim(),
-    dataRetorno: document.getElementById('lead-data-retorno')?.value||null,
-    proximaAcao: document.getElementById('lead-proxima-acao')?.value?.trim()||null,
+    // v207 — campo VAZIO preserva o retorno já existente do card (os campos abrem vazios por padrão;
+    // apagar sem querer era o risco); campo DIGITADO substitui.
+    dataRetorno: (document.getElementById('lead-data-retorno')?.value) || (editingLeadId?((crmLeads.find(l=>l.id===editingLeadId)||{}).dataRetorno||null):null),
+    proximaAcao: (document.getElementById('lead-proxima-acao')?.value?.trim()) || (editingLeadId?((crmLeads.find(l=>l.id===editingLeadId)||{}).proximaAcao||null):null),
     contatos:[...leadContatos],
     tasks:JSON.parse(JSON.stringify(leadTasks)),
     entradaEtapa:today(),
@@ -9459,10 +9468,23 @@ function saveAgendaEvento(){
   closeAgendaModal();renderAgenda();checkNotificacoes();saveData();
 }
 
+// v207 — ENCERRAR EXIGE JUSTIFICATIVA (ordem do dono 11/08): quem encerra conta COMO FOI o evento;
+// o registro fica no cartão, na aba Concluídos/Encerrados, para conferência da conclusão do agendamento.
+function _agEncerrar(ev){
+  if(!ev) return false;
+  const j=prompt('Encerrar "'+(ev.titulo||'')+'"\n\nComo foi o evento? (obrigatório — fica registrado na aba Concluídos/Encerrados)\nEx.: "Cliente atendido, pedido confirmado", "Não atendeu — reagendado", "Reunião realizada, aguardando retorno".');
+  if(j===null) return false; // cancelou
+  if(!String(j).trim()){ alert('A justificativa é obrigatória para encerrar o evento.'); return false; }
+  ev.status='concluido';
+  ev.concluidoEm=Date.now();
+  ev.concluidoPor=(currentUser&&currentUser.name)||'';
+  ev.conclusaoObs=String(j).trim();
+  return true;
+}
 function concluirEvento(){
   if(!editingEventoId)return;
   const ev=agendaEventos.find(x=>x.id===editingEventoId);if(!ev)return;
-  ev.status='concluido';ev.concluidoEm=Date.now();
+  if(!_agEncerrar(ev)) return;
   saveData();
   closeAgendaModal();renderAgenda();
 }
@@ -9474,6 +9496,19 @@ function agEventoStatus(ev){
   return prazo<new Date()?'atrasado':'pendente';
 }
 
+// v207 — RESPONSÁVEL EM DOIS FORMATOS (reporte do dono 11/08, "undefined" no filtro): eventos
+// automáticos (pós-venda/contato) gravam responsaveis como STRING com o id ("u178...", "admin"),
+// enquanto os manuais gravam {id,name}. As comparações por r.id/r.name falhavam nas strings —
+// além do "undefined" no filtro, o RESPONSÁVEL não via o próprio evento e a notificação não
+// disparava. Normalização única nos dois eixos:
+function _agRespId(r){ return (typeof r==='string')?r:((r&&r.id)||''); }
+function _agRespNome(r){
+  if(!r) return '';
+  if(typeof r!=='string' && r.name) return r.name;
+  var _id=_agRespId(r);
+  var u=(users||[]).find(function(x){ return x && x.id===_id; });
+  return (u&&u.name)||'';
+}
 function renderAgenda(){
   const tipoF=document.getElementById('ag-filter-tipo')?.value||'';
   const statusF=document.getElementById('ag-filter-status')?.value||'';
@@ -9482,7 +9517,7 @@ function renderAgenda(){
   const respSel=document.getElementById('ag-filter-resp');
   if(respSel){
     const prev=respSel.value;
-    const allResps=[...new Set(agendaEventos.flatMap(e=>e.responsaveis.map(r=>r.name)))];
+    const allResps=[...new Set(agendaEventos.flatMap(e=>(e.responsaveis||[]).map(_agRespNome).filter(Boolean)))].sort(); // v207 — sem undefined; nome resolvido pelo id quando faltar
     respSel.innerHTML='<option value="">Todos</option>'+allResps.map(r=>`<option value="${r}" ${r===prev?'selected':''}>${r}</option>`).join('');
     respSel.value=prev;
   }
@@ -9490,17 +9525,17 @@ function renderAgenda(){
   let eventos=agendaEventos.filter(ev=>{
     if(!currentUser)return false;
     if(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial')return true;
-    if(ev.responsaveis.some(r=>r.id===currentUser.id)||ev.criadoPor===currentUser.id) return true;
+    if((ev.responsaveis||[]).some(r=>_agRespId(r)===currentUser.id)||ev.criadoPor===currentUser.id) return true; // v207 — cobre resp-string
     // v192 — AGENDA ÚNICA DO SDR (pedido do dono 05/08): quem é do SDR vê os eventos de TODOS os
     // colegas do SDR (Marina e Sabrina trabalham uma agenda só)
     if(currentUser.perfil==='sdr'){
       const _sdrIds=(users||[]).filter(u=>u.perfil==='sdr').map(u=>u.id);
-      if(ev.responsaveis.some(r=>_sdrIds.includes(r.id)) || _sdrIds.includes(ev.criadoPor)) return true;
+      if((ev.responsaveis||[]).some(r=>_sdrIds.includes(_agRespId(r))) || _sdrIds.includes(ev.criadoPor)) return true;
     }
     return false;
   });
   if(tipoF)eventos=eventos.filter(e=>e.tipo===tipoF);
-  if(respF)eventos=eventos.filter(e=>e.responsaveis.some(r=>r.name===respF));
+  if(respF)eventos=eventos.filter(e=>(e.responsaveis||[]).some(r=>_agRespNome(r)===respF)); // v207
   const withStatus=eventos.map(e=>({...e,_status:agEventoStatus(e)}));
   if(statusF)eventos=withStatus.filter(e=>e._status===statusF);
   else eventos=withStatus;
@@ -9546,6 +9581,7 @@ function renderAgenda(){
           ${lead?`<span style="color:var(--text-info)">🔗 ${escapeHtml(lead.empresa)}</span>`:''}
         </div>
         ${e.obs?`<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${escapeHtml(e.obs)}</div>`:''}
+        ${st==='concluido'?`<div style="font-size:11px;color:var(--st-ok-tx);background:var(--st-ok-bg);border:.5px solid var(--st-ok-bd);border-radius:6px;padding:5px 9px;margin-top:5px">✔ Encerrado${e.concluidoEm?' em '+new Date(e.concluidoEm).toLocaleDateString('pt-BR'):''}${e.concluidoPor?' por '+escapeHtml(e.concluidoPor):''}${e.conclusaoObs?' — “'+escapeHtml(e.conclusaoObs)+'”':' — <i>sem justificativa (encerrado antes da regra de 11/08)</i>'}</div>`:''}
       </div>
       <div class="ag-actions">
         <button onclick="openAgendaModal('${e.id}')" style="padding:3px 10px;font-size:11px">Editar</button>
@@ -9564,7 +9600,8 @@ function renderAgenda(){
 
 function concluirEventoDireto(id){
   const ev=agendaEventos.find(x=>x.id===id);if(!ev)return;
-  ev.status='concluido';ev.concluidoEm=Date.now();renderAgenda();checkNotificacoes();saveData();
+  if(!_agEncerrar(ev)) return; // v207 — justificativa obrigatória
+  renderAgenda();checkNotificacoes();saveData();
 }
 function toggleAgConcluidosSection(){
   const list=document.getElementById('ag-concluidos-list');
@@ -9581,7 +9618,7 @@ function checkNotificacoes(){
   agendaEventos.forEach(ev=>{
     if(ev.status==='concluido')return;
     // Only notify if current user is a responsavel
-    if(!ev.responsaveis.some(r=>r.id===currentUser.id))return;
+    if(!(ev.responsaveis||[]).some(r=>_agRespId(r)===currentUser.id))return; // v207 — resp-string: a notificação do evento automático agora dispara para o responsável
     const evDt=new Date(ev.data+'T'+ev.hora);
     const notifDt=new Date(evDt.getTime()-(ev.antecedencia||0)*60000);
     const key=ev.id+'_notif';
@@ -13916,6 +13953,10 @@ function voltarDeRecebimento(pcId){
 }
 // ── Conferência/recebimento do pedido (financeiro): concilia com a NF; divergência AVISA e pergunta ──
 var _pcRecebId=null, _pcRecebRows=[], _rcbPedidoCtx=null;
+// v207 — CONCILIAÇÃO COMO CHECAGEM (ordem do dono 11/08): _pcRecebCheck=true abre a mesma tela de
+// conciliação em modo CHECAGEM (pedido já recebido; nada de pagamento/estoque — só conferência e
+// carimbo). _compRecebSub controla as sub-abas do Recebimento de Pedido (receber × checagem).
+var _pcRecebCheck=false, _compRecebSub='receber';
 // ═══════ v169 — CONCILIAÇÃO PELO XML DA NF-e (padrão SEFAZ 4.0) ═══════
 // Lê o XML oficial: valida chave/nº da NF, preenche qtd (qCom) e preço unit (vUnCom) por item
 // (casamento por nome — exato, depois "contém"; o que não casar fica p/ conferência manual),
@@ -13931,8 +13972,10 @@ function _pcXmlNorm(s){ return String(s||'').toUpperCase().normalize('NFD').repl
 // reescritos na unidade em que o pedido foi feito. Até a v193 isto era feito NA MÃO, linha a linha.
 // v204 — MILHEIRO/CENTO (caso PC-019 Florien, NF 1038458: cápsulas faturadas em uCom "5 MIL" =
 // milheiro de 5.000; o parser não conhecia "MIL" → fator 1 silencioso). Contagem entra na base 'un'.
-var _PC_UN_BASE={G:'g',GR:'g',GRAMA:'g',GRAMAS:'g',KG:'g',MG:'g',ML:'ml',L:'ml',LT:'ml',LITRO:'ml',UN:'un',UND:'un',UNID:'un',UNIDADE:'un',PC:'un',PCT:'un',CX:'un',FR:'un',FRASCO:'un',MIL:'un',MILH:'un',MILHEIRO:'un',MILHEIROS:'un',CENTO:'un'};
-var _PC_UN_MULT={G:1,GR:1,GRAMA:1,GRAMAS:1,KG:1000,MG:0.001,ML:1,L:1000,LT:1000,LITRO:1000,UN:1,UND:1,UNID:1,UNIDADE:1,PC:1,PCT:1,CX:1,FR:1,FRASCO:1,MIL:1000,MILH:1000,MILHEIRO:1000,MILHEIROS:1000,CENTO:100};
+// v207 — "MI" = milheiro abreviado (caso RICARO, NFs 509846/509827: uCom "MI" com qCom fracionária —
+// 0.02 MI = 20 un; vUnCom é o preço DO MILHEIRO). uTrib espelha o uCom, não há conversão exata no XML.
+var _PC_UN_BASE={G:'g',GR:'g',GRAMA:'g',GRAMAS:'g',KG:'g',MG:'g',ML:'ml',L:'ml',LT:'ml',LITRO:'ml',UN:'un',UND:'un',UNID:'un',UNIDADE:'un',PC:'un',PCT:'un',CX:'un',FR:'un',FRASCO:'un',MI:'un',MIL:'un',MILH:'un',MILHEIRO:'un',MILHEIROS:'un',CENTO:'un'};
+var _PC_UN_MULT={G:1,GR:1,GRAMA:1,GRAMAS:1,KG:1000,MG:0.001,ML:1,L:1000,LT:1000,LITRO:1000,UN:1,UND:1,UNID:1,UNIDADE:1,PC:1,PCT:1,CX:1,FR:1,FRASCO:1,MI:1000,MIL:1000,MILH:1000,MILHEIRO:1000,MILHEIROS:1000,CENTO:100};
 // "500 G" → {un:'g', fator:500} · "1 KG" → {un:'g', fator:1000} · "g" → {un:'g', fator:1}
 function _pcUnParse(u){
   var s=String(u||'').trim().toUpperCase().replace(',','.');
@@ -14069,27 +14112,54 @@ function _pcXmlAplicar(txt){
   try{
     var _cnpjNF=(emitCnpj||'').replace(/\D/g,'');
     if(_cnpjNF) (insumos||[]).forEach(function(ins){ (ins.deParaNF||[]).forEach(function(mp){
-      if(String(mp.cnpj||'').replace(/\D/g,'')===_cnpjNF && mp.cProd) _mem[String(mp.cProd)]={insumoId:ins.id, fator:parseFloat(mp.fator)||1, un:String(mp.un||''), em:mp.em, por:mp.por||''};
+      if(String(mp.cnpj||'').replace(/\D/g,'')===_cnpjNF && mp.cProd) _mem[String(mp.cProd)]={insumoId:ins.id, fator:parseFloat(mp.fator)||1, un:String(mp.un||''), kit:!!mp.kit, em:mp.em, por:mp.por||''};
     }); });
   }catch(_e){}
   _pcRecebRows.forEach(function(r){
     if(r.itemId==null) return;
-    var m=xitens.find(function(x){ return !x._usado && x.cod && _mem[String(x.cod)] && String(_mem[String(x.cod)].insumoId)===String(r.itemId); });
-    if(!m) return;
-    m._usado=true;
-    var mp=_mem[String(m.cod)];
-    var mesmaUn=String(m.un||'').trim().toUpperCase()===String(mp.un||'').trim().toUpperCase();
-    if(mesmaUn && mp.fator>0){
-      r.qtd=+((m.qtd*mp.fator)).toFixed(4);
-      r.preco=+((m.unit/mp.fator)).toFixed(6);
-      r.conv={ tem:Math.abs(mp.fator-1)>0.000001, fator:mp.fator, unNF:m.un, qtdNF:m.qtd, unitNF:m.unit, verificada:true, origem:'memoria', memoriaDe:mp.por||'', memoriaEm:mp.em||null };
+    // v207 — o MESMO insumo pode ter memória p/ VÁRIOS cProd deste fornecedor (KIT frasco+válvula,
+    // caso Magic Skin 11/08; ou o mesmo produto em linhas separadas): casa TODAS as partes de uma
+    // vez — antes só a primeira era vinculada e o resto caía na sobra.
+    var ms=xitens.filter(function(x){ return !x._usado && x.cod && _mem[String(x.cod)] && String(_mem[String(x.cod)].insumoId)===String(r.itemId); });
+    if(!ms.length) return;
+    if(ms.length===1){
+      var m=ms[0];
+      m._usado=true;
+      var mp=_mem[String(m.cod)];
+      var mesmaUn=String(m.un||'').trim().toUpperCase()===String(mp.un||'').trim().toUpperCase();
+      if(mesmaUn && mp.fator>0){
+        r.qtd=+((m.qtd*mp.fator)).toFixed(4);
+        r.preco=+((m.unit/mp.fator)).toFixed(6);
+        r.conv={ tem:Math.abs(mp.fator-1)>0.000001, fator:mp.fator, unNF:m.un, qtdNF:m.qtd, unitNF:m.unit, verificada:true, origem:'memoria', memoriaDe:mp.por||'', memoriaEm:mp.em||null };
+      } else {
+        var cvM=_pcConvSugerir(r.unidade, m.un, m.qtd, m.unit, m.nome);
+        r.qtd=cvM.qtd; r.preco=cvM.preco;
+        r.conv={ tem:cvM.tem, fator:cvM.fator, unNF:cvM.unNF, qtdNF:cvM.qtdNF, unitNF:cvM.unitNF, aviso:(cvM.aviso?cvM.aviso+' · ':'')+'unidade da NF mudou desde a última conciliação — verifique', verificada:!cvM.tem, origem:'xml' };
+      }
+      r.ipi=m.ipi; r.frete=m.frete; r.outros=m.outros;
+      r.xmlCod=m.cod||''; r._xml=true; r.xmlItens=[_pcXmlSnap(m)]; casados++; // v207 — retrato p/ desfazer vínculo
     } else {
-      var cvM=_pcConvSugerir(r.unidade, m.un, m.qtd, m.unit, m.nome);
-      r.qtd=cvM.qtd; r.preco=cvM.preco;
-      r.conv={ tem:cvM.tem, fator:cvM.fator, unNF:cvM.unNF, qtdNF:cvM.qtdNF, unitNF:cvM.unitNF, aviso:(cvM.aviso?cvM.aviso+' · ':'')+'unidade da NF mudou desde a última conciliação — verifique', verificada:!cvM.tem, origem:'xml' };
+      // v207 — vínculo MULTI refeito da memória: partes com fator memorizado entram verificadas;
+      // unidade que mudou desde a última conciliação exige verificação de novo (mesma regra do single)
+      var partesM=[], okM=true, kitM=false, sIpiM=0, sFreM=0, sOutM=0, snapsM=[];
+      ms.forEach(function(m2){
+        m2._usado=true;
+        var mp2=_mem[String(m2.cod)];
+        var mesma2=String(m2.un||'').trim().toUpperCase()===String(mp2.un||'').trim().toUpperCase();
+        var fat2=(mesma2&&mp2.fator>0)?mp2.fator:((_pcConvSugerir(r.unidade,m2.un,m2.qtd,m2.unit,m2.nome).fator)||1);
+        if(!(mesma2&&mp2.fator>0)) okM=false;
+        if(mp2.kit) kitM=true;
+        partesM.push({ nome:m2.nome, cProd:m2.cod||'', unNF:m2.un, qtdNF:m2.qtd, unitNF:m2.unit, fator:fat2 });
+        sIpiM+=(parseFloat(m2.ipi)||0); sFreM+=(parseFloat(m2.frete)||0); sOutM+=(parseFloat(m2.outros)||0);
+        snapsM.push(_pcXmlSnap(m2));
+      });
+      r.conv={ tem:true, verificada:okM, origem:'memoria', multi:true, kit:kitM, partes:partesM,
+               aviso:okM?'':'unidade da NF mudou desde a última conciliação — verifique',
+               fator:partesM[0].fator, unNF:partesM.length+' itens da NF', qtdNF:partesM[0].qtdNF, unitNF:partesM[0].unitNF };
+      _pcVincRecalc(r);
+      r.ipi=+sIpiM.toFixed(2); r.frete=+sFreM.toFixed(2); r.outros=+sOutM.toFixed(2);
+      r.xmlCod=partesM[0].cProd||''; r._xml=true; r.xmlItens=snapsM; casados++;
     }
-    r.ipi=m.ipi; r.frete=m.frete; r.outros=m.outros;
-    r.xmlCod=m.cod||''; r._xml=true; casados++;
   });
   _pcRecebRows.forEach(function(r){
     if(r._xml) return; // v201 — já casado pelo de-para
@@ -14105,7 +14175,7 @@ function _pcXmlAplicar(txt){
       r.conv={ tem:cv.tem, fator:cv.fator, unNF:cv.unNF, qtdNF:cv.qtdNF, unitNF:cv.unitNF, aviso:cv.aviso, verificada:!cv.tem, origem:'xml' };
       r.ipi=m.ipi; r.frete=m.frete; r.outros=m.outros;
       r.xmlCod=m.cod||''; // v201 — cProd do fornecedor (alimenta o de-para na confirmação do recebimento)
-      r._xml=true; casados++;
+      r._xml=true; r.xmlItens=[_pcXmlSnap(m)]; casados++; // v207 — retrato p/ desfazer vínculo
     }
   });
   var sobraXml=xitens.filter(function(x){ return !x._usado; });
@@ -14251,22 +14321,26 @@ function _pcVincAbrir(i){
 // o mesmo produto no xml, já importar vinculado"): não espera mais o recebimento confirmar. O mesmo
 // item do sistema pode ter de-paras de VÁRIOS fornecedores (a lista é por cnpj+cProd). A verificação
 // da conversão ATUALIZA o fator memorizado. O reforço no confirmar recebimento continua.
-function _pcDeParaGravar(insumoId, cProd, unNF, fator){
+function _pcDeParaGravar(insumoId, cProd, unNF, fator, kit){
   try{
     var cnpj=String((_pcXml&&_pcXml.emitCnpj)||'').replace(/\D/g,'');
     if(!cnpj){ var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); cnpj=String((pc&&pc.nfXml&&pc.nfXml.emitCnpj)||'').replace(/\D/g,''); }
     if(!cnpj || !insumoId || !cProd || !(fator>0)) return;
     var ins=(insumos||[]).find(function(i){ return i && String(i.id)===String(insumoId); }); if(!ins) return;
     ins.deParaNF=(ins.deParaNF||[]).filter(function(m){ return !(String(m.cnpj||'').replace(/\D/g,'')===cnpj && String(m.cProd)===String(cProd)); });
-    ins.deParaNF.push({ cnpj:cnpj, cProd:String(cProd), un:String(unNF||''), fator:+(+fator).toFixed(6), em:Date.now(), por:(currentUser&&currentUser.name)||'' });
+    ins.deParaNF.push({ cnpj:cnpj, cProd:String(cProd), un:String(unNF||''), fator:+(+fator).toFixed(6), kit:!!kit, em:Date.now(), por:(currentUser&&currentUser.name)||'' }); // v207 — kit memorizado: o automático refaz o vínculo como KIT
   }catch(_e){}
 }
 // v201 — monta a linha a partir das PARTES vinculadas (1 ou N itens da NF): qtd = Σ(qtd×fator),
 // preço = total da mercadoria ÷ qtd (média ponderada — o valor total é o da nota, sempre)
+// v207 — MODO KIT (caso Magic Skin, 11/08: pedido = 50 KITS espumador; a nota veio frasco e válvula
+// SEPARADOS, 50 de cada — 50+50 não é 100, é 50 kits): conv.kit=true → a quantidade é a MENOR das
+// partes (kits completos) e o preço por kit é a SOMA dos componentes. O total segue o da nota.
 function _pcVincRecalc(r){
   var partes=(r.conv&&r.conv.partes)||[];
-  var q=0, v=0;
-  partes.forEach(function(p){ var qi=(parseFloat(p.qtdNF)||0)*(parseFloat(p.fator)||0); q+=qi; v+=(parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0); });
+  var q=0, v=0, qMin=null;
+  partes.forEach(function(p){ var qi=(parseFloat(p.qtdNF)||0)*(parseFloat(p.fator)||0); q+=qi; if(qMin===null||qi<qMin) qMin=qi; v+=(parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0); });
+  if(r.conv&&r.conv.kit) q=qMin||0;
   r.qtd=+q.toFixed(4);
   r.preco=q>0?+(v/q).toFixed(6):0;
 }
@@ -14275,10 +14349,11 @@ function _pcVincAplicar(){
   var sels=Array.prototype.slice.call(document.querySelectorAll('input[name="pcv-op"]:checked'));
   if(!sels.length){ alert('Marque ao menos um item da nota.'); return; }
   var idxs=sels.map(function(s){ return parseInt(s.value,10); }).sort(function(a,b){ return b-a; }); // decrescente p/ splice seguro
-  var partes=[], somaIpi=0, somaFre=0, somaOut=0, temConv=false, avisos=[];
+  var partes=[], somaIpi=0, somaFre=0, somaOut=0, temConv=false, avisos=[], snaps=[];
   idxs.slice().reverse().forEach(function(xi){
     var x=(_pcXmlSobra||[])[xi]; if(!x) return;
     var cv=_pcConvSugerir(r.unidade, x.un, x.qtd, x.unit, x.nome);
+    snaps.push(_pcXmlSnap(x)); // v207 — retrato p/ desfazer vínculo
     partes.push({ nome:x.nome, cProd:x.cod||'', unNF:cv.unNF, qtdNF:cv.qtdNF, unitNF:cv.unitNF, fator:cv.fator, aviso:cv.aviso });
     if(cv.tem||partes.length>1) temConv=true;
     if(cv.aviso) avisos.push(cv.aviso);
@@ -14289,7 +14364,7 @@ function _pcVincAplicar(){
            fator:partes[0].fator, unNF:partes.length>1?(partes.length+' itens da NF'):partes[0].unNF, qtdNF:partes[0].qtdNF, unitNF:partes[0].unitNF };
   _pcVincRecalc(r);
   r.ipi=+somaIpi.toFixed(2); r.frete=+somaFre.toFixed(2); r.outros=+somaOut.toFixed(2);
-  r._xml=true;
+  r._xml=true; r.xmlItens=snaps; // v207 — retrato p/ desfazer vínculo
   if(r.itemId!=null) partes.forEach(function(p){ _pcDeParaGravar(r.itemId, p.cProd, p.unNF, p.fator); }); // v202 — memoriza JÁ no vínculo
   idxs.forEach(function(xi){ _pcXmlSobra.splice(xi,1); });
   document.getElementById('pc-vinc-overlay').classList.remove('open');
@@ -14305,6 +14380,44 @@ function _pcVincAplicar(){
 // v202 — CONCILIADO = TRAVADO: libera/trava a edição de uma linha (não vai ao rascunho — reabrir
 // volta travado; os VALORES editados sim persistem, pelo auto-save normal)
 function _pcRowEditar(i){ var r=_pcRecebRows[i]; if(!r) return; r.editLivre=!r.editLivre; _pcRecebRender(); }
+// v207 — DESFAZER VÍNCULO (pedido do dono 11/08: "tem item que vincula automático, mas pode vincular
+// errado, ou um item do pedido é vinculado a dois itens da nota"). A(s) parte(s) da NF voltam para a
+// sobra ("na NF fora do pedido"), disponíveis para revincular; a linha do pedido volta VAZIA.
+// Estrutural: o de-para memorizado (cnpj+cProd → insumo) é APAGADO junto — senão o próximo XML do
+// fornecedor repete o vínculo errado sozinho (mesma raiz do caso 907290 Valv Espumadora, 11/08).
+function _pcXmlSnap(x){ return { nome:x.nome||'', nomeAlt:x.nomeAlt||'', cod:x.cod||'', un:x.un||'', qtd:x.qtd, unit:x.unit, total:x.total||0, frete:(parseFloat(x.frete)||0), ipi:(parseFloat(x.ipi)||0), outros:(parseFloat(x.outros)||0) }; }
+function _pcVincDesfazer(i){
+  var r=_pcRecebRows[i]; if(!r||!r._xml) return;
+  // partes a devolver: retrato gravado no casamento; rascunho antigo (sem retrato) reconstrói da conversão
+  var partes=(r.xmlItens&&r.xmlItens.length)?r.xmlItens.slice()
+    : (r.conv&&r.conv.partes&&r.conv.partes.length)?r.conv.partes.map(function(p){ return { nome:p.nome||r.nome, nomeAlt:'', cod:p.cProd||'', un:p.unNF||'', qtd:p.qtdNF, unit:p.unitNF, total:+(((parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0))).toFixed(2), frete:0, ipi:0, outros:0 }; })
+    : [{ nome:r.nome, nomeAlt:'', cod:r.xmlCod||'', un:(r.conv&&r.conv.unNF)||'', qtd:(r.conv&&r.conv.qtdNF!=null)?r.conv.qtdNF:r.qtd, unit:(r.conv&&r.conv.unitNF!=null)?r.conv.unitNF:r.preco, total:0, frete:0, ipi:0, outros:0 }];
+  if(!confirm('✂ Desfazer o vínculo de "'+(r.nome||'')+'" com '+(partes.length>1?partes.length+' itens':'o item')+' da NF?\n\n• A(s) parte(s) da nota voltam como "na NF, fora do pedido" — dá para vincular de novo no item certo.\n• A linha do pedido volta vazia (sem quantidade/preço da NF).\n• A memória de vínculo deste fornecedor para este item é apagada (o automático não repete o erro).')) return;
+  // custos por fora ATUAIS da linha (podem incluir rateio feito depois do casamento) seguem juntos,
+  // rateados entre as partes pelo valor da mercadoria — o total da tela não muda um centavo
+  var vTot=0; partes.forEach(function(p){ vTot+=(parseFloat(p.qtd)||0)*(parseFloat(p.unit)||0); });
+  var rIpi=(parseFloat(r.ipi)||0), rFre=(parseFloat(r.frete)||0), rOut=(parseFloat(r.outros)||0);
+  partes.forEach(function(p,pi){
+    var fr=vTot>0?((parseFloat(p.qtd)||0)*(parseFloat(p.unit)||0))/vTot:(pi===0?1:0);
+    _pcXmlSobra.push({ nome:p.nome, nomeAlt:p.nomeAlt||'', cod:p.cod||'', un:p.un, qtd:p.qtd, unit:p.unit, total:p.total||0,
+      frete:+(rFre*fr).toFixed(2), ipi:+(rIpi*fr).toFixed(2), outros:+(rOut*fr).toFixed(2),
+      incluir:true, insumoId:null, insumoNome:'', insumoUn:'', recQtd:p.qtd, recPreco:p.unit, conv:null });
+  });
+  // apaga a memória de-para deste insumo para o(s) cProd desfeito(s) (CNPJ da NF aberta)
+  try{
+    var cnpj=String((_pcXml&&_pcXml.emitCnpj)||'').replace(/\D/g,'');
+    if(!cnpj){ var _pcM=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); cnpj=String((_pcM&&_pcM.nfXml&&_pcM.nfXml.emitCnpj)||'').replace(/\D/g,''); }
+    var ins=(insumos||[]).find(function(x){ return x && r.itemId!=null && String(x.id)===String(r.itemId); });
+    if(ins && cnpj && (ins.deParaNF||[]).length){
+      var cods=partes.map(function(p){ return String(p.cod||''); }).filter(Boolean);
+      ins.deParaNF=ins.deParaNF.filter(function(m){ return !(String(m.cnpj||'').replace(/\D/g,'')===cnpj && cods.indexOf(String(m.cProd))>=0); });
+    }
+  }catch(_e){}
+  r.qtd=null; r.preco=null; r.ipi=0; r.frete=0; r.outros=0; r.conv=null;
+  delete r._xml; r.xmlCod=''; delete r.xmlItens; r.editLivre=false;
+  _pcRecebRender();
+  try{ _pcConcDraftSave(false); }catch(_e){}
+}
 function _pcXtraEditar(si){ var x=(_pcXmlSobra||[])[si]; if(!x) return; x.editLivre=!x.editLivre; _pcRecebRender(); }
 function _pcXtraSet(si, campo, val){
   var x=(_pcXmlSobra||[])[si]; if(!x) return;
@@ -14369,6 +14482,18 @@ function _pcConvAbrir(i){
   var lin='display:flex;justify-content:space-between;gap:16px;padding:6px 0;border-bottom:.5px solid var(--border);font-size:13px';
   // v201 — VÍNCULO COM VÁRIAS PARTES da NF (granel + baldes): cada parte tem o próprio fator editável
   if(cv.partes && cv.partes.length){
+    // v207 — KIT ou SOMA (caso Magic Skin 11/08): pré-seleciona KIT quando as partes convertidas são
+    // IGUAIS entre si E iguais à quantidade comprada (50 frascos + 50 válvulas num pedido de 50 kits);
+    // modo já escolhido antes (cv.kit gravado) sempre prevalece.
+    var _kitPre=false;
+    try{
+      if(cv.kit!=null){ _kitPre=!!cv.kit; }
+      else if(cv.partes.length>1){
+        var _qs=cv.partes.map(function(p){ return (parseFloat(p.qtdNF)||0)*(parseFloat(p.fator)||0); });
+        var _igual=_qs.every(function(qi){ return Math.abs(qi-_qs[0])<=0.0001; });
+        _kitPre=_igual && (parseFloat(r.qtdPedido)||0)>0 && Math.abs(_qs[0]-r.qtdPedido)<=0.0001;
+      }
+    }catch(_e){}
     ov.innerHTML='<div class="modal" style="width:680px;max-width:96vw;max-height:88vh;overflow-y:auto">'+
       '<h2 style="font-size:16px;margin:0 0 2px">🔎 Verificar conversão'+(cv.partes.length>1?' — '+cv.partes.length+' itens da NF':'')+'</h2>'+
       '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">'+escapeHtml(r.nome||'')+' · pedido em <b>'+unPed+'</b> ('+(parseFloat(r.qtdPedido)||0).toLocaleString('pt-BR')+' '+unPed+' comprados)</div>'+
@@ -14381,9 +14506,14 @@ function _pcConvAbrir(i){
             '<span><input type="number" step="any" min="0" class="pcconv-fator" data-pi="'+pi+'" value="'+(parseFloat(p.fator)||1)+'" style="width:110px;text-align:right;font-size:13px;padding:3px 6px"> '+unPed+' → <b class="pcconv-parte" data-pi="'+pi+'"></b></span></div>'+
         '</div>';
       }).join('')+
+      (cv.partes.length>1?('<div style="border:.5px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px">'+
+        '<div style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;margin-bottom:5px">Como as partes se combinam</div>'+
+        '<label style="display:block;font-size:12.5px;margin-bottom:5px;cursor:pointer"><input type="radio" name="pcconv-modo" value="soma"'+(_kitPre?'':' checked')+' onchange="_pcConvPreview()"> As quantidades <b>SOMAM</b> — é o mesmo produto, que só veio separado na nota</label>'+
+        '<label style="display:block;font-size:12.5px;cursor:pointer"><input type="radio" name="pcconv-modo" value="kit"'+(_kitPre?' checked':'')+' onchange="_pcConvPreview()"> É um <b>KIT</b> — as partes se completam (ex.: frasco + tampa): 50 de cada = 50 kits, e o preço do kit é a <b>soma</b> dos componentes</label>'+
+      '</div>'):'')+
       '<div style="background:var(--bg-secondary);border-radius:8px;padding:8px 12px">'+
-        '<div style="'+lin+'"><span>Quantidade recebida (soma)</span><b id="pcconv-qtd"></b></div>'+
-        '<div style="'+lin+'"><span>Preço médio por '+unPed+'</span><b id="pcconv-preco"></b></div>'+
+        '<div style="'+lin+'"><span id="pcconv-qlabel">Quantidade recebida (soma)</span><b id="pcconv-qtd"></b></div>'+
+        '<div style="'+lin+'"><span id="pcconv-plabel">Preço médio por '+unPed+'</span><b id="pcconv-preco"></b></div>'+
         '<div style="'+lin+';border-bottom:none"><span>Total (o da nota, não muda)</span><b id="pcconv-tot"></b></div>'+
       '</div>'+
       '<div style="font-size:11px;color:var(--text-tertiary);margin-top:8px">A soma deve bater com o que foi comprado ('+(parseFloat(r.qtdPedido)||0).toLocaleString('pt-BR')+' '+unPed+') — se a entrega veio menor/maior, o valor real prevalece.</div>'+
@@ -14422,13 +14552,19 @@ function _pcConvPreview(){
   var cv=r.conv||{}, el;
   // v201 — multi-partes: soma das partes com os fatores digitados
   if(cv.partes && cv.partes.length){
-    var q=0, v=0;
+    var q=0, v=0, qMin=null;
     Array.prototype.forEach.call(document.querySelectorAll('.pcconv-fator'), function(inp){
       var pi=parseInt(inp.getAttribute('data-pi'),10), p=cv.partes[pi]; if(!p) return;
       var f=parseFloat(inp.value)||0, qi=f>0?(parseFloat(p.qtdNF)||0)*f:0;
-      q+=qi; v+=(parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0);
+      q+=qi; if(qMin===null||qi<qMin) qMin=qi; v+=(parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0);
       var pe=document.querySelector('.pcconv-parte[data-pi="'+pi+'"]'); if(pe) pe.textContent=qi.toLocaleString('pt-BR')+' '+(r.unidade||'');
     });
+    // v207 — modo KIT: kits completos = a MENOR das partes; preço do kit = soma dos componentes
+    var _mSel=document.querySelector('input[name="pcconv-modo"]:checked');
+    var _kit=!!(_mSel&&_mSel.value==='kit');
+    if(_kit) q=qMin||0;
+    if(el=document.getElementById('pcconv-qlabel')) el.textContent=_kit?'Kits completos (a MENOR das partes)':'Quantidade recebida (soma)';
+    if(el=document.getElementById('pcconv-plabel')) el.textContent=_kit?('Preço por kit (soma dos componentes)'):('Preço médio por '+(r.unidade||''));
     if(el=document.getElementById('pcconv-qtd')) el.textContent=q.toLocaleString('pt-BR')+' '+(r.unidade||'');
     if(el=document.getElementById('pcconv-preco')) el.textContent=q>0?fmtMoney(v/q):'—';
     if(el=document.getElementById('pcconv-tot')) el.textContent=fmtMoney(v);
@@ -14455,16 +14591,20 @@ function _pcConvAceitar(){
       fatores[parseInt(inps[k].getAttribute('data-pi'),10)]=f2;
     }
     cv.partes.forEach(function(p,pi){ if(fatores[pi]!=null) p.fator=+fatores[pi].toFixed(6); });
-    var novo=Object.assign({}, cv, {verificada:true, verificadaPor:(currentUser&&currentUser.name)||'', verificadaEm:Date.now()});
+    // v207 — modo escolhido (SOMA × KIT) entra na conversão e na memória de-para
+    var _mAc=document.querySelector('input[name="pcconv-modo"]:checked');
+    var _kitAc=_mAc?(_mAc.value==='kit'):!!cv.kit;
+    var novo=Object.assign({}, cv, {kit:_kitAc, verificada:true, verificadaPor:(currentUser&&currentUser.name)||'', verificadaEm:Date.now()});
     if(t.extra){ // v201 — extra ("na NF fora do pedido"): grava na sobra
       t.x.conv=novo;
-      var q=0,v=0; novo.partes.forEach(function(p){ var qi=(parseFloat(p.qtdNF)||0)*(parseFloat(p.fator)||0); q+=qi; v+=(parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0); });
+      var q=0,v=0,qMin=null; novo.partes.forEach(function(p){ var qi=(parseFloat(p.qtdNF)||0)*(parseFloat(p.fator)||0); q+=qi; if(qMin===null||qi<qMin) qMin=qi; v+=(parseFloat(p.qtdNF)||0)*(parseFloat(p.unitNF)||0); });
+      if(_kitAc) q=qMin||0; // v207 — kit: a MENOR das partes
       t.x.recQtd=+q.toFixed(4); t.x.recPreco=q>0?+(v/q).toFixed(6):0;
-      novo.partes.forEach(function(p){ _pcDeParaGravar(t.x.insumoId, p.cProd||t.x.cod, p.unNF, p.fator); }); // v202 — fator VERIFICADO atualiza a memória
+      novo.partes.forEach(function(p){ _pcDeParaGravar(t.x.insumoId, p.cProd||t.x.cod, p.unNF, p.fator, _kitAc); }); // v202 — fator VERIFICADO atualiza a memória (v207: + modo kit)
     } else {
       t.r.conv=novo;
       _pcVincRecalc(t.r);
-      if(t.r.itemId!=null) novo.partes.forEach(function(p){ _pcDeParaGravar(t.r.itemId, p.cProd, p.unNF, p.fator); }); // v202
+      if(t.r.itemId!=null) novo.partes.forEach(function(p){ _pcDeParaGravar(t.r.itemId, p.cProd, p.unNF, p.fator, _kitAc); }); // v202 (v207: + modo kit)
     }
     _pcConvFechar();
     _pcRecebRender();
@@ -14491,7 +14631,7 @@ function _pcConcDraftSave(fechar){
   pc.conciliacaoDraft={ em:Date.now(), por:(currentUser&&currentUser.name)||'', xml:_pcXml||null, xmlSobra:(_pcXmlSobra||[]).slice(),
     rows:(_pcRecebRows||[]).map(function(r){ return { listaId:r.listaId, ref:r.ref, codigo:r.codigo||'', nome:r.nome||'', incluir:r.incluir!==false,
       qtd:r.qtd, preco:r.preco, ipi:(parseFloat(r.ipi)||0), frete:(parseFloat(r.frete)||0), outros:(parseFloat(r.outros)||0),
-      conv:r.conv||null, _xml:!!r._xml, xmlCod:r.xmlCod||'' }; }) };
+      conv:r.conv||null, _xml:!!r._xml, xmlCod:r.xmlCod||'', xmlItens:r.xmlItens||null }; }) }; // v207 — retrato p/ desfazer vínculo persiste
   saveData();
   if(fechar){ closeReceberPedido(); alert('✓ Conciliação salva. Ao reabrir o recebimento deste pedido, tudo volta como está — sem reimportar o XML.'); }
 }
@@ -14509,21 +14649,33 @@ function _pcConcReset(){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
   if(!confirm('↺ RESET da conciliação do '+(pc.numero||'pedido')+'?\n\nApaga o rascunho salvo (XML importado, conversões, valores digitados) e a tela volta TODA VAZIA — o XML da fila NÃO é reaplicado sozinho (use o botão "Aplicar XML" se quiser importar de novo).\nItens já RECEBIDOS não são afetados.')) return;
   delete pc.conciliacaoDraft;
+  // v207 — reporte do dono 11/08 (PC-036): o carimbo "📄 XML ✓" da fila (pc.nfXml) sobrevivia ao
+  // Reset e a linha seguia dizendo "conciliado com XML" sem ser verdade. Se NADA foi recebido ainda,
+  // o carimbo cai junto com o rascunho; com leva já recebida usando o XML, o carimbo é história real
+  // e permanece.
+  if(!(pc.recebimentos||[]).length) delete pc.nfXml;
   saveData();
-  var id=_pcRecebId;
+  var id=_pcRecebId, _wasCheck=_pcRecebCheck; // v207 — reabrir preserva o modo checagem
   _pcResetSemXml=id; // v206 — ordem do dono 11/08: Reset zera TUDO que veio do XML e NÃO reaplica sozinho
   closeReceberPedido();
-  openReceberPedido(id);
+  openReceberPedido(id, _wasCheck);
+  try{ renderCompRecebimento(); }catch(_e){} // v207 — a fila reflete a queda do carimbo na hora
 }
-function openReceberPedido(pcId){
+function openReceberPedido(pcId, checagem){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
   if(!(pc.nf||'').trim()){ alert('Informe a NF do pedido antes de receber.'); return; }
+  _pcRecebCheck=!!checagem; // v207 — modo CHECAGEM: pedido já recebido, conciliação só confere
   // v202 — conciliação SÓ após o "📤 Enviar para recebimento" (ordem do dono: fechado→faturado→enviado;
   // antes disso o pedido aparece no menu Compras apenas para ACOMPANHAMENTO). Faturado também bloqueia.
-  if(pc.status!=='em_recebimento' && pc.status!=='conciliado'){ alert('Este pedido ainda não foi ENVIADO PARA RECEBIMENTO.\n\nO fluxo é na Solicitação de Compra › Gestão de Pedidos: fechar o pedido → informar a NF → 📤 Enviar para recebimento. Só então a conciliação libera aqui.'); return; }
+  // v207 — checagem exige o INVERSO: pedido já recebido (ou com leva recebida)
+  if(_pcRecebCheck){
+    if(pc.status!=='recebido' && !(pc.recebimentos||[]).length){ _pcRecebCheck=false; alert('Este pedido ainda não teve recebimento — use o fluxo normal (Conciliar / Receber) na sub-aba Receber.'); return; }
+  }
+  else if(pc.status!=='em_recebimento' && pc.status!=='conciliado'){ alert('Este pedido ainda não foi ENVIADO PARA RECEBIMENTO.\n\nO fluxo é na Solicitação de Compra › Gestão de Pedidos: fechar o pedido → informar a NF → 📤 Enviar para recebimento. Só então a conciliação libera aqui.'); return; }
   _pcRecebId=pcId;
   _pcXml=null; _pcXmlSobra=[]; try{ var _xi=document.getElementById('pcr-xml-info'); if(_xi) _xi.innerHTML=''; }catch(_e){} // v169 — limpa o XML da conciliação anterior (v198: sobra junto)
-  _pcRecebRows=_pcItens(pc).filter(function(x){ return !x.it.compra.recebido; }).map(function(x){
+  // v207 — na CHECAGEM entram TODOS os itens (inclusive os já recebidos — é exatamente o que se confere)
+  _pcRecebRows=_pcItens(pc).filter(function(x){ return _pcRecebCheck || !x.it.compra.recebido; }).map(function(x){
     return { listaId:x.listaId, ref:x.ref, nome:x.it.nome||'', codigo:x.it.codigo||'', unidade:x.it.unidade||'', tipo:x.tipo,
              qtdPedido:(parseFloat(x.it.compra.qtdComprada)||0), precoPedido:(parseFloat(x.it.compra.precoPago)||0),
              // v198 — "Preço NF" NASCE VAZIO (ordem do dono 06/08): o campo só contém preço que veio
@@ -14548,7 +14700,7 @@ function openReceberPedido(pcId){
       var dr=_byKey[String(r.listaId)+'|'+String(r.ref)] || _byNome[String(r.listaId)+'|'+String(r.codigo||'')+'|'+String(r.nome||'')]; if(!dr) return;
       r.incluir=dr.incluir!==false; r.qtd=dr.qtd; r.preco=dr.preco;
       r.ipi=dr.ipi||0; r.frete=dr.frete||0; r.outros=dr.outros||0;
-      r.conv=dr.conv||null; if(dr._xml) r._xml=true; if(dr.xmlCod) r.xmlCod=dr.xmlCod; _rest++;
+      r.conv=dr.conv||null; if(dr._xml) r._xml=true; if(dr.xmlCod) r.xmlCod=dr.xmlCod; if(dr.xmlItens) r.xmlItens=dr.xmlItens; _rest++; // v207
     });
     _pcXml=_d.xml||null;
     _pcXmlSobra=(_d.xmlSobra||[]).slice(); // v198 — sobra do XML volta junto (vínculo manual segue possível)
@@ -14558,7 +14710,9 @@ function openReceberPedido(pcId){
       if(_xi2) _xi2.innerHTML='<div style="font-size:12px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px">💾 <b>Conciliação salva restaurada</b> — '+_rest+' item(ns) como '+escapeHtml(_d.por||'')+' deixou em '+(_d.em?new Date(_d.em).toLocaleString('pt-BR'):'')+(_pcXml?' · XML da NF-e '+escapeHtml(_pcXml.nNF||'')+' já importado (não precisa reimportar)':'')+'</div>';
     }catch(_e){} }
   }
-  var tt=document.getElementById('pcr-titulo'); if(tt) tt.textContent='Receber '+(pc.numero||'')+' — '+(pc.fornecedorNome||'')+' · NF '+(pc.nf||'');
+  var tt=document.getElementById('pcr-titulo'); if(tt) tt.textContent=(_pcRecebCheck?'🧾 Checagem (conciliação) ':'Receber ')+(pc.numero||'')+' — '+(pc.fornecedorNome||'')+' · NF '+(pc.nf||'');
+  // v207 — modo CHECAGEM: o botão conclui a conferência (sem pagamento — o lançamento já foi feito no recebimento)
+  try{ var _pbt=document.getElementById('pcr-prosseguir-btn'); if(_pbt) _pbt.textContent=_pcRecebCheck?'✓ Concluir checagem':'Prosseguir → pagamento'; }catch(_e){}
   _pcRecebRender();
   var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.add('open');
   // v204 — XML da FILA DO DRIVE: sem XML no rascunho, busca o desta NF e aplica sozinho (cobre
@@ -14586,7 +14740,7 @@ function _nfFilaReaplicar(){
   if(!fe){ alert('Não há XML desta NF na fila.'); return; }
   _nfFilaAplicar(fe, pc);
 }
-function closeReceberPedido(){ _pcRecebId=null; _pcRecebRows=[]; var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.remove('open'); }
+function closeReceberPedido(){ _pcRecebId=null; _pcRecebRows=[]; _pcRecebCheck=false; var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.remove('open'); }
 function _pcRecebSet(i, campo, val){
   var r=_pcRecebRows[i]; if(!r) return;
   // v198/v202 — Preço NF e QTD RECEBIDA vazios = AINDA NÃO CONCILIADO (null); apagar volta a vazio
@@ -14689,6 +14843,8 @@ function _pcRecebRender(){
       var _trav = !!(r._xml && !r.editLivre);
       if(r._xml){
         _chips.push('<button onclick="_pcRowEditar('+i+')" title="'+(r.editLivre?'Voltar a travar os campos desta linha':'Liberar a edição dos campos desta linha (veio da NF — só edite se tiver certeza)')+'" style="font-size:10px;padding:1px 7px;white-space:nowrap'+(r.editLivre?';background:var(--st-mid-bg);border-color:var(--st-mid-bd);color:var(--st-mid-tx);font-weight:600':'')+'">'+(r.editLivre?'🔓 Editando — travar':'✎ Editar')+'</button>');
+        // v207 — desfazer vínculo (pedido do dono 11/08): a parte da NF volta p/ "fora do pedido" e a memória de-para é apagada
+        _chips.push('<button onclick="_pcVincDesfazer('+i+')" title="Desfazer o vínculo desta linha com o(s) item(ns) da NF — a parte da nota volta como &quot;na NF, fora do pedido&quot; para vincular no item certo, e a memória de vínculo do fornecedor é apagada (o automático não repete o erro)" style="font-size:10px;padding:1px 7px;white-space:nowrap">✂ Desfazer vínculo</button>');
         convHtml=_chips.length?'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin-top:4px;padding-bottom:2px">'+_chips.join('')+'</div>':'';
       }
       var _bg = pendente&&r.incluir ? 'background:var(--st-bad-bg,#FEF3F2)' : (((divQ||divP)&&r.incluir)?'background:var(--st-mid-bg)':'');
@@ -14788,12 +14944,44 @@ function _pcRecebProsseguir(){
     return;
   }
   var divergentes=leva.filter(function(r){ return Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009; });
+  // v207 — modo CHECAGEM (ordem do dono 11/08): mesmos gates de qualidade, mas o desfecho é o
+  // CARIMBO da conferência — sem pagamento, sem estoque (o recebimento já lançou tudo antes).
+  if(_pcRecebCheck){
+    if(divergentes.length || xtras.length){ _pcDivAbrir(leva, divergentes, xtras); return; }
+    _pcChecagemConcluir(leva, 0);
+    return;
+  }
   // v201 — TELA DE DIVERGÊNCIAS (pedido do dono 07/08): com tudo conciliado, a próxima tela é a de
   // divergências — tabela item a item comparando pedido × NF (quantidade e preço unitário), no lugar
   // do confirm() cru. Sem divergência, vai direto ao pagamento; divergência NÃO trava (regra v160),
   // é conferida e confirmada.
   if(divergentes.length || xtras.length){ _pcDivAbrir(leva, divergentes, xtras); return; } // v201 — extra sempre passa pela tela de divergências
   _pcRecebProsseguir2(leva, 0);
+}
+// v207 — CONCLUIR CHECAGEM: grava o carimbo da conferência no pedido (quem, quando, divergências
+// item a item) e NADA além disso — financeiro e estoque já foram resolvidos no recebimento. O
+// rascunho da conciliação fica guardado como memória do trabalho; o de-para aprendido nos vínculos/
+// verificações já foi gravado no caminho (v202).
+function _pcChecagemConcluir(levaIn, nDiv){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
+  var leva=levaIn||_pcRecebRows.filter(function(r){ return r.incluir && r.qtd>0; });
+  var divs=leva.filter(function(r){ return Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009; })
+    .map(function(r){ return { nome:r.nome, codigo:r.codigo||'', qtdPedido:r.qtdPedido, qtdNF:r.qtd, precoPedido:r.precoPedido, precoNF:r.preco }; });
+  var xt=(_pcXmlSobra||[]).filter(function(x){ return x.incluir!==false; })
+    .map(function(x){ return { foraPedido:true, nome:(x.insumoNome||x.nome), qtdNF:(parseFloat(x.recQtd)||0), precoNF:(parseFloat(x.recPreco)||0) }; });
+  pc.concChecagem={ em:Date.now(), por:(currentUser&&currentUser.name)||'', itens:leva.length,
+    divergentes:divs.length+xt.length, divergencias:divs.concat(xt) };
+  delete pc.concChecagemPend;
+  // v207 — checagem concluída em pedido já totalmente recebido: agora sim o XML da fila cumpriu o
+  // papel (a baixa foi adiada no recebimento direto justamente para a checagem poder usá-lo)
+  try{ if(pc.status==='recebido' && typeof _nfFilaPorNf==='function'){ var _feK=_nfFilaPorNf(pc.nf);
+    if(_feK){ _feK.status='consumido'; if(_sb) _sb.from('nf_xml_fila').update({ status:'consumido', pedido_compra_id:pc.id }).eq('id',_feK.id).then(function(_r){}); } // .then obrigatório (v179)
+  } }catch(_e){}
+  try{ _pcConcDraftSave(false); }catch(_e){}
+  saveData();
+  closeReceberPedido();
+  try{ renderCompRecebimento(); }catch(_e){}
+  alert('✓ Checagem do '+(pc.numero||'pedido')+' concluída'+((divs.length+xt.length)?' — '+(divs.length+xt.length)+' divergência(s) registrada(s) no pedido (para questionar o fornecedor).':' — tudo confere com o pedido.'));
 }
 function _pcDivAbrir(leva, divergentes, xtras){
   var ov=document.getElementById('pc-div-overlay');
@@ -14834,11 +15022,37 @@ function _pcDivAbrir(leva, divergentes, xtras){
     (_aMenos?'<div style="font-size:12px;color:var(--st-mid-tx);background:var(--st-mid-bg);border-radius:8px;padding:8px 12px;margin-top:10px">📉 '+_aMenos+' item(ns) chegaram A MENOS: o recebimento segue com a quantidade REAL (estoque e custo usam o que chegou). O faltante é rateado pelos pedidos por D1, os descobertos ganham alerta na Gestão a Vista e a decisão de recomprar fica em Solicitação de Compra › Recebidos a menos.</div>':'')+
     '<div class="modal-footer" style="margin-top:14px">'+
       '<button onclick="document.getElementById(\'pc-div-overlay\').classList.remove(\'open\')">↩ Voltar e corrigir</button>'+
-      '<button class="btn-primary" onclick="document.getElementById(\'pc-div-overlay\').classList.remove(\'open\');_pcRecebProsseguir2(null,'+divergentes.length+')">Confirmar divergências → pagamento</button>'+
+      // v207 — na CHECAGEM a divergência conclui a conferência (registrada no pedido); sem pagamento
+      (_pcRecebCheck
+        ? '<button class="btn-primary" onclick="document.getElementById(\'pc-div-overlay\').classList.remove(\'open\');_pcChecagemConcluir(null,'+divergentes.length+')">✓ Registrar divergências e concluir checagem</button>'
+        : '<button class="btn-primary" onclick="document.getElementById(\'pc-div-overlay\').classList.remove(\'open\');_pcRecebProsseguir2(null,'+divergentes.length+')">Confirmar divergências → pagamento</button>')+
     '</div></div>';
   ov.classList.add('open');
 }
-function _pcRecebProsseguir2(levaIn, nDiv){
+// v207 — RECEBER DIRETO, SEM CONCILIAÇÃO (mudança de fluxo do dono 11/08): o financeiro confirma
+// que a NOTA e os PRODUTOS chegaram — o sistema considera que TODOS os itens pendentes vieram
+// conforme o pedido (quantidade e preço da compra) — e vai direto ao pagamento/lançamento no Caixa.
+// A conciliação (NF/XML) vira CHECAGEM posterior na sub-aba própria, sem travar o processo.
+function _pcReceberDireto(pcId){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
+  if(!(pc.nf||'').trim()){ alert('Informe a NF do pedido antes de receber.'); return; }
+  if(pc.status!=='em_recebimento' && pc.status!=='conciliado'){ alert('Este pedido ainda não foi ENVIADO PARA RECEBIMENTO (Gestão de Pedidos › 📤 Enviar para recebimento).'); return; }
+  var pend=_pcItens(pc).filter(function(x){ return !x.it.compra.recebido; });
+  if(!pend.length){ alert('Todos os itens deste pedido já foram recebidos.'); return; }
+  var leva=pend.map(function(x){
+    return { listaId:x.listaId, ref:x.ref, nome:x.it.nome||'', codigo:x.it.codigo||'', unidade:x.it.unidade||'',
+             qtdPedido:(parseFloat(x.it.compra.qtdComprada)||0), precoPedido:(parseFloat(x.it.compra.precoPago)||0),
+             qtd:(parseFloat(x.it.compra.qtdComprada)||0), preco:(parseFloat(x.it.compra.precoPago)||0),
+             incluir:true, itemId:(x.it.itemId!=null?x.it.itemId:null), ipi:0, frete:0, outros:0, conv:null };
+  });
+  var totalD=leva.reduce(function(s,r){ return s+r.qtd*r.preco; },0);
+  if(!confirm('⚡ RECEBER DIRETO o '+(pc.numero||'pedido')+' — '+(pc.fornecedorNome||'')+' · NF '+(pc.nf||'')+'?\n\n• O sistema considera que TODOS os '+leva.length+' item(ns) pendentes chegaram conforme o PEDIDO ('+fmtMoney(totalD)+' — quantidade e preço da compra).\n• A próxima tela é o pagamento: o lançamento vai ao Caixa e o processo segue.\n• A CONCILIAÇÃO com a nota (XML) fica pendente na sub-aba "Conciliação (checagem)" — feita depois, só para conferência, sem travar nada.')) return;
+  _pcRecebId=pcId;
+  _pcRecebCheck=false;
+  _pcXml=null; _pcXmlSobra=[];
+  _pcRecebProsseguir2(leva, 0, true);
+}
+function _pcRecebProsseguir2(levaIn, nDiv, direto){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
   var leva=levaIn||_pcRecebRows.filter(function(r){ return r.incluir && r.qtd>0; });
   // v201 — extras da NF (fora do pedido), já conciliados (gates do Prosseguir garantem)
@@ -14854,7 +15068,8 @@ function _pcRecebProsseguir2(levaIn, nDiv){
   var _exOut=+(leva.reduce(function(s,r){ return s+(parseFloat(r.outros)||0); },0)+xtras.reduce(function(s,x){ return s+(parseFloat(x.outros)||0); },0)).toFixed(2);
   var total=+(_mercad+_exIpi+_exFre+_exOut).toFixed(2);
   // v169 — itens conferidos = pedido CONCILIADO (carimbo; o status recua p/ em_recebimento se a leva for parcial)
-  if(pc.status==='em_recebimento'){
+  // v207 — recebimento DIRETO não ganha o carimbo de conciliado (a conciliação ficou pendente na checagem)
+  if(pc.status==='em_recebimento' && !direto){
     pc.status='conciliado'; pc.conciliadoEm=Date.now(); pc.conciliadoPor=(currentUser&&currentUser.name)||'';
     try{ renderRecebimento(); }catch(_e){} try{ if(typeof renderCompRecebimento==='function') renderCompRecebimento(); }catch(_e){}
     saveData();
@@ -14862,7 +15077,7 @@ function _pcRecebProsseguir2(levaIn, nDiv){
   // v194 — `total` do contexto = MERCADORIA PURA. _rcbExtrasBase() usa este número e soma os campos
   // de frete/impostos/outros por cima; se guardássemos aqui o total já com extras, o passo de
   // pagamento somaria os custos por fora DUAS vezes.
-  _rcbPedidoCtx={ pcId:pc.id, leva:leva, xtras:xtras, divergentes:divergentes.length, total:_mercad }; // v201 — extras da NF vão junto
+  _rcbPedidoCtx={ pcId:pc.id, leva:leva, xtras:xtras, divergentes:divergentes.length, total:_mercad, direto:!!direto }; // v201 — extras da NF vão junto (v207: + recebimento direto)
   // reusa o modal de pagamento do recebimento (blocos/plano/emissão) com o total da LEVA
   document.getElementById('rcb-nf-title').textContent=pc.nf||'—';
   document.getElementById('rcb-info').innerHTML='Pedido de compra <b>'+escapeHtml(pc.numero||'')+'</b> · Fornecedor <b>'+escapeHtml(pc.fornecedorNome||'')+'</b> · '+leva.length+' item(ns) nesta leva'+(divergentes.length?' · <span style="color:var(--st-mid-tx)">⚠ '+divergentes.length+' divergência(s)</span>':'')
@@ -15014,7 +15229,7 @@ function saveRecebimento(){
   }
   if(_pcx){
     // ── v160: leva do PEDIDO DE COMPRA (conciliação já feita/confirmada no passo anterior) ──
-    var compra={ id:'compra'+now, fornecedorId:pc.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:pc.nf||'', docFaturado:docFaturado, nsu:_nsu, valor:valor, valorItens:_valorItens, freteNF:_exNF.frete, impostosNF:_exNF.impostos, outrosNF:_exNF.outros, forma:forma, desc:'Pedido de compra '+(pc.numero||'')+' — NF '+(pc.nf||'')+((pc.recebimentos||[]).length?' (leva '+((pc.recebimentos||[]).length+1)+')':'')+(_exNF.total>0?' (itens '+fmtMoney(_valorItens)+' + frete/imp. '+fmtMoney(_exNF.total)+')':''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, pedidoCompraId:pc.id, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
+    var compra={ id:'compra'+now, fornecedorId:pc.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:pc.nf||'', docFaturado:docFaturado, nsu:_nsu, valor:valor, valorItens:_valorItens, freteNF:_exNF.frete, impostosNF:_exNF.impostos, outrosNF:_exNF.outros, forma:forma, desc:'Pedido de compra '+(pc.numero||'')+' — NF '+(pc.nf||'')+((pc.recebimentos||[]).length?' (leva '+((pc.recebimentos||[]).length+1)+')':'')+(_exNF.total>0?' (itens '+fmtMoney(_valorItens)+' + frete/imp. '+fmtMoney(_exNF.total)+')':'')+(_pcx.direto?' · recebimento direto (conciliação pendente de checagem)':''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, pedidoCompraId:pc.id, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
     compras.push(compra);
     var orderIds={}, _afx=[], _evx=[];
     _pcx.leva.forEach(function(r){
@@ -15041,7 +15256,7 @@ function saveRecebimento(){
     (_pcx.xtras||[]).forEach(function(x){
       _evx.push({ itemId:x.insumoId, splitDe:null, codigo:'', qtd:(parseFloat(x.recQtd)||0) });
     });
-    (pc.recebimentos=pc.recebimentos||[]).push({ em:now, por:(currentUser&&currentUser.name)||'', valor:valor, valorItens:_valorItens, frete:_exNF.frete, impostos:_exNF.impostos, outros:_exNF.outros, compraLancId:compra.id, divergentes:_pcx.divergentes||0,
+    (pc.recebimentos=pc.recebimentos||[]).push({ em:now, por:(currentUser&&currentUser.name)||'', valor:valor, valorItens:_valorItens, frete:_exNF.frete, impostos:_exNF.impostos, outros:_exNF.outros, compraLancId:compra.id, divergentes:_pcx.divergentes||0, direto:!!_pcx.direto,
       itens:_pcx.leva.map(function(r){ return {listaId:r.listaId, itemId:r.ref, nome:r.nome, qtd:r.qtd, preco:r.preco}; })
         .concat((_pcx.xtras||[]).map(function(x){ return {foraPedido:true, insumoId:x.insumoId, nome:(x.insumoNome||x.nome), nomeNF:x.nome, cProd:x.cod||'', qtd:(parseFloat(x.recQtd)||0), preco:(parseFloat(x.recPreco)||0)}; })) });
     // v201 — APRENDIZADO DO DE-PARA (pedido do dono: "o XML é padrão, preciso de algo mais ajustado"):
@@ -15066,12 +15281,17 @@ function saveRecebimento(){
         });
       }
     }catch(_e){ console.warn('de-para NF não gravado:', _e&&_e.message); }
-    delete pc.conciliacaoDraft; // v198 — recebimento confirmado: o rascunho da conciliação cumpriu o papel
+    // v207 — recebimento DIRETO: a conciliação fica PENDENTE DE CHECAGEM (sub-aba própria); o
+    // rascunho eventual é preservado como material da checagem. Fluxo normal segue apagando.
+    if(_pcx.direto){ pc.concChecagemPend=true; }
+    else delete pc.conciliacaoDraft; // v198 — recebimento confirmado: o rascunho da conciliação cumpriu o papel
     try{ _syncCustosInsumo(_afx); }catch(_e){} // v187 — custoUltimo/custoMedio/custoMenor12m agora com o custo REAL (rateio incluso)
     try{ _rcbEstoqueEntrada(_evx); }catch(_e){} // v187 — entrada no estoque + reconhecimento de grupo de embalagem (com confirmação)
     if(_pcTotais(pc).pendentes===0){ pc.status='recebido'; pc.recebidoEm=now; pc.recebidoPor=(currentUser&&currentUser.name)||'';
       // v204 — baixa o XML na fila do Drive (pedido totalmente recebido = XML cumpriu o papel)
-      try{ if(typeof _nfFilaPorNf==='function'){ var _feC=_nfFilaPorNf(pc.nf);
+      // v207 — EXCETO no recebimento DIRETO: a checagem ainda vai usar este XML (consumido some da
+      // fila e a checagem abriria vazia); a baixa acontece ao CONCLUIR a checagem.
+      try{ if(!_pcx.direto && typeof _nfFilaPorNf==='function'){ var _feC=_nfFilaPorNf(pc.nf);
         if(_feC){ _feC.status='consumido'; if(_sb) _sb.from('nf_xml_fila').update({ status:'consumido', pedido_compra_id:pc.id }).eq('id',_feC.id).then(function(_r){}); } // .then obrigatório (v179)
       } }catch(_e){}
     }
@@ -15079,7 +15299,7 @@ function saveRecebimento(){
     Object.keys(orderIds).forEach(function(oid){ _reavaliarComprasPedido(oid); });
     try{ if(typeof sincronizarContasPagar==='function') sincronizarContasPagar(); }catch(_e){}
     closeReceberModal(); closeReceberPedido(); _renderPedidoCompraModal(); renderRecebimento(); try{ if(typeof renderCompRecebimento==='function') renderCompRecebimento(); }catch(_e){} saveData();
-    alert('✓ Recebimento do '+(pc.numero||'pedido')+' confirmado ('+(pc.status==='recebido'?'pedido COMPLETO':'parcial')+').\nLançamento de '+fmtMoney(valor)+' enviado ao Caixa (aguardando aprovação).');
+    alert('✓ Recebimento do '+(pc.numero||'pedido')+' confirmado ('+(pc.status==='recebido'?'pedido COMPLETO':'parcial')+').\nLançamento de '+fmtMoney(valor)+' enviado ao Caixa (aguardando aprovação).'+(_pcx.direto?'\n\n🧾 A conciliação com a NF ficou PENDENTE na sub-aba "Conciliação (checagem)" — fazer depois, só para conferência.':''));
     return;
   }
   var compra={ id:'compra'+now, fornecedorId:g.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:g.nf||'', docFaturado:docFaturado, nsu:_nsu, valor:valor, valorItens:_valorItens, freteNF:_exNF.frete, impostosNF:_exNF.impostos, outrosNF:_exNF.outros, forma:forma, desc:'Compra '+(g.tipo==='ativo'?'de ativos':'de embalagens')+(g.nf?' — NF '+g.nf:'')+(_exNF.total>0?' (itens '+fmtMoney(_valorItens)+' + frete/imp. '+fmtMoney(_exNF.total)+')':''), parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
@@ -15828,9 +16048,54 @@ function _pcNfEditar(pcId){
   var fe=(typeof _nfFilaPorNf==='function')?_nfFilaPorNf(novo):null;
   if(fe) alert('NF corrigida. O XML da NF '+novo+' está na fila — será aplicado sozinho ao abrir a conciliação.');
 }
+// v207 — sub-abas do Recebimento de Pedido (mudança de fluxo do dono 11/08): RECEBER (fila, com o
+// caminho direto) × CONCILIAÇÃO/CHECAGEM (pendências de conferência dos recebimentos diretos).
+function _compRecebSubSet(s){ _compRecebSub=s; renderCompRecebimento(); }
+function _compRecebChecagemRender(el){
+  var th='padding:8px 12px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
+  var td='padding:8px 12px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
+  var lst=(pedidosCompra||[]).filter(function(p){ return p && (p.concChecagemPend || p.concChecagem); })
+    .sort(function(a,b){ return (a.concChecagemPend?0:1)-(b.concChecagemPend?0:1) || (b.recebidoEm||b.criadoEm||0)-(a.recebidoEm||a.criadoEm||0); });
+  if(!lst.length){ el.innerHTML='<div class="empty" style="padding:26px">Nenhuma conciliação pendente de checagem.<br><span style="font-size:11px;color:var(--text-tertiary)">Pedidos recebidos pelo caminho "⚡ Receber direto" aparecem aqui para a conferência posterior com a NF/XML.</span></div>'; return; }
+  var rows=lst.map(function(pc){
+    var ult=(pc.recebimentos||[])[(pc.recebimentos||[]).length-1];
+    var xml=pc.nfXml?'<span style="font-size:10px;color:var(--st-ok-tx);font-weight:600">📄 XML ✓</span>'
+      :(_nfFilaPorNf(pc.nf)?'<span title="O XML desta NF está na fila do Drive — será aplicado sozinho ao abrir a checagem." style="font-size:10px;color:var(--st-mid-tx);font-weight:600">📥 XML na fila</span>':'<span style="font-size:10px;color:var(--text-tertiary)">—</span>');
+    var st=pc.concChecagemPend
+      ? '<span style="font-size:11px;font-weight:600;color:var(--st-mid-tx)">⏳ pendente de checagem</span>'
+      : '<span style="font-size:11px;font-weight:600;color:var(--st-ok-tx)" title="'+escapeHtml((pc.concChecagem&&pc.concChecagem.por)||'')+'">✓ checado em '+(pc.concChecagem&&pc.concChecagem.em?new Date(pc.concChecagem.em).toLocaleDateString('pt-BR'):'')+((pc.concChecagem&&pc.concChecagem.divergentes)?' · ⚠ '+pc.concChecagem.divergentes+' diverg.':'')+'</span>';
+    return '<tr>'+
+      '<td style="'+td+';font-weight:600;font-family:monospace">'+escapeHtml(pc.numero||'')+'</td>'+
+      '<td style="'+td+'">'+escapeHtml(pc.fornecedorNome||'—')+'</td>'+
+      '<td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(pc.nf||'—')+'</td>'+
+      '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney((ult&&ult.valor)||_pcTotais(pc).total)+'</td>'+
+      '<td style="'+td+';font-size:11px;color:var(--text-secondary)">'+(ult?new Date(ult.em).toLocaleDateString('pt-BR')+' · '+escapeHtml(ult.por||''):'—')+'</td>'+
+      '<td style="'+td+';text-align:center">'+xml+'</td>'+
+      '<td style="'+td+'">'+st+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap"><button '+(pc.concChecagemPend?'class="btn-primary" ':'')+'onclick="openReceberPedido(\''+pc.id+'\',true)" style="font-size:11px;padding:4px 12px">🧾 '+(pc.concChecagemPend?'Conciliar (checagem)':'Reabrir checagem')+'</button></td>'+
+    '</tr>';
+  }).join('');
+  el.innerHTML='<table style="width:100%;border-collapse:collapse;min-width:820px"><thead><tr>'+
+    '<th style="'+th+'">Pedido</th><th style="'+th+'">Fornecedor</th><th style="'+th+'">NF</th><th style="'+th+';text-align:right">Recebido (R$)</th><th style="'+th+'">Recebido em</th><th style="'+th+';text-align:center">XML</th><th style="'+th+'">Checagem</th><th style="'+th+'"></th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table>';
+}
 function renderCompRecebimento(){
   var el=document.getElementById('comp-receb-list'); if(!el) return;
   _nfFilaLoad(); // v204 — fila de XML do Drive (re-renderiza sozinha se mudar)
+  // v207 — sub-abas: destaque da ativa, contador de pendências e texto de apoio por sub-aba
+  try{
+    var _sbR=document.getElementById('comp-receb-sub-receber'), _sbC=document.getElementById('comp-receb-sub-checagem');
+    var _nPendC=(pedidosCompra||[]).filter(function(p){ return p && p.concChecagemPend; }).length;
+    if(_sbR) _sbR.className=(_compRecebSub!=='checagem')?'btn-primary':'';
+    if(_sbC){ _sbC.className=(_compRecebSub==='checagem')?'btn-primary':''; _sbC.innerHTML='🧾 Conciliação (checagem)'+(_nPendC?' ('+_nPendC+')':''); }
+    var _mst=document.getElementById('comp-receb-mostrar');
+    if(_mst&&_mst.parentElement) _mst.parentElement.style.display=(_compRecebSub==='checagem')?'none':'';
+    var _int=document.getElementById('comp-receb-intro');
+    if(_int) _int.innerHTML=(_compRecebSub==='checagem')
+      ? 'Conferência POSTERIOR dos pedidos recebidos pelo caminho <b>⚡ Receber direto</b>: a conciliação com a NF/XML é feita aqui, item a item, apenas como <b>checagem</b> — o financeiro e o estoque já foram lançados no recebimento. Divergências ficam registradas no pedido para questionar o fornecedor.'
+      : 'Pedidos enviados pela <b>Gestão de Pedidos</b> (Solicitação de Compra). Dois caminhos: <b>⚡ Receber direto</b> — confirma que a nota e os produtos chegaram (o sistema considera TODOS os itens conforme o pedido), lança no Caixa e deixa a conciliação para a sub-aba de checagem; ou <b>🧾 Conciliar / Receber</b> — o fluxo completo com a NF/XML antes do pagamento.';
+  }catch(_e){}
+  if(_compRecebSub==='checagem'){ _compRecebChecagemRender(el); return; }
   var mostrar=document.getElementById('comp-receb-mostrar')?.checked;
   // v202 — pedido FECHADO/FATURADO já aparece aqui para ACOMPANHAMENTO (ordem do dono 07/08: o
   // responsável vê que tem pedido fechado vindo), mas a CONCILIAÇÃO só libera depois do "📤 Enviar
@@ -15872,7 +16137,9 @@ function renderCompRecebimento(){
         '<span style="font-size:10px;color:var(--text-tertiary)" title="A conciliação libera quando a Solicitação de Compra faturar (NF) e usar o botão 📤 Enviar para recebimento">'+(pc.status==='fechado'?'aguardando NF + envio':'aguardando envio p/ recebimento')+'</span>';
     } else {
       acao='<button onclick="openPedidoCompraModal(\''+pc.id+'\')" style="font-size:11px;padding:4px 10px;margin-right:4px">👁</button>'+
-        '<button class="btn-primary" onclick="openReceberPedido(\''+pc.id+'\')" style="font-size:11px;padding:4px 12px">🧾 Conciliar / Receber</button>';
+        // v207 — mudança de fluxo do dono 11/08: RECEBER DIRETO primeiro (financeiro confirma e lança), conciliação vira checagem depois
+        '<button class="btn-primary" onclick="_pcReceberDireto(\''+pc.id+'\')" title="Confirma que a nota e os produtos chegaram: o sistema considera TODOS os itens pendentes conforme o pedido, vai direto ao pagamento e lança no Caixa. A conciliação com a NF/XML fica pendente na sub-aba Conciliação (checagem)." style="font-size:11px;padding:4px 12px;margin-right:4px">⚡ Receber direto</button>'+
+        '<button onclick="openReceberPedido(\''+pc.id+'\')" title="Fluxo completo: conciliação item a item com a NF/XML antes do pagamento" style="font-size:11px;padding:4px 12px">🧾 Conciliar / Receber</button>';
     }
     return '<tr>'+
       '<td style="'+td+';font-weight:600;font-family:monospace">'+escapeHtml(pc.numero||'')+'</td>'+
@@ -17273,6 +17540,30 @@ function _finLimparFiltro(tipo){
   document.getElementById('fin-filtro-overlay').classList.remove('open');
   const c=_finCtxRender[tipo]; if(c) _renderFinTabela(tipo,c.containerId,c.statusFilterId);
 }
+// v207 — ORDENAÇÃO POR COLUNA em Contas a Pagar/Receber (pedido do dono 11/08): clique no
+// cabeçalho ordena crescente; 2º clique inverte; 3º volta à ordem padrão (vencimento).
+var _finSort={pagar:null, receber:null};
+function _finSortSet(tipo,col){
+  var s=_finSort[tipo];
+  _finSort[tipo]=(s && s.col===col) ? (s.dir==='asc'?{col:col,dir:'desc'}:null) : {col:col,dir:'asc'};
+  var c=_finCtxRender[tipo]; if(c) _renderFinTabela(tipo,c.containerId,c.statusFilterId);
+}
+function _finSortKey(r,col){
+  switch(col){
+    case 'conta':   return String(r.id||'').toLowerCase();
+    case 'nome':    return String(r.nome||'').toLowerCase();
+    case 'nf':      return String(r.c.notaFiscal||'');
+    case 'valor':   return parseFloat(r.p.valor)||0;
+    case 'emissao': return r.emissao||'';
+    case 'venc':    return r.venc||'';
+    case 'baixa':   return (r.p.baixa&&r.p.baixa.data)||(r.st==='pago'?(r.venc||''):''); // mesma regra da célula
+    case 'forma':   return String((typeof _formaLabel==='function'?_formaLabel(r.c.formaPag):r.c.formaPag)||'').toLowerCase();
+    case 'boleto':  return String(r.p.boleto||r.c.nsu||'');
+    case 'parcela': return r.pi||0;
+    case 'status':  return r.st||'';
+  }
+  return '';
+}
 function _renderFinTabela(tipo, containerId, statusFilterId){
   const container=document.getElementById(containerId); if(!container) return;
   _finCtxRender[tipo]={containerId, statusFilterId};
@@ -17308,27 +17599,41 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
     <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">${rows.length} parcela(s)${_finFiltroAtivo(tipo)?' · filtrado':''}</span>
   </div>`;
   if(!rows.length){ container.innerHTML=toolbar+'<div class="empty" style="padding:20px">Nenhuma conta '+(tipo==='pagar'?'a pagar':'a receber')+' aprovada.</div>'; return; }
+  // v207 — ordenação escolhida no cabeçalho prevalece; sem escolha, ordem padrão de sempre
+  const _srt=_finSort[tipo];
+  if(_srt){
+    rows.sort((a,b)=>{
+      const ka=_finSortKey(a,_srt.col), kb=_finSortKey(b,_srt.col);
+      let cmp=(typeof ka==='number'&&typeof kb==='number')?(ka-kb):String(ka).localeCompare(String(kb));
+      if(cmp===0) cmp=(a.venc||'9999').localeCompare(b.venc||'9999'); // desempate estável por vencimento
+      return _srt.dir==='desc'?-cmp:cmp;
+    });
+  } else {
   rows.sort((a,b)=> convF ? ((a.nome||'').localeCompare(b.nome||'')||(a.venc||'9999').localeCompare(b.venc||'9999')) : (a.venc||'9999').localeCompare(b.venc||'9999')); // v108 — Convênio agrupa por cliente
+  }
   // v117 — somatório da coluna Valor (soma exatamente as parcelas exibidas na tela, após os filtros)
   const _totTela = rows.reduce((s,r)=>s+(parseFloat(r.p.valor)||0),0);
   const _colsAntes = tipo==='pagar'?4:3; // colunas antes de "Valor" (checkbox+Conta+Nome[+NF])
   const _colsDepois = tipo==='pagar'?6:7; // colunas depois de "Valor"
   const th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
   const td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
+  // v207 — cabeçalho clicável: ▲ crescente · ▼ decrescente · 3º clique volta ao padrão
+  const _thS=(col,label,extra)=>{ const s=_finSort[tipo], on=s&&s.col===col;
+    return `<th onclick="_finSortSet('${tipo}','${col}')" title="Clique para ordenar por ${label} (de novo inverte; 3º clique volta ao padrão)" style="${th};cursor:pointer;user-select:none;white-space:nowrap;${extra||''}${on?';color:var(--text-info)':''}">${label}${on?(s.dir==='asc'?' ▲':' ▼'):''}</th>`; };
   container.innerHTML = toolbar + `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:900px">
     <thead><tr>
       <th style="${th};width:32px;text-align:center"></th>
-      <th style="${th}">Conta</th>
-      <th style="${th}">${tipo==='pagar'?'Fornecedor':'Cliente'}</th>
-      ${tipo==='pagar'?`<th style="${th}">Nº NF</th>`:''}
-      <th style="${th};text-align:right">Valor</th>
-      <th style="${th};text-align:center">Emissão</th>
-      <th style="${th};text-align:center">Vencimento</th>
-      <th style="${th};text-align:center">${tipo==='pagar'?'Data Pagamento':'Data Recebimento'}</th>
-      <th style="${th}">Forma</th>
-      ${tipo==='receber'?`<th style="${th}">Boleto / NSU</th>`:''}
-      <th style="${th};text-align:center">Parcela</th>
-      <th style="${th};text-align:center">Status</th>
+      ${_thS('conta','Conta','')}
+      ${_thS('nome',tipo==='pagar'?'Fornecedor':'Cliente','')}
+      ${tipo==='pagar'?_thS('nf','Nº NF',''):''}
+      ${_thS('valor','Valor','text-align:right;')}
+      ${_thS('emissao','Emissão','text-align:center;')}
+      ${_thS('venc','Vencimento','text-align:center;')}
+      ${_thS('baixa',tipo==='pagar'?'Data Pagamento':'Data Recebimento','text-align:center;')}
+      ${_thS('forma','Forma','')}
+      ${tipo==='receber'?_thS('boleto','Boleto / NSU',''):''}
+      ${_thS('parcela','Parcela','text-align:center;')}
+      ${_thS('status','Status','text-align:center;')}
     </tr></thead><tbody>${rows.map(r=>`
       <tr style="${(r.st==='pago'||r.st==='bonificacao')?'opacity:.55':''}">
         <td style="${td};text-align:center">${r.st==='bonificacao'
@@ -26463,10 +26768,15 @@ function _waRetLoad(){
       }, function(){ _waRetBusy=false; });
   }catch(_e){ _waRetBusy=false; }
 }
+// v207 — MENSAGEM-CASCA (caso Dra. Adriana Omodei, 11/08): reação do cliente restaurada pelo
+// reconciliador como mensagem VAZIA (sem texto e sem anexo). Invisível na tela, mas contava como
+// "cliente falou por último" e envenenava os quadros e os tempos de resposta. Casca NÃO é fala.
+function _msgFantasma(m){ return !!m && !String((m&&m.texto)||'').trim() && !(m&&m.anexo); }
 function _convUltimaEm(cv){
   if(!cv) return 0;
-  if(cv.ultimaMsgEm) return cv.ultimaMsgEm;
-  var ms=cv.mensagens||[]; return ms.length?(ms[ms.length-1].em||0):0;
+  var ms=cv.mensagens||[];
+  for(var i=ms.length-1;i>=0;i--){ var m=ms[i]; if(!m||_msgFantasma(m)) continue; return m.em||0; } // v207 — ignora cascas no fim
+  return cv.ultimaMsgEm||0;
 }
 function resolverRetorno(rid){
   if(currentUser?.perfil!=='admin'){ alert('Apenas o admin pode marcar como resolvido.'); return; }
@@ -26498,7 +26808,7 @@ function renderDashConversas(){
   convs.forEach(cv=>{
     if(cv.grupo) return; // v148 : grupo fora dos KPIs/quadros comerciais
     if(_dcConvEq && cv.equipeId!==_dcConvEq) return; // filtro equipe
-    const msgs=(cv.mensagens||[]).filter(m=>(m.de==='cliente'||m.de==='atendente') && _inPer(m.em)).slice().sort((a,b)=>(a.em||0)-(b.em||0));
+    const msgs=(cv.mensagens||[]).filter(m=>(m.de==='cliente'||m.de==='atendente') && !_msgFantasma(m) && _inPer(m.em)).slice().sort((a,b)=>(a.em||0)-(b.em||0)); // v207 — casca fora dos quadros e dos tempos
     if(_temPer && !msgs.length) return; // com período: só conversas com atividade no período
     const ativa = cv.status!=='encerrada';
     if(ativa) ativas++; else encerradas++;
@@ -29738,14 +30048,15 @@ function mkOrd(id,num,cid,d1off,valor,transp,rastreio,fc,fr,urgente,prevDays,env
 // no banco; até a v133 a 1ª sincronização os descartava, mas a preservação anti-corrida da v134 os tratou
 // como "edição não salva" e tentou gravá-los (incidente PED-001, 2026-07-07). Fora de uso definitivo.
 
-// Demo CRM leads (apenas se não houver leads reais)
-if(!crmLeads.length) crmLeads.push(
+// v207 — SEED DE LEADS-DEMO REMOVIDO (l1..l5 — mesma família dos eventos ev1..ev4 e do PED-001/v135):
+// ainda não tinha vazado ao banco (conferido 11/08), removido preventivamente pela mesma razão.
+/* if(!crmLeads.length) crmLeads.push(
   {id:'l1',empresa:'Farmácia Nova Saúde',clienteId:'c4',segmento:'Farmácia',tipoProduto:'anestesico',origem:'indicacao',funil:1,etapa:'Lead Novo',responsavel:'Atendente Pedro',responsavelId:'at1',equipeId:'cc1',criadoPor:'at1',followup:daysFromNow(1),valor:3500,obs:'Indicação do cliente Alpha',contatos:[{nome:'Dr. Paulo Melo',cargo:'Doutor(a)',whats:'(11) 98888-1111',email:'paulo@novasaude.com.br'}],tasks:[{txt:'Enviar apresentação',done:false},{txt:'Confirmar WhatsApp',done:true}],historico:[{ts:Date.now()-86400000,tipo:'📞',txt:'Primeiro contato feito, cliente demonstrou interesse',por:'Atendente Pedro'}],entradaEtapa:daysAgo(2)},
   {id:'l2',empresa:'Distribuidora Alpha Ltda',clienteId:'c1',segmento:'Distribuidora',tipoProduto:'linha',origem:'whatsapp_ativo',funil:1,etapa:'Em Atendimento',responsavel:'Atendente Julia',responsavelId:'at2',equipeId:'cc1',criadoPor:'at2',followup:daysFromNow(3),valor:12000,obs:'Cliente recorrente, quer linha personalizada nova',contatos:[{nome:'João Financeiro',cargo:'Financeiro',whats:'(11) 3333-4445',email:'financeiro@alpha.com.br'}],tasks:[{txt:'Definir formulação',done:true},{txt:'Enviar amostras',done:false},{txt:'Fechar valor',done:false}],historico:[{ts:Date.now()-172800000,tipo:'🤝',txt:'Reunião realizada, cliente quer ampliar portfólio',por:'Atendente Julia'}],entradaEtapa:daysAgo(5)},
   {id:'l3',empresa:'Beleza Natural SP',clienteId:'c5',segmento:'Cosmético',tipoProduto:'linha',origem:'instagram',funil:1,etapa:'Orçamento Enviado',responsavel:'Atendente Marcos',responsavelId:'at3',equipeId:'cc2',criadoPor:'at3',followup:today(),valor:7800,obs:'',contatos:[{nome:'Márcia Souza',cargo:'Proprietário(a)',whats:'(11) 97777-2222',email:'marcia@belezanatural.com.br'}],tasks:[{txt:'Aguardar retorno',done:false}],historico:[{ts:Date.now()-259200000,tipo:'📧',txt:'Orçamento enviado por e-mail',por:'Atendente Marcos'},{ts:Date.now()-86400000,tipo:'💬',txt:'Cliente pediu 2 dias para analisar',por:'Atendente Marcos'}],entradaEtapa:daysAgo(3)},
   {id:'l4',empresa:'Farmácia Saúde & Vida',clienteId:'c2',segmento:'Farmácia',funil:2,etapa:'Pós-venda 30 dias',responsavel:'Atendente Pedro',responsavelId:'at1',equipeId:'cc1',criadoPor:'at1',followup:daysFromNow(5),valor:0,obs:'PED-002 entregue, acompanhar satisfação',contatos:[{nome:'Maria Contábil',cargo:'Financeiro',whats:'(21) 2222-3333',email:'financeiro@alpha.com.br'}],tasks:[{txt:'Ligar para conferir satisfação',done:false}],historico:[{ts:Date.now()-604800000,tipo:'📦',txt:'Pedido PED-002 entregue com sucesso',por:'Sistema'}],entradaEtapa:daysAgo(7)},
   {id:'l5',empresa:'Clínica Bem Estar',clienteId:'c6',segmento:'Clínica',tipoProduto:'anestesico',origem:'tiktok',motivoPerda:'concorrente',funil:3,etapa:'Orçamento Perdido',responsavel:'Atendente Marcos',responsavelId:'at3',equipeId:'cc2',criadoPor:'at3',followup:daysFromNow(15),valor:0,obs:'Optou por concorrente, tentar em 3 meses',contatos:[{nome:'Dr. Roberto Lima',cargo:'Doutor(a)',whats:'(31) 96666-3333',email:''}],tasks:[{txt:'Retomar contato em 3 meses',done:false}],historico:[{ts:Date.now()-1296000000,tipo:'📞',txt:'Cliente escolheu outro fornecedor por preço',por:'Atendente Marcos'}],entradaEtapa:daysAgo(15)},
-);
+); */
 
 const au={id:'admin',name:'Administrador'};currentUser=au;
 addAudit(orders[0],'financeiro','status','Não iniciado','Concluído');
@@ -29753,13 +30064,9 @@ addAudit(orders[0],'producao','status','Não iniciado','Em produção');
 addAudit(orders[1],'financeiro','status','Não iniciado','Concluído');
 currentUser=null;
 
-// Demo agenda events (apenas se vazio)
-if(!agendaEventos.length) agendaEventos.push(
-  {id:'ev1',titulo:'Ligar para Dr. Paulo Melo — follow-up proposta',tipo:'lembrete',data:today(),hora:'10:00',antecedencia:15,local:'',reuniaoTipo:'presencial',prazoFinal:null,obs:'Confirmar interesse na linha personalizada',leadId:'l1',responsaveis:[{id:'at1',name:'Atendente Pedro'}],criadoPor:'at1',status:'pendente',notifEnviadas:[]},
-  {id:'ev2',titulo:'Reunião com Distribuidora Alpha — apresentação nova linha',tipo:'reuniao',data:daysFromNow(2),hora:'14:30',antecedencia:60,local:'Teams — https://teams.microsoft.com/meet/lecare',reuniaoTipo:'video',prazoFinal:null,obs:'Preparar catálogo atualizado',leadId:'l2',responsaveis:[{id:'cc1',name:'Coord. Equipe 1 — Ana'},{id:'at2',name:'Atendente Julia'}],criadoPor:'at2',status:'pendente',notifEnviadas:[]},
-  {id:'ev3',titulo:'Enviar proposta revisada para Beleza Natural SP',tipo:'tarefa',data:daysFromNow(1),hora:'17:00',antecedencia:0,local:'',reuniaoTipo:'presencial',prazoFinal:daysFromNow(1),obs:'Incluir desconto de 5% na tabela',leadId:'l3',responsaveis:[{id:'at3',name:'Atendente Marcos'}],criadoPor:'at3',status:'pendente',notifEnviadas:[]},
-  {id:'ev4',titulo:'Pós-venda — Farmácia Saúde & Vida — 30 dias',tipo:'lembrete',data:daysFromNow(3),hora:'09:00',antecedencia:1440,local:'',reuniaoTipo:'presencial',prazoFinal:null,obs:'Verificar satisfação com o pedido PED-002',leadId:'l4',responsaveis:[{id:'at1',name:'Atendente Pedro'},{id:'cc1',name:'Coord. Equipe 1 — Ana'}],criadoPor:'at1',status:'pendente',notifEnviadas:[]},
-);
+// v207 — SEED DE EVENTOS-DEMO DA AGENDA REMOVIDO (ev1..ev4 — "Atendente Pedro"/"Dr. Paulo Melo",
+// fictícios do template): eles VAZARAM para o banco pelo mesmo mecanismo do incidente PED-001 (v135)
+// e poluíam o filtro de atendentes da Agenda (reporte do dono 11/08). Apagados do banco na mesma data.
 
 // ── 30 PEDIDOS DE EXEMPLO PARA TESTES ──────────────────────────
 // Clientes extras para os pedidos
@@ -32579,12 +32886,22 @@ function _renderLeadProximasAgenda(lead){
       .sort(function(a,b){ return ((a.data||'')+' '+(a.hora||'')).localeCompare((b.data||'')+' '+(b.hora||'')); });
     _n=_evs.length;
     var _dois=_evs.slice(0,2);
-    if(_dois.length){
+    var _chipHtml=function(dt,hr,tit,atras){ return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:.5px solid '+(atras?'var(--st-bad-bd,var(--st-bad-tx))':'var(--st-inf-bd)')+';background:'+(atras?'var(--st-bad-bg,#FEF3F2)':'var(--st-inf-bg)')+';border-radius:var(--r-md);margin-bottom:5px;font-size:12px">'
+      +'<span style="font-weight:600;color:'+(atras?'var(--st-bad-tx)':'var(--st-inf-tx)')+';white-space:nowrap">'+(dt===_hj?'\ud83d\udccc HOJE':'\ud83d\udcc5 '+fmtDate(dt))+(hr?' \u00b7 '+escapeHtml(hr):'')+(atras?' \u00b7 ATRASADO':'')+'</span>'
+      +'<span style="flex:1;color:var(--text-primary)">'+escapeHtml(tit||'')+'</span>'
+      +'</div>'; };
+    // v207 \u2014 retorno salvo NO PR\u00d3PRIO CARD (Salvar sem agendar / legado) tamb\u00e9m vira CHIP, no mesmo
+    // padr\u00e3o dos da agenda (caso Karllayne 11/08: aparecia DENTRO dos campos de digita\u00e7\u00e3o). S\u00f3 quando
+    // n\u00e3o h\u00e1 evento de agenda na mesma data (o Registrar na agenda grava nos dois lugares).
+    var _cardChip='';
+    if(lead.dataRetorno && !_evs.some(function(ev){ return ev.data===lead.dataRetorno; })){
+      _cardChip=_chipHtml(lead.dataRetorno, '', (lead.proximaAcao||'Retorno agendado')+' \u2014 (do card)', lead.dataRetorno<_hj);
+      _n++;
+    }
+    if(_dois.length || _cardChip){
       _pxHtml='<div style="margin-bottom:10px">'
-        +_dois.map(function(ev){ return '<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:.5px solid var(--st-inf-bd);background:var(--st-inf-bg);border-radius:var(--r-md);margin-bottom:5px;font-size:12px">'
-          +'<span style="font-weight:600;color:var(--st-inf-tx);white-space:nowrap">'+(ev.data===_hj?'\ud83d\udccc HOJE':'\ud83d\udcc5 '+fmtDate(ev.data))+(ev.hora?' \u00b7 '+escapeHtml(ev.hora):'')+'</span>'
-          +'<span style="flex:1;color:var(--text-primary)">'+escapeHtml(ev.titulo||'')+'</span>'
-          +'</div>'; }).join('')
+        +_cardChip
+        +_dois.map(function(ev){ return _chipHtml(ev.data, ev.hora, ev.titulo, false); }).join('')
         +(_evs.length>2?'<div style="font-size:10.5px;color:var(--text-tertiary);margin:2px 0 0 2px">+ '+(_evs.length-2)+' outra(s) a\u00e7\u00e3o(\u00f5es) agendada(s) \u2014 ver na Agenda</div>':'')
         +'</div>';
     }

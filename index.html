@@ -4558,6 +4558,15 @@ async function _sepSyncOne(cfg){
       }
     }
     if(changed.length){
+      // v205 — DEDUPE DO LOTE (erro real 10/08, tela do dono: "notificacoes: ON CONFLICT DO UPDATE
+      // command cannot affect row a second time" — o array local tinha o MESMO id 2x, e upsert com
+      // id repetido no MESMO lote é recusado pelo Postgres; o save inteiro emperra em retry eterno).
+      // Fica a ÚLTIMA ocorrência (a mais recente vence).
+      { var _vist={}, _unicos=[];
+        for(var _ci=changed.length-1;_ci>=0;_ci--){ var _cid=String(cfg.id(changed[_ci]));
+          if(_vist[_cid]){ console.warn('[dedupe] '+cfg.table+': id repetido no lote — '+_cid+' · descartada a cópia mais antiga · tipos: '+(typeof cfg.id(changed[_ci]))+' · titulo: '+String((changed[_ci]&&(changed[_ci].titulo||changed[_ci].nome))||'').slice(0,80)); continue; }
+          _vist[_cid]=1; _unicos.unshift(changed[_ci]); }
+        changed=_unicos; }
       const { error:upErr }=await _sb.from(cfg.table).upsert(changed.map(cfg.row),{onConflict:'id'});
       if(upErr){ console.warn(cfg.table+' upsert:', upErr.message); return {ok:false, table:cfg.table, error:upErr.message}; }
     }
@@ -4635,6 +4644,12 @@ async function _sepLoadOne(cfg){
       if(data.length<page) break;
       from+=page;
     }
+    // v205 — DEDUPE PÓS-PAGINAÇÃO (mesma raiz do erro das notificações 10/08): um INSERT entre duas
+    // requisições de página desloca as linhas e a MESMA linha pode vir em duas páginas — a duplicata
+    // no array vira upsert com id repetido no mesmo lote (recusado pelo Postgres). Última ocorrência vence.
+    { var _dseen={}, _dun=[];
+      for(var _di=all.length-1;_di>=0;_di--){ var _do=all[_di]; if(_do==null){ continue; } var _dk=String(cfg.id(_do)); if(_dseen[_dk]) continue; _dseen[_dk]=1; _dun.unshift(_do); }
+      all=_dun; }
     // v134 — ANTI-CORRIDA (raiz do "confirmei e evaporou sem erro"): ANTES de substituir pelo servidor,
     // captura TODA edição local AINDA NÃO GRAVADA (linha que difere do snapshot da última carga/gravação).
     // A proteção v119 (_sepDirty) só marcava a linha DURANTE a tentativa de sync — edição feita com um save
@@ -4780,7 +4795,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v204';
+var APP_VERSION = 'v205';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -11874,7 +11889,48 @@ function renderSolCompra(tab){
         '<td style="'+td+'">'+(nItens?nItens+' item(ns)':'—')+'</td>'+
         '<td style="'+td+'">'+stTxt+'</td>'+
         '<td style="'+td+';white-space:nowrap;text-align:right">'+btn+'</td></tr>';
-    }).join('')+'</tbody></table></div></div>';
+    }).join('')+'</tbody></table></div></div>'+_solEnviadosHtml(tab, busca, th, td);
+}
+// v205 — "🚚 JÁ ENVIADOS": pedidos que a expedição despachou com o lado da aba ainda relevante.
+// (a) lado SEM selo (tem solicitação aberta — o auto-"não necessário" não se aplica): ação humana,
+//     concluir pela lista ou complementar; (b) lado marcado NÃO NECESSÁRIO automaticamente nos
+//     últimos 15 dias: informativo, com Desfazer (desfazer reabre o lado — regra v159 do motor).
+function _solEnviadosHtml(tab, busca, th, td){
+  var agora=Date.now();
+  var lst=(orders||[]).filter(function(o){
+    if(!o || (o.linha||'personalizada')!=='personalizada') return false;
+    if(typeof _geraProducao==='function' && !_geraProducao(o.tipo)) return false;
+    if(!_expSaiu(o)) return false;
+    if(typeof _pedidoNovoCompras==='function' && !_pedidoNovoCompras(o)) return false;
+    var selado=o.comprasLados && o.comprasLados[tab];
+    var nn=o.compraNaoNec && o.compraNaoNec[tab];
+    if(!selado) return true; // pendente de verdade
+    return !!(nn && String(nn.por||'').indexOf('Sistema')===0 && (agora-(nn.em||0))<15*24*3600*1000); // informativo 15d
+  });
+  if(busca) lst=lst.filter(function(o){ return ((o.num||'')+' '+(o.cliente||'')).toLowerCase().indexOf(busca)>=0; });
+  if(!lst.length) return '';
+  lst.sort(function(a,b){ return String(b.d1||'').localeCompare(String(a.d1||'')); });
+  var rows=lst.map(function(o){
+    var nn=o.compraNaoNec && o.compraNaoNec[tab];
+    var selado=o.comprasLados && o.comprasLados[tab];
+    var st, btn;
+    if(!selado){
+      st='<span style="font-size:11px;font-weight:600;color:var(--st-bad-tx)">⚠ lado '+(tab==='ativo'?'ativos':'embalagem')+' sem conclusão</span>';
+      btn='<button onclick="_solVerPedido(\''+o.id+'\',\''+tab+'\')" style="font-size:11px;padding:4px 10px">👁 Ver</button> '+
+          '<button class="btn-primary" onclick="openSolicitarModal(\''+o.id+'\')" title="Concluir/complementar a solicitação — a compra se conclui pela Lista de Compra" style="font-size:11px;padding:4px 10px">Abrir solicitação</button>';
+    } else {
+      st='<span style="font-size:11px;font-weight:600;color:var(--st-ok-tx)" title="'+escapeHtml((nn&&nn.por)||'')+'">✓ Não necessário (automático no envio)</span>';
+      btn='<button onclick="desfazerCompraNaoNec(\''+o.id+'\')" title="Desfaz a marcação automática — o lado reabre para solicitar compra" style="font-size:11px;padding:4px 10px">Desfazer</button>';
+    }
+    return '<tr><td style="'+td+';font-weight:600">'+escapeHtml(o.num||'')+' <span title="Pedido já enviado pela expedição" style="font-size:10px">🚚</span></td>'+
+      '<td style="'+td+'">'+escapeHtml(o.cliente||'—')+'</td>'+
+      '<td style="'+td+'">'+(o.d1?fmtDate(o.d1):'—')+'</td>'+
+      '<td style="'+td+';font-size:11px;color:var(--text-secondary)">'+escapeHtml((o.statuses&&o.statuses.expedicao)||'')+'</td>'+
+      '<td style="'+td+'">'+st+'</td>'+
+      '<td style="'+td+';white-space:nowrap;text-align:right">'+btn+'</td></tr>';
+  }).join('');
+  return '<div class="panel" style="padding:0;margin-top:14px"><div style="padding:9px 12px;background:var(--st-mid-bg);font-size:12px;font-weight:600;color:var(--st-mid-tx)">🚚 Já enviados — compras de '+(tab==='ativo'?'ativos':'embalagem')+' ('+lst.length+')'+' <span style="font-weight:400;font-size:11px">· enviado sem definição vira "não necessário" sozinho; aqui ficam os que têm solicitação aberta e os marcados nos últimos 15 dias</span></div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+'">Pedido</th><th style="'+th+'">Cliente</th><th style="'+th+'">D1</th><th style="'+th+'">Expedição</th><th style="'+th+'">Situação</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
 }
 // v171 — bloco de UMA solicitação no modal 👁 (extraído do _solVerPedido p/ reusar no botão
 // "Lista de compra" do status de Compras). _lbl era o _statLbl local (nota v166).
@@ -13278,6 +13334,42 @@ function _reavaliarOrcamentoEmb(orderId){
     }
   }
   _setComprasStatusNovo(o,'Orçamento feito','embalagens cotadas');
+}
+// ═══════ v205 — REGRA DO DONO (10/08): PEDIDO ENVIADO COM LADO DE COMPRAS SEM DEFINIÇÃO ═══════
+// O envio esconde o pedido da Solicitação de Compra (v131) ANTES de o setor definir o lado — o
+// status congelava em "Compra embalagem finalizado" para sempre (17 pedidos regularizados via SQL
+// em 10/08; casos 102734/40221/102852). Decisão do dono: "assim que o pedido é enviado", lado sem
+// definição e SEM solicitação vira "NÃO NECESSÁRIO" automaticamente (auditado); lado com solicitação
+// aberta NÃO é tocado — segue para conclusão humana pela lista (seção "🚚 Já enviados" da aba).
+var _healCompEnvUlt=0;
+function _healComprasEnvio(){
+  try{
+    if(!currentUser || !(orders||[]).length) return;
+    if(Date.now()-_healCompEnvUlt<300000) return; // no máx. 1 varredura/5min por sessão
+    _healCompEnvUlt=Date.now();
+    var mudou=0;
+    (orders||[]).forEach(function(o){
+      if(!o || (o.linha||'personalizada')!=='personalizada') return;
+      if(typeof _geraProducao==='function' && !_geraProducao(o.tipo)) return;
+      if(!_expSaiu(o)) return;
+      if(typeof _pedidoNovoCompras==='function' && !_pedidoNovoCompras(o)) return; // motor antigo intacto
+      var lados=o.comprasLados||{};
+      var reavaliar=false;
+      ['ativo','embalagem'].forEach(function(t){
+        if(lados[t]) return; // lado já selado — nada a fazer
+        var nn=o.compraNaoNec && o.compraNaoNec[t];
+        var solics=(typeof _solTodasSolic==='function'?_solTodasSolic(o.id,t):[]).filter(function(s){ return (s.itens||[]).length; });
+        if(!nn && !solics.length){
+          if(!o.compraNaoNec) o.compraNaoNec={};
+          o.compraNaoNec[t]={em:Date.now(), por:'Sistema — enviado sem compra do lado ('+(t==='ativo'?'ativos':'embalagem')+')'};
+          try{ addAudit(o,'compras','naoNecessario','', 'lado '+t+' marcado NÃO NECESSÁRIO automaticamente no envio (regra do dono 10/08)'); }catch(_e){}
+          mudou++; reavaliar=true;
+        } else if(nn){ reavaliar=true; } // marcado (inclui regularização SQL 10/08) mas sem selo → o motor sela
+      });
+      if(reavaliar){ try{ _reavaliarComprasPedido(o.id); mudou++; }catch(_e){} }
+    });
+    if(mudou){ try{ saveData(); }catch(_e){} console.log('[v205] heal compras-envio: '+mudou+' ajuste(s)'); }
+  }catch(_e){}
 }
 function _reavaliarComprasPedido(orderId){
   var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); }); if(!o) return;
@@ -18235,6 +18327,7 @@ function _renderDFC(mk){
 function refreshAll(){
   _rebuildCreditosFromOrders(); // v112 — crédito SEMPRE derivado dos pedidos (mata o clobber do blob)
   if(typeof _healEstoqueNaoNec==='function') _healEstoqueNaoNec(); // v168 — embalagem "não necessário" = estoque 'Solicitado compra' (auto-corrige antigos)
+  if(typeof _healComprasEnvio==='function') _healComprasEnvio(); // v205 — enviado sem lado definido = não necessário automático (regra do dono 10/08)
   if(typeof _updateConvBadge==='function') _updateConvBadge();
   if(typeof renderNotifBadge==='function') renderNotifBadge(); // v102 — badge do sino acende em realtime (chega notificação → refreshAll → badge)
   // v89 — só re-renderiza as telas pesadas que estão VISÍVEIS (showPage já as re-renderiza ao navegar).

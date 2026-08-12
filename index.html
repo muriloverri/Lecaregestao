@@ -3903,13 +3903,13 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <button onclick="addDeliveryAddress()" style="font-size:12px;padding:5px 12px">+ Adicionar</button>
       </div>
     </div>
-    <div class="modal-section"><div class="modal-section-title">Contato</div>
-      <div class="form-row"><div class="form-group"><label>E-mail *</label><input type="email" id="c-email" placeholder="nome@empresa.com"></div><div class="form-group"><label>Telefone principal *</label><input type="tel" id="c-tel1" placeholder="(11) 99999-9999" oninput="this.value=_fmtTelBR(this.value)" maxlength="16"></div></div>
-      <div class="form-row"><div class="form-group"><label>Telefone secundário</label><input type="tel" id="c-tel2" placeholder="(11) 99999-9999" oninput="this.value=_fmtTelBR(this.value)" maxlength="16"></div><div class="form-group"><label>Contato Financeiro</label><input type="text" id="c-fin-contato"></div></div>
-      <div class="form-row"><div class="form-group"><label>E-mail Financeiro</label><input type="email" id="c-fin-email"></div><div class="form-group"><label>Telefone Financeiro</label><input type="tel" id="c-fin-tel" placeholder="(11) 99999-9999" oninput="this.value=_fmtTelBR(this.value)" maxlength="16"></div></div>
-    </div>
+    <!-- v208 (ordem do dono 11/08) — TELEFONE MORA NUM LUGAR SÓ: os campos Telefone principal/secundário/
+         Contato Financeiro/Telefone Financeiro saíram do formulário; a fonte única é CONTATOS DA EMPRESA
+         (★ = contato principal, sempre existe um). Os 2.968 cadastros existentes foram migrados por SQL
+         auditada (dedupe pelos últimos 8 dígitos; lápide respeitada). tel1/tel2 seguem gravados como
+         ESPELHO derivado do ★ (invisíveis) — WhatsApp, dedupe, exports e integrações continuam intactos. -->
     <div class="modal-section"><div class="modal-section-title">Contatos da empresa</div>
-      <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Cada número de contato com nome (e cargo). Sincroniza com os contatos do card no CRM.</div>
+      <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px">Cada número de contato com nome (e cargo). <b>★ = contato principal</b> — sem ★ marcado, o primeiro com telefone assume. Obrigatório ao menos um contato com telefone para criar cadastro completo. Sincroniza com os contatos do card no CRM.</div>
       <div id="c-contatos-list" style="margin-bottom:8px"></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <input type="text" id="c-ct-nome" placeholder="Nome do contato *" style="font-size:12px;flex:1;min-width:130px">
@@ -3917,6 +3917,11 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <input type="tel" id="c-ct-tel" placeholder="Telefone" oninput="this.value=_fmtTelBR(this.value)" maxlength="16" style="font-size:12px;width:150px">
         <button type="button" onclick="_addCliContato()" style="font-size:12px;padding:5px 12px;cursor:pointer">+ Adicionar</button>
       </div>
+    </div>
+    <!-- v208 — OUTROS CONTATOS (era a seção "Contato"): só o que NÃO é telefone; tudo OPCIONAL -->
+    <div class="modal-section"><div class="modal-section-title">Outros contatos</div>
+      <div class="form-row"><div class="form-group"><label>E-mail</label><input type="email" id="c-email" placeholder="nome@empresa.com"></div><div class="form-group"><label>E-mail Financeiro</label><input type="email" id="c-fin-email"></div></div>
+      <div class="form-row"><div class="form-group"><label>Site</label><input type="text" id="c-site" placeholder="https://empresa.com.br"></div><div class="form-group"><label>Instagram</label><input type="text" id="c-instagram" placeholder="@perfil"></div></div>
     </div>
     <div class="modal-section"><div class="modal-section-title">Responsável Técnico</div>
       <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px" id="rt-hint">Pessoa física responsável tecnicamente. Em Pessoa Jurídica, é o RT da empresa.</div>
@@ -4800,7 +4805,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v207';
+var APP_VERSION = 'v208';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6919,7 +6924,7 @@ async function saveOrder(){
           if(_c.rua && !(_cliEnd.rua||'').trim()) _cliEnd.rua=_c.rua;
           if(_c.numero && !(_cliEnd.numero||'').trim()) _cliEnd.numero=_c.numero;
           if(_c.comp && !(_cliEnd.comp||'').trim()) _cliEnd.comp=_c.comp;
-          if((_cliEnd.doc||'').replace(/\D/g,'')) _cliEnd.cadastroIncompleto=false;
+          _cliEnd.cadastroIncompleto=(typeof _cliEhCompleto==='function')?!_cliEhCompleto(_cliEnd):!(_cliEnd.doc||'').replace(/\D/g,''); // v208 — derivação nome+doc+contato
         }
       }
     }
@@ -7407,11 +7412,11 @@ function searchClients(){
   const list=document.getElementById('ac-list');
   const notFound=document.getElementById('client-not-found-msg');
   if(q.length<2){list.classList.remove('open');if(notFound)notFound.style.display='none';return;}
-  const qDoc=q.replace(/\D/g,'');
+  const qDoc=q.toUpperCase().replace(/[^0-9A-Z]/g,'');
   const m=clients.filter(c=>{
     if(typeof _ehIntermediario==='function' && _ehIntermediario(c)) return false; // intermediário não recebe pedido
     const nameHit=(c.nome||'').toLowerCase().includes(q)||(c.pessoasVinculadas||[]).some(v=>(v.nome||'').toLowerCase().includes(q));
-    const docHit=qDoc.length>0&&((c.doc||'').replace(/\D/g,'').includes(qDoc)||(c.pessoasVinculadas||[]).some(v=>(v.doc||'').replace(/\D/g,'').includes(qDoc)));
+    const docHit=qDoc.length>0&&((c.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'').includes(qDoc)||(c.pessoasVinculadas||[]).some(v=>(v.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'').includes(qDoc)));
     return nameHit||docHit;
   });
   if(!m.length){
@@ -7473,14 +7478,14 @@ function openClientModal(id){
     if(c){ m.style.display=''; m.textContent='Cadastro aberto em: '+(f(c.criadoEm)||'não registrado')+'   ·   Última alteração: '+(f(c.modificadoEm)||'não registrada (passa a ser gravada a partir desta versão)'); }
     else m.style.display='none';
   })();
-  [['c-nome','nome'],['c-doc','doc'],['c-conselho-tipo','conselhoTipo'],['c-conselho-num','conselhoNum'],['c-rt-nome','rtNome'],['c-tag','tag'],['c-carteira-linha','carteiraLinha'],['c-carteira-anest','carteiraAnest'],['c-email','email'],['c-tel1','tel1'],['c-tel2','tel2'],['c-fin-contato','finContato'],['c-fin-email','finEmail'],['c-fin-tel','finTel'],['c-cep','cep'],['c-uf','uf'],['c-cidade','cidade'],['c-bairro','bairro'],['c-rua','rua'],['c-numero','numero'],['c-comp','comp'],['c-obs','obs']].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.value=c?c[k]||'':'';});  const favEl=document.getElementById('c-favorito');if(favEl)favEl.checked=c?c.favorito||false:false;
+  [['c-nome','nome'],['c-doc','doc'],['c-conselho-tipo','conselhoTipo'],['c-conselho-num','conselhoNum'],['c-rt-nome','rtNome'],['c-tag','tag'],['c-carteira-linha','carteiraLinha'],['c-carteira-anest','carteiraAnest'],['c-email','email'],['c-fin-email','finEmail'],['c-site','site'],['c-instagram','instagram'],['c-cep','cep'],['c-uf','uf'],['c-cidade','cidade'],['c-bairro','bairro'],['c-rua','rua'],['c-numero','numero'],['c-comp','comp'],['c-obs','obs']].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.value=c?c[k]||'':'';});/* v208 — tel1/tel2/finContato/finTel saíram do formulário (fonte única = contatos da empresa) */  const favEl=document.getElementById('c-favorito');if(favEl)favEl.checked=c?c.favorito||false:false;
   const intEl=document.getElementById('c-interno');if(intEl)intEl.checked=c?c.interno||false:false; // v144
   const intWrap=document.getElementById('c-interno-wrap');if(intWrap)intWrap.style.display=(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial'))?'':'none'; // v144 : so admin/diretora
   const plEl=document.getElementById('c-prod-linha');if(plEl)plEl.checked=c?c.prodLinha||false:false;
   // Tipo de pessoa
   // v186 — sem tipoPessoa gravado, o tipo é inferido pelo FORMATO do documento (11 díg.=PF, 14=PJ);
   // o padrão cego "pj" rotulava CPF importado como Pessoa Jurídica (caso Raissa).
-  const _docDigs=String(c?.doc||'').replace(/\D/g,'');
+  const _docDigs=_docLimpo(c?.doc); // v208 — alfanumérico
   const tp = (c && _ehIntermediario(c)) ? 'intermediario' : (c?.tipoPessoa || (_docDigs.length===11?'pf':'pj'));
   const pjEl=document.getElementById('c-tipo-pj'); const pfEl=document.getElementById('c-tipo-pf'); const inEl=document.getElementById('c-tipo-interm');
   if(pjEl) pjEl.checked = (tp==='pj');
@@ -7628,12 +7633,31 @@ function _fmtTelBR(v){
   return '('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7);
 }
 // v186 — validação de documento com dígito verificador (pedido do dono 03/08, caso Raissa PJ com CPF)
-function _docValidoCPF(s){ s=String(s||'').replace(/\D/g,''); if(s.length!==11||/^(\d)\1{10}$/.test(s)) return false;
+function _docValidoCPF(s){ s=String(s||'').toUpperCase().replace(/[^0-9A-Z]/g,''); if(/[A-Z]/.test(s)) return false; /* CPF segue 100% numérico */ if(s.length!==11||/^(\d)\1{10}$/.test(s)) return false;
   for(const n of [9,10]){ let sm=0; for(let i=0;i<n;i++) sm+=(+s[i])*((n+1)-i); let dv=(sm*10)%11; if(dv===10)dv=0; if(dv!==+s[n]) return false; }
   return true; }
-function _docValidoCNPJ(s){ s=String(s||'').replace(/\D/g,''); if(s.length!==14||/^(\d)\1{13}$/.test(s)) return false;
-  const calc=n=>{ const p=(n===12)?[5,4,3,2,9,8,7,6,5,4,3,2]:[6,5,4,3,2,9,8,7,6,5,4,3,2]; let sm=0; for(let i=0;i<n;i++) sm+=(+s[i])*p[i]; const r=sm%11; return r<2?0:11-r; };
+// v208 — CNPJ ALFANUMÉRICO (IN RFB 2.229/2024, novos CNPJs desde jul/2026): 12 primeiras posições
+// aceitam A-Z e 0-9; os 2 DVs SEGUEM NUMÉRICOS; módulo 11 com valor do caractere = ASCII-48
+// ('0'→0…'9'→9, 'A'→17…'Z'→42). CNPJs 100% numéricos validam IDÊNTICO ao algoritmo antigo.
+function _docValidoCNPJ(s){ s=String(s||'').toUpperCase().replace(/[^0-9A-Z]/g,''); if(s.length!==14) return false;
+  if(!/^[0-9A-Z]{12}\d{2}$/.test(s)) return false;
+  if(/^(\d)\1{13}$/.test(s)) return false;
+  const val=ch=>ch.charCodeAt(0)-48;
+  const calc=n=>{ const p=(n===12)?[5,4,3,2,9,8,7,6,5,4,3,2]:[6,5,4,3,2,9,8,7,6,5,4,3,2]; let sm=0; for(let i=0;i<n;i++) sm+=val(s[i])*p[i]; const r=sm%11; return r<2?0:11-r; };
   return calc(12)===+s[12] && calc(13)===+s[13]; }
+// v208 — CADASTRO COMPLETO É DERIVAÇÃO LÓGICA (ordem do dono 11/08): NOME + CPF/CNPJ (11 ou 14
+// dígitos) + ao menos UM CONTATO com telefone = completo; faltou qualquer um = incompleto. Os 2.986
+// cadastros foram reclassificados por SQL na mesma noite (13 viram incompletos — tinham documento
+// mas nenhum telefone; 4 viram completos). tel1 (espelho) vale como contato p/ cadastros legados.
+function _cliEhCompleto(c){
+  if(!c) return false;
+  const d=(typeof _docLimpo==='function')?_docLimpo(c.doc):String(c.doc||'').replace(/\D/g,'');
+  const temDoc=(d.length===11||d.length===14);
+  const temNome=!!String(c.nome||'').trim();
+  const temCt=(Array.isArray(c.contatos)&&c.contatos.some(x=>x&&String(x.telefone||x.whats||'').replace(/\D/g,'').length>=8))
+              || String(c.tel1||'').replace(/\D/g,'').length>=8;
+  return temNome && temDoc && temCt;
+}
 function saveClient(){
   const nome=document.getElementById('c-nome').value.trim();
   const doc=document.getElementById('c-doc').value.trim();
@@ -7641,10 +7665,14 @@ function saveClient(){
   const _eraIncompleto = !!(_editCli && _editCli.cadastroIncompleto);
   if(!nome){alert('Nome / Razão Social é obrigatório.');return;}
   if(!doc && !_eraIncompleto){alert('CNPJ / CPF é obrigatório.');return;}
-  const docClean=doc.replace(/\D/g,'');
+  const docClean=_docLimpo(doc); // v208 — preserva letras do CNPJ alfanumérico
   // v186 — o documento tem que SER do tipo de pessoa marcado, e válido (dígito verificador):
   // Pessoa Jurídica exige CNPJ válido; Pessoa Física exige CPF válido; Intermediário aceita os dois.
-  if(docClean){
+  // v208 — caso Ilanna (11/08): CNPJ LEGADO truncado (13 dígitos) já gravado bloqueava a edição de
+  // QUALQUER outra informação — mesma regra do caso Edna: dado antigo intocado não trava; a validação
+  // roda só quando o campo documento FOI ALTERADO nesta edição (informação nova tem que ser válida).
+  const _docMudou = !_editCli || _docLimpo(_editCli.doc)!==docClean;
+  if(docClean && _docMudou){
     const _tpSel=document.getElementById('c-tipo-interm')?.checked?'intermediario':(document.getElementById('c-tipo-pf')?.checked?'pf':'pj');
     if(_tpSel==='pf' && !_docValidoCPF(docClean)){
       alert(docClean.length===14?'O documento digitado tem 14 dígitos (CNPJ), mas o cadastro está marcado como PESSOA FÍSICA.\n\nSe o cliente é uma empresa, troque o Tipo de pessoa para Pessoa Jurídica; se é uma pessoa, informe o CPF dela.':'CPF inválido — confira os dígitos.');
@@ -7659,20 +7687,34 @@ function saveClient(){
       return;
     }
   }
-  const tel1=document.getElementById('c-tel1').value.trim();
-  const tel1Clean=tel1.replace(/\D/g,'');
+  // v208 — TELEFONE MORA NUM LUGAR SÓ (ordem do dono 11/08): tel1/tel2/finTel saíram do formulário;
+  // a fonte única é CONTATOS DA EMPRESA. O ★ é O CONTATO PRINCIPAL e sempre existe: sem ★ marcado, o
+  // primeiro contato com telefone assume (regra de máquina, sem alerta). tel1/tel2 continuam sendo
+  // GRAVADOS como ESPELHO derivado do ★ (invisível) — WhatsApp, dedupe, fusão, exports e integrações
+  // seguem lendo tel1/tel2 sem nenhuma mudança.
+  const _ctsFone=_cliContatos.filter(x=>String(x.telefone||x.whats||'').replace(/\D/g,'').length>=8);
+  if(_ctsFone.length && !_ctsFone.some(x=>x.principal)){ _ctsFone[0].principal=true; }
+  const _priCt=_ctsFone.find(x=>x.principal)||_ctsFone[0]||null;
+  const tel1=_priCt?_fmtTelBR(_priCt.telefone||_priCt.whats):'';
+  const _pri8=_priCt?String(_priCt.telefone||_priCt.whats||'').replace(/\D/g,'').slice(-8):'';
+  const _segCt=_ctsFone.find(x=>x!==_priCt && String(x.telefone||x.whats||'').replace(/\D/g,'').slice(-8)!==_pri8)||null;
+  const tel2Esp=_segCt?_fmtTelBR(_segCt.telefone||_segCt.whats):'';
   const _emailCli=document.getElementById('c-email').value.trim();
-  const _incompleto=!docClean; // sem documento = cadastro incompleto → não exige email/telefone
+  const _incompleto=!docClean; // sem documento = cadastro incompleto → não exige contato
 
-  // ── E-mail + Telefone principal obrigatórios (exceto cadastro incompleto) ──
-  if(!_incompleto){
-    if(!_emailCli || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(_emailCli)){ alert('E-mail válido é obrigatório no cadastro completo.'); return; }
-    if(!tel1Clean || tel1Clean.length<10){ alert('Telefone principal com DDD é obrigatório no cadastro completo (ex.: (11) 91234-5678).'); return; }
+  // v208 — regra do dono 11/08 (caso Edna Martins): EDITAR cadastro EXISTENTE nunca é bloqueado por
+  // informação ausente — adicionar informação SEMPRE salva; completude é CLASSIFICAÇÃO, não trava.
+  // Campo PREENCHIDO continua validado no formato. CADASTRO NOVO já completo (com documento) exige a
+  // obrigatoriedade que era do "Telefone principal", agora no lugar único: ao menos UM contato da
+  // empresa com telefone com DDD.
+  if(_emailCli && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(_emailCli)){ alert('E-mail em formato inválido — confira (ex.: nome@dominio.com).'); return; }
+  if(!_incompleto && !_editCli){
+    if(!_ctsFone.some(x=>String(x.telefone||x.whats||'').replace(/\D/g,'').length>=10)){ alert('Adicione ao menos um contato em CONTATOS DA EMPRESA (nome + telefone com DDD) para criar um cadastro completo.'); return; }
   }
 
   // ── Anti-duplicidade v94: telefone → CPF/CNPJ → nome (sugestão), com fusão segura ──
   if(!_dupCheckBypass){
-    const _cands=_dupCliCandidatos({nome:nome,doc:doc,tel1:tel1,tel2:document.getElementById('c-tel2')?.value.trim()||'',contatos:_cliContatos}, editingClientId); // v150 — inclui os contatos da empresa na checagem
+    const _cands=_dupCliCandidatos({nome:nome,doc:doc,tel1:tel1,tel2:tel2Esp,contatos:_cliContatos}, editingClientId); // v150 — inclui os contatos da empresa na checagem (v208: tel1/tel2 = espelho dos contatos)
     if(_cands.length){ _abrirAlertaDup(_cands, {nome:nome,doc:doc,tel1:tel1}); return; }
   }
   _dupCheckBypass=false;
@@ -7682,7 +7724,7 @@ function saveClient(){
   // do clienteId). Operação EXCLUSIVA do administrador, e mesmo ele só com confirmação explícita.
   // Se a intenção é registrar OUTRO cliente, o caminho certo é criar um cadastro novo.
   if(_editCli){
-    const _docAnt=String(_editCli.doc||'').replace(/\D/g,'');
+    const _docAnt=_docLimpo(_editCli.doc);
     if(_docAnt && _docAnt!==docClean){
       const _nPed=(orders||[]).filter(o=>o&&o.clienteId===editingClientId).length;
       if(_nPed>0){
@@ -7716,7 +7758,7 @@ function saveClient(){
     atendidosIds:(tipoPessoa==='intermediario'?_cliAtend.slice():[]),
     contatos:_cliContatos.map(c=>({nome:c.nome||'',cargo:c.cargo||'',telefone:c.telefone||c.whats||'',email:c.email||'',principal:!!c.principal})), // v176 — ★ principal persiste
     rtNome,
-    prodLinha,prodAnest,conselhoTipo:document.getElementById('c-conselho-tipo').value.trim(),conselhoNum:document.getElementById('c-conselho-num').value.trim(),tag:document.getElementById('c-tag').value.trim(),email:document.getElementById('c-email').value.trim(),tel1:_fmtTelBR(document.getElementById('c-tel1').value),tel2:_fmtTelBR(document.getElementById('c-tel2').value),finContato:document.getElementById('c-fin-contato').value.trim(),finEmail:document.getElementById('c-fin-email').value.trim(),finTel:_fmtTelBR(document.getElementById('c-fin-tel').value),cep:document.getElementById('c-cep').value.trim(),uf:document.getElementById('c-uf').value.trim().toUpperCase(),cidade:document.getElementById('c-cidade').value.trim(),bairro:document.getElementById('c-bairro').value.trim(),rua:document.getElementById('c-rua').value.trim(),numero:document.getElementById('c-numero').value.trim(),comp:document.getElementById('c-comp').value.trim(),obs:document.getElementById('c-obs').value.trim(),carteiraLinha:document.getElementById('c-carteira-linha')?.value.trim()||'',carteiraAnest:document.getElementById('c-carteira-anest')?.value.trim()||'',cadastroIncompleto:!docClean,modificadoEm:new Date().toISOString(),deliveryAddresses:[...deliveryAddresses]};
+    prodLinha,prodAnest,conselhoTipo:document.getElementById('c-conselho-tipo').value.trim(),conselhoNum:document.getElementById('c-conselho-num').value.trim(),tag:document.getElementById('c-tag').value.trim(),email:document.getElementById('c-email').value.trim(),tel1:tel1,tel2:tel2Esp,/* v208 — espelho derivado dos CONTATOS DA EMPRESA (★ = principal) */finContato:(_editCli&&_editCli.finContato)||'',finEmail:document.getElementById('c-fin-email').value.trim(),finTel:(_editCli&&_editCli.finTel)||'',site:(document.getElementById('c-site')?.value||'').trim(),instagram:(document.getElementById('c-instagram')?.value||'').trim(),cep:document.getElementById('c-cep').value.trim(),uf:document.getElementById('c-uf').value.trim().toUpperCase(),cidade:document.getElementById('c-cidade').value.trim(),bairro:document.getElementById('c-bairro').value.trim(),rua:document.getElementById('c-rua').value.trim(),numero:document.getElementById('c-numero').value.trim(),comp:document.getElementById('c-comp').value.trim(),obs:document.getElementById('c-obs').value.trim(),carteiraLinha:document.getElementById('c-carteira-linha')?.value.trim()||'',carteiraAnest:document.getElementById('c-carteira-anest')?.value.trim()||'',cadastroIncompleto:!((docClean.length===11||docClean.length===14) && _ctsFone.length>0),/* v208 — derivação: nome+doc+contato = completo */modificadoEm:new Date().toISOString(),deliveryAddresses:[...deliveryAddresses]};
   // v144 : interno/fornecedor — so admin/diretora alteram o campo; para os demais o valor atual e preservado
   if(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial')){ data.interno=!!document.getElementById('c-interno')?.checked; }
   else if(_editCli){ data.interno=!!_editCli.interno; }
@@ -7773,12 +7815,12 @@ function saveClient(){
   // aguardandoCadastro (ou sem clienteId) é vinculado automaticamente ao novo cadastro.
   try{
     const _cliId = editingClientId || newId;
-    const _docDig = (docClean||'').replace(/\D/g,'');
+    const _docDig = docClean; // v208 — já normalizado (alfanumérico)
     if(_cliId && _docDig && _docDig.length>=11){
       let _linkados=0;
       (orders||[]).forEach(function(o){
         if(!o) return;
-        const _od=(o.doc||'').replace(/\D/g,'');
+        const _od=_docLimpo(o.doc);
         if(_od && _od===_docDig && (o.aguardandoCadastro || !o.clienteId)){
           o.clienteId=_cliId;
           o.cliente=data.nome||o.cliente;
@@ -7819,7 +7861,7 @@ function _dupFoneKeys(c){ const ks=new Set(); [c.tel1,c.tel2,c.finTel].forEach(t
   (Array.isArray(c.contatos)?c.contatos:[]).forEach(ct=>{ const d=String((ct&&(ct.telefone||ct.whats))||'').replace(/\D/g,''); if(d.length>=8) ks.add(d.slice(-8)); });
   return ks; }
 function _dupCliCandidatos(novo, excludeId){
-  const docN=(novo.doc||'').replace(/\D/g,'');
+  const docN=_docLimpo(novo.doc);
   const foneN=new Set(); [novo.tel1,novo.tel2].forEach(t=>{const d=(t||'').replace(/\D/g,''); if(d.length>=8) foneN.add(d.slice(-8));});
   (Array.isArray(novo.contatos)?novo.contatos:[]).forEach(ct=>{ const d=String((ct&&(ct.telefone||ct.whats))||'').replace(/\D/g,''); if(d.length>=8) foneN.add(d.slice(-8)); }); // v150 — contatos do cadastro sendo salvo também
   const nomeN=_dupNorm(novo.nome);
@@ -7831,7 +7873,7 @@ function _dupCliCandidatos(novo, excludeId){
     if(!c || c.id===excludeId) continue;
     let motivo=null, conf=0;
     if(foneN.size){ const ks=_dupFoneKeys(c); for(const k of foneN){ if(ks.has(k) && !fonesInterm.has(k)){ motivo='telefone'; conf=3; break; } } }
-    if(!motivo && docN && docN.length>=11){ const cd=(c.doc||'').replace(/\D/g,''); if(cd && cd===docN){ motivo='documento'; conf=3; } }
+    if(!motivo && docN && docN.length>=11){ const cd=_docLimpo(c.doc); if(cd && cd===docN){ motivo='documento'; conf=3; } }
     // v96 — nome: SÓ sugere se for IGUAL, ou se NOME e SOBRENOME baterem (>=2 palavras cada).
     // Antes "contém"/substring fazia 1º nome igual (ex.: "Cleonice") casar com "Cleonice Cristina Pereira" — falso positivo.
     if(!motivo && nomeN && nomeN.length>=5){ const cn=_dupNorm(c.nome); if(cn){
@@ -7875,22 +7917,22 @@ function _dupSalvarNovoMesmoAssim(){ _dupFecharAlerta(); _dupCheckBypass=true; s
 function _dupUnificar(canonId){
   if(!_soAdminFunde()) return; // v186 — fusão só admin (regra do dono 03/08)
   const canon=(clients||[]).find(c=>c.id===canonId); if(!canon){ _dupFecharAlerta(); return; }
-  const campos={ nome:'c-nome',doc:'c-doc',email:'c-email',tel1:'c-tel1',tel2:'c-tel2',conselhoTipo:'c-conselho-tipo',conselhoNum:'c-conselho-num',cep:'c-cep',uf:'c-uf',cidade:'c-cidade',bairro:'c-bairro',rua:'c-rua',numero:'c-numero',comp:'c-comp',obs:'c-obs',carteiraLinha:'c-carteira-linha',carteiraAnest:'c-carteira-anest',finContato:'c-fin-contato',finEmail:'c-fin-email',finTel:'c-fin-tel' };
-  const _nomeAntes=canon.nome||'', _docAntesU=String(canon.doc||'').replace(/\D/g,''); // v186 — identidade anterior não se perde
+  const campos={ nome:'c-nome',doc:'c-doc',email:'c-email',conselhoTipo:'c-conselho-tipo',conselhoNum:'c-conselho-num',cep:'c-cep',uf:'c-uf',cidade:'c-cidade',bairro:'c-bairro',rua:'c-rua',numero:'c-numero',comp:'c-comp',obs:'c-obs',carteiraLinha:'c-carteira-linha',carteiraAnest:'c-carteira-anest',finEmail:'c-fin-email',site:'c-site',instagram:'c-instagram' }; // v208 — telefones fora do formulário (fonte única = contatos)
+  const _nomeAntes=canon.nome||'', _docAntesU=_docLimpo(canon.doc); // v186 — identidade anterior não se perde (v208: alfanumérico)
   Object.keys(campos).forEach(k=>{ const v=document.getElementById(campos[k])?.value?.trim?.(); if(v){ canon[k]= (k==='uf'?v.toUpperCase():v); } });
   // v186 — se o formulário TROCOU o documento do cadastro principal (mecanismo do caso Ritha 27/07),
   // o documento anterior é preservado como pessoa/empresa vinculada — nenhuma identidade some na unificação.
-  const _docDepoisU=String(canon.doc||'').replace(/\D/g,'');
+  const _docDepoisU=_docLimpo(canon.doc);
   if(_docAntesU && _docDepoisU && _docAntesU!==_docDepoisU){
     if(!Array.isArray(canon.pessoasVinculadas)) canon.pessoasVinculadas=[];
-    if(!canon.pessoasVinculadas.some(v=>String((v&&v.doc)||'').replace(/\D/g,'')===_docAntesU)){
-      const _docFmt=_docAntesU.length===11?_docAntesU.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/,'$1.$2.$3-$4'):_docAntesU.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5');
+    if(!canon.pessoasVinculadas.some(v=>_docLimpo(v&&v.doc)===_docAntesU)){
+      const _docFmt=_docAntesU.length===11?_docAntesU.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/,'$1.$2.$3-$4'):_docAntesU.replace(/^([0-9A-Z]{2})([0-9A-Z]{3})([0-9A-Z]{3})([0-9A-Z]{4})(\d{2})$/,'$1.$2.$3/$4-$5'); // v208 — máscara aceita CNPJ alfanumérico
       canon.pessoasVinculadas.push({tipoPessoa:(_docAntesU.length===14?'pj':'pf'), nome:_nomeAntes, doc:_docFmt});
     }
   }
   if(document.getElementById('c-prod-linha')?.checked || canon.carteiraLinha) canon.prodLinha=true;
   if(document.getElementById('c-prod-anest')?.checked || canon.carteiraAnest) canon.prodAnest=true;
-  if(canon.doc && canon.doc.replace(/\D/g,'')) canon.cadastroIncompleto=false;
+  canon.cadastroIncompleto=(typeof _cliEhCompleto==='function')?!_cliEhCompleto(canon):!(canon.doc&&canon.doc.replace(/\D/g,'')); // v208 — derivação nome+doc+contato
   if(editingClientId && editingClientId!==canonId) _fundirClientes(canonId, editingClientId);
   _dupCheckBypass=false; _dupFecharAlerta(); closeClientModal();
   try{ if(typeof _sincronizarCardComCarteira==='function') _sincronizarCardComCarteira(canonId); }catch(_){}
@@ -7964,15 +8006,15 @@ function _fundirClientes(keepId, dropId){
   // v186 — FUSÃO NUNCA PERDE INFORMAÇÃO (regra do dono 03/08; casos Ritha/Ingrid/Kamilla):
   // tudo que o absorvido tinha e o principal não comporta nos campos únicos é PRESERVADO.
   if(!Array.isArray(keep.pessoasVinculadas)) keep.pessoasVinculadas=[];
-  const _dK=String(keep.doc||'').replace(/\D/g,''), _dD=String(drop.doc||'').replace(/\D/g,'');
-  const _temVinc=d=>keep.pessoasVinculadas.some(v=>String((v&&v.doc)||'').replace(/\D/g,'')===d);
+  const _dK=_docLimpo(keep.doc), _dD=_docLimpo(drop.doc); // v208 — alfanumérico
+  const _temVinc=d=>keep.pessoasVinculadas.some(v=>String((v&&v.doc)||'').toUpperCase().replace(/[^0-9A-Z]/g,'')===d);
   // (a) documento do absorvido diferente do principal → vira pessoa/empresa vinculada (identidade não some)
   if(_dD && _dK && _dD!==_dK && !_temVinc(_dD)){
     keep.pessoasVinculadas.push({tipoPessoa:(_dD.length===14?'pj':'pf'), nome:drop.nome||'', doc:drop.doc||''});
   }
   // (b) pessoas vinculadas do absorvido se somam (dedup por documento)
   (Array.isArray(drop.pessoasVinculadas)?drop.pessoasVinculadas:[]).forEach(v=>{
-    if(!v) return; const vd=String(v.doc||'').replace(/\D/g,'');
+    if(!v) return; const vd=String(v.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
     if(vd===_dK) return; // não registrar o doc do próprio principal como vinculada
     if(vd?!_temVinc(vd):!keep.pessoasVinculadas.some(x=>String((x&&x.nome)||'').toLowerCase().trim()===String(v.nome||'').toLowerCase().trim()&&String(v.nome||'').trim()))
       keep.pessoasVinculadas.push({tipoPessoa:v.tipoPessoa||'pf',nome:v.nome||'',doc:v.doc||''});
@@ -7995,7 +8037,7 @@ function _fundirClientes(keepId, dropId){
   }
   ['doc','email','tel1','tel2','cep','uf','cidade','bairro','rua','numero','comp','tag','conselhoTipo','conselhoNum','carteiraLinha','carteiraAnest','finContato','finEmail','finTel'].forEach(f=>{ if(!keep[f] && drop[f]) keep[f]=drop[f]; });
   if(drop.prodLinha) keep.prodLinha=true; if(drop.prodAnest) keep.prodAnest=true;
-  if(keep.doc && keep.doc.replace(/\D/g,'')) keep.cadastroIncompleto=false;
+  keep.cadastroIncompleto=(typeof _cliEhCompleto==='function')?!_cliEhCompleto(keep):!(keep.doc&&keep.doc.replace(/\D/g,'')); // v208 — derivação nome+doc+contato
   const ic=clients.findIndex(c=>c.id===dropId); if(ic>=0) clients.splice(ic,1);
   // v95.1 — o fio unificado não pode ficar órfão de roteamento: herda atendente do duplicado (se faltar) e re-roteia pela carteira do cliente canônico
   // v106 — re-sincroniza o dono de TODAS as conversas do cliente unificado (mescladas e as separadas por contato)
@@ -8017,7 +8059,7 @@ function _vincularPFaoPJ(aId, bId){
   if(!_soAdminFunde()) return; // v186 — fusão só admin
   const a=(clients||[]).find(c=>String(c.id)===String(aId)), b=(clients||[]).find(c=>String(c.id)===String(bId));
   if(!a||!b||a.id===b.id) return;
-  const dig=c=>String(c.doc||'').replace(/\D/g,'');
+  const dig=c=>String(c.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
   let pj,pf;
   if(dig(a).length===14 && dig(b).length===11){ pj=a; pf=b; }
   else if(dig(b).length===14 && dig(a).length===11){ pj=b; pf=a; }
@@ -8025,7 +8067,7 @@ function _vincularPFaoPJ(aId, bId){
   if(!confirm(`Vincular a Pessoa Física "${pf.nome}" (${pf.doc}) ao cadastro PJ "${pj.nome}" (${pj.doc})?\n\n• Fica UM cadastro só (o PJ).\n• Todos os pedidos/conversas do PF passam para o PJ (somam).\n• O CPF entra em "Pessoas vinculadas".\n• Endereço e dados do PJ prevalecem; contatos se somam.\n\nNÃO tem desfazer automático.`)) return;
   if(!Array.isArray(pj.pessoasVinculadas)) pj.pessoasVinculadas=[];
   const pfDoc=dig(pf);
-  if(pfDoc && !pj.pessoasVinculadas.some(v=>String(v.doc||'').replace(/\D/g,'')===pfDoc)){
+  if(pfDoc && !pj.pessoasVinculadas.some(v=>String(v.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'')===pfDoc)){
     pj.pessoasVinculadas.push({tipoPessoa:'pf', nome:pf.nome||'', doc:pf.doc||''});
   }
   pj.contatos=_unirContatos(pj, pf);
@@ -8059,7 +8101,7 @@ function _vincRenderLista(){
   const q=(document.getElementById('vinc-busca')?.value||'').toLowerCase().trim();
   const qd=q.replace(/\D/g,'');
   let lst=(clients||[]).filter(c=>c && c.id!==editingClientId);
-  if(q) lst=lst.filter(c=>(c.nome||'').toLowerCase().includes(q) || (qd.length>=3 && String(c.doc||'').replace(/\D/g,'').includes(qd)));
+  if(q) lst=lst.filter(c=>(c.nome||'').toLowerCase().includes(q) || (qd.length>=3 && String(c.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'').includes(qd)));
   lst.sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
   lst=lst.slice(0,12);
   if(!lst.length){ el.innerHTML='<div style="padding:14px;color:var(--text-tertiary);font-size:12px">Nenhum cadastro encontrado.</div>'; return; }
@@ -10477,9 +10519,9 @@ function saveFornecedor(){
   const doc=document.getElementById('fn-doc').value.trim();
   // v171 — CNPJs adicionais do grupo (faturam ora por um, ora por outro): dedupe considera TODOS os docs
   const docs2=(document.getElementById('fn-docs2')?.value||'').split(/[,;\n]/).map(s=>s.trim()).filter(Boolean);
-  const meusDocs=[doc,...docs2].map(d=>d.replace(/\D/g,'')).filter(Boolean);
+  const meusDocs=[doc,...docs2].map(d=>d.toUpperCase().replace(/[^0-9A-Z]/g,'')).filter(Boolean);
   if(meusDocs.length){
-    const dup=fornecedores.find(f=>f.id!==editingFornecedorId&&_fornDocs(f).some(d=>meusDocs.includes(d.replace(/\D/g,''))));
+    const dup=fornecedores.find(f=>f.id!==editingFornecedorId&&_fornDocs(f).some(d=>meusDocs.includes(d.toUpperCase().replace(/[^0-9A-Z]/g,''))));
     // v171 — GRUPO (regra do dono 23/07, caso Fagron/Florien/Sovitá/Infinity): empresas DIFERENTES podem
     // compartilhar o mesmo CNPJ — cada uma é um cadastro próprio (compras separadas por empresa).
     // O mesmo CNPJ em outro cadastro deixa de ser bloqueio: vira confirmação de grupo.
@@ -12961,7 +13003,7 @@ function _renderCotRows(){
   var dl=ro?'':('<datalist id="cot-forn-dl">'+(fornecedores||[]).slice(0,400).map(function(f){
     // v171 — label carrega o CNPJ formatado E só-dígitos: digitar o CNPJ de qualquer jeito lista TODAS as
     // empresas do grupo (mesmo CNPJ = várias opções, uma por empresa) e o comprador ESCOLHE em qual cota.
-    var lbl=(f.doc?f.doc+' · '+f.doc.replace(/\D/g,''):'');
+    var lbl=(f.doc?f.doc+' · '+f.doc.toUpperCase().replace(/[^0-9A-Z]/g,''):'');
     var o='<option value="'+escapeHtml(f.nome||'')+'"'+(lbl?' label="'+escapeHtml(lbl)+'"':'')+'>';
     if((f.apelido||'').trim()&&f.apelido.toLowerCase()!==String(f.nome||'').toLowerCase()) o+='<option value="'+escapeHtml(f.apelido.trim())+'" label="'+escapeHtml(f.nome||'')+'">'; // apelido é nome de trabalho na cotação
     return o;
@@ -13379,6 +13421,53 @@ function _reavaliarOrcamentoEmb(orderId){
 // definição e SEM solicitação vira "NÃO NECESSÁRIO" automaticamente (auditado); lado com solicitação
 // aberta NÃO é tocado — segue para conclusão humana pela lista (seção "🚚 Já enviados" da aba).
 var _healCompEnvUlt=0;
+// v208 — STATUS "PRODUTOS INFORMADOS" É DERIVAÇÃO LÓGICA (ordem do dono 11/08, caso 102926: a
+// rotina de import gravou o carimbo SEM gravar produtos e o card exibiu como se tudo certo). Regra
+// da máquina, sem alerta: informou produtos → o status pode ser "Produtos informados"; não informou
+// → o status NÃO muda — e escrita externa (rotina/SQL) que violar isso é REVERTIDA aqui para
+// "Não iniciado", com auditoria. Pedido que JÁ SAIU fica como está (carimbo é registro histórico,
+// mesma filosofia do nfXml no Reset). Os caminhos legítimos seguem intactos: trava do dropdown
+// (v107, linha ~7299) e auto-avanço _autoComercialPI (só com produtos corretos).
+var _healComPIUlt=0;
+function _healComercialPI(){
+  try{
+    if(!currentUser || !(orders||[]).length) return;
+    if(Date.now()-_healComPIUlt<300000) return; // no máx. 1 varredura/5min por sessão
+    _healComPIUlt=Date.now();
+    var mudou=0;
+    (orders||[]).forEach(function(o){
+      if(!o || !o.statuses || o.statuses.comercial!=='Produtos informados') return;
+      if((o.itens||[]).length) return; // produtos informados de verdade — carimbo legítimo
+      if(o.tipo==='venda_mae') return; // venda mãe: itens vazio é a regra dela (e o carimbo nem deveria existir)
+      if(String(o.envioReal||'').trim() || (typeof _expSaiu==='function' && _expSaiu(o))) return; // já saiu — registro histórico
+      var prev=o.statuses.comercial;
+      o.statuses.comercial='Não iniciado';
+      o.statusDates=o.statusDates||{};
+      o.statusDates.comercial={ts:Date.now(), by:'Sistema (derivação lógica)', from:prev, to:'Não iniciado'};
+      try{ addAudit(o,'comercial','status',prev,'Não iniciado (automático — carimbo "Produtos informados" sem nenhum produto no pedido)'); }catch(_e){}
+      mudou++;
+    });
+    if(mudou){ try{ saveData(); }catch(_e){} console.log('[v208] heal comercial-PI: '+mudou+' reversão(ões)'); }
+  }catch(_e){}
+}
+// v208 — CADASTRO COMPLETO derivado continuamente (ordem do dono 11/08): a flag acompanha os DADOS
+// nos dois sentidos — completou (ex.: chegou o CPF que faltava, contato entrou pela sincronização do
+// card) → sai dos incompletos sozinho; perdeu requisito por escrita externa → volta p/ incompletos.
+var _healCadCompUlt=0;
+function _healCadastroCompleto(){
+  try{
+    if(!currentUser || !(clients||[]).length || typeof _cliEhCompleto!=='function') return;
+    if(Date.now()-_healCadCompUlt<300000) return; // no máx. 1 varredura/5min por sessão
+    _healCadCompUlt=Date.now();
+    var mudou=0;
+    (clients||[]).forEach(function(c){
+      if(!c) return;
+      var alvo=!_cliEhCompleto(c);
+      if(!!c.cadastroIncompleto!==alvo){ c.cadastroIncompleto=alvo; mudou++; }
+    });
+    if(mudou){ try{ saveData(); }catch(_e){} console.log('[v208] heal cadastro-completo: '+mudou+' reclassificação(ões)'); }
+  }catch(_e){}
+}
 function _healComprasEnvio(){
   try{
     if(!currentUser || !(orders||[]).length) return;
@@ -14067,7 +14156,7 @@ function _pcXmlAplicar(txt){
   var nfDig=String(pc.nf||'').replace(/\D/g,'').replace(/^0+/,''), nNFdig=String(nNF||'').replace(/^0+/,'');
   if(nfDig && nNFdig && nfDig!==nNFdig) avisos.push('nº da NF do XML ('+nNF+') DIFERE do informado no pedido ('+pc.nf+')');
   if(emitCnpj){ var _ff=(fornecedores||[]).find(function(x){ return x.id===pc.fornecedorId; });
-    if(_ff && _fornGrupoDocs(_ff).length && !_fornGrupoDocs(_ff).some(function(d){ return d.replace(/\D/g,'')===emitCnpj.replace(/\D/g,''); }))
+    if(_ff && _fornGrupoDocs(_ff).length && !_fornGrupoDocs(_ff).some(function(d){ return d.toUpperCase().replace(/[^0-9A-Z]/g,'')===emitCnpj.toUpperCase().replace(/[^0-9A-Z]/g,''); }))
       avisos.push('CNPJ do emitente ('+emitCnpj+') não está no cadastro do fornecedor nem do grupo — se for um CNPJ novo, adicione em Fornecedores › CNPJs adicionais'); }
   var dets=Array.prototype.slice.call(doc.getElementsByTagName('det'));
   // v194 — além de qtd/preço, o XML traz por ITEM o que soma POR FORA do produto: frete (vFrete),
@@ -14110,9 +14199,9 @@ function _pcXmlAplicar(txt){
   // exige verificação de novo.
   var _mem={};
   try{
-    var _cnpjNF=(emitCnpj||'').replace(/\D/g,'');
+    var _cnpjNF=(emitCnpj||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
     if(_cnpjNF) (insumos||[]).forEach(function(ins){ (ins.deParaNF||[]).forEach(function(mp){
-      if(String(mp.cnpj||'').replace(/\D/g,'')===_cnpjNF && mp.cProd) _mem[String(mp.cProd)]={insumoId:ins.id, fator:parseFloat(mp.fator)||1, un:String(mp.un||''), kit:!!mp.kit, em:mp.em, por:mp.por||''};
+      if(String(mp.cnpj||'').toUpperCase().replace(/[^0-9A-Z]/g,'')===_cnpjNF && mp.cProd) _mem[String(mp.cProd)]={insumoId:ins.id, fator:parseFloat(mp.fator)||1, un:String(mp.un||''), kit:!!mp.kit, em:mp.em, por:mp.por||''};
     }); });
   }catch(_e){}
   _pcRecebRows.forEach(function(r){
@@ -14323,11 +14412,11 @@ function _pcVincAbrir(i){
 // da conversão ATUALIZA o fator memorizado. O reforço no confirmar recebimento continua.
 function _pcDeParaGravar(insumoId, cProd, unNF, fator, kit){
   try{
-    var cnpj=String((_pcXml&&_pcXml.emitCnpj)||'').replace(/\D/g,'');
-    if(!cnpj){ var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); cnpj=String((pc&&pc.nfXml&&pc.nfXml.emitCnpj)||'').replace(/\D/g,''); }
+    var cnpj=String((_pcXml&&_pcXml.emitCnpj)||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
+    if(!cnpj){ var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); cnpj=String((pc&&pc.nfXml&&pc.nfXml.emitCnpj)||'').toUpperCase().replace(/[^0-9A-Z]/g,''); }
     if(!cnpj || !insumoId || !cProd || !(fator>0)) return;
     var ins=(insumos||[]).find(function(i){ return i && String(i.id)===String(insumoId); }); if(!ins) return;
-    ins.deParaNF=(ins.deParaNF||[]).filter(function(m){ return !(String(m.cnpj||'').replace(/\D/g,'')===cnpj && String(m.cProd)===String(cProd)); });
+    ins.deParaNF=(ins.deParaNF||[]).filter(function(m){ return !(String(m.cnpj||'').toUpperCase().replace(/[^0-9A-Z]/g,'')===cnpj && String(m.cProd)===String(cProd)); });
     ins.deParaNF.push({ cnpj:cnpj, cProd:String(cProd), un:String(unNF||''), fator:+(+fator).toFixed(6), kit:!!kit, em:Date.now(), por:(currentUser&&currentUser.name)||'' }); // v207 — kit memorizado: o automático refaz o vínculo como KIT
   }catch(_e){}
 }
@@ -14405,12 +14494,12 @@ function _pcVincDesfazer(i){
   });
   // apaga a memória de-para deste insumo para o(s) cProd desfeito(s) (CNPJ da NF aberta)
   try{
-    var cnpj=String((_pcXml&&_pcXml.emitCnpj)||'').replace(/\D/g,'');
-    if(!cnpj){ var _pcM=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); cnpj=String((_pcM&&_pcM.nfXml&&_pcM.nfXml.emitCnpj)||'').replace(/\D/g,''); }
+    var cnpj=String((_pcXml&&_pcXml.emitCnpj)||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
+    if(!cnpj){ var _pcM=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); cnpj=String((_pcM&&_pcM.nfXml&&_pcM.nfXml.emitCnpj)||'').toUpperCase().replace(/[^0-9A-Z]/g,''); }
     var ins=(insumos||[]).find(function(x){ return x && r.itemId!=null && String(x.id)===String(r.itemId); });
     if(ins && cnpj && (ins.deParaNF||[]).length){
       var cods=partes.map(function(p){ return String(p.cod||''); }).filter(Boolean);
-      ins.deParaNF=ins.deParaNF.filter(function(m){ return !(String(m.cnpj||'').replace(/\D/g,'')===cnpj && cods.indexOf(String(m.cProd))>=0); });
+      ins.deParaNF=ins.deParaNF.filter(function(m){ return !(String(m.cnpj||'').toUpperCase().replace(/[^0-9A-Z]/g,'')===cnpj && cods.indexOf(String(m.cProd))>=0); });
     }
   }catch(_e){}
   r.qtd=null; r.preco=null; r.ipi=0; r.frete=0; r.outros=0; r.conv=null;
@@ -14740,6 +14829,19 @@ function _nfFilaReaplicar(){
   if(!fe){ alert('Não há XML desta NF na fila.'); return; }
   _nfFilaAplicar(fe, pc);
 }
+// v208 — DESCONSIDERAR NF da fila (pedido do dono 11/08: nota já recebida MANUALMENTE por fora
+// ficava aparecendo como pendência): marca status='descartado' — o sistema passa a ignorar o XML
+// como se não estivesse na pasta, e a rotina do Drive NÃO o traz de volta (linha existente é
+// intocável — orientação nº 11; incidente 11-12/08: um reprocessamento da pasta reverteu 8
+// descartes do dono, repostos por SQL).
+function _nfFilaDescartar(id){
+  var f=(_nfFila||[]).find(function(x){ return String(x.id)===String(id); }); if(!f) return;
+  if(!confirm('🗑 DESCONSIDERAR a NF '+(f.nnf||'')+' — '+(f.emit_nome||f.emit_cnpj||'')+' ('+fmtMoney(parseFloat(f.valor)||0)+')?\n\nUse quando a nota JÁ FOI recebida/lançada manualmente por fora do sistema. O XML passa a ser ignorado como se não estivesse na pasta (a rotina não o traz de volta).')) return;
+  f.status='descartado';
+  var _obsD='desconsiderada por '+((currentUser&&currentUser.name)||'?')+' em '+new Date().toLocaleDateString('pt-BR')+' (já recebida manualmente por fora)';
+  try{ if(_sb) _sb.from('nf_xml_fila').update({ status:'descartado', obs:_obsD }).eq('id', f.id).then(function(r){ if(r&&r.error) alert('⚠ Não consegui gravar o descarte no servidor ('+r.error.message+') — a nota pode voltar a aparecer ao recarregar. Tente de novo.'); }); }catch(_e){} // .then obrigatório (v179)
+  try{ renderCompRecebimento(); }catch(_e){}
+}
 function closeReceberPedido(){ _pcRecebId=null; _pcRecebRows=[]; _pcRecebCheck=false; var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.remove('open'); }
 function _pcRecebSet(i, campo, val){
   var r=_pcRecebRows[i]; if(!r) return;
@@ -15029,30 +15131,78 @@ function _pcDivAbrir(leva, divergentes, xtras){
     '</div></div>';
   ov.classList.add('open');
 }
-// v207 — RECEBER DIRETO, SEM CONCILIAÇÃO (mudança de fluxo do dono 11/08): o financeiro confirma
-// que a NOTA e os PRODUTOS chegaram — o sistema considera que TODOS os itens pendentes vieram
-// conforme o pedido (quantidade e preço da compra) — e vai direto ao pagamento/lançamento no Caixa.
-// A conciliação (NF/XML) vira CHECAGEM posterior na sub-aba própria, sem travar o processo.
+// v207 — RECEBER DIRETO, SEM CONCILIAÇÃO (mudança de fluxo do dono 11/08): recebimento e lançamento
+// vêm PRIMEIRO; a conciliação (NF/XML) vira CHECAGEM posterior na sub-aba própria.
+// v208 — REFINAMENTO do dono (11/08, antes da subida): "não vai ser apenas uma mensagem" — abre um
+// MODAL com os itens do pedido e a QUANTIDADE RECEBIDA editável, na unidade DO PEDIDO (pedi 200 g,
+// vieram 250 g ou 150 g — ajusta aqui; SEM conversão de unidade/XML, isso é da conciliação). Item
+// que não veio = quantidade 0 (continua pendente para outra leva). Itens FORA do pedido não entram
+// aqui — ficam para a checagem. O TOTAL a lançar é o DA NOTA FISCAL (campo editável — pode ser
+// maior ou menor que o pedido; a verificação fina é da conciliação).
+var _pcDirRows=[], _pcDirPcId=null, _pcDirTotTouched=false;
 function _pcReceberDireto(pcId){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
   if(!(pc.nf||'').trim()){ alert('Informe a NF do pedido antes de receber.'); return; }
   if(pc.status!=='em_recebimento' && pc.status!=='conciliado'){ alert('Este pedido ainda não foi ENVIADO PARA RECEBIMENTO (Gestão de Pedidos › 📤 Enviar para recebimento).'); return; }
   var pend=_pcItens(pc).filter(function(x){ return !x.it.compra.recebido; });
   if(!pend.length){ alert('Todos os itens deste pedido já foram recebidos.'); return; }
-  var leva=pend.map(function(x){
+  _pcDirPcId=pcId; _pcDirTotTouched=false;
+  _pcDirRows=pend.map(function(x){
     return { listaId:x.listaId, ref:x.ref, nome:x.it.nome||'', codigo:x.it.codigo||'', unidade:x.it.unidade||'',
              qtdPedido:(parseFloat(x.it.compra.qtdComprada)||0), precoPedido:(parseFloat(x.it.compra.precoPago)||0),
-             qtd:(parseFloat(x.it.compra.qtdComprada)||0), preco:(parseFloat(x.it.compra.precoPago)||0),
-             incluir:true, itemId:(x.it.itemId!=null?x.it.itemId:null), ipi:0, frete:0, outros:0, conv:null };
+             qtd:(parseFloat(x.it.compra.qtdComprada)||0), itemId:(x.it.itemId!=null?x.it.itemId:null) };
   });
-  var totalD=leva.reduce(function(s,r){ return s+r.qtd*r.preco; },0);
-  if(!confirm('⚡ RECEBER DIRETO o '+(pc.numero||'pedido')+' — '+(pc.fornecedorNome||'')+' · NF '+(pc.nf||'')+'?\n\n• O sistema considera que TODOS os '+leva.length+' item(ns) pendentes chegaram conforme o PEDIDO ('+fmtMoney(totalD)+' — quantidade e preço da compra).\n• A próxima tela é o pagamento: o lançamento vai ao Caixa e o processo segue.\n• A CONCILIAÇÃO com a nota (XML) fica pendente na sub-aba "Conciliação (checagem)" — feita depois, só para conferência, sem travar nada.')) return;
-  _pcRecebId=pcId;
+  var ov=document.getElementById('pc-dir-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='pc-dir-overlay'; ov.className='overlay'; ov.style.zIndex='470'; document.body.appendChild(ov); }
+  var th='padding:7px 10px;background:var(--bg-secondary);font-size:10.5px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
+  var td='padding:6px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
+  ov.innerHTML='<div class="modal" style="width:820px;max-width:96vw;max-height:90vh;overflow-y:auto">'+
+    '<h2 style="font-size:16px;margin:0 0 2px">⚡ Receber direto — '+escapeHtml(pc.numero||'')+' · '+escapeHtml(pc.fornecedorNome||'')+' · NF '+escapeHtml(pc.nf||'')+'</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Confira O QUE VEIO e QUANTO veio, na unidade do pedido — ajuste a quantidade se veio a mais ou a menos; item que NÃO veio fica com 0 (continua pendente). Sem conversão de unidade e sem itens fora do pedido aqui — isso é da <b>Conciliação (checagem)</b>, depois. O lançamento vai ao Caixa com o total DA NOTA.</div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:640px"><thead><tr>'+
+      '<th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd pedida</th><th style="'+th+';text-align:right">Qtd recebida</th><th style="'+th+';text-align:right">Preço compra</th><th style="'+th+';text-align:right">Total (ref. pedido)</th>'+
+    '</tr></thead><tbody>'+_pcDirRows.map(function(r,i){
+      return '<tr>'+
+        '<td style="'+td+'">'+(r.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.codigo)+'</span> ':'')+escapeHtml(r.nome)+'</td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-secondary);white-space:nowrap">'+r.qtdPedido.toLocaleString('pt-BR')+' '+escapeHtml(r.unidade||'')+'</td>'+
+        '<td style="'+td+';text-align:right;white-space:nowrap"><input type="number" min="0" step="any" value="'+r.qtd+'" oninput="_pcDirSet('+i+',this.value)" style="width:90px;text-align:right;font-size:12px;padding:3px 5px"> <span style="font-size:11px;color:var(--text-secondary)">'+escapeHtml(r.unidade||'')+'</span></td>'+
+        '<td style="'+td+';text-align:right;color:var(--text-secondary);white-space:nowrap">'+fmtMoney(r.precoPedido)+'</td>'+
+        '<td id="pc-dir-tot-'+i+'" style="'+td+';text-align:right;font-weight:600;white-space:nowrap">'+fmtMoney(r.qtd*r.precoPedido)+'</td>'+
+      '</tr>';
+    }).join('')+'</tbody></table></div>'+
+    '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px;padding:10px 12px;background:var(--bg-secondary);border-radius:8px">'+
+      '<span style="font-size:12.5px;font-weight:600">Total da MERCADORIA na nota fiscal (R$):</span>'+
+      '<input type="number" min="0" step="0.01" id="pc-dir-total" value="'+(+_pcDirRows.reduce(function(s,r){ return s+r.qtd*r.precoPedido; },0).toFixed(2))+'" oninput="_pcDirTotTouched=true" style="width:130px;text-align:right;font-size:13px;font-weight:600;padding:4px 6px">'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text-tertiary);margin-top:6px">O campo nasce com a soma pelas quantidades × preço da COMPRA e se recalcula ao ajustar quantidades — digite por cima com o valor da NOTA se diferir (frete/impostos entram na próxima tela). Divergência de valor não trava: fica para a conciliação.</div>'+
+    '<div class="modal-footer" style="margin-top:14px"><button onclick="document.getElementById(\'pc-dir-overlay\').classList.remove(\'open\')">Cancelar</button><button class="btn-primary" onclick="_pcDiretoProsseguir()">Prosseguir → pagamento</button></div>'+
+  '</div>';
+  ov.classList.add('open');
+}
+function _pcDirSet(i, v){
+  var r=_pcDirRows[i]; if(!r) return;
+  r.qtd=(String(v).trim()==='')?0:(parseFloat(v)||0);
+  var el=document.getElementById('pc-dir-tot-'+i); if(el) el.textContent=fmtMoney(r.qtd*r.precoPedido);
+  if(!_pcDirTotTouched){ var t=document.getElementById('pc-dir-total'); if(t) t.value=(+_pcDirRows.reduce(function(s,x){ return s+x.qtd*x.precoPedido; },0).toFixed(2)); }
+}
+function _pcDiretoProsseguir(){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcDirPcId; }); if(!pc) return;
+  var leva=_pcDirRows.filter(function(r){ return r.qtd>0; }).map(function(r){
+    return { listaId:r.listaId, ref:r.ref, nome:r.nome, codigo:r.codigo, unidade:r.unidade,
+             qtdPedido:r.qtdPedido, precoPedido:r.precoPedido,
+             qtd:r.qtd, preco:r.precoPedido, incluir:true, itemId:r.itemId, ipi:0, frete:0, outros:0, conv:null };
+  });
+  if(!leva.length){ alert('Nenhum item com quantidade recebida — se nada chegou, use Cancelar.'); return; }
+  var totalNF=parseFloat(document.getElementById('pc-dir-total')?.value)||0;
+  if(!(totalNF>0)){ alert('Informe o total da mercadoria na nota fiscal (R$).'); return; }
+  var nDiv=leva.filter(function(r){ return Math.abs(r.qtd-r.qtdPedido)>0.001; }).length;
+  var ov=document.getElementById('pc-dir-overlay'); if(ov) ov.classList.remove('open');
+  _pcRecebId=_pcDirPcId;
   _pcRecebCheck=false;
   _pcXml=null; _pcXmlSobra=[];
-  _pcRecebProsseguir2(leva, 0, true);
+  _pcRecebProsseguir2(leva, nDiv, true, totalNF);
 }
-function _pcRecebProsseguir2(levaIn, nDiv, direto){
+function _pcRecebProsseguir2(levaIn, nDiv, direto, totalNF){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc) return;
   var leva=levaIn||_pcRecebRows.filter(function(r){ return r.incluir && r.qtd>0; });
   // v201 — extras da NF (fora do pedido), já conciliados (gates do Prosseguir garantem)
@@ -15063,6 +15213,10 @@ function _pcRecebProsseguir2(levaIn, nDiv, direto){
   // sendo a base do lançamento; os extras vão nos campos próprios (sem dupla contagem).
   var _mercad=+(leva.reduce(function(s,r){ return s+(parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0); },0)
                +xtras.reduce(function(s,x){ return s+(parseFloat(x.recQtd)||0)*(parseFloat(x.recPreco)||0); },0)).toFixed(2);
+  // v208 — RECEBER DIRETO lança o valor DA NOTA FISCAL (ordem do dono 11/08): o total digitado no
+  // modal de itens substitui a soma pelo preço do pedido — pode vir a mais ou a menos; a verificação
+  // fina é da conciliação (checagem). Estoque/custo por item seguem o preço da COMPRA até lá.
+  if(direto && (parseFloat(totalNF)||0)>0) _mercad=+(parseFloat(totalNF)).toFixed(2);
   var _exIpi=+(leva.reduce(function(s,r){ return s+(parseFloat(r.ipi)||0); },0)+xtras.reduce(function(s,x){ return s+(parseFloat(x.ipi)||0); },0)).toFixed(2);
   var _exFre=+(leva.reduce(function(s,r){ return s+(parseFloat(r.frete)||0); },0)+xtras.reduce(function(s,x){ return s+(parseFloat(x.frete)||0); },0)).toFixed(2);
   var _exOut=+(leva.reduce(function(s,r){ return s+(parseFloat(r.outros)||0); },0)+xtras.reduce(function(s,x){ return s+(parseFloat(x.outros)||0); },0)).toFixed(2);
@@ -15117,8 +15271,8 @@ function _rcbCnpjSetup(fornecedorId, sugerido){
   var docs=f?_fornGrupoDocs(f):[]; // v171 — união dos CNPJs do GRUPO (empresas que compartilham CNPJ)
   if(!docs.length && !sugerido){ wrap.style.display='none'; sel.innerHTML=''; return; }
   var sugDig=String(sugerido||'').replace(/\D/g,'');
-  sel.innerHTML=docs.map(function(d,i){ var hit=sugDig&&d.replace(/\D/g,'')===sugDig; return '<option value="'+escapeHtml(d)+'"'+(hit?' selected':'')+'>'+escapeHtml(d)+(i===0?' (principal)':'')+'</option>'; }).join('');
-  if(sugDig && !docs.some(function(d){ return d.replace(/\D/g,'')===sugDig; }))
+  sel.innerHTML=docs.map(function(d,i){ var hit=sugDig&&d.toUpperCase().replace(/[^0-9A-Z]/g,'')===sugDig; return '<option value="'+escapeHtml(d)+'"'+(hit?' selected':'')+'>'+escapeHtml(d)+(i===0?' (principal)':'')+'</option>'; }).join('');
+  if(sugDig && !docs.some(function(d){ return d.toUpperCase().replace(/[^0-9A-Z]/g,'')===sugDig; }))
     sel.innerHTML='<option value="'+escapeHtml(sugerido)+'" selected>'+escapeHtml(sugerido)+' ⚠ (do XML — fora do cadastro)</option>'+sel.innerHTML;
   wrap.style.display=(docs.length>1||sugDig)?'':'none';
 }
@@ -15263,12 +15417,12 @@ function saveRecebimento(){
     // cada item CONFIRMADO grava no cadastro do insumo o vínculo {cnpj do emitente, cProd, unidade da
     // NF, fator} — a próxima nota deste fornecedor concilia por CÓDIGO, determinístico, sem heurística.
     try{
-      var _cnpjL=String((_pcXml&&_pcXml.emitCnpj)||(pc.nfXml&&pc.nfXml.emitCnpj)||'').replace(/\D/g,'');
+      var _cnpjL=String((_pcXml&&_pcXml.emitCnpj)||(pc.nfXml&&pc.nfXml.emitCnpj)||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
       if(_cnpjL){
         var _aprende=function(insumoId, cProd, unNF, fator){
           if(!insumoId || !cProd || !(fator>0)) return;
           var ins=(insumos||[]).find(function(i){ return i && String(i.id)===String(insumoId); }); if(!ins) return;
-          ins.deParaNF=(ins.deParaNF||[]).filter(function(m){ return !(String(m.cnpj||'').replace(/\D/g,'')===_cnpjL && String(m.cProd)===String(cProd)); });
+          ins.deParaNF=(ins.deParaNF||[]).filter(function(m){ return !(String(m.cnpj||'').toUpperCase().replace(/[^0-9A-Z]/g,'')===_cnpjL && String(m.cProd)===String(cProd)); });
           ins.deParaNF.push({ cnpj:_cnpjL, cProd:String(cProd), un:String(unNF||''), fator:+(+fator).toFixed(6), em:now, por:(currentUser&&currentUser.name)||'' });
         };
         _pcx.leva.forEach(function(r){
@@ -15544,14 +15698,14 @@ function _fornDocs(f){
 function _fornDocMatch(f,q){ return _fornDocs(f).some(d=>_docMatch(d,q)); }
 // v171 — GRUPO derivado do CNPJ compartilhado (Fagron/Florien/Sovitá/Infinity = cadastros separados, mesmo CNPJ)
 function _fornMesmoDoc(a,b){
-  const da=_fornDocs(a).map(d=>d.replace(/\D/g,'')).filter(Boolean);
-  const db=_fornDocs(b).map(d=>d.replace(/\D/g,'')).filter(Boolean);
+  const da=_fornDocs(a).map(d=>d.toUpperCase().replace(/[^0-9A-Z]/g,'')).filter(Boolean);
+  const db=_fornDocs(b).map(d=>d.toUpperCase().replace(/[^0-9A-Z]/g,'')).filter(Boolean);
   return da.some(d=>db.indexOf(d)>=0);
 }
 function _fornGrupo(f){ if(!f) return []; return (fornecedores||[]).filter(x=>x.id!==f.id&&_fornMesmoDoc(f,x)); }
 function _fornGrupoDocs(f){ // união dos CNPJs do grupo (os do próprio cadastro primeiro)
   const docs=[], vist={};
-  [f].concat(_fornGrupo(f)).forEach(x=>{ _fornDocs(x).forEach(d=>{ const k=d.replace(/\D/g,''); if(k&&!vist[k]){ vist[k]=1; docs.push(d); } }); });
+  [f].concat(_fornGrupo(f)).forEach(x=>{ _fornDocs(x).forEach(d=>{ const k=d.toUpperCase().replace(/[^0-9A-Z]/g,''); if(k&&!vist[k]){ vist[k]=1; docs.push(d); } }); });
   return docs;
 }
 function renderFornecedores(){
@@ -16119,6 +16273,7 @@ function renderCompRecebimento(){
         '<span style="font-weight:600">'+fmtMoney(parseFloat(f.valor)||0)+'</span>'+
         '<span style="font-size:10px;color:var(--text-tertiary)">'+(f.emitida_em?String(f.emitida_em).split('-').reverse().join('/'):'')+'</span>'+
         '<button onclick="_nfReceberSemPedido(\''+f.id+'\')" style="font-size:11px;padding:4px 10px">🧾 Receber sem pedido</button>'+
+        '<button onclick="_nfFilaDescartar(\''+f.id+'\')" title="A nota já foi recebida/lançada MANUALMENTE por fora? Desconsidere: o XML passa a ser ignorado como se não estivesse na pasta (a rotina não o traz de volta)." style="font-size:11px;padding:4px 10px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">🗑 Desconsiderar</button>'+
         '<span style="font-size:10px;color:var(--text-tertiary)" title="Se a compra TEM pedido que ainda não foi fechado na Solicitação de Compra, feche e fature com esta NF — o vínculo com o XML acontece sozinho ao abrir a conciliação.">ou aguarde o pedido fechar</span>'+
       '</div>';
     }).join('')+'</div>' : '';
@@ -17921,7 +18076,7 @@ function _mlAutoc(pref, arr, label){
   const inf=document.getElementById('ml-'+pref+'-info'); if(inf) inf.style.display='none';
   if(q.length<2){ ac.classList.remove('open'); return; }
   const qd=q.replace(/\D/g,'');
-  const m=(arr||[]).filter(x=>(x.nome||'').toLowerCase().includes(q)||(x.apelido||'').toLowerCase().includes(q)||(qd.length>1&&_fornDocs(x).some(d=>d.replace(/\D/g,'').includes(qd)))).slice(0,8);
+  const m=(arr||[]).filter(x=>(x.nome||'').toLowerCase().includes(q)||(x.apelido||'').toLowerCase().includes(q)||(qd.length>1&&_fornDocs(x).some(d=>d.toUpperCase().replace(/[^0-9A-Z]/g,'').includes(qd)))).slice(0,8);
   if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nenhum '+label+' encontrado no cadastro.</div>'; ac.classList.add('open'); return; }
   ac.innerHTML=m.map(x=>`<div class="autocomplete-item" onclick="_mlSelEnt2('${pref}','${x.id}')"><div class="ac-name">${escapeHtml(x.nome)}</div><div class="ac-doc">${escapeHtml(x.doc||x.categoria||'')}</div></div>`).join('');
   ac.classList.add('open');
@@ -18672,6 +18827,8 @@ function refreshAll(){
   _rebuildCreditosFromOrders(); // v112 — crédito SEMPRE derivado dos pedidos (mata o clobber do blob)
   if(typeof _healEstoqueNaoNec==='function') _healEstoqueNaoNec(); // v168 — embalagem "não necessário" = estoque 'Solicitado compra' (auto-corrige antigos)
   if(typeof _healComprasEnvio==='function') _healComprasEnvio(); // v205 — enviado sem lado definido = não necessário automático (regra do dono 10/08)
+  if(typeof _healComercialPI==='function') _healComercialPI(); // v208 — "Produtos informados" sem produtos = reversão lógica (ordem do dono 11/08, caso 102926)
+  if(typeof _healCadastroCompleto==='function') _healCadastroCompleto(); // v208 — completude do cadastro = derivação nome+doc+contato (ordem do dono 11/08)
   if(typeof _updateConvBadge==='function') _updateConvBadge();
   if(typeof renderNotifBadge==='function') renderNotifBadge(); // v102 — badge do sino acende em realtime (chega notificação → refreshAll → badge)
   // v89 — só re-renderiza as telas pesadas que estão VISÍVEIS (showPage já as re-renderiza ao navegar).
@@ -19260,14 +19417,16 @@ function openDetailModal(oid){
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
       <div>
         ${rowc('E-mail',c.email||'—')}
-        ${rowc('Telefone',c.tel1||'—')}
+        ${rowc('Telefone',c.tel1||'—')}${''/* v208 — espelho do contato ★ (fonte única = contatos da empresa) */}
         ${c.tel2?rowc('Telefone 2',c.tel2):''}
         ${c.conselhoTipo||c.conselhoNum?rowc('Conselho',[c.conselhoTipo,c.conselhoNum].filter(Boolean).join(' ')):''}
       </div>
       <div>
-        ${rowc('Contato fin.',c.finContato||'—')}
+        ${c.finContato?rowc('Contato fin.',c.finContato):''}
         ${rowc('E-mail fin.',c.finEmail||'—')}
-        ${rowc('Fone fin.',c.finTel||'—')}
+        ${c.finTel?rowc('Fone fin.',c.finTel):''}
+        ${c.site?rowc('Site',c.site):''}
+        ${c.instagram?rowc('Instagram',c.instagram):''}
       </div>
     </div>
     ${c.rtNome?row('Responsável técnico',c.rtNome):''}
@@ -20390,8 +20549,8 @@ async function importarPedidoPDF(input){
     } else { _iaItensPendentes=null; _iaProdutosNovos=null; }
     // ── Cliente: vincular por CPF/CNPJ (sem criar cadastro) ──
     let clienteHtml='';
-    const docClean=(f.doc||'').replace(/\D/g,'');
-    const cli=docClean?(typeof _acharClientePorDoc==='function'?_acharClientePorDoc(docClean):clients.find(c=>c.doc&&c.doc.replace(/\D/g,'')===docClean)):null;
+    const docClean=_docLimpo(f.doc); // v208 — alfanumérico
+    const cli=docClean?(typeof _acharClientePorDoc==='function'?_acharClientePorDoc(docClean):clients.find(c=>c.doc&&_docLimpo(c.doc)===docClean)):null;
     if(cli){
       if(typeof selectClient==='function') selectClient(cli.id);
       applied.push('Cliente vinculado');
@@ -23199,7 +23358,7 @@ function _dupClientePares(){
   const porDoc={}, porFone={}; // v110 (D2) — 'porNome' removido junto com a varredura por nome
   const addKey=(map,k,c)=>{ if(!k) return; (map[k]=map[k]||[]).push(c); };
   cs.forEach(c=>{
-    const d=(c.doc||'').replace(/\D/g,''); if(d.length>=11) addKey(porDoc,d,c);
+    const d=(c.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,''); if(d.length>=11) addKey(porDoc,d,c);
     _dupFoneKeys(c).forEach(k=>addKey(porFone,k,c));
     // v110 — removida a deteccao por nome+sobrenome (gerava muito falso positivo); mantem só CPF/CNPJ + telefone.
   });
@@ -23262,12 +23421,12 @@ function _diagInconsistencias(){
     if(probs.length) issues.conversas.push({id:cv.id, nome:(cli&&cli.nome)||'(sem cliente)', probs});
   });
   const porDoc={};
-  clients.forEach(c=>{ const d=(c.doc||'').replace(/\D/g,''); if(d) porDoc[d]=(porDoc[d]||0)+1; });
+  clients.forEach(c=>{ const d=(c.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,''); if(d) porDoc[d]=(porDoc[d]||0)+1; });
   clients.forEach(c=>{
     const probs=[];
     if(c.carteiraLinha && !eqOk(c.carteiraLinha)) probs.push('Carteira de Linha aponta para equipe inexistente');
     if(c.carteiraAnest && !eqOk(c.carteiraAnest)) probs.push('Carteira de Anestésico aponta para equipe inexistente');
-    const d=(c.doc||'').replace(/\D/g,''); if(d && porDoc[d]>1) probs.push('CNPJ/CPF duplicado em outro cliente');
+    const d=(c.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,''); if(d && porDoc[d]>1) probs.push('CNPJ/CPF duplicado em outro cliente');
     if(probs.length) issues.clientes.push({id:c.id, nome:c.nome||'(sem nome)', probs});
   });
   // v118 — produto ENVIADO / na lista da EXPEDIÇÃO diferente do produto do PEDIDO
@@ -23287,7 +23446,7 @@ function _diagInconsistencias(){
   (orders||[]).forEach(o=>{
     if(!o) return;
     const temCad = o.clienteId && cliById(o.clienteId);
-    const doc=(o.doc||'').replace(/\D/g,'');
+    const doc=(o.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
     if(temCad) return;                       // já tem cadastro válido
     if(!o.aguardandoCadastro && !doc) return; // sem flag e sem doc → não dá pra vincular, ignora
     const chave = doc || ('__'+o.id);
@@ -23302,7 +23461,7 @@ function _diagInconsistencias(){
 function _vincularOrfaosACliente(docDig, clienteId){
   const c=clients.find(x=>String(x.id)===String(clienteId)); if(!c){ alert('Cliente não encontrado.'); return; }
   let n=0;
-  (orders||[]).forEach(o=>{ if(!o) return; const od=(o.doc||'').replace(/\D/g,''); if(od && od===String(docDig) && (o.aguardandoCadastro || !o.clienteId)){ o.clienteId=c.id; o.cliente=c.nome||o.cliente; delete o.aguardandoCadastro; n++; } });
+  (orders||[]).forEach(o=>{ if(!o) return; const od=(o.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,''); if(od && od===String(docDig) && (o.aguardandoCadastro || !o.clienteId)){ o.clienteId=c.id; o.cliente=c.nome||o.cliente; delete o.aguardandoCadastro; n++; } });
   if(n) saveData();
   renderInconsistencias();
   alert(n? (n+' pedido(s) vinculado(s) a '+(c.nome||'cliente')+'.') : 'Nenhum pedido para vincular.');
@@ -23378,7 +23537,7 @@ function renderInconsistencias(){
       <div style="font-size:11px;color:${p.conf>=3?'var(--st-bad-tx)':'var(--st-mid-tx)'};font-weight:600;margin-bottom:6px">⚠ ${esc(p.motivo)}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">${infoBox(p.a,p.b)}${infoBox(p.b,p.a)}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${(()=>{ const da=String(p.a.doc||'').replace(/\D/g,''), db=String(p.b.doc||'').replace(/\D/g,''); const ehPFPJ=(da.length===11&&db.length===14)||(da.length===14&&db.length===11); return ehPFPJ ? `<button class="btn-primary" style="${bs}" onclick="_vincularPFaoPJ('${p.a.id}','${p.b.id}')">🔗 Vincular pessoa física ao PJ</button>` : `<button class="btn-primary" style="${bs}" onclick="_vincularClientes('${p.a.id}','${p.b.id}')">🔗 Vincular (mesmo dono)</button>`; })()}
+        ${(()=>{ const da=String(p.a.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,''), db=String(p.b.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,''); const ehPFPJ=(da.length===11&&db.length===14)||(da.length===14&&db.length===11); return ehPFPJ ? `<button class="btn-primary" style="${bs}" onclick="_vincularPFaoPJ('${p.a.id}','${p.b.id}')">🔗 Vincular pessoa física ao PJ</button>` : `<button class="btn-primary" style="${bs}" onclick="_vincularClientes('${p.a.id}','${p.b.id}')">🔗 Vincular (mesmo dono)</button>`; })()}
         <button style="${bs}" onclick="_fundirClienteDup('${p.a.id}','${p.b.id}')">⛓ Fundir → ${esc((p.a.nome||'').slice(0,16))}</button>
         <button style="${bs}" onclick="_fundirClienteDup('${p.b.id}','${p.a.id}')">⛓ Fundir → ${esc((p.b.nome||'').slice(0,16))}</button>
         <button style="${bs}" onclick="_descartarPar('${p.a.id}','${p.b.id}')">✕ Não é o mesmo</button>
@@ -23420,8 +23579,8 @@ function renderInconsistencias(){
   // v120 — Pedidos aguardando cadastro do cliente (lançados pelo agente de import sem cadastro)
   const _qs=s=>esc(String(s||'').replace(/'/g,'’'));
   html+=secao('⏳ Pedidos aguardando cadastro do cliente', I.aguardandoCadastro, g=>{
-    const docDig=(g.doc||'').replace(/\D/g,'');
-    const cliExist = docDig ? clients.find(x=>(x.doc||'').replace(/\D/g,'')===docDig) : null;
+    const docDig=(g.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
+    const cliExist = docDig ? clients.find(x=>(x.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'')===docDig) : null;
     const nums=g.pedidos.map(p=>esc(p.num)).join(', ');
     let acoes='';
     if(cliExist) acoes+='<button class="btn-primary" style="'+bs+'" onclick="_vincularOrfaosACliente(\''+docDig+'\',\''+cliExist.id+'\')">🔗 Vincular a '+esc((cliExist.nome||'').slice(0,20))+'</button> ';
@@ -23820,8 +23979,8 @@ function renderCalendario(){
 
 function getFornecedorSuggestions(q){
   const ql=(q||'').toLowerCase();
-  const qd=(q||'').replace(/\D/g,''); // v113 — dígitos p/ buscar por CNPJ/CPF
-  return fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(ql) || (f.apelido||'').toLowerCase().includes(ql) || (qd.length>=2 && _fornDocs(f).some(d=>d.replace(/\D/g,'').includes(qd)))).slice(0,8);
+  const qd=(q||'').toUpperCase().replace(/[^0-9A-Z]/g,''); // v113 — dígitos p/ buscar por CNPJ/CPF
+  return fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(ql) || (f.apelido||'').toLowerCase().includes(ql) || (qd.length>=2 && _fornDocs(f).some(d=>d.toUpperCase().replace(/[^0-9A-Z]/g,'').includes(qd)))).slice(0,8);
 }
 
 function renderFornecedorAc(acId,inputId,onSelect){
@@ -24318,8 +24477,8 @@ function onPtFornecedorInput(val){
   const q=val.trim().toLowerCase();
   if(q.length<1){ac.classList.remove('open');return;}
   // Combine registered fornecedores + unique names from freteRealLanc
-  const _qd=q.replace(/\D/g,''); // v113 — também por CNPJ/CPF
-  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||(_qd.length>=2&&_fornDocs(f).some(d=>d.replace(/\D/g,'').includes(_qd))));
+  const _qd=q.toUpperCase().replace(/[^0-9A-Z]/g,''); // v113 — também por CNPJ/CPF
+  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||(_qd.length>=2&&_fornDocs(f).some(d=>d.toUpperCase().replace(/[^0-9A-Z]/g,'').includes(_qd))));
   const fromFr=[...new Set(freteRealLanc.map(x=>x.fornecedorNome).filter(n=>n&&n.toLowerCase().includes(q)))]
     .filter(n=>!fromForn.find(f=>f.nome.toLowerCase()===n.toLowerCase()))
     .map(n=>({id:null,nome:n}));
@@ -24903,8 +25062,8 @@ function onPgFornecedorInput(val){
   const q=(val||'').trim().toLowerCase();
   if(q.length<1){ ac.classList.remove('open'); return; }
   // nomes de gráfica vindos dos lançamentos impressao + fornecedores cadastrados
-  const _qd=q.replace(/\D/g,''); // v113 — também por CNPJ/CPF
-  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||(_qd.length>=2&&_fornDocs(f).some(d=>d.replace(/\D/g,'').includes(_qd)))).map(f=>f.nome);
+  const _qd=q.toUpperCase().replace(/[^0-9A-Z]/g,''); // v113 — também por CNPJ/CPF
+  const fromForn=fornecedores.filter(f=>(f.nome||'').toLowerCase().includes(q)||(f.apelido||'').toLowerCase().includes(q)||(_qd.length>=2&&_fornDocs(f).some(d=>d.toUpperCase().replace(/[^0-9A-Z]/g,'').includes(_qd)))).map(f=>f.nome);
   const fromPag=[...new Set((pagamentos||[]).filter(p=>p.tipo==='impressao').map(p=>p.fornecedor).filter(n=>n&&n.toLowerCase().includes(q)))];
   const all=[...new Set([...fromPag,...fromForn])].slice(0,8);
   if(all.length){
@@ -25054,7 +25213,7 @@ function _prejFrIntPed(o){
 function _ufDestino(o){
   if(!o) return '';
   var c = o.clienteId ? clients.find(x=>x.id===o.clienteId) : null;
-  if(!c && o.doc){ var d=String(o.doc||'').replace(/\D/g,''); if(d) c=clients.find(x=>String(x.doc||'').replace(/\D/g,'')===d); }
+  if(!c && o.doc){ var d=String(o.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,''); if(d) c=clients.find(x=>String(x.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'')===d); }
   if(!c && o.cliente){ var nm=String(o.cliente||'').trim().toLowerCase(); c=clients.find(x=>String(x.nome||'').trim().toLowerCase()===nm); }
   return c && c.uf ? String(c.uf).toUpperCase() : '';
 }
@@ -29771,7 +29930,7 @@ function _importCarteirasPreview(rows){
   rows.forEach(r=>{
     const id=(r['ID']||'').trim();
     let cli = id.startsWith('lead_') ? null : clients.find(c=>c.id===id);
-    if(!cli && r['CNPJ/CPF']){ const d=r['CNPJ/CPF'].replace(/\D/g,''); if(d) cli=clients.find(c=>(c.doc||'').replace(/\D/g,'')===d); }
+    if(!cli && r['CNPJ/CPF']){ const d=r['CNPJ/CPF'].toUpperCase().replace(/[^0-9A-Z]/g,''); if(d) cli=clients.find(c=>(c.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'')===d); }
     if(!cli){ return; } // leads sem cadastro: ignora atualização de carteira (não têm cliente)
     const nome=cli.nome;
     const campos=[];
@@ -32210,11 +32369,11 @@ function importarClientesCSV(input){
       }
 
       // Classificar: novos vs duplicados (por doc normalizado)
-      const docsExistentes = new Set(clients.map(c=>(c.doc||'').replace(/\D/g,'')).filter(Boolean));
+      const docsExistentes = new Set(clients.map(c=>(c.doc||'').toUpperCase().replace(/[^0-9A-Z]/g,'')).filter(Boolean));
       const novos=[]; const duplicados=[]; const semDoc=[];
       const docsNoArquivo = new Set();
       rows.forEach(r=>{
-        const docN = (r.doc||'').replace(/\D/g,'');
+        const docN = _docLimpo(r.doc); // v208 — alfanumérico
         if(!docN){ semDoc.push(r); return; }
         if(docsExistentes.has(docN) || docsNoArquivo.has(docN)){ duplicados.push(r); return; }
         docsNoArquivo.add(docN);
@@ -32287,6 +32446,9 @@ function confirmarImportClientes(){
       email: r.email||'',
       tel1: r.tel1||'',
       tel2: r.tel2||'',
+      // v208 — fonte única de telefone: o CSV também alimenta CONTATOS DA EMPRESA (★ no principal)
+      contatos: [ ...(r.tel1?[{nome:r.nome||'Contato principal',cargo:'',telefone:r.tel1,email:r.email||'',principal:true}]:[]),
+                  ...((r.tel2 && String(r.tel2).replace(/\D/g,'').slice(-8)!==String(r.tel1||'').replace(/\D/g,'').slice(-8))?[{nome:(r.nome||'Contato')+' (2)',cargo:'',telefone:r.tel2,email:'',principal:false}]:[]) ],
       finContato:'', finEmail:'', finTel:'',
       cep: r.cep||'',
       uf: r.uf||'',
@@ -36381,7 +36543,8 @@ function _onTipoPessoaChange(){
 var _cliVinc=[];   // pessoasVinculadas: [{tipoPessoa,nome,doc}]
 var _cliAtend=[];  // atendidosIds: clientes que o intermediário atende
 function _ehIntermediario(c){ return !!(c && (c.tipoPessoa==='intermediario' || c.intermediaria===true)); }
-function _docLimpo(d){ return String(d||'').replace(/\D/g,''); }
+// v208 — CNPJ ALFANUMÉRICO (jul/2026): documento normalizado preserva LETRAS (A-Z) — 'só dígitos' destruiria os novos CNPJs
+function _docLimpo(d){ return String(d||'').toUpperCase().replace(/[^0-9A-Z]/g,''); }
 // acha cliente por documento — principal OU pessoa vinculada
 function _acharClientePorDoc(doc, exceptId){
   const dc=_docLimpo(doc); if(!dc) return null;
@@ -36438,7 +36601,7 @@ function _renderAtendBusca(){
   const q=(document.getElementById('c-atend-busca')?.value||'').toLowerCase().trim();
   const ac=document.getElementById('c-atend-ac'); if(!ac) return;
   if(!q){ ac.style.display='none'; return; }
-  const qd=q.replace(/\D/g,''); // v144 : documento digitado sem pontuacao tambem acha
+  const qd=q.toUpperCase().replace(/[^0-9A-Z]/g,''); // v144 : documento digitado sem pontuacao tambem acha
   const res=(clients||[]).filter(c=>c.id!==editingClientId && !_ehIntermediario(c) && !_cliAtend.includes(c.id) && (((c.nome||'')+' '+(c.doc||'')).toLowerCase().includes(q) || (qd.length>=5 && _docLimpo(c.doc).includes(qd)))).slice(0,8);
   ac.innerHTML = res.length ? res.map(c=>`<div class="autocomplete-item" style="padding:6px 10px;font-size:12px;cursor:pointer" onmousedown="_addAtendido('${c.id}')">${escapeHtml(c.nome||'')} <span style="color:var(--text-tertiary)">· ${c.tipoPessoa==='pf'?'PF':'PJ'}${c.doc?(' · '+escapeHtml(c.doc)):''}</span></div>`).join('') : '<div style="padding:6px 10px;font-size:12px;color:var(--text-tertiary)">Nenhum cliente encontrado.</div>';
   ac.style.display='block';
@@ -36693,12 +36856,15 @@ async function _buscarCepCliente(){
 // v186 — pedido do dono 03/08: buscar a razão social (e endereço) pelo CNPJ na Receita (BrasilAPI).
 // Só completa campos VAZIOS — nunca sobrescreve o que já está na ficha (o nome pede confirmação).
 async function _buscarCnpjCliente(){
-  const inp=document.getElementById('c-doc'); const cnpj=(inp?.value||'').replace(/\D/g,'');
+  const inp=document.getElementById('c-doc'); const cnpj=_docLimpo(inp?.value); // v208 — CNPJ alfanumérico entra inteiro
   if(cnpj.length!==14){ alert('Informe um CNPJ completo (14 dígitos) para buscar.\n(Para CPF não existe consulta pública.)'); return; }
+  // v208 — caso Ilanna (11/08): CNPJ com dígito verificador errado caía no catch e a mensagem culpava
+  // a INTERNET ("precisa de internet/online") — o problema era o NÚMERO. Agora valida ANTES e nomeia.
+  if(typeof _docValidoCNPJ==='function' && !_docValidoCNPJ(cnpj)){ alert('Este CNPJ é INVÁLIDO (o dígito verificador não confere) — confira os números digitados.\nA Receita não tem cadastro com esse número; não é problema de internet.'); return; }
   const btn=document.getElementById('c-doc-buscar'); if(btn){ btn.disabled=true; btn.textContent='Buscando…'; }
   try{
     const r=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+cnpj);
-    if(!r.ok){ alert(r.status===404?'CNPJ não encontrado na Receita.':'A consulta de CNPJ falhou (serviço indisponível). Tente novamente em instantes.'); return; }
+    if(!r.ok){ alert(r.status===404?'CNPJ não encontrado na Receita.':(r.status===400?'A Receita recusou este CNPJ como inválido — confira os números.':'A consulta de CNPJ falhou (serviço indisponível). Tente novamente em instantes.')); return; }
     const d=await r.json();
     const razao=(d.razao_social||'').trim();
     if(razao){
@@ -36708,7 +36874,7 @@ async function _buscarCnpjCliente(){
         if(!atual || confirm('Razão social na Receita:\n\n'+razao+'\n\nSubstituir o nome atual "'+atual+'"?')) nomeEl.value=razao;
       }
     } else { alert('A Receita não retornou razão social para este CNPJ.'); }
-    if(inp) inp.value=cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5');
+    if(inp) inp.value=cnpj.replace(/^([0-9A-Z]{2})([0-9A-Z]{3})([0-9A-Z]{3})([0-9A-Z]{4})(\d{2})$/,'$1.$2.$3/$4-$5'); // v208 — máscara alfanumérica
     const setIfEmpty=(id,v)=>{ const e=document.getElementById(id); if(e&&!e.value.trim()&&v) e.value=String(v); };
     setIfEmpty('c-cep', d.cep?String(d.cep).replace(/\D/g,'').replace(/^(\d{5})(\d{3})$/,'$1-$2'):'');
     setIfEmpty('c-uf', (d.uf||'').toUpperCase());

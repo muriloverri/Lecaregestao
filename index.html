@@ -4813,7 +4813,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v210';
+var APP_VERSION = 'v211';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -12112,7 +12112,9 @@ function _solItemLinhaInfo(s, it, lst){
   } else {
     k='aguarda_lista'; st='<span style="color:var(--text-tertiary)">📨 solicitado<br><span style="'+sub+'">aguardando entrar em lista</span></span>';
   }
-  var _dtC=(c&&c.compradoEm)?fmtDate(_gstDataDe(c.compradoEm)):'';
+  // v211 — data da coluna Compra = data em que o PEDIDO DE COMPRA foi FECHADO (pedido do dono 14/08,
+  // print PC-039); enquanto o PC não fecha (ou compra sem PC), vale a data em que o item foi comprado
+  var _dtC=(inf.pc&&inf.pc.fechadoEm)?fmtDate(_gstDataDe(inf.pc.fechadoEm)):((c&&c.compradoEm)?fmtDate(_gstDataDe(c.compradoEm)):'');
   var _qtdC=c?(parseFloat(c.qtdComprada)||0):0, _qtdS=parseFloat(it.qtd)||0;
   var colCompra = c ? ('<span style="white-space:nowrap">'+(_dtC||'—')+'</span>'+
       (c.compradoPor?'<br><span style="'+sub+'">'+escapeHtml(c.compradoPor)+'</span>':'')+
@@ -12130,6 +12132,15 @@ function _solItemLinhaInfo(s, it, lst){
     // rateio por D1 deixou este pedido descoberto — destaca a falta específica dele
     var _mineA=_rf&&s&&(_rf.aloc||[]).find(function(x){ return String(x.orderId)===String(s.orderId); });
     if(_mineA) colReceb+='<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:700" title="O rateio por D1 do recebimento a menos deixou ESTE pedido descoberto">⚠ faltaram '+(parseFloat(_mineA.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+' DESTE pedido</span>';
+  } else if(c && c.recebFisicoEm!=null){
+    // v211 — recebimento FÍSICO (📦 Gestão de Pedidos, fluxo v210) conta como RECEBIDO na mercadoria
+    // (reporte do dono 14/08, PC-041/NF 170025: o pedido constava recebido e aqui seguia "aguardando
+    // recebimento" — c.recebido é a marca da CONCILIAÇÃO, que vira pendência à parte)
+    var _qF=parseFloat(c.recebFisicoQtd)||0, _qC2=parseFloat(c.qtdComprada)||0;
+    colReceb='<span style="color:var(--st-ok-tx);font-weight:600;white-space:nowrap">✔ recebido</span>'+
+      '<br><span style="'+sub+'">'+fmtDate(_gstDataDe(c.recebFisicoEm))+'</span>'+
+      (_qC2 && Math.abs(_qF-_qC2)>0.001?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="Conferência física: chegou diferente do comprado">📦 chegou '+_qF.toLocaleString('pt-BR')+' de '+_qC2.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</span>':'')+
+      '<br><span style="color:var(--st-mid-tx);font-size:10px" title="Valores/XML e lançamento para o Caixa pendentes no menu Compras › Recebimento de Pedido">conciliação pendente</span>';
   } else if(c && inf.pc){
     colReceb='<span style="color:var(--text-secondary)">'+escapeHtml((typeof _PC_ST_LBL!=='undefined'&&_PC_ST_LBL[inf.pc.status])||inf.pc.status||'—')+'</span>'+
       '<br><span style="'+sub+'">aguardando recebimento</span>';
@@ -13339,7 +13350,9 @@ function _acompStatusItem(s, it){
   if(parts.every(function(p){ return p.naoComprado; })) return {st: li.ncResolucao==='ajustado'?'Ajustado':li.ncResolucao==='tinha_estoque'?'Tinha estoque':li.ncResolucao==='sem_estoque'?'Sem estoque':'Não comprado', li:li}; // v171 — resolução por item
   if(parts.some(function(p){ return p.compraParcial && p.compra && p.compra.comprado; })) return {st:'Compra parcial', li:li}; // v169 — solicitado subiu acima do comprado
   var vivos=parts.filter(function(p){ return !p.naoComprado; });
-  if(vivos.length && vivos.every(function(p){ return p.compra && p.compra.recebido; })){
+  // v211 — recebimento FÍSICO (recebFisicoEm, fluxo v210) conta como recebido no Acompanhamento;
+  // a conciliação pendente é etapa do financeiro, não da mercadoria (reporte do dono 14/08, PC-041)
+  if(vivos.length && vivos.every(function(p){ return p.compra && (p.compra.recebido || p.compra.recebFisicoEm!=null); })){
     // v210 — caso 102798/válvula (14/08): a compra da LISTA foi recebida, mas o RATEIO por D1 deixou
     // o quinhão DESTE pedido descoberto — o Acompanhamento dizia "Recebido" e o Recebidos a menos
     // dizia "faltam 10" ao mesmo tempo. Agora o status cruza com o rateio: quinhão descoberto =
@@ -14504,12 +14517,31 @@ function _pcXmlAplicar(txt){
       r.xmlCod=partesM[0].cProd||''; r._xml=true; r.xmlItens=snapsM; casados++;
     }
   });
+  // v211 — DESEMPATE PONDERADO (autorização do dono 14/08; casos 907290 e 101457×101498/NF 84962:
+  // duas "VALVULA ESPUMADORA" na mesma nota — o nome não distingue e o primeiro-que-aparece vencia,
+  // invertendo os vínculos). Quando um nível da cascata devolve MAIS DE UM candidato, a escolha
+  // pondera a proximidade do PREÇO UNITÁRIO (peso maior) e, POR ÚLTIMO, a da QUANTIDADE — ambos
+  // comparados na unidade do PEDIDO (conversão sugerida aplicada antes de comparar).
+  var _melhor=function(r, cands){
+    if(cands.length<=1) return cands[0]||null;
+    var pRef=parseFloat(r.precoPedido!=null?r.precoPedido:r.preco)||0;
+    var qRef=parseFloat(r.qtdPedido!=null?r.qtdPedido:r.qtd)||0;
+    var best=null, bestSc=Infinity;
+    cands.forEach(function(x){
+      var cv=_pcConvSugerir(r.unidade, x.un, x.qtd, x.unit, x.nome);
+      var dP=pRef>0?Math.min(1,Math.abs((parseFloat(cv.preco)||0)-pRef)/pRef):0.5;
+      var dQ=qRef>0?Math.min(1,Math.abs((parseFloat(cv.qtd)||0)-qRef)/qRef):0.5;
+      var sc=dP*4+dQ; // preço pesa 4×; a quantidade só decide quando os preços empatam na distância
+      if(sc<bestSc){ bestSc=sc; best=x; }
+    });
+    return best;
+  };
   _pcRecebRows.forEach(function(r){
     if(r._xml) return; // v201 — já casado pelo de-para
     var rn=_pcXmlNorm(r.nome), rt=_tok(r.nome);
-    var m=xitens.find(function(x){ return !x._usado && _nomesDe(x).some(function(n){ return _pcXmlNorm(n)===rn; }); })
-        || xitens.find(function(x){ if(x._usado) return false; return _nomesDe(x).some(function(n){ var xn=_pcXmlNorm(n); return xn&&rn&&(xn.indexOf(rn)>=0||rn.indexOf(xn)>=0); }); })
-        || xitens.find(function(x){ if(x._usado) return false; return _nomesDe(x).some(function(n){ var xt=_tok(n); return _tokSubset(rt,xt)||_tokSubset(xt,rt); }); });
+    var m=_melhor(r, xitens.filter(function(x){ return !x._usado && _nomesDe(x).some(function(n){ return _pcXmlNorm(n)===rn; }); }))
+        || _melhor(r, xitens.filter(function(x){ if(x._usado) return false; return _nomesDe(x).some(function(n){ var xn=_pcXmlNorm(n); return xn&&rn&&(xn.indexOf(rn)>=0||rn.indexOf(xn)>=0); }); }))
+        || _melhor(r, xitens.filter(function(x){ if(x._usado) return false; return _nomesDe(x).some(function(n){ var xt=_tok(n); return _tokSubset(rt,xt)||_tokSubset(xt,rt); }); }));
     if(m){ m._usado=true;
       // v194 — converte para a unidade DO PEDIDO e guarda a memória de cálculo p/ o modal de
       // verificação (obrigatório antes de prosseguir quando houve conversão — regra do dono).

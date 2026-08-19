@@ -4813,7 +4813,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v211';
+var APP_VERSION = 'v212';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -10275,9 +10275,11 @@ function onPercPedidoInput(i, val){
   const q=val.trim().toLowerCase();
   if(q.length<1){ac.classList.remove('open');atualizarPercRows();return;}
   // Busca parcial nos pedidos
+  // v212 — mesmo defeito do Frete Real (nº curto sumia no corte dos 8): exato → começa-com → contém
+  const _rankP=o=>{ const n=String(o.num||'').toLowerCase(); return n===q?0:(n.indexOf(q)===0?1:(n.indexOf(q)>=0?2:3)); };
   const matches=orders.filter(o=>
     o.num.toLowerCase().includes(q)||o.cliente.toLowerCase().includes(q)
-  ).slice(0,8);
+  ).sort((a,b)=>_rankP(a)-_rankP(b)).slice(0,8);
   if(matches.length){
     ac.innerHTML=matches.map(o=>`<div class="autocomplete-item" onmousedown="selectPercPedido(${i},'${o.id}','${escapeHtml(o.num)}')">
       <div class="ac-name" style="font-weight:500">${escapeHtml(o.num)} <span style="font-weight:400;color:var(--text-secondary)">— ${escapeHtml(o.cliente)}</span></div>
@@ -15057,6 +15059,10 @@ function openReceberPedido(pcId, checagem){
   // (Gestão de Pedidos › 📦 Receber). Antes disso o pedido fica em acompanhamento.
   else if(pc.status==='em_recebimento'||pc.status==='conciliado'){ alert('📦 Receba a MERCADORIA primeiro: Solicitação de Compra › Gestão de Pedidos › botão "📦 Receber" na linha do pedido.\n\nDepois do recebimento, a conciliação com a NF libera aqui.'); return; }
   else if(pc.status!=='recebido'){ alert('Este pedido ainda não foi ENVIADO PARA RECEBIMENTO.\n\nO fluxo é na Solicitação de Compra › Gestão de Pedidos: fechar o pedido → informar a NF → 📤 Enviar para recebimento → 📦 Receber a mercadoria. Só então a conciliação libera aqui.'); return; }
+  // v212 — MUDANÇA DE FLUXO (dono, 19/08): o FINANCEIRO vai ao Caixa ANTES da conciliação. Pedido do
+  // fluxo novo (recebimento físico) sem lançamento financeiro → primeiro o botão 💰 Lançar financeiro;
+  // a conciliação passa a ser a conferência de PREÇOS UNITÁRIOS. Fluxo legado (sem físico) inalterado.
+  else if(pc.recebFisico && !pc.finLanc && !(pc.recebimentos||[]).length){ alert('💰 Lance o FINANCEIRO primeiro: botão "Lançar financeiro" na linha deste pedido.\n\nO lançamento usa o valor da nota informado na conferência física e vai ao Caixa. Depois disso, a conciliação aqui é a conferência dos PREÇOS UNITÁRIOS de cada item com a NF/XML.'); return; }
   _pcRecebId=pcId;
   _pcXml=null; _pcXmlSobra=[]; try{ var _xi=document.getElementById('pcr-xml-info'); if(_xi) _xi.innerHTML=''; }catch(_e){} // v169 — limpa o XML da conciliação anterior (v198: sobra junto)
   // v207 — na CHECAGEM entram TODOS os itens (inclusive os já recebidos — é exatamente o que se confere)
@@ -15067,7 +15073,10 @@ function openReceberPedido(pcId, checagem){
              // DA NOTA (XML, vínculo manual ou digitado da nota em papel). Antes vinha pré-preenchido
              // com o preço da COMPRA (precoPago), o que parecia conciliado sem estar — a coluna
              // "Preço pedido" continua mostrando o da compra como referência da divergência.
-             qtd:null, preco:null, incluir:true, // v202 — qtd recebida TAMBÉM nasce vazia (ordem do dono: sem conciliação, nada preenchido)
+             // v212 — a QTD RECEBIDA nasce do RECEBIMENTO FÍSICO (pedido do dono 19/08, PC-039: "se
+             // já fez o recebimento da quantidade, pode puxar do recebimento") — a conciliação foca o
+             // financeiro e o PREÇO unitário. Sem conferência física (fluxo legado), nasce vazia (v202).
+             qtd:(x.it.compra.recebFisicoQtd!=null?(parseFloat(x.it.compra.recebFisicoQtd)||0):null), preco:null, incluir:true,
              itemId:(x.it.itemId!=null?x.it.itemId:null), // v201 — insumo do sistema (chave do de-para NF)
              ipi:0, frete:0, outros:0, conv:null }; // v194 — custos por fora + memória da conversão
   });
@@ -15083,7 +15092,7 @@ function openReceberPedido(pcId, checagem){
     var _rest=0;
     _pcRecebRows.forEach(function(r){
       var dr=_byKey[String(r.listaId)+'|'+String(r.ref)] || _byNome[String(r.listaId)+'|'+String(r.codigo||'')+'|'+String(r.nome||'')]; if(!dr) return;
-      r.incluir=dr.incluir!==false; r.qtd=dr.qtd; r.preco=dr.preco;
+      r.incluir=dr.incluir!==false; r.qtd=(dr.qtd!=null?dr.qtd:r.qtd); r.preco=dr.preco; // v212 — rascunho sem qtd não apaga a qtd do recebimento físico
       r.ipi=dr.ipi||0; r.frete=dr.frete||0; r.outros=dr.outros||0;
       r.conv=dr.conv||null; if(dr._xml) r._xml=true; if(dr.xmlCod) r.xmlCod=dr.xmlCod; if(dr.xmlItens) r.xmlItens=dr.xmlItens; _rest++; // v207
     });
@@ -15103,7 +15112,7 @@ function openReceberPedido(pcId, checagem){
       : '';
   }catch(_e){}
   // v207 — modo CHECAGEM: o botão conclui a conferência (sem pagamento — o lançamento já foi feito no recebimento)
-  try{ var _pbt=document.getElementById('pcr-prosseguir-btn'); if(_pbt) _pbt.textContent=_pcRecebCheck?'✓ Concluir checagem':'Prosseguir → pagamento'; }catch(_e){}
+  try{ var _pbt=document.getElementById('pcr-prosseguir-btn'); if(_pbt) _pbt.textContent=_pcRecebCheck?'✓ Concluir checagem':(pc.finLanc?'✓ Concluir conciliação':'Prosseguir → pagamento'); }catch(_e){} // v212 — financeiro já lançado: conciliação conclui sem pagamento
   _pcRecebRender();
   var ov=document.getElementById('pc-receb-overlay'); if(ov) ov.classList.add('open');
   // v204 — XML da FILA DO DRIVE: sem XML no rascunho, busca o desta NF e aplica sozinho (cobre
@@ -15359,6 +15368,13 @@ function _pcRecebProsseguir(){
   // divergências — tabela item a item comparando pedido × NF (quantidade e preço unitário), no lugar
   // do confirm() cru. Sem divergência, vai direto ao pagamento; divergência NÃO trava (regra v160),
   // é conferida e confirmada.
+  // v212 — FINANCEIRO JÁ LANÇADO (fluxo novo, dono 19/08): a conciliação conclui SEM pagamento —
+  // grava a leva, os custos unitários REAIS, o de-para e o rateio de faltantes; a conta já está no Caixa.
+  if(pc.finLanc){
+    if(divergentes.length || xtras.length){ _pcDivAbrir(leva, divergentes, xtras); return; }
+    _pcConciliarSemConta(leva, 0);
+    return;
+  }
   if(divergentes.length || xtras.length){ _pcDivAbrir(leva, divergentes, xtras); return; } // v201 — extra sempre passa pela tela de divergências
   _pcRecebProsseguir2(leva, 0);
 }
@@ -15429,7 +15445,9 @@ function _pcDivAbrir(leva, divergentes, xtras){
       // v207 — na CHECAGEM a divergência conclui a conferência (registrada no pedido); sem pagamento
       (_pcRecebCheck
         ? '<button class="btn-primary" onclick="document.getElementById(\'pc-div-overlay\').classList.remove(\'open\');_pcChecagemConcluir(null,'+divergentes.length+')">✓ Registrar divergências e concluir checagem</button>'
-        : '<button class="btn-primary" onclick="document.getElementById(\'pc-div-overlay\').classList.remove(\'open\');_pcRecebProsseguir2(null,'+divergentes.length+')">Confirmar divergências → pagamento</button>')+
+        : (_pcDivFinLanc()
+          ? '<button class="btn-primary" onclick="document.getElementById(\'pc-div-overlay\').classList.remove(\'open\');_pcConciliarSemConta(null,'+divergentes.length+')">✓ Registrar divergências e concluir conciliação</button>' // v212 — financeiro já no Caixa
+          : '<button class="btn-primary" onclick="document.getElementById(\'pc-div-overlay\').classList.remove(\'open\');_pcRecebProsseguir2(null,'+divergentes.length+')">Confirmar divergências → pagamento</button>'))+
     '</div></div>';
   ov.classList.add('open');
 }
@@ -15651,6 +15669,100 @@ function _rcbDistrib(){
   var ok=Math.abs(d-total)<0.01;
   el.innerHTML='Configurado <b>'+fmtMoney(d)+'</b> / '+fmtMoney(total)+' — '+(ok?'<span style="color:var(--st-ok-tx)">✓ valor exato</span>':'<span style="color:var(--st-bad-tx)">⚠ tem que bater com o total da compra</span>');
 }
+// v212 — helper da tela de divergências: o pedido atual tem financeiro já lançado?
+function _pcDivFinLanc(){ var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); return !!(pc&&pc.finLanc); }
+// v212 — LANÇAR FINANCEIRO (mudança de fluxo do dono 19/08): pedido RECEBIDO fisicamente ganha o
+// lançamento financeiro ANTES da conciliação — valor = o da NOTA informado na conferência física;
+// a conta vai ao Caixa (pendente). A conciliação vira conferência de PREÇOS UNITÁRIOS, sem pagamento.
+function _pcLancFinanceiro(pcId){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
+  if(pc.status!=='recebido'){ alert('O lançamento financeiro libera com a mercadoria RECEBIDA (📦 Gestão de Pedidos).'); return; }
+  if(pc.finLanc){ alert('O financeiro deste pedido já foi lançado em '+new Date(pc.finLanc.em).toLocaleDateString('pt-BR')+' por '+(pc.finLanc.por||'')+' — '+fmtMoney(pc.finLanc.valor||0)+' (Caixa).'); return; }
+  if((pc.recebimentos||[]).length){ alert('Este pedido já tem leva conciliada com lançamento (fluxo anterior) — o financeiro já existe.'); return; }
+  var total=+(parseFloat(pc.recebFisico&&pc.recebFisico.valorNota)||0).toFixed(2);
+  if(!(total>0)){ alert('A conferência física não registrou o VALOR DA NOTA — refaça o recebimento na Gestão de Pedidos informando o valor.'); return; }
+  _pcRecebId=pcId;
+  _rcbPedidoCtx={ pcId:pc.id, leva:[], xtras:[], divergentes:0, total:total, finSo:true };
+  document.getElementById('rcb-nf-title').textContent=pc.nf||'—';
+  document.getElementById('rcb-info').innerHTML='💰 Lançamento financeiro do pedido <b>'+escapeHtml(pc.numero||'')+'</b> · Fornecedor <b>'+escapeHtml(pc.fornecedorNome||'')+'</b><br><span style="font-size:11px;color:var(--text-secondary)">Valor da NOTA informado na conferência física ('+new Date(pc.recebFisico.em).toLocaleDateString('pt-BR')+', '+escapeHtml(pc.recebFisico.por||'')+'). Ao salvar, a conta vai ao Caixa (aguardando aprovação). A conciliação dos preços unitários com a NF/XML é o passo seguinte, na mesma tela.</span>';
+  document.getElementById('rcb-total').textContent='Total a lançar: '+fmtMoney(total);
+  document.getElementById('rcb-dataemissao').value='';
+  _rcbExtrasReset();
+  document.getElementById('rcb-blocos-wrap').style.display='';
+  _rcbBlocos=[{forma:'PIX',valor:total,nsu:'',parcelas:[{num:1,valor:total,vencimento:(typeof today==='function'?today():''),pago:false,boleto:''}]}];
+  _peOpen(_rcbBlocos,'rcb-blocos',total,_rcbDistrib,'',_COMPRAS_PE_FORMAS_BON);
+  _rcbDistrib();
+  _planoAcSet('rcb-plano','');
+  _rcbCnpjSetup(pc.fornecedorId, (pc.nfXml&&pc.nfXml.emitCnpj)||'');
+  document.getElementById('receber-modal').classList.add('open');
+}
+// v212 — CONCLUIR CONCILIAÇÃO SEM CONTA (financeiro já lançado pelo _pcLancFinanceiro): grava a leva
+// com os PREÇOS UNITÁRIOS reais da NF (custoUnitReal, conversões, de-para, faltantes por D1) e o
+// estoque dos EXTRAS — sem criar lançamento (a conta já está no Caixa desde o Lançar financeiro).
+function _pcConciliarSemConta(levaIn, nDiv){
+  var pc=(pedidosCompra||[]).find(function(p){ return p.id===_pcRecebId; }); if(!pc||!pc.finLanc) return;
+  var leva=levaIn||_pcRecebRows.filter(function(r){ return r.incluir && r.qtd>0; });
+  var xtras=(_pcXmlSobra||[]).filter(function(x){ return x.incluir!==false && x.insumoId && (parseFloat(x.recQtd)>0) && x.recPreco!=null; });
+  var now=Date.now();
+  var _valorItens=+(leva.reduce(function(s,r){ return s+(parseFloat(r.qtd)||0)*(parseFloat(r.preco)||0); },0)
+                   +xtras.reduce(function(s,x){ return s+(parseFloat(x.recQtd)||0)*(parseFloat(x.recPreco)||0); },0)).toFixed(2);
+  var _exIpi=+(leva.reduce(function(s,r){ return s+(parseFloat(r.ipi)||0); },0)+xtras.reduce(function(s,x){ return s+(parseFloat(x.ipi)||0); },0)).toFixed(2);
+  var _exFre=+(leva.reduce(function(s,r){ return s+(parseFloat(r.frete)||0); },0)+xtras.reduce(function(s,x){ return s+(parseFloat(x.frete)||0); },0)).toFixed(2);
+  var _exOut=+(leva.reduce(function(s,r){ return s+(parseFloat(r.outros)||0); },0)+xtras.reduce(function(s,x){ return s+(parseFloat(x.outros)||0); },0)).toFixed(2);
+  var valor=+(_valorItens+_exIpi+_exFre+_exOut).toFixed(2);
+  var _difNota=Math.abs(valor-(parseFloat(pc.finLanc.valor)||0))>0.01;
+  var orderIds={}, _afx=[], _evx=[];
+  leva.forEach(function(r){
+    var l=(listasCompra||[]).find(function(x){ return x.id===r.listaId; }); if(!l) return;
+    var it=r.ref?_lcItemByRef(l, r.ref):null; if(!it||!it.compra) return;
+    it.compra.recebido=true; it.compra.recebidoEm=now; it.compra.recebidoPor=(currentUser&&currentUser.name)||''; it.compra.compraLancId=pc.finLanc.compraId||null; it.compra.formaPag=pc.finLanc.forma||'';
+    if(Math.abs(r.qtd-r.qtdPedido)>0.001||Math.abs(r.preco-r.precoPedido)>0.009){ it.compra.recebidoQtd=r.qtd; it.compra.recebidoPreco=r.preco; it.compra.recebidoDivergente=true; }
+    var _exLinha=(parseFloat(r.ipi)||0)+(parseFloat(r.frete)||0)+(parseFloat(r.outros)||0);
+    it.compra.custoExtras=+(_exLinha).toFixed(4);
+    it.compra.custoUnitReal=+((r.preco+(r.qtd>0?_exLinha/r.qtd:0))).toFixed(4);
+    if(_exLinha>0){ it.compra.custoIPI=+(parseFloat(r.ipi)||0).toFixed(4); it.compra.custoFrete=+(parseFloat(r.frete)||0).toFixed(4); it.compra.custoOutros=+(parseFloat(r.outros)||0).toFixed(4); }
+    if(r.conv && r.conv.tem) it.compra.conversaoNF={ fator:r.conv.fator, unNF:r.conv.unNF, qtdNF:r.conv.qtdNF, unitNF:r.conv.unitNF, por:r.conv.verificadaPor||'', em:r.conv.verificadaEm||now };
+    try{ _rcbRegistrarFaltante(l, it, r.qtd, now); }catch(_e){}
+    _afx.push(it); _evx.push({itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:r.qtd, _doPedido:true});
+    (it.origem||[]).forEach(function(og){ orderIds[og.orderId]=1; });
+  });
+  (xtras||[]).forEach(function(x){ _evx.push({ itemId:x.insumoId, splitDe:null, codigo:'', qtd:(parseFloat(x.recQtd)||0) }); });
+  (pc.recebimentos=pc.recebimentos||[]).push({ em:now, por:(currentUser&&currentUser.name)||'', valor:valor, valorItens:_valorItens, frete:_exFre, impostos:_exIpi, outros:_exOut, compraLancId:pc.finLanc.compraId||null, divergentes:nDiv||0, semConta:true,
+    itens:leva.map(function(r){ return {listaId:r.listaId, itemId:r.ref, nome:r.nome, qtd:r.qtd, preco:r.preco}; })
+      .concat((xtras||[]).map(function(x){ return {foraPedido:true, insumoId:x.insumoId, nome:(x.insumoNome||x.nome), nomeNF:x.nome, cProd:x.cod||'', qtd:(parseFloat(x.recQtd)||0), preco:(parseFloat(x.recPreco)||0)}; })) });
+  try{
+    var _cnpjL=String((_pcXml&&_pcXml.emitCnpj)||(pc.nfXml&&pc.nfXml.emitCnpj)||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
+    if(_cnpjL){
+      var _aprende=function(insumoId, cProd, unNF, fator){
+        if(!insumoId || !cProd || !(fator>0)) return;
+        var ins=(insumos||[]).find(function(i){ return i && String(i.id)===String(insumoId); }); if(!ins) return;
+        ins.deParaNF=(ins.deParaNF||[]).filter(function(m){ return !(String(m.cnpj||'').toUpperCase().replace(/[^0-9A-Z]/g,'')===_cnpjL && String(m.cProd)===String(cProd)); });
+        ins.deParaNF.push({ cnpj:_cnpjL, cProd:String(cProd), un:String(unNF||''), fator:+(+fator).toFixed(6), em:now, por:(currentUser&&currentUser.name)||'' });
+      };
+      leva.forEach(function(r){
+        if(!r._xml || r.itemId==null || !r.conv) return;
+        if(r.conv.partes && r.conv.partes.length) r.conv.partes.forEach(function(p){ _aprende(r.itemId, p.cProd, p.unNF, p.fator); });
+        else if(r.xmlCod) _aprende(r.itemId, r.xmlCod, r.conv.unNF, r.conv.fator||1);
+      });
+      (xtras||[]).forEach(function(x){
+        if(x.conv && x.conv.partes && x.conv.partes.length) x.conv.partes.forEach(function(p){ _aprende(x.insumoId, p.cProd||x.cod, p.unNF, p.fator); });
+      });
+    }
+  }catch(_e){ console.warn('de-para NF não gravado:', _e&&_e.message); }
+  delete pc.conciliacaoDraft;
+  try{ _syncCustosInsumo(_afx); }catch(_e){}
+  try{ _rcbEstoqueEntrada(pc.recebFisico ? _evx.filter(function(e){ return !e._doPedido; }) : _evx); }catch(_e){}
+  if(_pcTotais(pc).pendentes===0){
+    pc.conciliadoEm=now; pc.conciliadoPor=(currentUser&&currentUser.name)||'';
+    try{ if(typeof _nfFilaPorNf==='function'){ var _feC=_nfFilaPorNf(pc.nf);
+      if(_feC){ _feC.status='consumido'; if(_sb) _sb.from('nf_xml_fila').update({ status:'consumido', pedido_compra_id:pc.id }).eq('id',_feC.id).then(function(_r){}); }
+    } }catch(_e){}
+  }
+  Object.keys(orderIds).forEach(function(oid){ _reavaliarComprasPedido(oid); });
+  closeReceberPedido(); _renderPedidoCompraModal(); renderRecebimento(); try{ if(typeof renderCompRecebimento==='function') renderCompRecebimento(); }catch(_e){} saveData();
+  alert('✓ Conciliação do '+(pc.numero||'pedido')+' concluída — preços unitários reais gravados (custo, estoque de extras, de-para).'+
+    (_difNota?'\n\n⚠ A soma conciliada ('+fmtMoney(valor)+') DIFERE do lançamento feito pelo valor da nota ('+fmtMoney(pc.finLanc.valor||0)+') — confira o lançamento no Caixa/Financeiro.':'\nO financeiro já estava lançado ('+fmtMoney(pc.finLanc.valor||0)+' no Caixa).'));
+}
 function saveRecebimento(){
   // v160 — dois caminhos: PEDIDO DE COMPRA (leva conferida) ou grupo legado (fornecedor+NF)
   var _pcx=_rcbPedidoCtx, g=null, pc=null;
@@ -15682,6 +15794,17 @@ function saveRecebimento(){
     }
     var _fs=[]; parcelas.forEach(function(p){ if(p.forma&&_fs.indexOf(p.forma)<0) _fs.push(p.forma); });
     forma=_fs.length>1?'misto':(_fs[0]||'a_vista');
+  }
+  if(_pcx && _pcx.finSo){
+    // ── v212: LANÇAR FINANCEIRO (sem leva) — valor da NOTA da conferência física vai ao Caixa; a
+    // conciliação dos preços unitários vem depois e NÃO gera outra conta ──
+    var compraF={ id:'compra'+now, fornecedorId:pc.fornecedorId||null, planoId:planoId, contaPlanoId:planoId, data:(typeof today==='function'?today():''), dataEmissao:dataEmissao, nf:pc.nf||'', docFaturado:docFaturado, nsu:_nsu, valor:valor, valorItens:_valorItens, freteNF:_exNF.frete, impostosNF:_exNF.impostos, outrosNF:_exNF.outros, forma:forma, desc:'Pedido de compra '+(pc.numero||'')+' — NF '+(pc.nf||'')+' (lançado pelo valor da nota da conferência física; conciliação de preços pendente)', parcelas:parcelas, tipoLanc:'compra', origemSolicitacaoCompra:true, pedidoCompraId:pc.id, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now };
+    compras.push(compraF);
+    pc.finLanc={ em:now, por:(currentUser&&currentUser.name)||'', compraId:compraF.id, valor:valor, forma:forma };
+    try{ if(typeof sincronizarContasPagar==='function') sincronizarContasPagar(); }catch(_e){}
+    closeReceberModal(); renderRecebimento(); try{ if(typeof renderCompRecebimento==='function') renderCompRecebimento(); }catch(_e){} saveData();
+    alert('✓ Financeiro do '+(pc.numero||'pedido')+' lançado — '+fmtMoney(valor)+' enviado ao Caixa (aguardando aprovação).\n\n🧾 Próximo passo: 🧾 Conciliar — conferência dos PREÇOS UNITÁRIOS de cada item com a NF/XML (não gera novo lançamento).');
+    return;
   }
   if(_pcx){
     // ── v160: leva do PEDIDO DE COMPRA (conciliação já feita/confirmada no passo anterior) ──
@@ -16557,7 +16680,7 @@ function renderCompRecebimento(){
     var _int=document.getElementById('comp-receb-intro');
     if(_int) _int.innerHTML=(_compRecebSub==='checagem')
       ? 'Conferência POSTERIOR dos pedidos recebidos pelo antigo caminho direto (legado): a conciliação com a NF/XML é feita aqui, item a item, apenas como <b>checagem</b> — o financeiro e o estoque já foram lançados no recebimento. Divergências ficam registradas no pedido para questionar o fornecedor.'
-      : 'Pedidos de compra a partir do <b>FECHADO</b> (acompanhamento). O recebimento da MERCADORIA é feito na <b>Gestão de Pedidos</b> (Solicitação de Compra › 📦 Receber); depois de <b>recebido</b>, o pedido libera aqui a <b>🧾 CONCILIAÇÃO</b> com a NF/XML — valores unitários, verificações — e o <b>pagamento</b>, que cria o lançamento e envia ao <b>Caixa</b>.';
+      : 'Pedidos de compra a partir do <b>FECHADO</b> (acompanhamento). O recebimento da MERCADORIA é feito na <b>Gestão de Pedidos</b> (Solicitação de Compra › 📦 Receber); depois de <b>recebido</b>: <b>1) 💰 Lançar financeiro</b> — o valor da nota (da conferência física) vai ao <b>Caixa</b>; <b>2) 🧾 Conciliar</b> — conferência dos <b>preços unitários</b> de cada item com a NF/XML (as quantidades já vêm do recebimento físico; não gera novo lançamento).';
   }catch(_e){}
   if(_compRecebSub==='checagem'){ _compRecebChecagemRender(el); return; }
   var mostrar=document.getElementById('comp-receb-mostrar')?.checked;
@@ -16608,9 +16731,15 @@ function renderCompRecebimento(){
     // v209 (mudança de fluxo do dono 13/08): conciliação SÓ após o recebimento físico da mercadoria
     // (Gestão de Pedidos › 📦 Receber). O botão ⚡ Receber direto foi retirado (fluxo extinto).
     if(pc.status==='recebido'){
+      // v212 (mudança de fluxo do dono 19/08): FINANCEIRO ANTES da conciliação — pedido recebido sem
+      // lançamento ganha o botão 💰; com o financeiro no Caixa, a conciliação vira conferência de preços.
+      var _precisaFin = pc.recebFisico && !pc.finLanc && !(pc.recebimentos||[]).length;
+      var _finBtn = _precisaFin
+        ? '<button class="btn-primary" onclick="_pcLancFinanceiro(\''+pc.id+'\')" title="Lança o financeiro pelo VALOR DA NOTA informado na conferência física — a conta vai ao Caixa (aguardando aprovação). A conciliação dos preços unitários vem depois." style="font-size:11px;padding:4px 12px;margin-right:4px">💰 Lançar financeiro</button>'
+        : (pc.finLanc?'<span style="font-size:10px;color:var(--st-ok-tx);font-weight:600;margin-right:6px" title="Financeiro lançado em '+new Date(pc.finLanc.em).toLocaleDateString('pt-BR')+' por '+escapeHtml(pc.finLanc.por||'')+' — '+fmtMoney(pc.finLanc.valor||0)+' (Caixa)">💰 ✓</span>':'');
       acao = t.pendentes>0
-        ? '<button onclick="openPedidoCompraModal(\''+pc.id+'\')" style="font-size:11px;padding:4px 10px;margin-right:4px">👁</button>'+
-          '<button class="btn-primary" onclick="openReceberPedido(\''+pc.id+'\')" title="Mercadoria recebida — conciliar com a NF/XML (valores unitários, verificações) e prosseguir ao pagamento (Caixa)" style="font-size:11px;padding:4px 12px">🧾 Conciliar</button>'
+        ? '<button onclick="openPedidoCompraModal(\''+pc.id+'\')" style="font-size:11px;padding:4px 10px;margin-right:4px">👁</button>'+_finBtn+
+          '<button '+(_precisaFin?'':'class="btn-primary" ')+'onclick="openReceberPedido(\''+pc.id+'\')" title="'+(_precisaFin?'Libera após o Lançar financeiro — a conciliação é a conferência dos PREÇOS UNITÁRIOS com a NF/XML':'Conferir os PREÇOS UNITÁRIOS de cada item com a NF/XML (quantidades já vêm do recebimento físico; não gera novo lançamento)')+'" style="font-size:11px;padding:4px 12px">🧾 Conciliar</button>'
         : '<button onclick="openPedidoCompraModal(\''+pc.id+'\')" style="font-size:11px;padding:4px 12px">Abrir</button>';
     } else if(pc.status==='fechado'||pc.status==='faturado'){
       // v202 — ACOMPANHAMENTO: visível, mas a conciliação só libera após o envio na Gestão de Pedidos
@@ -26067,7 +26196,11 @@ function onFrRowPedidoInput(i,val){
   if(!ac) return;
   const q=val.trim().toLowerCase();
   if(q.length<1){ac.classList.remove('open');return;}
-  const matches=orders.filter(o=>o.num.toLowerCase().includes(q)||o.cliente.toLowerCase().includes(q)).slice(0,8);
+  // v212 — pedido de Nº CURTO (ex.: 25) não aparecia (reporte do dono 19/08): centenas de números
+  // CONTÊM "25" e o corte nos 8 primeiros deixava o match EXATO de fora. Ordem: nº exato → nº que
+  // começa com o digitado → nº que contém → só cliente.
+  const _rank=o=>{ const n=String(o.num||'').toLowerCase(); return n===q?0:(n.indexOf(q)===0?1:(n.indexOf(q)>=0?2:3)); };
+  const matches=orders.filter(o=>o.num.toLowerCase().includes(q)||o.cliente.toLowerCase().includes(q)).sort((a,b)=>_rank(a)-_rank(b)).slice(0,8);
   if(matches.length){
     ac.innerHTML=matches.map(o=>`<div class="autocomplete-item" onmousedown="selectFrRowPedido(${i},'${o.id}')">
       <div class="ac-name" style="font-weight:500">${escapeHtml(o.num)} <span style="font-weight:400;color:var(--text-secondary)">— ${escapeHtml(o.cliente)}</span></div>
@@ -29180,7 +29313,13 @@ function renderCaixaFinalizados(){
   let lista=fonte.filter(c=>{
     const ap=_caixaFinAprovEm(c);
     if(mesFinal && ap.slice(0,7)!==mesFinal) return false;
-    if(q){ const blob=((c.clienteNome||'')+' '+(c.fornecedorNome||'')+' '+(c.descricao||'')+' '+(c.origemNum||'')).toLowerCase(); if(!blob.includes(q)) return false; }
+    if(q){
+      // v212 — a busca cobre também o campo NF (reporte do dono 14/08, NF 43292: a linha sem o número
+      // na descrição era ilocalizável); NF compara por DÍGITOS ("43292." e "43.292" acham "43292")
+      const blob=((c.clienteNome||'')+' '+(c.fornecedorNome||'')+' '+(c.descricao||'')+' '+(c.origemNum||'')+' '+(c.notaFiscal||'')).toLowerCase();
+      const qd=q.replace(/[^0-9]/g,''), nfd=String(c.notaFiscal||'').replace(/[^0-9]/g,'');
+      if(!blob.includes(q) && !(qd && nfd && nfd.indexOf(qd)>=0)) return false;
+    }
     return true;
   }).sort((a,b)=>_caixaFinAprovEm(b).localeCompare(_caixaFinAprovEm(a)));
   // v107 — agrupa contas de PEDIDO por pedido (1 linha/pedido; estorno = pedido inteiro). Compra/manual: 1 linha cada.

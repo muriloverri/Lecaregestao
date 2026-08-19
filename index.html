@@ -2475,6 +2475,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div style="display:flex;align-items:center;gap:8px">
               <label style="font-size:12px;color:var(--text-secondary)">Período:</label>
               <select id="ag-periodo" onchange="onAgPeriodoChange()" style="font-size:12px;padding:5px 10px;font-weight:500">
+                <option value="mes_atual">Mês atual</option><!-- v213 — pedido do dono 19/08 -->
                 <option value="30">Último mês</option>
                 <option value="90">Últimos 3 meses</option>
                 <option value="180">Últimos 6 meses</option>
@@ -4813,7 +4814,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v212';
+var APP_VERSION = 'v213';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -16636,25 +16637,41 @@ function _compRecebSubSet(s){ _compRecebSub=s; renderCompRecebimento(); }
 function _compRecebChecagemRender(el){
   var th='padding:8px 12px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
   var td='padding:8px 12px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
-  var lst=(pedidosCompra||[]).filter(function(p){ return p && (p.concChecagemPend || p.concChecagem); })
-    .sort(function(a,b){ return (a.concChecagemPend?0:1)-(b.concChecagemPend?0:1) || (b.recebidoEm||b.criadoEm||0)-(a.recebidoEm||a.criadoEm||0); });
-  if(!lst.length){ el.innerHTML='<div class="empty" style="padding:26px">Nenhuma conciliação pendente de checagem.<br><span style="font-size:11px;color:var(--text-tertiary)">Pedidos recebidos pelo caminho "⚡ Receber direto" aparecem aqui para a conferência posterior com a NF/XML.</span></div>'; return; }
+  // v213 — ORDEM DO DONO (19/08: "os pedidos que faltam conciliação é para ficar nesta tela"): a
+  // sub-aba concentra TODAS as conciliações — fluxo novo (recebido fisicamente, itens por conciliar)
+  // e checagens legadas do extinto ⚡ Receber direto. A lista principal fica só com o acompanhamento.
+  var _ehNovoPend=function(p){ return p.status==='recebido' && _pcTotais(p).pendentes>0 && !p.concChecagemPend; };
+  var lst=(pedidosCompra||[]).filter(function(p){ return p && (p.concChecagemPend || p.concChecagem || _ehNovoPend(p)); })
+    .sort(function(a,b){ var g=function(p){ return (p.concChecagemPend||_ehNovoPend(p))?0:1; }; return g(a)-g(b) || (b.recebidoEm||b.criadoEm||0)-(a.recebidoEm||a.criadoEm||0); });
+  if(!lst.length){ el.innerHTML='<div class="empty" style="padding:26px">Nenhuma conciliação pendente.<br><span style="font-size:11px;color:var(--text-tertiary)">Pedidos com a mercadoria recebida (📦 Gestão de Pedidos) aparecem aqui para o lançamento financeiro e a conciliação dos preços com a NF/XML.</span></div>'; return; }
   var rows=lst.map(function(pc){
     var ult=(pc.recebimentos||[])[(pc.recebimentos||[]).length-1];
     var xml=pc.nfXml?'<span style="font-size:10px;color:var(--st-ok-tx);font-weight:600">📄 XML ✓</span>'
-      :(_nfFilaPorNf(pc.nf)?'<span title="O XML desta NF está na fila do Drive — será aplicado sozinho ao abrir a checagem." style="font-size:10px;color:var(--st-mid-tx);font-weight:600">📥 XML na fila</span>':'<span style="font-size:10px;color:var(--text-tertiary)">—</span>');
-    var st=pc.concChecagemPend
-      ? '<span style="font-size:11px;font-weight:600;color:var(--st-mid-tx)">⏳ pendente de checagem</span>'
-      : '<span style="font-size:11px;font-weight:600;color:var(--st-ok-tx)" title="'+escapeHtml((pc.concChecagem&&pc.concChecagem.por)||'')+'">✓ checado em '+(pc.concChecagem&&pc.concChecagem.em?new Date(pc.concChecagem.em).toLocaleDateString('pt-BR'):'')+((pc.concChecagem&&pc.concChecagem.divergentes)?' · ⚠ '+pc.concChecagem.divergentes+' diverg.':'')+'</span>';
+      :(_nfFilaPorNf(pc.nf)?'<span title="O XML desta NF está na fila do Drive — será aplicado sozinho ao abrir a conciliação." style="font-size:10px;color:var(--st-mid-tx);font-weight:600">📥 XML na fila</span>':'<span style="font-size:10px;color:var(--text-tertiary)">—</span>');
+    var st, acao;
+    if(_ehNovoPend(pc)){
+      // fluxo novo: financeiro primeiro (💰), depois a conferência de preços unitários (🧾)
+      var _precisaFin=pc.recebFisico && !pc.finLanc && !(pc.recebimentos||[]).length;
+      st='<span style="font-size:11px;font-weight:600;color:var(--st-mid-tx)">⏳ pendente de conciliação</span>'+
+        (_precisaFin?'<div style="font-size:10px;color:var(--st-bad-tx);font-weight:600">💰 financeiro não lançado</div>':(pc.finLanc?'<div style="font-size:10px;color:var(--st-ok-tx)">💰 financeiro no Caixa ('+fmtMoney(pc.finLanc.valor||0)+')</div>':''));
+      acao=(_precisaFin?'<button class="btn-primary" onclick="_pcLancFinanceiro(\''+pc.id+'\')" title="Lança o financeiro pelo valor da nota da conferência física — vai ao Caixa (pendente)" style="font-size:11px;padding:4px 12px;margin-right:4px">💰 Lançar financeiro</button>':'')+
+        '<button '+(_precisaFin?'':'class="btn-primary" ')+'onclick="openReceberPedido(\''+pc.id+'\')" title="Conferência dos preços unitários com a NF/XML (quantidades vêm do recebimento físico; não gera novo lançamento)" style="font-size:11px;padding:4px 12px">🧾 Conciliar</button>';
+    } else {
+      st=pc.concChecagemPend
+        ? '<span style="font-size:11px;font-weight:600;color:var(--st-mid-tx)">⏳ pendente de checagem (legado)</span>'
+        : '<span style="font-size:11px;font-weight:600;color:var(--st-ok-tx)" title="'+escapeHtml((pc.concChecagem&&pc.concChecagem.por)||'')+'">✓ checado em '+(pc.concChecagem&&pc.concChecagem.em?new Date(pc.concChecagem.em).toLocaleDateString('pt-BR'):'')+((pc.concChecagem&&pc.concChecagem.divergentes)?' · ⚠ '+pc.concChecagem.divergentes+' diverg.':'')+'</span>';
+      acao='<button '+(pc.concChecagemPend?'class="btn-primary" ':'')+'onclick="openReceberPedido(\''+pc.id+'\',true)" style="font-size:11px;padding:4px 12px">🧾 '+(pc.concChecagemPend?'Conciliar (checagem)':'Reabrir checagem')+'</button>';
+    }
+    var _rEm=(pc.recebFisico&&pc.recebFisico.em)?new Date(pc.recebFisico.em).toLocaleDateString('pt-BR')+' · '+escapeHtml(pc.recebFisico.por||''):(ult?new Date(ult.em).toLocaleDateString('pt-BR')+' · '+escapeHtml(ult.por||''):'—');
     return '<tr>'+
       '<td style="'+td+';font-weight:600;font-family:monospace">'+escapeHtml(pc.numero||'')+'</td>'+
       '<td style="'+td+'">'+escapeHtml(pc.fornecedorNome||'—')+'</td>'+
       '<td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(pc.nf||'—')+'</td>'+
-      '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney((ult&&ult.valor)||_pcTotais(pc).total)+'</td>'+
-      '<td style="'+td+';font-size:11px;color:var(--text-secondary)">'+(ult?new Date(ult.em).toLocaleDateString('pt-BR')+' · '+escapeHtml(ult.por||''):'—')+'</td>'+
+      '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney((pc.recebFisico&&pc.recebFisico.valorNota)||(ult&&ult.valor)||_pcTotais(pc).total)+'</td>'+
+      '<td style="'+td+';font-size:11px;color:var(--text-secondary)">'+_rEm+'</td>'+
       '<td style="'+td+';text-align:center">'+xml+'</td>'+
       '<td style="'+td+'">'+st+'</td>'+
-      '<td style="'+td+';text-align:right;white-space:nowrap"><button '+(pc.concChecagemPend?'class="btn-primary" ':'')+'onclick="openReceberPedido(\''+pc.id+'\',true)" style="font-size:11px;padding:4px 12px">🧾 '+(pc.concChecagemPend?'Conciliar (checagem)':'Reabrir checagem')+'</button></td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+acao+'</td>'+
     '</tr>';
   }).join('');
   el.innerHTML='<table style="width:100%;border-collapse:collapse;min-width:820px"><thead><tr>'+
@@ -16668,19 +16685,20 @@ function renderCompRecebimento(){
   try{
     var _sbR=document.getElementById('comp-receb-sub-receber'), _sbC=document.getElementById('comp-receb-sub-checagem');
     var _nPendC=(pedidosCompra||[]).filter(function(p){ return p && p.concChecagemPend; }).length;
-    // v209 (mudança de fluxo do dono 13/08) — a sub-aba CHECAGEM só existe enquanto houver pendências
-    // LEGADAS do extinto "⚡ Receber direto" (4 pedidos em 13/08); zerou = some e a tela volta a ser única.
-    if(!_nPendC && _compRecebSub==='checagem') _compRecebSub='receber';
-    if(_sbR) _sbR.style.display=_nPendC?'':'none';
-    if(_sbC) _sbC.style.display=_nPendC?'':'none';
+    // v213 (ordem do dono 19/08) — a sub-aba CONCILIAÇÃO concentra TODOS os pedidos que faltam
+    // conciliar: fluxo novo (recebido com itens por conciliar) + checagens legadas. Sempre visível.
+    var _nPendN=(pedidosCompra||[]).filter(function(p){ return p && p.status==='recebido' && !p.concChecagemPend && _pcTotais(p).pendentes>0; }).length;
+    var _nPendTot=_nPendC+_nPendN;
+    if(_sbR) _sbR.style.display='';
+    if(_sbC) _sbC.style.display='';
     if(_sbR) _sbR.className=(_compRecebSub!=='checagem')?'btn-primary':'';
-    if(_sbC){ _sbC.className=(_compRecebSub==='checagem')?'btn-primary':''; _sbC.innerHTML='🧾 Conciliação (checagem)'+(_nPendC?' ('+_nPendC+')':''); }
+    if(_sbC){ _sbC.className=(_compRecebSub==='checagem')?'btn-primary':''; _sbC.innerHTML='🧾 Conciliação'+(_nPendTot?' ('+_nPendTot+')':''); }
     var _mst=document.getElementById('comp-receb-mostrar');
     if(_mst&&_mst.parentElement) _mst.parentElement.style.display=(_compRecebSub==='checagem')?'none':'';
     var _int=document.getElementById('comp-receb-intro');
     if(_int) _int.innerHTML=(_compRecebSub==='checagem')
-      ? 'Conferência POSTERIOR dos pedidos recebidos pelo antigo caminho direto (legado): a conciliação com a NF/XML é feita aqui, item a item, apenas como <b>checagem</b> — o financeiro e o estoque já foram lançados no recebimento. Divergências ficam registradas no pedido para questionar o fornecedor.'
-      : 'Pedidos de compra a partir do <b>FECHADO</b> (acompanhamento). O recebimento da MERCADORIA é feito na <b>Gestão de Pedidos</b> (Solicitação de Compra › 📦 Receber); depois de <b>recebido</b>: <b>1) 💰 Lançar financeiro</b> — o valor da nota (da conferência física) vai ao <b>Caixa</b>; <b>2) 🧾 Conciliar</b> — conferência dos <b>preços unitários</b> de cada item com a NF/XML (as quantidades já vêm do recebimento físico; não gera novo lançamento).';
+      ? 'Pedidos com a mercadoria RECEBIDA que faltam conciliar: <b>1) 💰 Lançar financeiro</b> — o valor da nota (da conferência física) vai ao <b>Caixa</b>; <b>2) 🧾 Conciliar</b> — conferência dos <b>preços unitários</b> de cada item com a NF/XML (quantidades vêm do recebimento físico; não gera novo lançamento). Inclui as checagens LEGADAS do antigo caminho direto. Divergências ficam registradas no pedido para questionar o fornecedor.'
+      : 'Acompanhamento dos pedidos de compra a partir do <b>FECHADO</b>. O recebimento da MERCADORIA é feito na <b>Gestão de Pedidos</b> (Solicitação de Compra › 📦 Receber); depois de <b>recebido</b>, o pedido vai para a aba <b>🧾 Conciliação</b> ao lado — lançamento financeiro (Caixa) e conferência dos preços unitários.';
   }catch(_e){}
   if(_compRecebSub==='checagem'){ _compRecebChecagemRender(el); return; }
   var mostrar=document.getElementById('comp-receb-mostrar')?.checked;
@@ -16694,7 +16712,7 @@ function renderCompRecebimento(){
   var lst=(pedidosCompra||[]).filter(function(p){
       if(!p) return false;
       if(p.status==='em_recebimento'||p.status==='conciliado'||p.status==='fechado'||p.status==='faturado') return true;
-      if(p.status==='recebido') return mostrar || _pcTotais(p).pendentes>0;
+      if(p.status==='recebido') return !!mostrar; // v213 — recebidos pendentes vivem na aba 🧾 Conciliação (ordem do dono 19/08); aqui só com o checkbox
       return false;
     })
     .sort(function(a,b){
@@ -24596,8 +24614,15 @@ function deleteFreteReal(id){
 // muda (o Conferir fatura marca só 1). Rótulos internos (FININHO/EDUARDO/MAIO 05/…) NÃO agrupam
 // — não são rastreio real e cada lançamento deles é custo próprio.
 function _frRastReal(x){ const k=String((x&&x.rastreio)||'').toUpperCase().replace(/[^A-Z0-9]/g,''); return /^[A-Z]{2}\d{9}[A-Z]{2}$/.test(k)?k:null; }
-function _frConjMapa(){ const m={}; (freteRealLanc||[]).forEach(f=>{ const k=_frRastReal(f); if(k) m[k]=(m[k]||0)+1; }); return m; }
-function _frValorEfetivo(x,mapa){ const k=_frRastReal(x); const n=(k&&mapa&&mapa[k])||1; return (parseFloat(x.valor)||0)/(n>1?n:1); }
+// v213 — REGRA DO DONO (19/08): um código de rastreio SÓ PAGA UMA VEZ. O PRIMEIRO lançamento
+// preenchido (menor criadoEm; empate: menor id) fica com o valor INTEGRAL; os demais do mesmo
+// código real valem ZERO para efeito de custo (antes, v163, o valor era DIVIDIDO entre eles).
+function _frConjMapa(){ const m={}; (freteRealLanc||[]).forEach(f=>{ const k=_frRastReal(f); if(!k) return;
+  const cur=m[k];
+  const cf=parseFloat(f.criadoEm)||0, cc=cur?(parseFloat(cur.criadoEm)||0):Infinity;
+  if(!cur || cf<cc || (cf===cc && String(f.id)<String(cur.id))) m[k]=f;
+}); return m; }
+function _frValorEfetivo(x,mapa){ const k=_frRastReal(x); if(k&&mapa&&mapa[k]&&String(mapa[k].id)!==String(x.id)) return 0; return (parseFloat(x.valor)||0); }
 function getFreteRealPedido(pedidoId){
   const _cjm=_frConjMapa(); // v163 — envio conjunto conta 1×
   return freteRealLanc.filter(x=>String(x.pedidoId)===String(pedidoId)).reduce((s,x)=>s+_frValorEfetivo(x,_cjm),0);
@@ -25957,7 +25982,15 @@ function saveEnvioSalvo(i){
 
   // Collect rastreios from inputs
   const rastInputs=[...document.querySelectorAll(`[id^="es-rast-${i}-"]`)];
-  const rts=rastInputs.map(inp=>inp.value.trim()).filter(Boolean);
+  const rtsRaw=rastInputs.map(inp=>inp.value.trim());
+  const rts=rtsRaw.filter(Boolean);
+  // v213 — PROPAGAÇÃO DO RASTREIO (autorização do dono 19/08): código EDITADO aqui renomeia os
+  // lançamentos de FRETE REAL deste pedido que apontavam para o código antigo — o Frete Real e o
+  // alerta "rastreio sem frete" ficam espelhados no cadastro (princípio card = espelho). Comparação
+  // POSICIONAL: o input N edita o código N deste envio; removido sem substituto não mexe em nada.
+  const _oldRts=(e.rastreios||[e.rastreio||'']).map(r=>String(r||'').trim());
+  const _renM={};
+  rtsRaw.forEach((nv,ix)=>{ const ov=_oldRts[ix]; if(ov && nv && ov.toUpperCase()!==nv.toUpperCase()) _renM[ov.toUpperCase()]=nv; });
 
   // v111 — transportadora tem que estar CADASTRADA (ou INTERNO)
   const _internoE = transp==='INTERNO';
@@ -25978,6 +26011,19 @@ function saveEnvioSalvo(i){
   o.rastreio=allRts[0]||'';
   o.rastreios=allRts;
   o.transp=allTrs[0]||'';
+
+  // v213 — aplica a propagação nos lançamentos de frete real do pedido (código antigo → novo)
+  try{
+    if(Object.keys(_renM).length){
+      let _nRen=0;
+      (freteRealLanc||[]).forEach(f=>{
+        if(String(f.pedidoId)!==String(o.id)) return;
+        const k=String(f.rastreio||'').trim().toUpperCase();
+        if(_renM[k]){ f.rastreio=_renM[k]; _nRen++; }
+      });
+      if(_nRen) alert('🔄 '+_nRen+' lançamento(s) de FRETE REAL deste pedido foram atualizados para o novo código de rastreio.');
+    }
+  }catch(_e){}
 
   saveData();
   renderEnvioSalvos();
@@ -26307,6 +26353,16 @@ function saveFreteRealMulti(){
     for(let _j=0;_j<i;_j++){ const _r2=_frRows[_j];
       if(String(_r2.pedidoId)===String(row.pedidoId) && String(_r2.rastreio||'').replace(/\s/g,'').toUpperCase()===_rk){
         alert(`Lançamento ${i+1}: repete o rastreio do lançamento ${_j+1} (mesmo pedido).`); return; }
+    }
+    // v213 — REGRA DO DONO (19/08): um código de rastreio SÓ PAGA UMA VEZ. Código REAL já lançado
+    // em OUTRO pedido → este novo entra com custo ZERO (o primeiro preenchido leva o valor integral).
+    // Não bloqueia — o registro do envio conjunto continua possível, mas a pessoa é avisada.
+    const _rReal=_frRastReal({rastreio:row.rastreio});
+    if(_rReal){
+      const _cj=_frConjMapa(); const _dono=_cj[_rReal];
+      if(_dono && _dono.id!==row._editId && String(_dono.pedidoId)!==String(row.pedidoId)){
+        if(!confirm(`Lançamento ${i+1}: o código ${row.rastreio} JÁ tem frete lançado no pedido ${_dono.pedidoNum||''} (${fmtMoney(parseFloat(_dono.valor)||0)}).\n\nRegra: um rastreio só paga UMA vez — este novo lançamento entra com custo ZERO para o pedido (fica só como registro do envio conjunto).\n\nContinuar?`)) return;
+      }
     }
   }
   const now=Date.now();
@@ -27007,6 +27063,8 @@ var _agIni=null, _agFim=null, _rfvLinha='todos';
 function _agRange(){
   const v=document.getElementById('ag-periodo')?.value||'365';
   if(v==='intervalo' && _agIni && _agFim) return { ini:new Date(_agIni+'T00:00:00'), fim:new Date(_agFim+'T23:59:59') };
+  // v213 — MÊS ATUAL (pedido do dono 19/08): do dia 1 do mês corrente até hoje
+  if(v==='mes_atual'){ const ini=new Date(); ini.setDate(1); ini.setHours(0,0,0,0); return { ini, fim:new Date(8640000000000000) }; }
   const dias=parseInt(v)||365; const ini=new Date(); ini.setHours(0,0,0,0); ini.setDate(ini.getDate()-dias);
   return { ini, fim:new Date(8640000000000000) };
 }
@@ -29638,17 +29696,25 @@ function renderAgVendas(){
   H.push('<div style="margin-bottom:22px"><div style="font-size:13px;font-weight:600;margin-bottom:10px">Produção por linha e tipo de pedido <span style="font-weight:400;font-size:11px;color:var(--text-tertiary)">(período selecionado · independe dos filtros abaixo)</span></div>'+
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px">'+
     _linSec('anestesico','Anestésico','💉')+_linSec('personalizada','Linha Personalizada','🧴')+'</div></div>');
-  var receita=base.reduce(function(s,o){return s+(parseFloat(o.valor)||0);},0);
-  var nped=base.length, ticket=nped?receita/nped:0;
+  // v213 — reporte do dono (19/08): o cartão "Receita" somava TODOS os tipos (bonificação, amostra,
+  // venda filho…) e não batia com os quadros por linha. Receita = CANÔNICA (venda + venda mãe +
+  // embaixador), a mesma regra dos quadros e do Dashboard; ticket médio = receita / pedidos de receita.
+  var _ehRecT=function(o){ var t=o.tipo||'venda'; return t==='venda'||t==='venda_mae'||t==='embaixador'; };
+  var baseRec=base.filter(_ehRecT);
+  var receita=baseRec.reduce(function(s,o){return s+(parseFloat(o.valor)||0);},0);
+  var nped=base.length, nRec=baseRec.length, ticket=nRec?receita/nRec:0;
   var itensVend=base.reduce(function(s,o){return s+itemsOf(o).reduce(function(a,it){return a+(parseFloat(it.qtd)||0);},0);},0);
   var pedComItens=base.filter(function(o){return itemsOf(o).length;}).length;
   var card=function(lbl,val,sub){return '<div style="background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md);padding:14px 16px"><div style="font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.04em">'+lbl+'</div><div style="font-size:22px;font-weight:600;margin-top:4px">'+val+'</div>'+(sub?'<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">'+sub+'</div>':'')+'</div>';};
   H.push('<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:18px">'+
-    card('Receita (pedidos)', fmt(receita))+card('Pedidos', nped.toLocaleString('pt-BR'))+
-    card('Ticket médio', fmt(ticket))+card('Itens vendidos', itensVend.toLocaleString('pt-BR'), pedComItens+' de '+nped+' pedidos c/ itens')+'</div>');
-  if(pedComItens<nped) H.push('<div style="font-size:11px;color:var(--st-mid-tx);margin:-8px 0 16px">⚠️ '+(nped-pedComItens)+' pedido(s) sem produtos informados — não entram nas análises por produto.</div>');
+    card('Receita (pedidos)', fmt(receita), 'venda + venda mãe + embaixador')+card('Pedidos', nped.toLocaleString('pt-BR'), nRec+' de receita')+
+    card('Ticket médio', fmt(ticket), 'sobre pedidos de receita')+card('Itens vendidos', itensVend.toLocaleString('pt-BR'), pedComItens+' de '+nped+' pedidos c/ itens')+'</div>');
+  // v213 — o aviso conta SÓ quem deveria ter produtos: Venda Mãe é CRÉDITO, sem itens por definição
+  // (confirmação do dono 19/08: "não faz sentido alerta se não precisa lançar produto")
+  var _semProd=base.filter(function(o){ return (o.tipo||'venda')!=='venda_mae' && !itemsOf(o).length; }).length;
+  if(_semProd) H.push('<div style="font-size:11px;color:var(--st-mid-tx);margin:-8px 0 16px">⚠️ '+_semProd+' pedido(s) sem produtos informados — não entram nas análises por produto (Venda Mãe não conta: é crédito, sem itens).</div>');
   // por linha
-  var porLinha={}; base.forEach(function(o){var L=o.linha||'(sem)'; if(!porLinha[L])porLinha[L]={rec:0,ped:0}; porLinha[L].rec+=parseFloat(o.valor)||0; porLinha[L].ped++;});
+  var porLinha={}; base.forEach(function(o){var L=o.linha||'(sem)'; if(!porLinha[L])porLinha[L]={rec:0,ped:0}; if(_ehRecT(o)) porLinha[L].rec+=parseFloat(o.valor)||0; porLinha[L].ped++;}); // v213 — receita canônica por linha (pedidos contam todos)
   var linKeys=Object.keys(porLinha).sort(function(a,b){return porLinha[b].rec-porLinha[a].rec;});
   H.push('<div style="margin-bottom:22px"><div style="font-size:13px;font-weight:600;margin-bottom:10px">Vendas por tipo de produção</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">'+
     linKeys.map(function(L){var pct=receita?Math.round(porLinha[L].rec/receita*100):0; return '<div style="border:.5px solid var(--border);border-radius:var(--r-md);padding:14px 16px"><div style="font-size:13px;font-weight:500">'+escapeHtml(_linhaLabel(L))+'</div><div style="font-size:20px;font-weight:600;margin-top:4px">'+fmt(porLinha[L].rec)+'</div><div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">'+porLinha[L].ped+' pedidos · '+pct+'% da receita</div></div>';}).join('')+'</div></div>');

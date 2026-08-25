@@ -4814,7 +4814,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v215';
+var APP_VERSION = 'v216';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -27501,6 +27501,14 @@ function _convUltimaEm(cv){
   for(var i=ms.length-1;i>=0;i--){ var m=ms[i]; if(!m||_msgFantasma(m)) continue; return m.em||0; } // v207 — ignora cascas no fim
   return cv.ultimaMsgEm||0;
 }
+// v216 — última mensagem DO CLIENTE com conteúdo: régua da auto-limpeza dos retornos direcao='cliente'
+// (a promessa do cliente só sai do quadro quando ELE falar de novo — resposta nossa não baixa).
+function _convUltimaCliEm(cv){
+  if(!cv) return 0;
+  var ms=cv.mensagens||[];
+  for(var i=ms.length-1;i>=0;i--){ var m=ms[i]; if(!m||_msgFantasma(m)||m.de!=='cliente') continue; return m.em||0; }
+  return 0;
+}
 function resolverRetorno(rid){
   if(currentUser?.perfil!=='admin'){ alert('Apenas o admin pode marcar como resolvido.'); return; }
   var r=(_waRetornos||[]).find(function(x){ return String(x.id)===String(rid); }); if(!r) return;
@@ -27511,6 +27519,53 @@ function resolverRetorno(rid){
   }catch(_e){}
   renderDashConversas();
 }
+// v216 — RETORNOS DO CLIENTE (pedido do dono 25/08): o cliente ficou de dar um retorno (recebeu o
+// orçamento e vai avaliar, vai decidir produto/cor, vai confirmar uma informação…) — mesma tabela
+// wa_retornos com direcao='cliente', detectado pela mesma rotina IA 2x/dia. Exibição em MODAL
+// aberto por botão no Dashboard Comercial › Atendimento (decisão do dono: não poluir a tela).
+var _rcLista=[], _rcAberto=false;
+function _rcEnsureOverlay(){
+  if(document.getElementById('rc-overlay')) return;
+  var d=document.createElement('div'); d.className='overlay'; d.id='rc-overlay';
+  d.innerHTML='<div class="modal" style="width:760px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column">'
+    +'<h2 style="margin-bottom:4px">💬 Retornos do cliente</h2>'
+    +'<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Conversas em que o CLIENTE ficou de dar um retorno (avaliar o orçamento, decidir produto/cor, confirmar uma informação…) e ainda não deu. Detectado pela rotina IA (2x/dia). A linha sai sozinha quando o cliente mandar mensagem nova.</div>'
+    +'<div id="rc-lista" style="overflow-y:auto;flex:1;padding:0 2px"></div>'
+    +'<div class="modal-footer" style="margin-top:12px"><button onclick="_rcFechar()">Fechar</button></div></div>';
+  d.addEventListener('click', function(ev){ if(ev.target===d) _rcFechar(); });
+  document.body.appendChild(d);
+}
+function _rcItemHtml(x, now, isAdm){
+  return '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:.5px solid var(--border);font-size:12px">'
+    +'<span style="flex:1;min-width:0"><span style="cursor:pointer;color:var(--text-info)" onclick="_rcFechar();abrirConversaDireta(\''+x.cv.id+'\')">'+escapeHtml(_nomeCliConv(x.cv))+'</span>'
+    +(x.cv.telefone?' <span style="color:var(--text-tertiary);font-size:10px">· '+escapeHtml(x.cv.telefone)+'</span>':'')
+    +' <span style="color:var(--text-tertiary);font-size:10px">· '+escapeHtml(_nomeAtendConv(x.cv.atendenteId))+'</span>'
+    +(x.r.trecho?'<div style="color:var(--text-tertiary);font-size:10px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">“'+escapeHtml(x.r.trecho)+'”</div>':'')
+    +'</span><span style="display:flex;align-items:center;gap:8px;white-space:nowrap">'
+    +(x.r.prazo?'<span style="color:var(--st-bad-tx);font-size:10px">p/ '+escapeHtml(x.r.prazo.split('-').reverse().join('/'))+'</span>':'')
+    +'<span style="color:var(--st-mid-tx)">há '+_fmtDurConv(now-x.desde)+'</span>'
+    +(isAdm?'<button onclick="resolverRetorno(\''+x.r.id+'\')" title="Marcar como resolvido — o cliente deu o retorno por outro canal ou desistiu. Sai da lista." style="font-size:10px;padding:2px 8px;border:.5px solid var(--st-ok-bd);background:var(--st-ok-bg);color:var(--st-ok-tx);border-radius:6px;cursor:pointer">✓ Resolver</button>':'')
+    +'</span></div>';
+}
+function _rcRender(){
+  var el=document.getElementById('rc-lista'); if(!el) return;
+  var now=Date.now(); var isAdm=currentUser?.perfil==='admin';
+  var lista=_rcLista||[];
+  if(!lista.length){ el.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:10px 0">Nenhum retorno de cliente pendente. 👍</div>'; return; }
+  var html='';
+  var _mk=function(x){ return _rcItemHtml(x, now, isAdm); };
+  if(typeof _waModoDois==='function' && _waModoDois()){
+    (((_waNumCfg&&_waNumCfg.numeros)||[]).forEach(function(n){
+      var sub=lista.filter(function(x){ return _waNumDaConv(x.cv)===n.id; });
+      if(sub.length) html+='<div style="font-weight:600;font-size:12px;margin:10px 0 2px;color:var(--text-secondary)">📱 '+escapeHtml(n.rotulo||n.id)+'</div>'+sub.map(_mk).join('');
+    }));
+    var sem=lista.filter(function(x){ return !_waNumDaConv(x.cv); });
+    if(sem.length) html+='<div style="font-weight:600;font-size:12px;margin:10px 0 2px;color:var(--text-secondary)">📱 (sem número)</div>'+sem.map(_mk).join('');
+  } else html=lista.map(_mk).join('');
+  el.innerHTML=html;
+}
+function _rcAbrir(){ _rcEnsureOverlay(); _rcAberto=true; _rcRender(); document.getElementById('rc-overlay').classList.add('open'); }
+function _rcFechar(){ _rcAberto=false; var d=document.getElementById('rc-overlay'); if(d) d.classList.remove('open'); }
 var _dcConvEq='', _dcConvDe='', _dcConvAte='';
 // v214 — FICHA DE CADASTRO ONLINE (pedido do dono 25/08): gera link de USO ÚNICO da página pública
 // (edge ficha-cadastro) vinculado à conversa + cliente. O cliente preenche nome/CPF-CNPJ/conselho/
@@ -27526,7 +27581,7 @@ async function _fichaGerarLink(convId){
     for(var i=0;i<32;i++) tok+=abc[rnd[i]%abc.length];
     var r=await _sb.from('fichas_cadastro').insert({ id:'fic'+Date.now(), token:tok, cliente_id:conv.clienteId||null, conversa_id:conv.id, criado_por:(currentUser&&currentUser.name)||'' });
     if(r.error){ alert('Não consegui gerar o link: '+r.error.message); return; }
-    var link='https://muriloverri.github.io/Lecaregestao/ficha.html?t='+tok; // v215 — página no Pages (a plataforma de edge functions força text/plain e mostrava o código-fonte)
+    var link='https://app.lecaremanipulados.com.br/ficha.html?t='+tok; // v216 — domínio próprio (CNAME→Pages); v215 usava muriloverri.github.io, que agora redireciona para cá
     var txt='Para agilizar seu cadastro, preencha esta ficha rápida (leva 2 minutos): '+link;
     try{ var ta=document.querySelector('#conv-tela .conv-input-field')||document.querySelector('.conv-input-field'); if(ta){ ta.value=txt; ta.focus(); } }catch(_e){}
     try{ await navigator.clipboard.writeText(link); }catch(_e){}
@@ -27578,12 +27633,18 @@ function renderDashConversas(){
   // v203 — retornos prometidos pendentes (tabela wa_retornos, rotina 2x/dia): só entra se a
   // conversa existe, está ativa, não é grupo, passa nos filtros E a promessa ainda é a última msg.
   _waRetLoad();
-  const retornos=(_waRetornos||[]).map(r=>{
+  // v216 — a tabela tem DUAS direções: 'nosso' (prometemos retorno) e 'cliente' (o cliente ficou de
+  // dar retorno). Auto-limpeza distinta: promessa NOSSA some com QUALQUER mensagem nova na conversa;
+  // promessa do CLIENTE só some quando o CLIENTE falar de novo (nosso "ok, aguardo" não baixa).
+  const _retBase=(_waRetornos||[]).map(r=>{
     const cv=convs.find(c=>String(c.id)===String(r.conv_id));
     return cv?{cv, r, desde:Number(r.msg_ts)||0}:null;
   }).filter(x=>x && !x.cv.grupo && x.cv.status!=='encerrada'
-    && (!_dcConvEq || x.cv.equipeId===_dcConvEq)
+    && (!_dcConvEq || x.cv.equipeId===_dcConvEq));
+  const retornos=_retBase.filter(x=>(x.r.direcao||'nosso')!=='cliente'
     && _convUltimaEm(x.cv) <= (x.desde+2000)).sort((a,b)=>a.desde-b.desde);
+  _rcLista=_retBase.filter(x=>x.r.direcao==='cliente'
+    && _convUltimaCliEm(x.cv) <= (x.desde+2000)).sort((a,b)=>a.desde-b.desde);
   semResposta.sort((a,b)=>a.desde-b.desde); aguardando.sort((a,b)=>a.desde-b.desde);
   const taxaResp = comCliente? Math.round(comAtend/comCliente*100) : null;
   const card=(label,val,sub,cor)=>`<div style="background:var(--bg-primary);border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 16px">
@@ -27664,7 +27725,10 @@ function renderDashConversas(){
   </div>`;
   const _escopo = ativas+encerradas;
   const _filtroDesc = (_dcConvEq?(' · '+escapeHtml((_eqs.find(e=>e.id===_dcConvEq)||{}).nome||'equipe')):'')+((_dcConvDe||_dcConvAte)?(' · período '+(_dcConvDe||'…')+' a '+(_dcConvAte||'…')):'');
-  root.innerHTML = _filtroBar+`<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:12px">Métricas sobre ${_escopo} conversa(s)${_filtroDesc}. Tempos consideram mensagens de cliente e atendente.</div>`+kpis+panels+rankTable;
+  // v216 — botão discreto que abre o modal "Retornos do cliente" (decisão do dono: modal p/ não poluir a tela)
+  const rcBar=`<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="_rcAbrir()" style="font-size:12px;padding:6px 14px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-primary);cursor:pointer;font-family:inherit">💬 Retornos do cliente ${_rcLista.length?`<b style="color:var(--st-mid-tx)">(${_rcLista.length})</b>`:`<span style="color:var(--text-tertiary)">(0)</span>`}</button></div>`;
+  root.innerHTML = _filtroBar+`<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:12px">Métricas sobre ${_escopo} conversa(s)${_filtroDesc}. Tempos consideram mensagens de cliente e atendente.</div>`+kpis+rcBar+panels+rankTable;
+  if(_rcAberto) _rcRender(); // modal aberto acompanha o relógio de 60 s e os resolves
 }
 
 function setDcSubTab(tab){

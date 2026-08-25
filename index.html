@@ -4814,7 +4814,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v214';
+var APP_VERSION = 'v215';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7702,6 +7702,12 @@ function saveClient(){
   // GRAVADOS como ESPELHO derivado do ★ (invisível) — WhatsApp, dedupe, fusão, exports e integrações
   // seguem lendo tel1/tel2 sem nenhuma mudança.
   const _ctsFone=_cliContatos.filter(x=>String(x.telefone||x.whats||'').replace(/\D/g,'').length>=8);
+  // v215 — CPF NO CAMPO TELEFONE (caso do dono 25/08: cadastro "murilo" com 064.139.559-02 como
+  // fone, que virou conversa com CPF de número): 11 dígitos que validam como CPF e NÃO têm cara de
+  // celular (DDD não começa com 0; celular tem 9 na 3ª posição) são BLOQUEADOS no salvar.
+  const _pareceCPF=(t)=>{ const d=String(t||'').replace(/\D/g,''); if(d.length!==11) return false; if(d[2]==='9' && d[0]!=='0') return false; return typeof _docValidoCPF==='function' && _docValidoCPF(d); };
+  const _ctCPF=_ctsFone.find(x=>_pareceCPF(x.telefone||x.whats));
+  if(_ctCPF){ alert('🚫 O telefone "'+(_ctCPF.telefone||_ctCPF.whats)+'" parece ser um CPF, não um número de telefone.\n\nInforme o CPF no campo CNPJ/CPF e o telefone (com DDD) nos Contatos da empresa.'); return; }
   if(_ctsFone.length && !_ctsFone.some(x=>x.principal)){ _ctsFone[0].principal=true; }
   const _priCt=_ctsFone.find(x=>x.principal)||_ctsFone[0]||null;
   const tel1=_priCt?_fmtTelBR(_priCt.telefone||_priCt.whats):'';
@@ -27520,7 +27526,7 @@ async function _fichaGerarLink(convId){
     for(var i=0;i<32;i++) tok+=abc[rnd[i]%abc.length];
     var r=await _sb.from('fichas_cadastro').insert({ id:'fic'+Date.now(), token:tok, cliente_id:conv.clienteId||null, conversa_id:conv.id, criado_por:(currentUser&&currentUser.name)||'' });
     if(r.error){ alert('Não consegui gerar o link: '+r.error.message); return; }
-    var link='https://oubwotsfknurmhiqtroz.supabase.co/functions/v1/ficha-cadastro?t='+tok;
+    var link='https://muriloverri.github.io/Lecaregestao/ficha.html?t='+tok; // v215 — página no Pages (a plataforma de edge functions força text/plain e mostrava o código-fonte)
     var txt='Para agilizar seu cadastro, preencha esta ficha rápida (leva 2 minutos): '+link;
     try{ var ta=document.querySelector('#conv-tela .conv-input-field')||document.querySelector('.conv-input-field'); if(ta){ ta.value=txt; ta.focus(); } }catch(_e){}
     try{ await navigator.clipboard.writeText(link); }catch(_e){}

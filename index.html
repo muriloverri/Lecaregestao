@@ -4814,7 +4814,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v213';
+var APP_VERSION = 'v214';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -13478,7 +13478,9 @@ function _ladoComprasEstado(o, tipo, cutTs){
         if(li.naoComprado) continue;
         // v169 — COMPRA PARCIAL (solicitado subiu acima do comprado após complemento): conta como NÃO comprado
         if(!li.compra || !li.compra.comprado || li.compraParcial) compradoOk=false;
-        if(!li.compra || !li.compra.recebido || li.compraParcial) recebidoOk=false;
+        // v213 — recebimento FÍSICO conta como recebido (regra do dono 19/08, caso 102915/PC-039:
+        // itens recebidos na Gestão de Pedidos e o "Produto entregue" preso esperando a conciliação)
+        if(!li.compra || !(li.compra.recebido || li.compra.recebFisicoEm!=null) || li.compraParcial) recebidoOk=false;
       }
     }
   }
@@ -13506,7 +13508,7 @@ function _ladoComprasPendentes(o, tipo){
         if(li.naoComprado) return; // resolvido sem compra — não segura
         if(!li.compra || !li.compra.comprado || li.compraParcial){
           out.push('• '+fmtIt(it)+(li.compraParcial?' — COMPRA PARCIAL (estornar e comprar o total)':' — aguardando COMPRA')+' · lista '+cod);
-        } else if(!li.compra.recebido){
+        } else if(!(li.compra.recebido || li.compra.recebFisicoEm!=null)){ // v213 — espelha o motor: físico conta como recebido
           var pc=li.compra.pedidoCompraId?(pedidosCompra||[]).find(function(p){ return p&&p.id===li.compra.pedidoCompraId; }):null;
           out.push('• '+fmtIt(it)+' — comprado'+(li.compra.fornecedorNome?' de '+li.compra.fornecedorNome:'')+(pc&&pc.numero?' ('+pc.numero+')':'')+' — aguardando RECEBIMENTO');
         }
@@ -13584,6 +13586,23 @@ function _healComercialPI(){
       mudou++;
     });
     if(mudou){ try{ saveData(); }catch(_e){} console.log('[v208] heal comercial-PI: '+mudou+' reversão(ões)'); }
+  }catch(_e){}
+}
+// v213 — HEAL: pedidos atendidos por RECEBIMENTO FÍSICO anterior a esta versão (caso 102915/PC-039,
+// 19/08: itens recebidos na Gestão de Pedidos e o "Produto entregue" preso). Reavalia o setor Compras
+// dos pedidos ligados a PCs com conferência física — _reavaliarComprasPedido só AVANÇA, idempotente.
+var _healRecFisUlt=0;
+function _healComprasRecebFisico(){
+  try{
+    if(!currentUser || !(pedidosCompra||[]).length) return;
+    if(Date.now()-_healRecFisUlt<300000) return; // no máx. 1 varredura/5min por sessão
+    _healRecFisUlt=Date.now();
+    var oids={};
+    (pedidosCompra||[]).forEach(function(pc){
+      if(!pc || !pc.recebFisico) return;
+      try{ _pcItens(pc).forEach(function(x){ (x.it.origem||[]).forEach(function(og){ oids[og.orderId]=1; }); }); }catch(_e){}
+    });
+    Object.keys(oids).forEach(function(oid){ try{ _reavaliarComprasPedido(oid); }catch(_e){} });
   }catch(_e){}
 }
 // v208 — CADASTRO COMPLETO derivado continuamente (ordem do dono 11/08): a flag acompanha os DADOS
@@ -14043,16 +14062,20 @@ function _gpReceberConfirmar(){
     itens:_gpRows.map(function(r){ return { listaId:r.listaId, ref:r.ref, itemId:r.itemId, codigo:r.codigo, nome:r.nome, unidade:r.unidade, qtdPedida:r.qtdPedida, qtd:r.qtd }; }),
     extras:_gpExtras.map(function(e){ return { insumoId:e.insumoId, codigo:e.codigo, nome:e.nome, unidade:e.unidade, qtd:e.qtd }; }) };
   // carimbo por item (referência p/ conciliação e auditoria) + eventos de ESTOQUE dos itens do pedido
-  var _evts=[];
+  var _evts=[], _oidsFis={};
   _gpRows.forEach(function(r){
     try{
       var l=(listasCompra||[]).find(function(x){ return x.id===r.listaId; });
       var it=l?_lcItemByRef(l, r.ref):null;
       if(it&&it.compra){ it.compra.recebFisicoQtd=r.qtd; it.compra.recebFisicoEm=now; }
       if(r.qtd>0 && it && it.itemId!=null) _evts.push({ itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:r.qtd });
+      if(it) (it.origem||[]).forEach(function(og){ _oidsFis[og.orderId]=1; }); // v213 — pedidos atendidos por este físico
     }catch(_e){}
   });
   try{ _rcbEstoqueEntrada(_evts); }catch(_e){}
+  // v213 — o recebimento FÍSICO já conta como recebido (regra do dono 19/08): reavalia o setor
+  // Compras dos pedidos atendidos — "Produto entregue" não espera mais a conciliação de preços
+  try{ Object.keys(_oidsFis).forEach(function(oid){ _reavaliarComprasPedido(oid); }); }catch(_e){}
   pc.status='recebido';
   if(!pc.recebidoEm){ pc.recebidoEm=now; pc.recebidoPor=(currentUser&&currentUser.name)||''; }
   var ov=document.getElementById('gp-fis-overlay'); if(ov) ov.classList.remove('open');
@@ -19312,6 +19335,7 @@ function refreshAll(){
   if(typeof _healComprasEnvio==='function') _healComprasEnvio(); // v205 — enviado sem lado definido = não necessário automático (regra do dono 10/08)
   if(typeof _healComercialPI==='function') _healComercialPI(); // v208 — "Produtos informados" sem produtos = reversão lógica (ordem do dono 11/08, caso 102926)
   if(typeof _healCadastroCompleto==='function') _healCadastroCompleto(); // v208 — completude do cadastro = derivação nome+doc+contato (ordem do dono 11/08)
+  if(typeof _healComprasRecebFisico==='function') _healComprasRecebFisico(); // v213 — físico conta como recebido: destrava "Produto entregue" retroativo
   if(typeof _updateConvBadge==='function') _updateConvBadge();
   if(typeof renderNotifBadge==='function') renderNotifBadge(); // v102 — badge do sino acende em realtime (chega notificação → refreshAll → badge)
   // v89 — só re-renderiza as telas pesadas que estão VISÍVEIS (showPage já as re-renderiza ao navegar).
@@ -19472,8 +19496,10 @@ function renderDashboard(){
       // do mesmo pedido"): pedido com ≥1 etapa atrasada = 1 alerta; com ≥1 etapa crítica = 1 crítico
       // (pedido com os dois tipos conta um em cada cartão). SÓ os cartões — o detalhamento do clique
       // e o restante do sistema continuam etapa a etapa.
-      if(oa.some(a=>a.level==='crit')) c++;
-      if(oa.some(a=>a.level!=='crit')) w++;
+      // v214 — SEM duplicidade (decisão do dono 19/08): pedido com QUALQUER etapa crítica conta SÓ
+      // em Críticos; pedido só com atrasos comuns conta em Alertas. Os dois cartões somam exatamente
+      // o total de pedidos com alerta.
+      if(oa.some(a=>a.level==='crit')) c++; else w++;
       alertsByOrder.push({order:o,alerts:oa});
     }
   });
@@ -27480,6 +27506,31 @@ function resolverRetorno(rid){
   renderDashConversas();
 }
 var _dcConvEq='', _dcConvDe='', _dcConvAte='';
+// v214 — FICHA DE CADASTRO ONLINE (pedido do dono 25/08): gera link de USO ÚNICO da página pública
+// (edge ficha-cadastro) vinculado à conversa + cliente. O cliente preenche nome/CPF-CNPJ/conselho/
+// contato/endereço; a função valida (CNPJ alfanumérico incluso), aplica ao cadastro SÓ o que está
+// vazio (nunca sobrescreve dado válido) e registra o resumo como mensagem de sistema na conversa.
+async function _fichaGerarLink(convId){
+  try{
+    var conv=(conversas||[]).find(function(c){ return String(c.id)===String(convId); });
+    if(!conv){ alert('Conversa não encontrada.'); return; }
+    if(!_sb){ alert('Sem conexão com o banco — tente novamente.'); return; }
+    var abc='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789', tok='';
+    var rnd=new Uint32Array(32); crypto.getRandomValues(rnd);
+    for(var i=0;i<32;i++) tok+=abc[rnd[i]%abc.length];
+    var r=await _sb.from('fichas_cadastro').insert({ id:'fic'+Date.now(), token:tok, cliente_id:conv.clienteId||null, conversa_id:conv.id, criado_por:(currentUser&&currentUser.name)||'' });
+    if(r.error){ alert('Não consegui gerar o link: '+r.error.message); return; }
+    var link='https://oubwotsfknurmhiqtroz.supabase.co/functions/v1/ficha-cadastro?t='+tok;
+    var txt='Para agilizar seu cadastro, preencha esta ficha rápida (leva 2 minutos): '+link;
+    try{ var ta=document.querySelector('#conv-tela .conv-input-field')||document.querySelector('.conv-input-field'); if(ta){ ta.value=txt; ta.focus(); } }catch(_e){}
+    try{ await navigator.clipboard.writeText(link); }catch(_e){}
+    alert('📝 Link da ficha gerado (uso único) e copiado.\n\nA mensagem pronta foi colocada no campo de texto — é só enviar.\n\nQuando o cliente preencher: os dados entram no cadastro (só campos vazios) e o resumo aparece nesta conversa.');
+  }catch(e){ alert('Erro ao gerar a ficha: '+((e&&e.message)||e)); }
+}
+// v214 — o "há X min" dos quadros CONGELAVA no instante da renderização (reporte do dono 25/08:
+// conversa 30+ min sem resposta mostrando "há 1 min" — o cálculo estava certo, mas só rodava quando
+// algum evento re-renderizava). Relógio de 60 s re-renderiza o quadro ENQUANTO estiver visível.
+var _dcConvTick=setInterval(function(){ try{ var el=document.getElementById('dcconv-root'); if(el && el.offsetParent!==null) renderDashConversas(); }catch(_e){} }, 60000);
 function _dcConvSetEq(v){ _dcConvEq=v||''; renderDashConversas(); }
 function _dcConvSetDe(v){ _dcConvDe=v||''; renderDashConversas(); }
 function _dcConvSetAte(v){ _dcConvAte=v||''; renderDashConversas(); }
@@ -35542,6 +35593,7 @@ function renderConversaTela(convId, containerId){
       </div>
       ${conv.grupo?`<span style="font-size:11px;color:#54656f;padding:5px 10px">👥 Grupo — sem vínculo com cliente</span>`:`<button onclick="${_cardLead?`openLeadModal('${_cardLead.id}')`:`alert('Este cliente ainda não tem card no CRM.')`}" title="Abrir card no CRM" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📋 Card</button>`}
       ${conv.grupo?'':`<button onclick="openClienteFichaPorId('${conv.clienteId}')" title="Ver dados do cliente" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">👤 Cliente</button>`}
+      ${conv.grupo?'':`<button onclick="_fichaGerarLink('${conv.id}')" title="Gera um link de FICHA DE CADASTRO online para enviar ao cliente — ele preenche (nome, CPF/CNPJ, conselho, contato, endereço) e os dados entram no cadastro sozinhos, com o resumo aparecendo nesta conversa. Link de uso único." style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📝 Ficha</button>`}
       <button onclick="_convMarcarNaoLida('${conv.id}')" title="Marcar como não lida" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">✉️ Não lida</button>
       ${(currentUser?.perfil==='admin' && !conv.grupo)?`<button onclick="_convImportarHistorico('${conv.id}')" title="Importar histórico exportado do WhatsApp do celular (.txt) — apenas admin" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📥 Importar</button>`:''}
       ${conv.grupo?'':(_encerrada

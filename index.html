@@ -4814,7 +4814,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v218';
+var APP_VERSION = 'v219';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5090,6 +5090,30 @@ async function _commitToDb(){
       _srvUsers.forEach(function(su){ if(su && su.id!=null && !_locIds.has(String(su.id)) && !_allRemov.has(String(su.id))) blockData.users.push(su); });
       blockData.users=blockData.users.filter(function(u){ return !(u && _allRemov.has(String(u.id))); });
       users=blockData.users.slice(); usersRemovidos=blockData.usersRemovidos.slice(); // reflete no estado local (senão a aba re-salvaria sem eles)
+      // v219 — ANTI-CLOBBER de EQUIPES (caso Aline 26/08, 3 regravações no mesmo dia): equipes era
+      // FULL-REPLACE — aba com a lista velha em memória apagava a inscrição de atendente feita por
+      // outra pessoa. Merge antes de gravar: equipe que só existe no servidor é PRESERVADA; membro
+      // que só existe no servidor volta SE o cadastro do usuário ainda o vincula à equipe
+      // (atendente ativo com coordenadorId = coordenador da equipe) — a FONTE DA VERDADE do vínculo
+      // é o CADASTRO DO USUÁRIO; a lista da equipe é cache. Lápide usersRemovidos respeitada.
+      try{
+        const _srvEqs=(_srvBlob&&_srvBlob.value&&Array.isArray(_srvBlob.value.equipes))?_srvBlob.value.equipes:[];
+        if(!Array.isArray(blockData.equipes)) blockData.equipes=[];
+        const _locEq=new Map(blockData.equipes.map(function(e){ return [String(e&&e.id), e]; }));
+        _srvEqs.forEach(function(se){
+          if(!se || se.id==null) return;
+          const le=_locEq.get(String(se.id));
+          if(!le){ blockData.equipes.push(se); return; } // equipe criada por outra aba: preserva
+          const _locSet=new Set((le.atendentesIds||[]).map(String));
+          (se.atendentesIds||[]).forEach(function(id){
+            id=String(id);
+            if(_locSet.has(id) || _allRemov.has(id)) return;
+            const u=(blockData.users||[]).find(function(x){ return x && String(x.id)===id; });
+            if(u && u.perfil==='atendente' && u.ativo!==false && !u.semAcesso && u.coordenadorId===le.coordenadorId){ (le.atendentesIds=le.atendentesIds||[]).push(id); }
+          });
+        });
+        equipes=blockData.equipes.slice(); // reflete no estado local (senão a aba re-salvaria sem eles)
+      }catch(_e){ console.warn('merge de equipes falhou (grava como está):', _e&&_e.message); }
     }catch(_e){ console.warn('merge de users falhou (grava como está):', _e&&_e.message); }
     const { error }=await _sb.from('app_data').upsert({ key:SB_DATA_KEY, value:blockData, updated_at:new Date().toISOString() }, { onConflict:'key' });
     if(error){ ok=false; firstErr=firstErr||('bloco principal: '+error.message); console.warn('app_data upsert:', error.message); }
@@ -19513,6 +19537,7 @@ function refreshAll(){
   if(typeof _healComercialPI==='function') _healComercialPI(); // v208 — "Produtos informados" sem produtos = reversão lógica (ordem do dono 11/08, caso 102926)
   if(typeof _healCadastroCompleto==='function') _healCadastroCompleto(); // v208 — completude do cadastro = derivação nome+doc+contato (ordem do dono 11/08)
   if(typeof _healComprasRecebFisico==='function') _healComprasRecebFisico(); // v213 — físico conta como recebido: destrava "Produto entregue" retroativo
+  if(typeof _healAtendentesEquipes==='function') _healAtendentesEquipes(); // v219 — re-inscreve atendentes nas equipes pelo vínculo do cadastro (caso Aline: clobber concorrente)
   if(typeof _updateConvBadge==='function') _updateConvBadge();
   if(typeof renderNotifBadge==='function') renderNotifBadge(); // v102 — badge do sino acende em realtime (chega notificação → refreshAll → badge)
   // v89 — só re-renderiza as telas pesadas que estão VISÍVEIS (showPage já as re-renderiza ao navegar).
@@ -34171,7 +34196,36 @@ function _usuarioPertenceEquipe(userId, eqId){
     return equipes.some(e=>e.tipo==='sdr' && (e.coordenadorId===userId || (e.atendentesIds||[]).includes(userId)));
   }
   const e = getEquipe(eqId); if(!e) return false;
-  return e.coordenadorId===userId || (e.atendentesIds||[]).includes(userId);
+  if(e.coordenadorId===userId || (e.atendentesIds||[]).includes(userId)) return true;
+  // v219 — o VÍNCULO DO CADASTRO DO USUÁRIO também vale (caso Aline 26/08: equipe.atendentesIds era
+  // regravado por sessões concorrentes e o menu Conversas sumia mesmo após dois force-reloads):
+  // atendente ativo cujo coordenadorId é o coordenador da equipe PERTENCE a ela — o cadastro do
+  // usuário sobrevive ao clobber; a lista da equipe vira cache reparado pelo _healAtendentesEquipes.
+  const u=(users||[]).find(x=>x&&x.id===userId);
+  return !!(u && u.perfil==='atendente' && u.ativo!==false && !u.semAcesso && u.coordenadorId && u.coordenadorId===e.coordenadorId);
+}
+// v219 — SELF-HEAL da inscrição atendente↔equipe (caso Aline 26/08): sessões concorrentes com a
+// memória velha regravavam equipes SEM a atendente nova — nem dois force-reloads venceram a guerra
+// de clobber. Agora TODA sessão re-inscreve os atendentes pelo vínculo do CADASTRO (coordenadorId):
+// quem salvar depois PRESERVA em vez de apagar. Nunca REMOVE ninguém (remoção é manual, tela Equipes).
+var _healAtEqUlt=0;
+function _healAtendentesEquipes(){
+  try{
+    if(!currentUser || !(users||[]).length || !(equipes||[]).length) return;
+    if(Date.now()-_healAtEqUlt<300000) return; // no máx. 1 varredura/5min por sessão
+    _healAtEqUlt=Date.now();
+    var mudou=false;
+    (users||[]).forEach(function(u){
+      if(!u || u.perfil!=='atendente' || u.ativo===false || u.semAcesso || !u.coordenadorId) return;
+      if(typeof usersRemovidos!=='undefined' && usersRemovidos && usersRemovidos.indexOf(String(u.id))>=0) return; // lápide v132 — removido não ressuscita
+      (equipes||[]).forEach(function(e){
+        if(!e || e.ativa===false || e.coordenadorId!==u.coordenadorId) return;
+        if(!Array.isArray(e.atendentesIds)) e.atendentesIds=[];
+        if(e.atendentesIds.indexOf(u.id)<0){ e.atendentesIds.push(u.id); mudou=true; }
+      });
+    });
+    if(mudou){ try{ _updateConvNav(); }catch(_e){} saveData(); }
+  }catch(_e){}
 }
 function _sincronizarClienteCardConversa(clienteId){
   const cli = clients.find(c=>c.id===clienteId); if(!cli) return;

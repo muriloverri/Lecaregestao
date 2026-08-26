@@ -4814,7 +4814,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v217';
+var APP_VERSION = 'v218';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -11914,6 +11914,12 @@ function _solStatusEfetivo(s){
   if(!s) return '';
   if(s.status!=='em_lista' || !s.listaId) return s.status;
   var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; });
+  // v218 — defesa (caso SA-58): se o listaId aponta para uma lista que NÃO contém a solicitação,
+  // o status vale pela lista que realmente a contém (é nela que a compra aconteceu).
+  if(!l || (l.solicIds||[]).indexOf(s.id)<0){
+    var l2=(listasCompra||[]).find(function(x){ return x && (x.solicIds||[]).indexOf(s.id)>=0; });
+    if(l2) l=l2;
+  }
   if(!l) return s.status;
   var algum=false;
   for(var j=0;j<(s.itens||[]).length;j++){
@@ -12144,6 +12150,15 @@ function _solItemLinhaInfo(s, it, lst){
   } else {
     k='aguarda_lista'; st='<span style="color:var(--text-tertiary)">📨 solicitado<br><span style="'+sub+'">aguardando entrar em lista</span></span>';
   }
+  // v218 — DATA DA SITUAÇÃO (pedido do dono 26/08): embaixo do rótulo, a data do FATO que definiu
+  // o status — compra (compradoEm), decisão de não comprar/resolução (naoCompradoEm), entrada na
+  // lista (lst.criadoEm), solicitação (s.criadoEm). Cotação não tem carimbo próprio — sem data.
+  var _stEm = c ? c.compradoEm
+    : (li && li.naoComprado) ? li.naoCompradoEm
+    : (li && ((li.cotacoes||[]).length || li.escolhida!=null)) ? null
+    : li ? (lst && lst.criadoEm)
+    : (s && s.criadoEm);
+  if(_stEm) st+='<br><span style="'+sub+'">'+fmtDate(_gstDataDe(_stEm))+'</span>';
   // v211 — data da coluna Compra = data em que o PEDIDO DE COMPRA foi FECHADO (pedido do dono 14/08,
   // print PC-039); enquanto o PC não fecha (ou compra sem PC), vale a data em que o item foi comprado
   var _dtC=(inf.pc&&inf.pc.fechadoEm)?fmtDate(_gstDataDe(inf.pc.fechadoEm)):((c&&c.compradoEm)?fmtDate(_gstDataDe(c.compradoEm)):'');
@@ -12168,11 +12183,18 @@ function _solItemLinhaInfo(s, it, lst){
     // v211 — recebimento FÍSICO (📦 Gestão de Pedidos, fluxo v210) conta como RECEBIDO na mercadoria
     // (reporte do dono 14/08, PC-041/NF 170025: o pedido constava recebido e aqui seguia "aguardando
     // recebimento" — c.recebido é a marca da CONCILIAÇÃO, que vira pendência à parte)
+    // v218 — conferência física com quantidade ZERO = item que NÃO VEIO (revisão 26/08)
     var _qF=parseFloat(c.recebFisicoQtd)||0, _qC2=parseFloat(c.qtdComprada)||0;
+    if(c.recebFisicoQtd!=null && _qF<=0){
+      colReceb='<span style="color:var(--st-bad-tx);font-weight:600;white-space:nowrap" title="Conferência física registrou ZERO recebido deste item">✕ não veio</span>'+
+        '<br><span style="'+sub+'">'+fmtDate(_gstDataDe(c.recebFisicoEm))+'</span>'+
+        '<br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>';
+    } else {
     colReceb='<span style="color:var(--st-ok-tx);font-weight:600;white-space:nowrap">✔ recebido</span>'+
       '<br><span style="'+sub+'">'+fmtDate(_gstDataDe(c.recebFisicoEm))+'</span>'+
       (_qC2 && Math.abs(_qF-_qC2)>0.001?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="Conferência física: chegou diferente do comprado">📦 chegou '+_qF.toLocaleString('pt-BR')+' de '+_qC2.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</span>':'')+
       '<br><span style="color:var(--st-mid-tx);font-size:10px" title="Valores/XML e lançamento para o Caixa pendentes no menu Compras › Recebimento de Pedido">conciliação pendente</span>';
+    }
   } else if(c && inf.pc){
     colReceb='<span style="color:var(--text-secondary)">'+escapeHtml((typeof _PC_ST_LBL!=='undefined'&&_PC_ST_LBL[inf.pc.status])||inf.pc.status||'—')+'</span>'+
       '<br><span style="'+sub+'">aguardando recebimento</span>';
@@ -12398,7 +12420,12 @@ function openSolicitarModal(orderId, solicId){
   document.getElementById('solicitar-modal').classList.add('open');
 }
 // v138/v168 — botões sem pedido: SEMPRE abrem um lançamento novo (zerado)
-function openSolicitarAvulsa(){ openSolicitarModal('__geral__'); }
+function openSolicitarAvulsa(){
+  // v218 — ordem do dono 26/08: solicitação AVULSA de EMBALAGEM é exclusiva do administrador
+  // (avulsa de ativos/matéria-prima segue liberada).
+  if(_solTab==='embalagem' && currentUser?.perfil!=='admin'){ alert('Solicitação avulsa de EMBALAGEM: somente o administrador.\n\nSe precisa de embalagem para estoque, avise o administrador.'); return; }
+  openSolicitarModal('__geral__');
+}
 function openSolicitarAnestesico(){ openSolicitarModal('__anestesico__'); }
 function closeSolicitarModal(){ document.getElementById('solicitar-modal').classList.remove('open'); _solRows=[]; _solOrderId=null; _solEditId=null; }
 function _solSearchItem(){
@@ -12442,6 +12469,8 @@ function saveSolicitacao(){
   var itens=_solRows.filter(function(r){ return r.itemId && (parseFloat(r.qtd)||0)>0; });
   if(!itens.length){ alert('Adicione ao menos um item com quantidade.'); return; }
   var ehPseudo=_solEhPseudo(_solOrderId); // v168 — avulsa/anestésico
+  // v218 — trava no SALVAR também (defesa em profundidade da regra do botão): avulsa de embalagem só admin
+  if(String(_solOrderId)==='__geral__' && _solTab==='embalagem' && currentUser?.perfil!=='admin'){ alert('Solicitação avulsa de EMBALAGEM: somente o administrador.'); return; }
   var o=ehPseudo?null:(orders||[]).find(function(x){ return String(x.id)===String(_solOrderId); });
   var s=null; var now=Date.now();
   if(ehPseudo){
@@ -12574,7 +12603,16 @@ function setListaSub(tipo){
   var gb=document.getElementById('lst-gerar-btn'); if(gb) gb.textContent='+ Gerar lista de '+(tipo==='ativo'?'ativos':'embalagens');
   renderListaCompra();
 }
-function _solicPendentes(tipo){ return (solicitacoesCompra||[]).filter(function(s){ return s && s.tipo===tipo && s.status==='solicitado' && (s.itens||[]).length; }); }
+function _solicPendentes(tipo){ return (solicitacoesCompra||[]).filter(function(s){
+  if(!(s && s.tipo===tipo && s.status==='solicitado' && (s.itens||[]).length)) return false;
+  // v218 — INVARIANTE (caso SA-58, 26/08): solicitação presente numa lista VIVA nunca é pendente.
+  // O status dela regrediu para 'solicitado' em algum fluxo e ela RE-ENTROU numa segunda lista —
+  // linha dizia "Em lista" com o item já comprado na primeira, e a duplicata ficou aguardando
+  // cotação (risco de compra em dobro). Se uma lista viva ainda a contém: realinha e NÃO re-inclui.
+  var dona=(listasCompra||[]).find(function(l){ return l && (l.solicIds||[]).indexOf(s.id)>=0; });
+  if(dona){ s.status='em_lista'; s.listaId=dona.id; return false; }
+  return true;
+}); }
 // ═══════ v175 — 🚫 FORA DE ESTOQUE (pedido do dono 28/07) ═══════
 // Item devolvido pela resolução "Sem estoque" fica MARCADO na fila (it.semEstoque). O Gerar lista
 // PERGUNTA se inclui; o botão "🚫 Fora de estoque" lista os marcados. Ao entrar numa lista
@@ -13404,12 +13442,13 @@ function _acompStatusItem(s, it){
   var parts=l?_lcPartesDoItem(l, it.itemId):[]; // v186 — compra dividida: o status agrega as partes
   var li=parts[0]||null;
   if(!li) return {st:'Em lista', li:null};
+  // (usa _recebFisicoConta — v218: conferência física com qtd ZERO não conta como recebido)
   if(parts.every(function(p){ return p.naoComprado; })) return {st: li.ncResolucao==='ajustado'?'Ajustado':li.ncResolucao==='tinha_estoque'?'Tinha estoque':li.ncResolucao==='sem_estoque'?'Sem estoque':'Não comprado', li:li}; // v171 — resolução por item
   if(parts.some(function(p){ return p.compraParcial && p.compra && p.compra.comprado; })) return {st:'Compra parcial', li:li}; // v169 — solicitado subiu acima do comprado
   var vivos=parts.filter(function(p){ return !p.naoComprado; });
   // v211 — recebimento FÍSICO (recebFisicoEm, fluxo v210) conta como recebido no Acompanhamento;
   // a conciliação pendente é etapa do financeiro, não da mercadoria (reporte do dono 14/08, PC-041)
-  if(vivos.length && vivos.every(function(p){ return p.compra && (p.compra.recebido || p.compra.recebFisicoEm!=null); })){
+  if(vivos.length && vivos.every(function(p){ return p.compra && (p.compra.recebido || _recebFisicoConta(p.compra)); })){
     // v210 — caso 102798/válvula (14/08): a compra da LISTA foi recebida, mas o RATEIO por D1 deixou
     // o quinhão DESTE pedido descoberto — o Acompanhamento dizia "Recebido" e o Recebidos a menos
     // dizia "faltam 10" ao mesmo tempo. Agora o status cruza com o rateio: quinhão descoberto =
@@ -13534,12 +13573,18 @@ function _ladoComprasEstado(o, tipo, cutTs){
         if(!li.compra || !li.compra.comprado || li.compraParcial) compradoOk=false;
         // v213 — recebimento FÍSICO conta como recebido (regra do dono 19/08, caso 102915/PC-039:
         // itens recebidos na Gestão de Pedidos e o "Produto entregue" preso esperando a conciliação)
-        if(!li.compra || !(li.compra.recebido || li.compra.recebFisicoEm!=null) || li.compraParcial) recebidoOk=false;
+        // v218 — refinamento (revisão 26/08, casos GAROPABA/CERA DE CANDELILA 0 recebidos): conferência
+        // física com quantidade ZERO é item que NÃO VEIO — não pode destravar o "Produto entregue".
+        if(!li.compra || !(li.compra.recebido || _recebFisicoConta(li.compra)) || li.compraParcial) recebidoOk=false;
       }
     }
   }
   return {definido:true, compradoOk:compradoOk, recebidoOk:recebidoOk};
 }
+// v218 — FÍSICO CONTA COMO RECEBIDO SÓ SE ALGO CHEGOU (revisão 26/08): conferência com qtd ZERO
+// é item que não veio; qtd não registrada (legado) mantém o comportamento v213 (conta).
+// Predicado ÚNICO usado pelo motor, pelo espelho e pelo Acompanhamento — divergência entre eles é bug.
+function _recebFisicoConta(c){ if(!c || c.recebFisicoEm==null) return false; var q=parseFloat(c.recebFisicoQtd); return !(q<=0); }
 // v200 — DETALHE do que segura um lado (pedido do dono 07/08: a trava do "Produto entregue" dizia
 // só "Ativos: pendente" — agora lista ITEM A ITEM o que falta e em que pé está). Espelha fielmente
 // a varredura do _ladoComprasEstado acima; qualquer divergência entre os dois é bug.
@@ -13562,7 +13607,7 @@ function _ladoComprasPendentes(o, tipo){
         if(li.naoComprado) return; // resolvido sem compra — não segura
         if(!li.compra || !li.compra.comprado || li.compraParcial){
           out.push('• '+fmtIt(it)+(li.compraParcial?' — COMPRA PARCIAL (estornar e comprar o total)':' — aguardando COMPRA')+' · lista '+cod);
-        } else if(!(li.compra.recebido || li.compra.recebFisicoEm!=null)){ // v213 — espelha o motor: físico conta como recebido
+        } else if(!(li.compra.recebido || _recebFisicoConta(li.compra))){ // v213 — espelha o motor: físico conta como recebido; v218 — qtd zero não conta
           var pc=li.compra.pedidoCompraId?(pedidosCompra||[]).find(function(p){ return p&&p.id===li.compra.pedidoCompraId; }):null;
           out.push('• '+fmtIt(it)+' — comprado'+(li.compra.fornecedorNome?' de '+li.compra.fornecedorNome:'')+(pc&&pc.numero?' ('+pc.numero+')':'')+' — aguardando RECEBIMENTO');
         }
@@ -13657,6 +13702,21 @@ function _healComprasRecebFisico(){
       try{ _pcItens(pc).forEach(function(x){ (x.it.origem||[]).forEach(function(og){ oids[og.orderId]=1; }); }); }catch(_e){}
     });
     Object.keys(oids).forEach(function(oid){ try{ _reavaliarComprasPedido(oid); }catch(_e){} });
+    // v218 — heal retroativo dos FALTANTES do físico (caso PC-047/GAROPABA 0 de 60, 26/08): itens
+    // conferidos fisicamente A MENOS antes desta versão nunca registraram recebFaltante — não
+    // apareciam em "Recebidos a menos". Registra UMA vez (só quem não tem registro; a conciliação
+    // já feita, c.recebido, fica fora — o fluxo dela cuidou).
+    var _healFalt=0;
+    (listasCompra||[]).forEach(function(l){
+      (l.itens||[]).forEach(function(it){
+        var c=it&&it.compra; if(!c) return;
+        if(c.recebFisicoEm==null || c.recebido || c.recebFaltante) return;
+        var qF=parseFloat(c.recebFisicoQtd), qC=parseFloat(c.qtdComprada)||0;
+        if(isNaN(qF) || !(qC>0) || qF>=qC-0.001) return;
+        try{ _rcbRegistrarFaltante(l, it, qF, c.recebFisicoEm); _healFalt++; }catch(_e){}
+      });
+    });
+    if(_healFalt){ try{ _rmFaltCache.map=null; }catch(_e){} try{ _rmAtualizaBadge(); }catch(_e){} saveData(); }
   }catch(_e){}
 }
 // v208 — CADASTRO COMPLETO derivado continuamente (ordem do dono 11/08): a flag acompanha os DADOS
@@ -14122,6 +14182,11 @@ function _gpReceberConfirmar(){
       var l=(listasCompra||[]).find(function(x){ return x.id===r.listaId; });
       var it=l?_lcItemByRef(l, r.ref):null;
       if(it&&it.compra){ it.compra.recebFisicoQtd=r.qtd; it.compra.recebFisicoEm=now; }
+      // v218 — reporte do dono 26/08 (PC-047/FRASCO GAROPABA 0 de 60): o faltante detectado na
+      // conferência FÍSICA não alimentava "Recebidos a menos" — o registro só rodava na conciliação,
+      // que no fluxo v212 vem depois (às vezes dias). Registra JÁ no físico (rateio por D1 + alerta
+      // + decisão de recompra); a conciliação posterior re-registra sem apagar decisão já tomada.
+      if(it) try{ _rcbRegistrarFaltante(l, it, r.qtd, now); }catch(_e){}
       if(r.qtd>0 && it && it.itemId!=null) _evts.push({ itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:r.qtd });
       if(it) (it.origem||[]).forEach(function(og){ _oidsFis[og.orderId]=1; }); // v213 — pedidos atendidos por este físico
     }catch(_e){}
@@ -14294,15 +14359,33 @@ function _renderPedidoCompraModal(){
     else if(c.recebido) _qr=_qp;
     var _qrHtml=(_qr==null)?'<span style="color:var(--text-tertiary)">—</span>'
       :((Math.abs(_qr-_qp)>0.001)?'<b style="color:var(--st-bad-tx)" title="Diferente da quantidade pedida">'+_qr.toLocaleString('pt-BR')+' '+_un+'</b>':(_qr.toLocaleString('pt-BR')+' '+_un));
+    // v218 — AS 3 QUANTIDADES no modal do PC (pedido do dono 26/08): coluna Qtd SOLICITADA + os
+    // pedidos de ORIGEM (com a quantidade de cada um) em linha pequena embaixo do nome do item.
+    var _qSol=parseFloat(x.it.qtdTotal);
+    if(isNaN(_qSol)) _qSol=(x.it.origem||[]).reduce(function(s2,og){ return s2+(parseFloat(og.qtd)||0); },0);
+    var _origHtml=(x.it.origem||[]).length?('<br><span style="font-size:10px;color:var(--text-tertiary)" title="Pedidos que deram origem à quantidade solicitada">📋 '+
+      x.it.origem.map(function(og){ return escapeHtml(og.orderNum||'—')+': '+(parseFloat(og.qtd)||0).toLocaleString('pt-BR')+' '+_un; }).join(' · ')+'</span>'):'';
     return '<tr>'+
       '<td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.it.codigo||'—')+'</td>'+
-      '<td style="'+td+'">'+escapeHtml(x.it.nome||'')+'</td>'+
+      '<td style="'+td+'">'+escapeHtml(x.it.nome||'')+_origHtml+'</td>'+
       '<td style="'+td+';font-size:10px;color:var(--text-tertiary)">'+(x.tipo==='ativo'?'Ativo':'Embalagem')+'</td>'+
+      '<td style="'+td+';text-align:right">'+((_qSol||_qSol===0)?_qSol.toLocaleString('pt-BR')+' '+_un:'—')+'</td>'+
       '<td style="'+td+';text-align:right">'+_qp.toLocaleString('pt-BR')+' '+_un+'</td>'+
       '<td style="'+td+';text-align:right">'+_qrHtml+'</td>'+
       '<td style="'+td+';text-align:right">'+fmtMoney(c.precoPago||0)+'</td>'+
       '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(vt)+'</td>'+
-      '<td style="'+td+';text-align:center">'+(c.recebido?'<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ recebido</span>':'<span style="font-size:11px;color:var(--text-tertiary)">pendente</span>')+'</td>'+
+      // v218 — reporte do dono 26/08 (PC-047): a coluna só olhava a marca da CONCILIAÇÃO (c.recebido)
+      // e mostrava "pendente" com o pedido já recebido FISICAMENTE. Regra do dono 19/08: físico =
+      // recebido; conciliação é pendência à parte. Item com conferência física ZERO não veio.
+      '<td style="'+td+';text-align:center">'+(function(){
+        if(c.recebido) return '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ recebido</span>';
+        if(c.recebFisicoEm!=null){
+          var _qF3=parseFloat(c.recebFisicoQtd);
+          if(!isNaN(_qF3) && _qF3<=0) return '<span style="font-size:11px;color:var(--st-bad-tx);font-weight:600" title="Conferência física registrou ZERO recebido deste item">✕ não veio</span>';
+          return '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ recebido</span><br><span style="font-size:10px;color:var(--st-mid-tx)" title="Valores/NF e lançamento para o Caixa pendentes em Compras › Recebimento de Pedido">conciliação pendente</span>';
+        }
+        return '<span style="font-size:11px;color:var(--text-tertiary)">pendente</span>';
+      })()+'</td>'+
     '</tr>';
   }).join('');
   var levas=(pc.recebimentos||[]).map(function(r,i){
@@ -14311,9 +14394,9 @@ function _renderPedidoCompraModal(){
   var body=document.getElementById('pc-ab-body');
   if(body) body.innerHTML=
     '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
-    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+'">Tipo</th><th style="'+th+';text-align:right">Qtd comprada</th><th style="'+th+';text-align:right">Qtd recebida</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th><th style="'+th+';text-align:center">Recebimento</th>'+
-    '</tr></thead><tbody>'+(rows||'<tr><td colspan="8" style="'+td+';color:var(--text-tertiary)">Nenhum item ainda — os itens entram aqui automaticamente ao serem comprados deste fornecedor.</td></tr>')+'</tbody>'+
-    '<tfoot><tr><td colspan="6" style="padding:8px;text-align:right;font-weight:600;font-size:12px">Total do pedido</td><td style="padding:8px;text-align:right;font-weight:700;font-size:13px">'+fmtMoney(t.total)+'</td><td></td></tr></tfoot></table></div>'+
+    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+'">Tipo</th><th style="'+th+';text-align:right">Qtd solicitada</th><th style="'+th+';text-align:right">Qtd comprada</th><th style="'+th+';text-align:right">Qtd recebida</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th><th style="'+th+';text-align:center">Recebimento</th>'+
+    '</tr></thead><tbody>'+(rows||'<tr><td colspan="9" style="'+td+';color:var(--text-tertiary)">Nenhum item ainda — os itens entram aqui automaticamente ao serem comprados deste fornecedor.</td></tr>')+'</tbody>'+
+    '<tfoot><tr><td colspan="7" style="padding:8px;text-align:right;font-weight:600;font-size:12px">Total do pedido</td><td style="padding:8px;text-align:right;font-weight:700;font-size:13px">'+fmtMoney(t.total)+'</td><td></td></tr></tfoot></table></div>'+
     (levas?('<div style="margin-top:10px">'+levas+'</div>'):'')+
     // v200 — cronologia das movimentações (pedido do dono 07/08): rodapé discreto com data/hora e autor
     (function(){
@@ -14698,13 +14781,20 @@ function _rcbRegistrarFaltante(l, it, qtdRecebida, now){
   // excedente comprado acima do solicitado é estoque (v164): se o corte coube todo nele, ninguém ficou descoberto
   var somaOrigem=(it.origem||[]).reduce(function(s,og){ return s+(parseFloat(og.qtd)||0); },0);
   if(qc>somaOrigem && !aloc.length && estoqueFalta<=0) estoqueFalta=+Math.min(falta, qc-somaOrigem).toFixed(4);
-  c.recebFaltante={ qtd:falta, aloc:aloc, estoqueQtd:estoqueFalta, em:now, por:(currentUser&&currentUser.name)||'' };
+  // v218 — o registro agora roda no FÍSICO e de novo na conciliação: se o faltante NÃO MUDOU e já
+  // existe decisão tomada (re-solicitado / sem recompra), a decisão SOBREVIVE ao re-registro —
+  // só faltante novo ou de quantidade diferente reabre a decisão.
+  var _prevFalt=c.recebFaltante, _resAtual=c.recebFaltanteRes;
+  var _mesmoFalt=_prevFalt && Math.abs((parseFloat(_prevFalt.qtd)||0)-falta)<0.001;
+  c.recebFaltante={ qtd:falta, aloc:aloc, estoqueQtd:estoqueFalta, em:(_mesmoFalt&&_prevFalt.em)||now, por:(_mesmoFalt&&_prevFalt.por)||((currentUser&&currentUser.name)||'') };
   // v210 — AS 3 QUANTIDADES (regra do dono 14/08: solicitada / comprada / recebida): se NENHUM
   // pedido ficou descoberto, a quantidade SOLICITADA foi atendida — o corte coube no excedente
   // comprado p/ estoque. O item aparece em "Recebidos a menos" (registro), mas JÁ RESOLVIDO como
   // "sem recompra" AUTOMÁTICO — sem decisão pendente e sem entrar na próxima lista. Com pedido
-  // descoberto, qualquer resolução antiga é limpa (a decisão volta a ser necessária).
-  if(!aloc.length){ c.recebFaltanteRes={ acao:'sem_recompra', motivo:'Automático: quantidade SOLICITADA já atendida — o faltante é só do excedente comprado para estoque', em:now, por:'Sistema' }; }
+  // descoberto, qualquer resolução antiga é limpa (a decisão volta a ser necessária) — EXCETO se o
+  // faltante é o MESMO e a decisão já foi tomada (v218).
+  if(!aloc.length){ c.recebFaltanteRes=(_mesmoFalt&&_resAtual)||{ acao:'sem_recompra', motivo:'Automático: quantidade SOLICITADA já atendida — o faltante é só do excedente comprado para estoque', em:now, por:'Sistema' }; }
+  else if(_mesmoFalt && _resAtual){ c.recebFaltanteRes=_resAtual; }
   else { delete c.recebFaltanteRes; }
   try{ _rmFaltCache.map=null; }catch(_e){}
   aloc.forEach(function(a){
@@ -17681,7 +17771,7 @@ function renderFinPainel(){
     const coleta=(arr,tp,diaStr,ehHoje)=> arr.filter(_contaAprovada)
       .filter(c=>!_formaSemCaixa(c.formaPag)) // v209 — bonificação/abate de crédito não é dinheiro que sai/entra
       .flatMap(c=>(c.parcelas||[])
-      .filter(p=>!p.pago && p.vencimento && !_formaSemCaixa(p.forma) && (ehHoje? p.vencimento<=diaStr : p.vencimento===diaStr)) // v209 — parcela bonificada em conta mista também fica fora
+      .filter(p=>!p.pago && !p.antecipado && p.vencimento && !_formaSemCaixa(p.forma) && (ehHoje? p.vencimento<=diaStr : p.vencimento===diaStr)) // v209 — parcela bonificada em conta mista também fica fora; v218 — boleto ANTECIPADO pelo banco já entrou no caixa (não entra de novo)
       .map(p=>({tipo:tp, desc:c.descricao, nome:(tp==='pagar'?c.fornecedorNome:c.clienteNome), origemNum:c.origemNum, venc:p.vencimento, valor:parseFloat(p.valor)||0})));
     let saldo=parseFloat((alertasFinConfig&&alertasFinConfig.saldoInicialCaixa)||0)||0;
     const temSaldoIni=saldo!==0;
@@ -18308,6 +18398,7 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
   const toolbar=`<div style="display:flex;gap:8px;padding:8px 12px;align-items:center;border-bottom:.5px solid var(--border)">
     <button class="btn-primary" onclick="_finBaixarSelecionadas('${tipo}')" style="font-size:12px;padding:5px 12px">💵 ${tipo==='pagar'?'Baixar':'Receber'} selecionada(s)</button>
     <button onclick="_finEstornarSelecionada('${tipo}')" title="Estornar 1 ${tipo==='pagar'?'pagamento':'recebimento'} já baixado (volta para em aberto)" style="font-size:12px;padding:5px 12px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">↩ Estornar selecionada</button>
+    ${tipo==='receber'?`<button onclick="_finAnteciparSelecionadas()" title="Antecipação de recebíveis: o banco adiantou o valor do(s) boleto(s), mas o cliente ainda deve pagá-lo(s) — a parcela NÃO é baixada e o valor sai das projeções de recebimento e do fluxo de caixa (não vai entrar de novo). Selecione parcela(s) de BOLETO em aberto; para desfazer, selecione parcela(s) já antecipada(s)." style="font-size:12px;padding:5px 12px">⚡ Antecipado</button> `:''}
     <button onclick="_finAbrirFiltro('${tipo}')" style="font-size:12px;padding:5px 12px;${_finFiltroAtivo(tipo)?'background:var(--text-info);color:#fff;border-color:var(--text-info)':''}">⚙ Filtro${_finFiltroAtivo(tipo)?' ✓':''}</button>
     <span id="fin-sel-tot-${tipo}" style="display:none;font-size:12.5px;font-weight:700;color:${tipo==='pagar'?'var(--st-bad-tx)':'var(--st-ok-tx)'};background:var(--bg-secondary);border:.5px solid var(--border);border-radius:14px;padding:3px 12px"></span><!-- v199 — somatório dos marcados -->
     <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">${rows.length} parcela(s)${_finFiltroAtivo(tipo)?' · filtrado':''}</span>
@@ -18365,7 +18456,7 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
         <td style="${td}">${escapeHtml(_formaLabel(r.c.formaPag))}${r.nparc>1?` <span style="font-size:9px;color:var(--text-tertiary)">${r.nparc}×</span>`:''}</td>
         ${tipo==='receber'?`<td style="${td};font-family:monospace;font-size:11px">${(r.p.boleto||r.c.nsu)?escapeHtml(r.p.boleto||r.c.nsu):'—'}</td>`:''}
         <td style="${td};text-align:center">${r.nparc>1?(r.pi+1)+'/'+r.nparc:'única'}</td>
-        <td style="${td};text-align:center"><span style="font-size:10px;font-weight:600;padding:1px 8px;border-radius:20px;color:${statusColor[r.st]};background:var(--bg-secondary)">${statusLabels[r.st]}</span></td>
+        <td style="${td};text-align:center"><span style="font-size:10px;font-weight:600;padding:1px 8px;border-radius:20px;color:${statusColor[r.st]};background:var(--bg-secondary)">${statusLabels[r.st]}</span>${(tipo==='receber'&&!r.p.pago&&r.p.antecipado)?`<br><span style="font-size:9px;font-weight:700;color:var(--text-info)" title="Recebimento ANTECIPADO pelo banco${r.p.antecipado.data?' em '+fmtDate(r.p.antecipado.data):''}${r.p.antecipado.por?' ('+escapeHtml(r.p.antecipado.por)+')':''} — o boleto segue em aberto com o cliente (a quitação ainda é nossa responsabilidade); o valor está FORA das projeções de recebimento e do fluxo de caixa">⚡ antecipado</span>`:''}</td>
       </tr>`).join('')}</tbody>
     <tfoot><tr style="background:var(--bg-secondary);border-top:2px solid var(--border-md)">
       <td colspan="${_colsAntes}" style="${td};text-align:right;font-weight:700">Total na tela (${rows.length} parc.)</td>
@@ -18374,6 +18465,37 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
     </tr></tfoot></table></div>`;
 }
 function _finSelecionadas(tipo){ return [...document.querySelectorAll('.finsel-'+tipo+':checked')]; }
+// v218 — ANTECIPAÇÃO DE RECEBÍVEIS (regra do dono 26/08): o banco adianta o valor do boleto, mas o
+// cliente ainda deve pagá-lo — a responsabilidade da quitação segue nossa. A parcela NÃO é baixada
+// (não foi quitada) e o valor sai das PROJEÇÕES de recebimento e do FLUXO DE CAIXA (o dinheiro já
+// entrou e não entra de novo). Marca/desmarca p.antecipado {data,por,ts} nas parcelas selecionadas.
+function _finAnteciparSelecionadas(){
+  const sel=_finSelecionadas('receber');
+  if(!sel.length){ alert('Marque a(s) parcela(s) de BOLETO em aberto que o banco antecipou.\n\nPara desfazer uma antecipação, marque parcela(s) já antecipada(s) e clique de novo.'); return; }
+  const alvos=[];
+  for(const cb of sel){
+    const c=contasReceber.find(x=>x.id===cb.dataset.conta); const pi=parseInt(cb.dataset.parc);
+    const p=c&&c.parcelas&&c.parcelas[pi]; if(!p) continue;
+    if(p.pago){ alert('Parcela já RECEBIDA não se antecipa ('+(c.clienteNome||'—')+' — '+fmtMoney(p.valor)+').'); return; }
+    const ehBoleto=String(p.forma||c.formaPag||'').toLowerCase().indexOf('boleto')>=0 || !!p.boleto;
+    if(!ehBoleto){ alert('A antecipação de recebíveis é só para BOLETO.\n\nA parcela de '+(c.clienteNome||'—')+' ('+fmtMoney(p.valor)+') é de outra forma de pagamento.'); return; }
+    alvos.push({c,p});
+  }
+  if(!alvos.length) return;
+  const todasAnt=alvos.every(x=>x.p.antecipado);
+  const tot=alvos.reduce((s,x)=>s+(parseFloat(x.p.valor)||0),0);
+  if(todasAnt){
+    if(!confirm('Desfazer a marcação de ANTECIPADO de '+alvos.length+' parcela(s) — '+fmtMoney(tot)+'?\n\nElas voltam a contar nas projeções de recebimento e no fluxo de caixa.')) return;
+    alvos.forEach(x=>{ delete x.p.antecipado; });
+  } else {
+    if(!confirm('⚡ Marcar '+alvos.length+' parcela(s) de boleto — '+fmtMoney(tot)+' — como VALOR ANTECIPADO pelo banco?\n\n• O boleto CONTINUA em aberto com o cliente (NÃO é baixado — a quitação segue pendente e a cobrança é nossa).\n• O valor SAI das projeções de recebimento e do fluxo de caixa (já entrou no caixa, não entra de novo).\n• Quando o cliente pagar, a baixa acontece normalmente pelo 💵 Receber.')) return;
+    alvos.forEach(x=>{ if(!x.p.antecipado) x.p.antecipado={ data:today(), por:(currentUser&&currentUser.name)||'—', ts:Date.now() }; });
+  }
+  saveData();
+  const ctx=_finCtxRender['receber']; if(ctx) _renderFinTabela('receber',ctx.containerId,ctx.statusFilterId);
+  try{ renderFinPainel&&renderFinPainel(); }catch(_e){}
+  try{ renderFinFluxo&&renderFinFluxo(); }catch(_e){}
+}
 // v110 — estorno de UM recebimento/pagamento já baixado direto da tabela (1 por vez + confirmação)
 function _finEstornarSelecionada(tipo){
   const sel=[...document.querySelectorAll('.finest-'+tipo+':checked')];
@@ -18869,6 +18991,7 @@ function renderFinFluxo(){
       if(_formaSemCaixa(c.formaPag)) return; // v127/v209 — forma sem caixa (bonificação, abate de crédito, amostra…) fora do fluxo projetado
       (c.parcelas||[]).forEach(p=>{
         if(p.pago) return;
+        if(p.antecipado) return; // v218 — boleto ANTECIPADO pelo banco: o valor já entrou no caixa, não entra de novo
         if(_formaSemCaixa(p.forma)) return; // v209 — parcela sem caixa dentro de conta mista (blocos v132)
         const v=parseFloat(p.valor)||0; const mk=(p.vencimento||'').slice(0,7);
         let bk; if(mk && mk<mesAtual) bk='vencido'; else if(buckets[mk]) bk=mk; else return;
@@ -18923,7 +19046,7 @@ function _calcAlertasFin(){
     let saldo=parseFloat(cfg.saldoInicialCaixa)||0; const hj=new Date();
     const mesAtual=hj.getFullYear()+'-'+String(hj.getMonth()+1).padStart(2,'0');
     const buck={}; for(let i=0;i<12;i++){ buck[_mesKeyAdd(hj,i)]={e:0,s:0}; }
-    contasReceber.filter(aprov).forEach(c=>(c.parcelas||[]).forEach(p=>{ if(p.pago)return; const mk=(p.vencimento||'').slice(0,7); const k=(mk&&mk<mesAtual)?_mesKeyAdd(hj,0):mk; if(buck[k])buck[k].e+=parseFloat(p.valor)||0; }));
+    contasReceber.filter(aprov).forEach(c=>(c.parcelas||[]).forEach(p=>{ if(p.pago||p.antecipado)return; const mk=(p.vencimento||'').slice(0,7); const k=(mk&&mk<mesAtual)?_mesKeyAdd(hj,0):mk; if(buck[k])buck[k].e+=parseFloat(p.valor)||0; })); // v218 — antecipado fora da projeção de saldo
     contasPagar.filter(aprovP).forEach(c=>(c.parcelas||[]).forEach(p=>{ if(p.pago)return; const mk=(p.vencimento||'').slice(0,7); const k=(mk&&mk<mesAtual)?_mesKeyAdd(hj,0):mk; if(buck[k])buck[k].s+=parseFloat(p.valor)||0; }));
     const ks=Object.keys(buck).sort(); let negMes=null;
     for(const k of ks){ saldo+=buck[k].e-buck[k].s; if(saldo<0){ negMes=k; break; } }

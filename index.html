@@ -4814,7 +4814,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v216';
+var APP_VERSION = 'v217';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -8238,6 +8238,12 @@ function _fundirCardsCliente(clienteId){
 function openUserModal(id){
   if(currentUser?.perfil!=='admin'&&currentUser?.perfil!=='diretor_comercial')return;
   editingUserId=id||null;const u=id?users.find(x=>x.id===id):null;
+  // v217 — espelho da regra da edge admin-user v9: diretor comercial só gerencia perfis
+  // OPERACIONAIS (Atendente, SDR, Usuário). Conta restrita não abre para edição e as opções
+  // restritas somem do seletor (a trava real continua no servidor).
+  const _soOps=currentUser?.perfil!=='admin';
+  if(_soOps && u && !u.semAcesso && !['atendente','sdr','user'].includes(u.perfil)){ alert('Este perfil só pode ser gerenciado pelo administrador.'); return; }
+  document.querySelectorAll('#u-perfil option').forEach(o=>{ o.hidden=_soOps && !['atendente','sdr','user'].includes(o.value); o.disabled=o.hidden; });
   document.getElementById('user-modal-title').textContent=u?'Editar Usuário':'Novo Usuário';
   document.getElementById('u-nome').value=u?u.name:'';document.getElementById('u-login').value=u?u.login:'';
   // v81: login = e-mail de acesso; não muda na edição. v197 — EXCEÇÃO: colaborador SEM ACESSO tem
@@ -8342,6 +8348,19 @@ async function saveUser(){
   const _btn=document.querySelector('#user-overlay .btn-primary');
   const _setBtn=(t,dis)=>{ if(_btn){_btn.textContent=t;_btn.disabled=dis;} };
   const _fail=(msg)=>{ _setBtn('Salvar',false); alert(msg); };
+  // v217 — CAUSA-RAIZ do "menu Conversas não aparece" (caso Aline 25/08): o cadastro gravava só o
+  // coordenadorId, mas o menu por número (v140) é regido por equipe.atendentesIds — a atendente
+  // nascia fora da equipe e não via conversa nenhuma. Ao salvar atendente com coordenador, garante
+  // a inscrição na(s) equipe(s) ativa(s) daquele coordenador. NÃO remove de outras equipes
+  // (multi-equipe é legítimo — ex.: pool SDR + vendas; remoção continua manual na tela Equipes).
+  const _syncAtendenteEquipe=(userId)=>{
+    if(perfil!=='atendente' || !effCoordenadorId || !userId) return;
+    (equipes||[]).forEach(e=>{
+      if(!e || e.ativa===false || e.coordenadorId!==effCoordenadorId) return;
+      if(!Array.isArray(e.atendentesIds)) e.atendentesIds=[];
+      if(!e.atendentesIds.includes(userId)) e.atendentesIds.push(userId);
+    });
+  };
   _setBtn('Salvando…',true);
 
   try{
@@ -8359,6 +8378,7 @@ async function saveUser(){
         uAtual.name=nome;uAtual.login=login;uAtual.perfil=perfil;
         uAtual.setores=effSetores;uAtual.coordSetores=effCoordSetores;uAtual.coordenadorId=effCoordenadorId;uAtual.verEquipe=effVerEquipe;
         delete uAtual.semAcesso;
+        _syncAtendenteEquipe(uAtual.id); // v217
       } else {
       // 1) troca de senha (se preenchida) — Edge Function valida política + HaveIBeenPwned
       if(senha){
@@ -8369,6 +8389,7 @@ async function saveUser(){
       const u=uAtual;
       u.name=nome;u.login=login;u.perfil=perfil;
       u.setores=effSetores;u.coordSetores=effCoordSetores;u.coordenadorId=effCoordenadorId;u.verEquipe=effVerEquipe;
+      _syncAtendenteEquipe(u.id); // v217
       // 3) sincroniza perfil/setores em user_profiles (fonte da verdade da RLS)
       const p=await _sb.from('user_profiles').update({ perfil, setores:effSetores, coord_setores:effCoordSetores, coordenador_id:effCoordenadorId, updated_at:new Date().toISOString() }).eq('login', login);
       if(p.error) console.warn('user_profiles update falhou:', p.error.message);
@@ -8377,7 +8398,9 @@ async function saveUser(){
       // Cria a conta de acesso (Auth) + user_profiles + checagem HIBP — tudo na Edge Function
       const r=await _sb.functions.invoke('admin-user',{ body:{ action:'create', login, password:senha, perfil, setores:effSetores, coord_setores:effCoordSetores, coordenador_id:effCoordenadorId } });
       if(r.error||!r.data?.ok){ return _fail('Não foi possível criar o acesso: '+(await _edgeReason(r))); }
-      users.push({ id:'u'+Date.now(), name:nome, login, perfil, setores:effSetores, coordSetores:effCoordSetores, coordenadorId:effCoordenadorId, verEquipe:effVerEquipe });
+      const _novo={ id:'u'+Date.now(), name:nome, login, perfil, setores:effSetores, coordSetores:effCoordSetores, coordenadorId:effCoordenadorId, verEquipe:effVerEquipe };
+      users.push(_novo);
+      _syncAtendenteEquipe(_novo.id); // v217
     }
   }catch(e){ return _fail('Erro inesperado: '+(e?.message||e)); }
 
@@ -12254,8 +12277,33 @@ function verListaCompraPedido(orderId){
         '<td style="'+tdc+'">'+nfo.colReceb+'</td></tr>';
       if(temHist){
         occ.slice(0,-1).forEach(function(h2,ix){
+          // v217 — DESFECHO da etapa (pedido do dono 25/08): cada etapa anterior diz O QUE ACONTECEU
+          // com ela e por que veio a seguinte — comprada (volume adicional), não comprada (motivo),
+          // sem estoque re-solicitada, entrega a menor, consolidada na MESMA lista, ou em aberto.
+          var nx=occ[ix+1], li2=h2.info.li, c2=h2.info.c;
+          var _dtNx=(nx&&nx.s&&nx.s.criadoEm)?fmtDate(_gstDataDe(nx.s.criadoEm)):'';
+          var desf='';
+          if(li2 && li2.naoComprado){
+            var _r2=li2.ncResolucao;
+            desf = _r2==='sem_estoque' ? '↪ fornecedor SEM ESTOQUE — re-solicitada'
+                 : _r2==='ajustado' ? '✕ resolvida sem compra (ajustada'+(li2.naoCompradoMotivo?': '+escapeHtml(li2.naoCompradoMotivo):'')+')'
+                 : _r2==='tinha_estoque' ? '✕ resolvida sem compra (tinha estoque)'
+                 : '✕ NÃO comprada'+(li2.naoCompradoMotivo?' — motivo: '+escapeHtml(li2.naoCompradoMotivo):' (sem motivo registrado)');
+          } else if(c2 && c2.recebFaltanteRes && c2.recebFaltanteRes.acao==='recompra'){
+            desf='📉 entrega veio A MENOR — re-solicitada';
+          } else if(c2){
+            desf='✔ COMPRADA — a solicitação seguinte é volume ADICIONAL';
+          } else if(h2.lst && nx && nx.lst && h2.lst.id===nx.lst.id){
+            desf='⇉ consolidada na MESMA lista da solicitação seguinte — os volumes seguem JUNTOS na cotação';
+          } else if(h2.lst){
+            desf='⏳ seguia em aberto nesta lista quando veio a nova solicitação';
+          } else {
+            desf='📨 ainda não tinha entrado em lista quando veio a nova solicitação';
+          }
+          if(_dtNx) desf+=' · nova solicitação em '+_dtNx;
           secoes+='<tr class="'+gid+'" style="display:none;background:var(--bg-secondary)">'+
-            '<td style="'+tdc+';padding-left:34px"><span style="'+sub+'">etapa '+(ix+1)+' de '+occ.length+' — solicitada em '+(h2.s.criadoEm?fmtDate(_gstDataDe(h2.s.criadoEm)):'—')+(h2.s.criadoPor?' por '+escapeHtml(h2.s.criadoPor):'')+(h2.s.numSeq?' · '+_solCodSeq(h2.s):'')+(h2.lst?' · lista '+escapeHtml(_lcCodigo(h2.lst)):' · não entrou em lista')+'</span></td>'+
+            '<td style="'+tdc+';padding-left:34px"><span style="'+sub+'">etapa '+(ix+1)+' de '+occ.length+' — solicitada em '+(h2.s.criadoEm?fmtDate(_gstDataDe(h2.s.criadoEm)):'—')+(h2.s.criadoPor?' por '+escapeHtml(h2.s.criadoPor):'')+(h2.s.numSeq?' · '+_solCodSeq(h2.s):'')+(h2.lst?' · lista '+escapeHtml(_lcCodigo(h2.lst)):' · não entrou em lista')+'</span>'+
+            '<br><span style="font-size:10.5px;font-weight:600;color:var(--text-info)" title="O que aconteceu com esta etapa e por que existe a solicitação seguinte">'+desf+'</span></td>'+
             '<td style="'+tdc+';text-align:right;white-space:nowrap"><span style="'+sub+'">'+(parseFloat(h2.it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(h2.it.unidade||'')+'</span></td>'+
             '<td style="'+tdc+'">'+h2.info.st+'</td>'+
             '<td style="'+tdc+'">'+(h2.info.c&&h2.info.c.fornecedorNome?'<span style="'+sub+'">'+escapeHtml(h2.info.c.fornecedorNome)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+

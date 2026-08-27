@@ -3924,7 +3924,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <input type="text" id="c-ct-nome" placeholder="Nome do contato *" style="font-size:12px;flex:1;min-width:130px">
         <input type="text" id="c-ct-cargo" placeholder="Cargo (opcional)" style="font-size:12px;width:120px">
         <input type="tel" id="c-ct-tel" placeholder="Telefone" oninput="this.value=_fmtTelBR(this.value)" maxlength="16" style="font-size:12px;width:150px">
-        <button type="button" onclick="_addCliContato()" style="font-size:12px;padding:5px 12px;cursor:pointer">+ Adicionar</button>
+        <button type="button" id="c-ct-add-btn" onclick="_addCliContato()" style="font-size:12px;padding:5px 12px;cursor:pointer">+ Adicionar</button>
       </div>
     </div>
     <!-- v208 — OUTROS CONTATOS (era a seção "Contato"): só o que NÃO é telefone; tudo OPCIONAL -->
@@ -4788,6 +4788,7 @@ function _surfaceSkipWarn(list){
 // (pílula + faixa fixa no topo), os dados ficam no cache local e o sistema retenta.
 var _saveState='idle';        // 'saving' | 'saved' | 'error'
 var _saveInFlight=false;
+var _blobLastSavedJson=null;  // v220 correção 3: JSON (sem _savedAt/_savedBy) da última gravação CONFIRMADA do blob — null = ainda não gravou nesta sessão (1ª gravação sempre acontece)
 var _saveDirty=false;
 var _saveLastError='';
 var _saveRetryT=null;
@@ -4814,7 +4815,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v219';
+var APP_VERSION = 'v220';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5075,6 +5076,16 @@ async function _commitToDb(){
   try{
     const blockData=_collectData();
     SEP_ENTITIES.forEach(function(c){ delete blockData[c.key]; });
+    // v220 — CORREÇÃO 3 fase 1 (autorizada pelo dono 27/08, incidente de saturação: o blob de ~3MB
+    // era regravado ~700×/h): o blob SÓ é gravado quando o CONTEÚDO mudou desde a última gravação
+    // CONFIRMADA desta aba. A comparação ignora os carimbos _savedAt/_savedBy (mudam a cada ciclo).
+    // Segurança: pular gravação IDÊNTICA não perde escrita de ninguém (os merges v132/v219 só existem
+    // para proteger gravações reais) e até REDUZ clobber (cópia velha idêntica não regrava por cima).
+    // O sync das entidades separadas (clients/orders/conversas/etc.) continua rodando SEMPRE, abaixo.
+    var _blobCmp=function(bd){ var t=bd._savedAt, b=bd._savedBy; delete bd._savedAt; delete bd._savedBy; var s=JSON.stringify(bd); bd._savedAt=t; bd._savedBy=b; return s; };
+    var _blobJson=_blobCmp(blockData);
+    var _blobPular=(_blobLastSavedJson!==null && _blobJson===_blobLastSavedJson);
+    if(!_blobPular){
     // v132 — ANTI-CLOBBER de USUÁRIOS: users vive no blob compartilhado e era full-replace — uma aba com a lista
     // velha em memória APAGAVA usuários criados por outra pessoa (colaboradores sumindo 2x). Antes de gravar,
     // faz MERGE por id com os users do SERVIDOR: quem existe lá e a aba não conhece é PRESERVADO, exceto quem
@@ -5115,8 +5126,14 @@ async function _commitToDb(){
         equipes=blockData.equipes.slice(); // reflete no estado local (senão a aba re-salvaria sem eles)
       }catch(_e){ console.warn('merge de equipes falhou (grava como está):', _e&&_e.message); }
     }catch(_e){ console.warn('merge de users falhou (grava como está):', _e&&_e.message); }
+    // v220 — os merges acima podem ter trazido linhas do servidor para dentro do blockData: o
+    // comparativo é RECALCULADO pós-merge e só vira "última gravação confirmada" se o upsert der
+    // certo. Falha de upsert NÃO atualiza a referência — o retry re-tenta a gravação normalmente.
+    var _blobJsonFinal=_blobCmp(blockData);
     const { error }=await _sb.from('app_data').upsert({ key:SB_DATA_KEY, value:blockData, updated_at:new Date().toISOString() }, { onConflict:'key' });
     if(error){ ok=false; firstErr=firstErr||('bloco principal: '+error.message); console.warn('app_data upsert:', error.message); }
+    else { _blobLastSavedJson=_blobJsonFinal; }
+    } // fim do if(!_blobPular) — blob idêntico ao já confirmado: gravação dispensada nesta rodada
   }catch(e){ ok=false; firstErr=firstErr||('bloco principal: '+e.message); console.warn('app_data falhou:', e.message); }
   var _skipPend=[];
   for(var i=0;i<SEP_ENTITIES.length;i++){
@@ -7526,6 +7543,11 @@ function openClientModal(id){
   if(inEl) inEl.checked = (tp==='intermediario');
   _cliVinc = (c && Array.isArray(c.pessoasVinculadas)) ? c.pessoasVinculadas.map(v=>({tipoPessoa:v.tipoPessoa||'pf',nome:v.nome||'',doc:v.doc||''})) : [];
   _cliAtend = (c && Array.isArray(c.atendidosIds)) ? c.atendidosIds.slice() : [];
+  // v220 — ESPELHO NA ABERTURA (reporte do dono 26/08: card e cadastro exibiam contatos diferentes —
+  // a união v176 só rodava ao SALVAR; contato que entra por outro caminho, como fusão ou ficha,
+  // divergia até alguém salvar): sincroniza cadastro↔card ANTES de carregar a lista.
+  if(c && c.id){ try{ _sincronizarContatos(c.id, 'cliente'); }catch(_e){} }
+  _cliCtEdit=null; { const _b=document.getElementById('c-ct-add-btn'); if(_b) _b.textContent='+ Adicionar'; } // v220 — reseta edição de contato pendente
   // v106 — contatos: usa c.contatos; se vazio, semeia de tel1/tel2/contato financeiro
   if(c && Array.isArray(c.contatos) && c.contatos.length){ _cliContatos=c.contatos.map(x=>({nome:x.nome||'',cargo:x.cargo||'',telefone:x.telefone||x.whats||'',email:x.email||'',principal:!!x.principal})); } // v176 — carrega o ★ principal
   else if(c){ _cliContatos=[]; // v173 — semeadura respeita a LÁPIDE (contato excluído não renasce do tel1/tel2)
@@ -7719,6 +7741,14 @@ function saveClient(){
       alert('Documento inválido — informe um CPF ou CNPJ válido.');
       return;
     }
+  }
+  // v220 — INVARIANTE (ordem do dono 26/08, caso do 2º cadastro com o CPF dele via ficha): o
+  // sistema NÃO admite dois cadastros com o mesmo CPF/CNPJ. Documento novo/alterado que já
+  // pertence a OUTRO cadastro bloqueia o salvar — o caminho é a FUSÃO (só admin) ou corrigir.
+  if(docClean && _docMudou){
+    const _dk220=(s)=>String(s||'').toUpperCase().replace(/[^0-9A-Z]/g,'');
+    const _dupDoc=(clients||[]).find(c=>c && (!_editCli || String(c.id)!==String(_editCli.id)) && _dk220(c.doc).length>=11 && _dk220(c.doc)===_dk220(docClean));
+    if(_dupDoc){ alert('🚫 Este CPF/CNPJ já pertence ao cadastro:\n\n'+(_dupDoc.nome||_dupDoc.id)+'\n\nO sistema não admite dois cadastros com o mesmo documento.\n• Se é o MESMO cliente: use a fusão (🔗 Vincular a um cadastro — administrador).\n• Se não é: confira o documento digitado.'); return; }
   }
   // v208 — TELEFONE MORA NUM LUGAR SÓ (ordem do dono 11/08): tel1/tel2/finTel saíram do formulário;
   // a fonte única é CONTATOS DA EMPRESA. O ★ é O CONTATO PRINCIPAL e sempre existe: sem ★ marcado, o
@@ -8996,7 +9026,27 @@ function updateLeadEtapaSelect(){
   sel.innerHTML=etapas.map(e=>`<option value="${e}">${e}</option>`).join('');
 }
 
-function removeLeadContato(i){leadContatos.splice(i,1);renderLeadContatosList();}
+// v220 — "Salvar Contato" GRAVA NA HORA (caso dra. Taiana 26/08: o dono editou o nome do contato
+// no card, fechou o card no X e a edição SUMIU — o sub-modal só mexia na lista em memória e o
+// snapshot do Cancelar revertia tudo; o botão dizia "Salvar" e não salvava). Contato adicionado/
+// editado/removido num card EXISTENTE persiste imediatamente (lead + lápide + espelho no cadastro
+// + saveData) e entra no snapshot — o Cancelar do card não desfaz mais contatos. Card NOVO (ainda
+// sem id) continua em memória até o primeiro salvar do card.
+function _leadCtCommit(){
+  try{
+    if(!editingLeadId) return;
+    const lead=(crmLeads||[]).find(x=>x.id===editingLeadId); if(!lead) return;
+    const univ0=[...(lead.contatos||[])];
+    lead.contatos=[...leadContatos];
+    try{ _ctTombAtualiza((clients||[]).find(x=>x.id===lead.clienteId), univ0, leadContatos); }catch(_e){}
+    if(lead.clienteId && typeof _sincronizarContatos==='function') _sincronizarContatos(lead.clienteId, 'card');
+    leadContatos=[...(lead.contatos||[])]; // o espelho pode ter normalizado (dedupe/campos) — reflete na tela
+    if(_leadSnapshot) _leadSnapshot.contatos=JSON.parse(JSON.stringify(lead.contatos||[]));
+    saveData();
+    renderLeadContatosList();
+  }catch(_e){}
+}
+function removeLeadContato(i){leadContatos.splice(i,1);renderLeadContatosList();_leadCtCommit();}
 function renderLeadContatosList(){
   const el=document.getElementById('lead-contatos-list');
   if(!el)return;
@@ -9069,6 +9119,14 @@ function renderLeadHistList(hist){
 function openLeadModal(id, funil, etapa){
   editingLeadId=id||null;leadContatos=[];leadTasks=[];
   const lead=id?crmLeads.find(x=>x.id===id):null;
+  // v220 — ESPELHO NA ABERTURA (mesma correção do cadastro): o card sincroniza com o cadastro
+  // ANTES de renderizar os contatos — as duas telas passam a mostrar SEMPRE a mesma lista
+  // (deduplicada pelos últimos 8 dígitos — variantes do 9º dígito não aparecem em dobro).
+  // E o NOME/RAZÃO SOCIAL do card é o do CADASTRO (regra do dono 26/08: cadastro é a fonte).
+  if(lead && lead.clienteId){
+    try{ _sincronizarContatos(lead.clienteId, 'cliente'); }catch(_e){}
+    try{ const _cliN=(clients||[]).find(c=>c&&c.id===lead.clienteId); if(_cliN && String(_cliN.nome||'').trim() && lead.empresa!==_cliN.nome) lead.empresa=_cliN.nome; }catch(_e){}
+  }
   // Snapshot p/ reverter no Cancelar (edições de campo só valem ao Salvar)
   _leadSnapshot = lead ? JSON.parse(JSON.stringify(lead)) : null;
   _leadSaved = false;
@@ -20097,10 +20155,16 @@ function openDetailModal(oid){
         const tipoBadge=e.tipo==='total'
           ?'<span style="font-size:10px;padding:1px 7px;border-radius:20px;background:var(--st-ok-bg);color:var(--st-ok-tx);font-weight:500">Total</span>'
           :'<span style="font-size:10px;padding:1px 7px;border-radius:20px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:500">Parcial</span>';
-        const temLista=!!(e.lista?.nome);
+        // v220 — pedido do dono 26/08: TODO envio tem a sua lista de produtos enviados. Envio com
+        // lista registrada mostra o botão dela ("Lista Completa"/"Lista Parcial"); envio TOTAL sem
+        // lista (legado) usa os produtos do pedido (semântica correta: total = tudo); envio PARCIAL
+        // sem lista registrada não tem como reconstruir — informa honestamente.
+        const temLista=!!(e.lista&&e.lista.nome&&(e.lista.itens||[]).length);
         const btnProd=temLista
-          ?'<button onclick="openListaProdutosModal(\''+o.id+'\','+i+')" style="font-size:11px;padding:2px 10px;margin-left:auto;border-radius:20px">📋 '+e.lista.nome+'</button>'
-          :'';
+          ?'<button onclick="openListaProdutosModal(\''+o.id+'\','+i+')" style="font-size:11px;padding:2px 10px;margin-left:auto;border-radius:20px">📋 '+escapeHtml(e.lista.nome)+'</button>'
+          :(e.tipo==='total'
+            ?'<button onclick="openListaProdutosModal(\''+o.id+'\','+i+')" title="Envio total sem lista registrada — exibe os produtos do pedido (foi tudo)" style="font-size:11px;padding:2px 10px;margin-left:auto;border-radius:20px">📋 Lista Completa</button>'
+            :'<span style="font-size:10px;color:var(--text-tertiary);margin-left:auto" title="Envio parcial antigo — os itens deste envio não foram registrados na época">itens não registrados</span>');
         return '<div style="padding:8px 0'+(i>0?';border-top:.5px solid var(--border)':'')+'">' +
           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
             '<span style="font-size:12px;font-weight:600">Envio '+(i+1)+'</span>'+tipoBadge+
@@ -31451,6 +31515,7 @@ function salvarContatoLead(){
   }
   renderLeadContatosList();
   document.getElementById('contato-lead-overlay').classList.remove('open');
+  _leadCtCommit(); // v220 — "Salvar Contato" grava NA HORA (fechar o card no X não desfaz mais)
 }
 
 // ══════════════════════════════════════════════════════════
@@ -33148,9 +33213,12 @@ function openListaProdutosModal(orderId, envioIdx, editMode){
     ? `<button onclick="document.getElementById('lista-prod-overlay').remove();openListaProdutosModal('${orderId}',${envioIdx})">Cancelar</button><button class="btn-primary" onclick="_salvarListaEnvio('${orderId}',${envioIdx})">Salvar quantidades</button>`
     : `${podeEditar?`<button onclick="document.getElementById('lista-prod-overlay').remove();openListaProdutosModal('${orderId}',${envioIdx},true)" style="color:var(--text-info);border-color:var(--text-info)">✏ Editar quantidades</button>`:''}<button onclick="document.getElementById('lista-prod-overlay').remove()">Fechar</button>`;
   document.getElementById('lista-prod-overlay')?.remove();
+  // v220 — modal MAIOR (pedido do dono 26/08) + contexto do ENVIO no título (nº e data)
+  const _envReal=(o.enviosHistorico||[])[envioIdx];
+  const _ctxEnvio=_envReal?(' — Envio '+(envioIdx+1)+(_envReal.data?' · '+fmtDate(_envReal.data):'')):'';
   const html = `<div class="overlay open" id="lista-prod-overlay" data-dyn="1">
-    <div class="modal" style="width:540px;max-height:88vh;display:flex;flex-direction:column">
-      <h2 style="flex-shrink:0">📋 ${escapeHtml(lista.nome||'Lista de Produtos')}${editMode?' — ajustar quantidades':''}</h2>
+    <div class="modal" style="width:820px;max-width:95vw;max-height:88vh;display:flex;flex-direction:column">
+      <h2 style="flex-shrink:0">📋 ${escapeHtml(lista.nome||'Lista de Produtos')}${escapeHtml(_ctxEnvio)}${editMode?' — ajustar quantidades':''}</h2>
       ${editMode?'<div style="font-size:11px;color:var(--text-tertiary);margin:-4px 0 8px;flex-shrink:0">Ajuste a quantidade ENVIADA de cada item (ex.: marcou 5 mas saiu 4).</div>':''}
       <div style="flex:1;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:var(--bg-secondary)">
@@ -35109,8 +35177,14 @@ function registrarMensagem(clienteId, de, texto, anexo, telefone){
     try{ if(typeof _waUpsertConversa==='function') _waUpsertConversa(conv); }catch(_e){} // grava J\u00c1 (padr\u00e3o v143)
   } else if(!conv.status){ conv.status='ativa'; }
   // Quem responder primeiro assume o atendimento (conversa do pool da equipe)
+  // v220 — ORDEM DO DONO 26/08: "sempre que responder uma conversa sem atendente, passa a assumir".
+  // O atalho responder=assumir fica com a MESMA régua do botão Assumir/Transferir (v144): qualquer
+  // atendente AUTORIZADO NO NÚMERO da conversa assume ao responder — antes, conversa de outra
+  // carteira recebia a resposta mas continuava "sem atendente" (inconsistência entre os caminhos).
   if(de==='atendente' && currentUser && !conv.atendenteId){
-    const podeAssumir = _usuarioPertenceEquipe(currentUser.id, conv.equipeId) || ['admin','diretor_comercial'].includes(currentUser.perfil);
+    const podeAssumir = _usuarioPertenceEquipe(currentUser.id, conv.equipeId)
+      || ['admin','diretor_comercial'].includes(currentUser.perfil)
+      || (typeof _waAtendAutorizadoNum==='function' && _waAtendAutorizadoNum(currentUser.id, conv));
     if(podeAssumir){
       _convSetAtendente(conv, currentUser.id); // v159 — carimbo atendEm (era atribuição direta SEM carimbo: outra aba com cópia antiga devolvia a conversa ao pool em silêncio — classe do bug v143)
       const _card = crmLeads.find(l=>l.clienteId===clienteId);
@@ -35371,13 +35445,17 @@ function _convItemHtml(conv, semDono){
 }
 
 // v103 — nome da conversa = CONTATO do card (não a razão social); fallback p/ nome do cliente.
+// v220 — prioridade invertida (caso "dra. Taiana · d", 26/08): o nome do contato segue o CADASTRO
+// (★ principal → 1º contato); o campo legado card.contato (texto congelado) virou último recurso —
+// antes ele vencia e exibia nome velho mesmo com o contato já corrigido.
 function _nomeConversaCli(clienteId){
   const card=(crmLeads||[]).find(l=>l.clienteId===clienteId);
   const cli=(clients||[]).find(x=>x.id===clienteId);
   const empresa=(cli&&cli.nome&&String(cli.nome).trim()) || (card&&card.empresa) || 'Cliente';
-  // v106 — nome do contato: card.contato (legado) OU 1º contato do cadastro/card
-  let contato=(card&&card.contato&&String(card.contato).trim())||'';
-  if(!contato){ const ct=(cli&&Array.isArray(cli.contatos)&&cli.contatos[0])||(card&&Array.isArray(card.contatos)&&card.contatos[0]); contato=(ct&&ct.nome&&String(ct.nome).trim())||''; }
+  const _cts=(cli&&Array.isArray(cli.contatos)&&cli.contatos.length)?cli.contatos:((card&&Array.isArray(card.contatos))?card.contatos:[]);
+  const _pri=_cts.find(x=>x&&x.principal)||_cts[0];
+  let contato=(_pri&&_pri.nome&&String(_pri.nome).trim())||'';
+  if(!contato) contato=(card&&card.contato&&String(card.contato).trim())||'';
   return (contato && contato!==empresa) ? (empresa+' · '+contato) : empresa;
 }
 // v103 — rascunho do textarea preservado entre re-renders (realtime não apaga o que está sendo digitado).
@@ -37363,6 +37441,7 @@ function _renderCliContatos(){
       <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;white-space:nowrap">
       ${c.telefone?`<label title="Número PRINCIPAL — os botões 💬 fora do cadastro abrem este" style="display:flex;align-items:center;gap:2px;font-size:11px;color:${c.principal?'#B8860B':'var(--text-tertiary)'};cursor:pointer;white-space:nowrap"><input type="checkbox" ${c.principal?'checked':''} onchange="_cliSetContatoPrincipal(${i},this.checked)" style="width:auto;margin:0">★</label>`:''}
       ${(c.telefone&&editingClientId)?`<button type="button" onclick="_cliAbrirConversaContato(${i})" title="Abrir conversa com ESTE número" style="font-size:11px;padding:2px 8px;color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:var(--r-md);background:transparent;cursor:pointer">💬</button>`:''}
+      <button type="button" onclick="_editCliContato(${i})" title="Editar este contato (nome, cargo, telefone — e-mail e ★ são preservados)" style="font-size:11px;padding:2px 8px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:transparent;cursor:pointer">Editar</button>
       <button type="button" onclick="_delCliContato(${i})" style="border:none;background:none;color:var(--st-bad-tx);cursor:pointer;font-size:15px">×</button>
       </div>
     </div>`).join('') : '<div style="font-size:11px;color:var(--text-tertiary)">Nenhum contato ainda.</div>';
@@ -37373,12 +37452,27 @@ function _cliAbrirConversaContato(i){
   const c=_cliContatos[i]; if(!c||!c.telefone||!editingClientId) return;
   closeClientModal(); abrirConversaCliente(editingClientId, c.telefone);
 }
+// v220 — EDITAR contato do cadastro (pedido do dono 26/08: o card tinha Editar e o cadastro não):
+// a linha volta para os campos de digitação; e-mail e ★ do contato são preservados no salvar.
+var _cliCtEdit=null;
+function _editCliContato(i){
+  const c=_cliContatos[i]; if(!c) return;
+  const set=(id,v)=>{ const e=document.getElementById(id); if(e) e.value=v||''; };
+  set('c-ct-nome',c.nome); set('c-ct-cargo',c.cargo); set('c-ct-tel',c.telefone);
+  _cliCtEdit={ email:c.email||'', principal:!!c.principal };
+  _cliContatos.splice(i,1);
+  _renderCliContatos();
+  const b=document.getElementById('c-ct-add-btn'); if(b) b.textContent='✔ Salvar contato';
+  const n=document.getElementById('c-ct-nome'); if(n) n.focus();
+}
 function _addCliContato(){
   const nome=(document.getElementById('c-ct-nome')?.value||'').trim();
   const cargo=(document.getElementById('c-ct-cargo')?.value||'').trim();
   const tel=(document.getElementById('c-ct-tel')?.value||'').trim();
   if(!nome){ alert('Informe o nome do contato.'); return; }
-  _cliContatos.push({nome, cargo, telefone:tel, email:''});
+  _cliContatos.push({nome, cargo, telefone:tel, email:(_cliCtEdit&&_cliCtEdit.email)||'', principal:!!(_cliCtEdit&&_cliCtEdit.principal)});
+  _cliCtEdit=null;
+  { const b=document.getElementById('c-ct-add-btn'); if(b) b.textContent='+ Adicionar'; }
   ['c-ct-nome','c-ct-cargo','c-ct-tel'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
   _renderCliContatos();
 }
@@ -37756,9 +37850,22 @@ async function _buscarCnpjCliente(){
   if(typeof _docValidoCNPJ==='function' && !_docValidoCNPJ(cnpj)){ alert('Este CNPJ é INVÁLIDO (o dígito verificador não confere) — confira os números digitados.\nA Receita não tem cadastro com esse número; não é problema de internet.'); return; }
   const btn=document.getElementById('c-doc-buscar'); if(btn){ btn.disabled=true; btn.textContent='Buscando…'; }
   try{
-    const r=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+cnpj);
-    if(!r.ok){ alert(r.status===404?'CNPJ não encontrado na Receita.':(r.status===400?'A Receita recusou este CNPJ como inválido — confira os números.':'A consulta de CNPJ falhou (serviço indisponível). Tente novamente em instantes.')); return; }
-    const d=await r.json();
+    // v220 — PROVEDOR RESERVA (caso KARINA 27/08: a BrasilAPI falhou — limite por IP/instabilidade —
+    // e a mensagem culpava a internet do usuário, que estava online): tenta a BrasilAPI; se a REDE
+    // falhar ou vier 429/5xx, tenta minhareceita.org (mesma base da Receita, MESMOS campos, CORS
+    // aberto — conferido 27/08). 404/400 da BrasilAPI são definitivos (o CNPJ é o problema).
+    let r=null, d=null;
+    try{ r=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+cnpj); }catch(_e){ r=null; }
+    if(r && r.status===404){ alert('CNPJ não encontrado na Receita.'); return; }
+    if(r && r.status===400){ alert('A Receita recusou este CNPJ como inválido — confira os números.'); return; }
+    if(r && r.ok){ try{ d=await r.json(); }catch(_e){ d=null; } }
+    if(!d){
+      let r2=null;
+      try{ r2=await fetch('https://minhareceita.org/'+cnpj); }catch(_e){ r2=null; }
+      if(r2 && r2.status===404){ alert('CNPJ não encontrado na Receita.'); return; }
+      if(r2 && r2.ok){ try{ d=await r2.json(); }catch(_e){ d=null; } }
+    }
+    if(!d){ alert('A consulta de CNPJ falhou nos DOIS serviços públicos (limite de consultas ou instabilidade momentânea) — não é defeito do sistema nem da sua internet.\n\nTente de novo em alguns instantes; se preferir, preencha os dados manualmente.'); return; }
     const razao=(d.razao_social||'').trim();
     if(razao){
       const nomeEl=document.getElementById('c-nome');
@@ -37777,7 +37884,7 @@ async function _buscarCnpjCliente(){
     setIfEmpty('c-numero', d.numero||'');
     setIfEmpty('c-comp', d.complemento||'');
     if(d.nome_fantasia){ const o=document.getElementById('c-obs'); if(o && !o.value.toLowerCase().includes('fantasia')) o.value=(o.value?o.value+'\n':'')+'Nome fantasia: '+d.nome_fantasia; }
-  }catch(e){ alert('Não consegui consultar o CNPJ (precisa de internet/online).'); }
+  }catch(e){ alert('A consulta de CNPJ falhou de forma inesperada — tente novamente em instantes.'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent='🔍 Buscar'; } }
 }
 function openClienteFichaPorId(id){

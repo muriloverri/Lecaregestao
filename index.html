@@ -4432,6 +4432,45 @@ SEP_ENTITIES.push({
   row:function(p){ return { id:getPendKey(p.orderId,p.setor), data:p, updated_at:new Date().toISOString() }; }
 });
 var _sepSnap={};
+// v221 — BOOT EM DOIS TEMPOS (autorizado 28/08, cronometragem do dono: 1min15s até a tela).
+// O boot baixava TODAS as ~26 entidades antes de pintar a tela; as marcadas abaixo NÃO são
+// necessárias para as telas de trabalho pintarem (auditoria 3,4MB/13 mil linhas é a maior — a data
+// de status v158 tem fallback próprio no carimbo statusDates; notificações atrasam o sino por
+// segundos; catálogos/insumos/agenda renderizam vazios e repintam) e passam a descer EM SEGUNDO
+// PLANO logo após a tela abrir. SEGURANÇA (analisada contra o histórico inteiro):
+// (a) entidade não carregada NUNCA apaga nada — deletes derivam do snapshot, e sem carga não há
+//     snapshot (removed=[] por construção); upsert é por linha, sem full-replace;
+// (b) registro criado pelo usuário ANTES da carga diferida é PRESERVADO (re-adicionado após a
+//     carga e sem snapshot → o próximo sync grava; cobre a janela que a v135 deixa de fora na
+//     1ª carga — coleções diferidas começam vazias, nada aqui é seed de demonstração);
+// (c) realtime/append antes da carga já funcionava (linha nova entra por push, padrão v104);
+// (d) rede de segurança: o resync periódico (3min/foco) usa a lista COMPLETA após a fase 1 —
+//     qualquer falha da carga diferida se auto-corrige no próximo resync.
+var _SEP_DEFER={ auditLog:1, notificacoes:1, agendaEventos:1, insumos:1, catalogo:1, catalogoNovo:1, gruposEmbalagem:1 };
+var _sepBootFase1=true, _sepDeferRodando=false;
+async function _sepCarregarDiferidas(){
+  if(_sepDeferRodando) return; _sepDeferRodando=true;
+  try{
+    var pend=SEP_ENTITIES.filter(function(c){ return _SEP_DEFER[c.key]; });
+    for(var i=0;i<pend.length;i++){
+      var cfg=pend[i];
+      var pre=(cfg.get()||[]).slice(); // criado nesta sessão antes da carga (ex.: audit de um clique, notificação)
+      var ok=false;
+      try{ ok=await _sepLoadOne(cfg); }catch(_e){ ok=false; }
+      if(ok && pre.length){
+        var arr=cfg.get()||[]; var tem={};
+        for(var z=0;z<arr.length;z++){ if(arr[z]!=null) tem[String(cfg.id(arr[z]))]=1; }
+        var snapC=_sepSnap[cfg.key]||{};
+        for(var y=0;y<pre.length;y++){ var po=pre[y]; if(po==null) continue; var pid=String(cfg.id(po));
+          if(!tem[pid]){ arr.push(po); delete snapC[pid]; } } // sem snapshot → o próximo sync grava a linha
+        cfg.set(arr);
+      }
+    }
+  }catch(_e){ console.warn('carga diferida falhou (resync de 3min cobre):', _e && _e.message); }
+  finally{ _sepDeferRodando=false; _sepBootFase1=false; }
+  try{ refreshAll(); }catch(_e){}
+  try{ if(typeof _notifBootToast==='function') _notifBootToast(); }catch(_e){} // sino das não lidas depois que as notificações chegaram (uma vez só — trava interna)
+}
 // v119 — escritas locais EM VOO (ainda não confirmadas no servidor). Protege obs/pendência/status recém-salvos
 // de serem derrubados pelo _resyncFromServer (que substitui o estado local pelo do servidor antes do upsert chegar).
 var _sepDirty={};
@@ -9911,11 +9950,13 @@ function _notifToast(n){
     setTimeout(function(){ try{ el.remove(); }catch(_e){} }, 12000);
   }catch(_e){}
 }
+var _notifBootJa=false; // v221 — o resumo toca UMA vez (chamado no fim do boot E após a carga diferida das notificações)
 function _notifBootToast(){
   try{
-    if(!currentUser) return;
+    if(!currentUser || _notifBootJa) return;
     var nl=getMyNotifs().filter(function(n){return !n.lida;});
     if(!nl.length) return;
+    _notifBootJa=true;
     _notifToast({ titulo:'🔔 Você tem '+nl.length+' notificação'+(nl.length>1?'ões':'')+' não lida'+(nl.length>1?'s':''), sub:'Clique para abrir as notificações.' });
   }catch(_e){}
 }
@@ -32985,11 +33026,15 @@ async function initSupabase(){
     _startSession();
     _dataReady=true;
     _hideBootLoader();
+    // v221 — BOOT EM DOIS TEMPOS, fase 2: com a tela já aberta, baixa em segundo plano o que
+    // ficou de fora da fase 1 (auditoria, notificações, catálogos, insumos, agenda, grupos).
+    setTimeout(function(){ try{ _sepCarregarDiferidas(); }catch(_e){ _sepBootFase1=false; } }, 400);
   } catch(e){
     console.warn('Supabase init error:', e.message);
     _updateSbIndicator('✗ Offline', 'var(--st-bad-tx)');
     _dataReady=true;
     _hideBootLoader();
+    _sepBootFase1=false; // boot falhou → resyncs seguintes usam a lista completa
   }
 }
 
@@ -33023,21 +33068,25 @@ async function _loadFromSupabase(skipSep){
         _bootParalelo=(_bp && _bp[0] && String(_bp[0].value||'').trim())||'off';
       }catch(_e){ _bootParalelo='off'; }
       const _usaParalelo = (_bootParalelo==='all') || (_bootParalelo==='admin' && currentUser && currentUser.perfil==='admin');
+      // v221 — BOOT EM DOIS TEMPOS: na FASE 1 (só o primeiro boot) as entidades diferidas ficam de
+      // fora e descem em segundo plano após a tela abrir (_sepCarregarDiferidas). Resyncs seguintes
+      // (fase 1 encerrada) usam a lista COMPLETA — rede de segurança de 3min para qualquer falha.
+      const _cfgsCarga = _sepBootFase1 ? SEP_ENTITIES.filter(function(c){ return !_SEP_DEFER[c.key]; }) : SEP_ENTITIES;
       if(_usaParalelo){
         var _pDone=0; const _pT0=performance.now();
-        const _falhas=await _sepLoadPool(SEP_ENTITIES, 5, function(){
-          _pDone++; _setBootProgress(20 + (_pDone/SEP_ENTITIES.length)*68, 'Carregando dados… ('+_pDone+'/'+SEP_ENTITIES.length+')');
+        const _falhas=await _sepLoadPool(_cfgsCarga, 5, function(){
+          _pDone++; _setBootProgress(20 + (_pDone/_cfgsCarga.length)*68, 'Carregando dados… ('+_pDone+'/'+_cfgsCarga.length+')');
         });
         for(let _fi=0;_fi<_falhas.length;_fi++){ // rede de segurança: retry sequencial + fallback do blob (igual ao modo antigo)
           const _cfg=_falhas[_fi];
           const _ok=await _sepLoadOne(_cfg);
           if(!_ok && d[_cfg.key]){ _cfg.set(d[_cfg.key]); _sepBuildSnap(_cfg); }
         }
-        console.log('[perf] carga paralela: '+Math.round(performance.now()-_pT0)+'ms ('+SEP_ENTITIES.length+' entidades'+(_falhas.length?(', '+_falhas.length+' via fallback sequencial'):'')+')');
+        console.log('[perf] carga paralela: '+Math.round(performance.now()-_pT0)+'ms ('+_cfgsCarga.length+' entidades'+(_falhas.length?(', '+_falhas.length+' via fallback sequencial'):'')+')');
       } else {
-      for(let _si=0;_si<SEP_ENTITIES.length;_si++){
-        const _cfg=SEP_ENTITIES[_si];
-        _setBootProgress(20 + (_si/SEP_ENTITIES.length)*68, 'Carregando '+(_bootLabels[_cfg.table]||_cfg.key)+'…');
+      for(let _si=0;_si<_cfgsCarga.length;_si++){
+        const _cfg=_cfgsCarga[_si];
+        _setBootProgress(20 + (_si/_cfgsCarga.length)*68, 'Carregando '+(_bootLabels[_cfg.table]||_cfg.key)+'…');
         const _ok=await _sepLoadOne(_cfg);
         if(!_ok && d[_cfg.key]){ _cfg.set(d[_cfg.key]); _sepBuildSnap(_cfg); }
       }

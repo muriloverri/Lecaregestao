@@ -4435,6 +4435,38 @@ var _sepSnap={};
 // v119 — escritas locais EM VOO (ainda não confirmadas no servidor). Protege obs/pendência/status recém-salvos
 // de serem derrubados pelo _resyncFromServer (que substitui o estado local pelo do servidor antes do upsert chegar).
 var _sepDirty={};
+// v221 — CORREÇÃO 2 do incidente 27/08 (autorizada 28/08): IGUALDADE CANÔNICA no detector de mudanças.
+// PROVA da doença (audit_trail, 24h): 14.386 de 14.467 regravações de contas_receber eram byte a byte
+// IDÊNTICAS à versão anterior — o resync adota do servidor objetos com as chaves na ordem do jsonb
+// (comprimento+bytes), o refreshAll re-deriva objetos com as chaves na ordem do JS, e o comparador de
+// TEXTO via "diferente" com conteúdo IGUAL → a coleção inteira era regravada a cada ciclo (mesma classe
+// nas conversas: releitura merge-read + regravação em massa, ~19 mil releituras/h medidas em 28/08).
+// _canonStr serializa com CHAVES ORDENADAS (conteúdo igual ⇒ string igual, qualquer ordem de origem);
+// ARRAYS preservam a ordem (ordem de mensagem/parcela É conteúdo). Paridade com JSON.stringify:
+// undefined em objeto é omitido, em array vira null; objeto especial (Date etc.) NÃO casa com o snap
+// parseado ⇒ tratado como diferente ⇒ comportamento antigo (fail-open, nunca deixa de gravar por engano).
+// Modo pela chave remota app_config 'sep_canon': 'off' (comparador antigo puro) | 'shadow' (só mede,
+// PADRÃO — zero mudança de comportamento) | 'all' (linha canonicamente IGUAL não regrava — pular escrita
+// de conteúdo idêntico não perde nada de ninguém, por definição). Reverter = trocar a chave via SQL.
+var _sepCanonModo=null, _sepCanonLendo=false;
+var _sepCanonDiag={iguais:0, reais:0, porTabela:{}};
+function _canonStr(v){
+  if(v===null || typeof v!=='object') return JSON.stringify(v);
+  if(Array.isArray(v)){ var pa=[]; for(var ai=0;ai<v.length;ai++){ var av=v[ai]; pa.push(av===undefined?'null':_canonStr(av)); } return '['+pa.join(',')+']'; }
+  var ks=Object.keys(v).sort(), out=[];
+  for(var ki=0;ki<ks.length;ki++){ var val=v[ks[ki]]; if(val===undefined) continue; out.push(JSON.stringify(ks[ki])+':'+_canonStr(val)); }
+  return '{'+out.join(',')+'}';
+}
+async function _sepCanonLoad(){
+  if(_sepCanonLendo || !_sb) return; _sepCanonLendo=true;
+  try{
+    const { data }=await _sb.from('app_config').select('value').eq('key','sep_canon').limit(1);
+    var m=(data && data[0] && String(data[0].value||'').trim())||'shadow';
+    if(m==='admin'){ m=(currentUser && currentUser.perfil==='admin')?'all':'shadow'; } // v221 — piloto: skip só na sessão do admin, demais seguem medindo
+    _sepCanonModo=(m==='off'||m==='all'||m==='shadow')?m:'shadow';
+  }catch(_e){ if(_sepCanonModo===null) _sepCanonModo='shadow'; }
+  _sepCanonLendo=false;
+}
 function _sepMarkDirty(cfg, changed){ if(!changed||!changed.length) return; if(!_sepDirty[cfg.key]) _sepDirty[cfg.key]={}; for(var i=0;i<changed.length;i++){ if(changed[i]!=null) _sepDirty[cfg.key][String(cfg.id(changed[i]))]=changed[i]; } }
 function _sepClearDirty(cfg, changed){ var d=_sepDirty[cfg.key]; if(!d||!changed) return; for(var i=0;i<changed.length;i++){ if(changed[i]!=null) delete d[String(cfg.id(changed[i]))]; } }
 // v126 — MERGE DE 3 VIAS por chave (objetos como statuses/statusDates/obsSetor): base = o que carreguei.
@@ -4532,7 +4564,20 @@ async function _sepSyncOne(cfg){
       var id=cfg.id(o);
       if(id==null || id===''){ id=cfg.key+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); o.id=id; }
       id=String(id); curIds[id]=1;
-      if(snap[id]!==JSON.stringify(o)) changed.push(o);
+      if(snap[id]!==JSON.stringify(o)){
+        // v221 — o TEXTO difere: confere se o CONTEÚDO difere (ordem de chaves não é mudança).
+        // Linha nova (sem snapshot) e erro de canonização caem no comportamento antigo (grava).
+        if(_sepCanonModo===null && !_sepCanonLendo){ try{ _sepCanonLoad(); }catch(_e){} }
+        var _cMode=_sepCanonModo||'shadow', _cEq=false;
+        if(_cMode!=='off' && snap[id]!==undefined){
+          try{ _cEq=(_canonStr(JSON.parse(snap[id]))===_canonStr(o)); }catch(_e){ _cEq=false; }
+        }
+        if(_cEq){
+          _sepCanonDiag.iguais++; _sepCanonDiag.porTabela[cfg.table]=(_sepCanonDiag.porTabela[cfg.table]||0)+1;
+          if(_cMode==='all'){ snap[id]=JSON.stringify(o); continue; } // conteúdo idêntico: nada a gravar; o snapshot se auto-corrige e a linha some do próximo ciclo
+        } else if(_cMode!=='off'){ _sepCanonDiag.reais++; }
+        changed.push(o);
+      }
     }
     var removed=Object.keys(snap).filter(function(id){ return !curIds[id]; });
     _sepMarkDirty(cfg, changed); // v119 — protege o que vai ser gravado até o upsert confirmar (fim do "obs/pendência some")
@@ -4815,7 +4860,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v220';
+var APP_VERSION = 'v221';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -4976,7 +5021,9 @@ async function _sessionHeartbeat(){
     if(!_authUidLogin) _authUidLogin = _uid;
   }catch(_e){ /* indisponibilidade momentânea de rede não é sessão morta — não alarma */ }
   try{
-    await _sb.from('sessions').upsert({ tab_id:_tabId, user_id:currentUser.id, user_name:currentUser.name, version:APP_VERSION, last_seen:new Date().toISOString(), updated_at:new Date().toISOString() }, { onConflict:'tab_id' });
+    var _hbDiag=null; // v221 — telemetria da correção 2 (contadores do detector canônico), lida por SQL na coluna sessions.diag
+    try{ _hbDiag={ canon:{ modo:(_sepCanonModo||'shadow'), iguais:_sepCanonDiag.iguais, reais:_sepCanonDiag.reais, tab:_sepCanonDiag.porTabela } }; }catch(_e){ _hbDiag=null; }
+    await _sb.from('sessions').upsert({ tab_id:_tabId, user_id:currentUser.id, user_name:currentUser.name, version:APP_VERSION, last_seen:new Date().toISOString(), updated_at:new Date().toISOString(), diag:_hbDiag }, { onConflict:'tab_id' });
     const r = await _sb.from('sessions').select('kicked').eq('tab_id',_tabId).limit(1);
     if(r && r.data && r.data[0] && r.data[0].kicked){ _doKickLogout(); }
   }catch(e){ /* silencioso */ }
@@ -33042,7 +33089,7 @@ function _setupRealtime(){
   SEP_ENTITIES.forEach(function(cfg){
     ch = ch.on('postgres_changes', { event:'*', schema:'public', table:cfg.table }, function(payload){ _sepOnRealtime(cfg,payload); });
   });
-  ch = ch.on('postgres_changes', { event:'*', schema:'public', table:'app_config' }, function(){ _checkVersionGate(); _checkWaStatus(); });
+  ch = ch.on('postgres_changes', { event:'*', schema:'public', table:'app_config' }, function(){ _checkVersionGate(); _checkWaStatus(); try{ _sepCanonModo=null; _sepCanonLoad(); }catch(_e){} }); // v221 — troca da chave sep_canon via SQL vale em segundos, sem reload
   ch = ch.on('postgres_changes', { event:'UPDATE', schema:'public', table:'sessions', filter:'tab_id=eq.'+_tabId }, function(payload){ if(payload.new && payload.new.kicked){ _doKickLogout(); } });
   // v102 (Fix D) — ao RECONECTAR (SUBSCRIBED após uma queda), o realtime não reenvia o que foi perdido →
   // reconcilia com o servidor. _rtWasConnected distingue a 1ª inscrição (boot já carrega) de uma reconexão.

@@ -4488,7 +4488,35 @@ var _sepDirty={};
 // PADRÃO — zero mudança de comportamento) | 'all' (linha canonicamente IGUAL não regrava — pular escrita
 // de conteúdo idêntico não perde nada de ninguém, por definição). Reverter = trocar a chave via SQL.
 var _sepCanonModo=null, _sepCanonLendo=false;
-var _sepCanonDiag={iguais:0, reais:0, porTabela:{}};
+var _sepCanonDiag={iguais:0, reais:0, porTabela:{}, reaisTab:{}};
+// v222 — ETAPA 3 FASE A (autorizada 28/08): INSTRUMENTAÇÃO do detector de mudanças. Quando uma linha
+// é marcada "alterada", registra QUAIS campos de topo diferem entre a fotografia e a memória (só NOMES
+// de campos e contagens — nunca conteúdo de mensagem; amostra de até 3 conversas por ciclo). Objetivo:
+// provar COM DADO qual mecanismo mantém dezenas de conversas perpetuamente "alteradas" (a maior fonte
+// de pressão restante — ~19 mil releituras/h) antes de escrever a correção (fase B). ZERO mudança de
+// comportamento: roda DEPOIS da decisão de marcação, em try/catch, e desliga pela chave app_config
+// 'sep_diag' ('off'). Telemetria sobe no heartbeat (sessions.diag), canal provado na v221.
+var _sepDiagModo=null;
+var _sepDirtyDiag={ciclos:0, porTabela:{}, campos:{}, amostras:[]};
+function _sepDiffCampos(snapStr, o){
+  try{
+    var a=JSON.parse(snapStr), out=[], ks={};
+    Object.keys(a||{}).forEach(function(k){ ks[k]=1; });
+    Object.keys(o||{}).forEach(function(k){ ks[k]=1; });
+    Object.keys(ks).forEach(function(k){
+      var va=(a||{})[k], vb=(o||{})[k], sa, sb2;
+      try{ sa=JSON.stringify(va); }catch(_e){ sa='!'; }
+      try{ sb2=JSON.stringify(vb); }catch(_e){ sb2='!'; }
+      if(sa!==sb2){
+        if(k==='mensagens'){
+          var la=Array.isArray(va)?va.length:0, lb=Array.isArray(vb)?vb.length:0;
+          out.push(la===lb ? ('mensagens(conteudo,'+lb+')') : ('mensagens('+la+'>'+lb+')'));
+        } else out.push(k);
+      }
+    });
+    return out;
+  }catch(_e){ return ['(erro-diff)']; }
+}
 function _canonStr(v){
   if(v===null || typeof v!=='object') return JSON.stringify(v);
   if(Array.isArray(v)){ var pa=[]; for(var ai=0;ai<v.length;ai++){ var av=v[ai]; pa.push(av===undefined?'null':_canonStr(av)); } return '['+pa.join(',')+']'; }
@@ -4499,11 +4527,13 @@ function _canonStr(v){
 async function _sepCanonLoad(){
   if(_sepCanonLendo || !_sb) return; _sepCanonLendo=true;
   try{
-    const { data }=await _sb.from('app_config').select('value').eq('key','sep_canon').limit(1);
-    var m=(data && data[0] && String(data[0].value||'').trim())||'shadow';
+    const { data }=await _sb.from('app_config').select('key,value').in('key',['sep_canon','sep_diag']);
+    var m='shadow', d='on';
+    (data||[]).forEach(function(r){ if(r.key==='sep_canon') m=String(r.value||'').trim()||'shadow'; if(r.key==='sep_diag') d=String(r.value||'').trim()||'on'; });
     if(m==='admin'){ m=(currentUser && currentUser.perfil==='admin')?'all':'shadow'; } // v221 — piloto: skip só na sessão do admin, demais seguem medindo
     _sepCanonModo=(m==='off'||m==='all'||m==='shadow')?m:'shadow';
-  }catch(_e){ if(_sepCanonModo===null) _sepCanonModo='shadow'; }
+    _sepDiagModo=(d==='off')?'off':'on'; // v222 — instrumentação desligável por SQL
+  }catch(_e){ if(_sepCanonModo===null) _sepCanonModo='shadow'; if(_sepDiagModo===null) _sepDiagModo='on'; }
   _sepCanonLendo=false;
 }
 function _sepMarkDirty(cfg, changed){ if(!changed||!changed.length) return; if(!_sepDirty[cfg.key]) _sepDirty[cfg.key]={}; for(var i=0;i<changed.length;i++){ if(changed[i]!=null) _sepDirty[cfg.key][String(cfg.id(changed[i]))]=changed[i]; } }
@@ -4597,7 +4627,8 @@ async function _sepSyncOne(cfg){
   }
   try{
     var arr=cfg.get()||[]; var snap=_sepSnap[cfg.key]||{};
-    var changed=[]; var curIds={};
+    var changed=[]; var curIds={}; var _digN=0; // v222 — amostras de diff por ciclo (máx 3)
+    if(cfg.key==='conversas'){ try{ _sepDirtyDiag.ciclos++; }catch(_e){} }
     for(var i=0;i<arr.length;i++){
       var o=arr[i]; if(o==null || typeof o!=='object') continue;
       var id=cfg.id(o);
@@ -4614,7 +4645,21 @@ async function _sepSyncOne(cfg){
         if(_cEq){
           _sepCanonDiag.iguais++; _sepCanonDiag.porTabela[cfg.table]=(_sepCanonDiag.porTabela[cfg.table]||0)+1;
           if(_cMode==='all'){ snap[id]=JSON.stringify(o); continue; } // conteúdo idêntico: nada a gravar; o snapshot se auto-corrige e a linha some do próximo ciclo
-        } else if(_cMode!=='off'){ _sepCanonDiag.reais++; }
+        } else if(_cMode!=='off'){ _sepCanonDiag.reais++; _sepCanonDiag.reaisTab[cfg.table]=(_sepCanonDiag.reaisTab[cfg.table]||0)+1; }
+        // v222 — INSTRUMENTAÇÃO (fase A da etapa 3): registra o que foi marcado, DEPOIS da decisão.
+        // Nunca altera o fluxo: try/catch total e desligável pela chave sep_diag.
+        try{
+          if(_sepDiagModo!=='off'){
+            _sepDirtyDiag.porTabela[cfg.table]=(_sepDirtyDiag.porTabela[cfg.table]||0)+1;
+            if(cfg.key==='conversas' && _digN<3 && snap[id]!==undefined){
+              _digN++;
+              var _dcs=_sepDiffCampos(snap[id], o);
+              for(var _dk2=0;_dk2<_dcs.length;_dk2++){ var _dnm=String(_dcs[_dk2]).replace(/\(.*\)$/,''); _sepDirtyDiag.campos[_dnm]=(_sepDirtyDiag.campos[_dnm]||0)+1; }
+              _sepDirtyDiag.amostras.push({ id:id, c:_dcs.join(',') });
+              if(_sepDirtyDiag.amostras.length>5) _sepDirtyDiag.amostras.shift();
+            }
+          }
+        }catch(_e){}
         changed.push(o);
       }
     }
@@ -4899,7 +4944,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v221';
+var APP_VERSION = 'v222';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5061,7 +5106,8 @@ async function _sessionHeartbeat(){
   }catch(_e){ /* indisponibilidade momentânea de rede não é sessão morta — não alarma */ }
   try{
     var _hbDiag=null; // v221 — telemetria da correção 2 (contadores do detector canônico), lida por SQL na coluna sessions.diag
-    try{ _hbDiag={ canon:{ modo:(_sepCanonModo||'shadow'), iguais:_sepCanonDiag.iguais, reais:_sepCanonDiag.reais, tab:_sepCanonDiag.porTabela } }; }catch(_e){ _hbDiag=null; }
+    try{ _hbDiag={ canon:{ modo:(_sepCanonModo||'shadow'), iguais:_sepCanonDiag.iguais, reais:_sepCanonDiag.reais, tab:_sepCanonDiag.porTabela, reaisTab:_sepCanonDiag.reaisTab },
+                   dirty:{ ciclos:_sepDirtyDiag.ciclos, tab:_sepDirtyDiag.porTabela, campos:_sepDirtyDiag.campos, am:_sepDirtyDiag.amostras } }; }catch(_e){ _hbDiag=null; } // v222 — fase A: o que é marcado "alterado" e POR QUAIS CAMPOS
     await _sb.from('sessions').upsert({ tab_id:_tabId, user_id:currentUser.id, user_name:currentUser.name, version:APP_VERSION, last_seen:new Date().toISOString(), updated_at:new Date().toISOString(), diag:_hbDiag }, { onConflict:'tab_id' });
     const r = await _sb.from('sessions').select('kicked').eq('tab_id',_tabId).limit(1);
     if(r && r.data && r.data[0] && r.data[0].kicked){ _doKickLogout(); }

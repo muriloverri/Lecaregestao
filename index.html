@@ -3782,6 +3782,9 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       <!-- v119 — PRODUÇÃO por item: botão abre modal com os produtos, cada um com seu responsável -->
       <button id="sm-prod-btn" type="button" onclick="openProdRespModal()" style="display:none;width:100%;padding:9px 12px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit;font-size:13px">🏭 Indicar quem produziu (por produto)</button>
       <div id="sm-prod-resumo" style="display:none;font-size:11px;color:var(--text-tertiary);margin-top:6px"></div>
+      <!-- v223 — ANESTÉSICO: quem ENVASOU + LOTE por produto (pedido do dono 31/08; fora da produtividade por enquanto) -->
+      <button id="sm-env-btn" type="button" onclick="openEnvaseModal()" style="display:none;width:100%;margin-top:8px;padding:9px 12px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit;font-size:13px">🧪 Indicar quem envasou + lote (por produto)</button>
+      <div id="sm-env-resumo" style="display:none;font-size:11px;color:var(--text-tertiary);margin-top:6px"></div>
     </div>
     <!-- v120 — Observações do setor: botão abre o thread (cada obs salva na hora, edita só quem criou) -->
     <div style="margin-top:12px">
@@ -4798,6 +4801,34 @@ async function _sepLoadOne(cfg){
     { var _dseen={}, _dun=[];
       for(var _di=all.length-1;_di>=0;_di--){ var _do=all[_di]; if(_do==null){ continue; } var _dk=String(cfg.id(_do)); if(_dseen[_dk]) continue; _dseen[_dk]=1; _dun.unshift(_do); }
       all=_dun; }
+    // v223 — FASE B (fix 2): a carga LEVE (30 msgs) não pode REBAIXAR conversa já hidratada.
+    // Antes: cfg.set(all) recolapsava a memória para 30 msgs e a preservação v134 re-inflava a
+    // conversa com a fotografia presa na versão leve — regravação INTEGRAL a cada resync (prova:
+    // fase A/v222, a mesma conversa re-marcada "mensagens(30>N)" em ciclos seguidos). Agora: une as
+    // mensagens da memória na linha leve (campos do SERVIDOR vencem; a união v107 nunca descarta
+    // mensagem) e, se o resultado é canonicamente IGUAL ao que a memória já tinha, mantém o PRÓPRIO
+    // objeto da memória (texto estável → zero marcação falsa). Diferença real (campo mudado no
+    // servidor / mensagem nova) → adota a união, como o realtime faz. As edições locais não gravadas
+    // continuam protegidas pelo _pend/v134, que roda DEPOIS e independe deste bloco. Falha em uma
+    // conversa → aquela conversa segue na carga leve de sempre (fail-open, por linha).
+    if(cfg.key==='conversas' && all.length){
+      try{
+        var _memC=cfg.get()||[]; var _memIdx={};
+        for(var _m1=0;_m1<_memC.length;_m1++){ var _mo=_memC[_m1]; if(_mo && _mo.id!=null) _memIdx[String(_mo.id)]=_mo; }
+        for(var _m2=0;_m2<all.length;_m2++){
+          var _lv=all[_m2]; if(!_lv || _lv.id==null) continue;
+          var _mc=_memIdx[String(_lv.id)]; if(!_mc) continue;
+          var _nMem=Array.isArray(_mc.mensagens)?_mc.mensagens.length:0;
+          var _nLv=Array.isArray(_lv.mensagens)?_lv.mensagens.length:0;
+          if(_nMem<=_nLv) continue; // memória não tem nada além da carga leve
+          try{
+            _convUniaoMsgs(_lv, _mc); // linha leve (servidor) ganha as msgs que só a memória tem
+            if(typeof _canonStr==='function' && _canonStr(_lv)===_canonStr(_mc)) all[_m2]=_mc; // idêntico → objeto estável
+            else all[_m2]=_lv; // diferença real → adota servidor+união
+          }catch(_e){}
+        }
+      }catch(_e){}
+    }
     // v134 — ANTI-CORRIDA (raiz do "confirmei e evaporou sem erro"): ANTES de substituir pelo servidor,
     // captura TODA edição local AINDA NÃO GRAVADA (linha que difere do snapshot da última carga/gravação).
     // A proteção v119 (_sepDirty) só marcava a linha DURANTE a tentativa de sync — edição feita com um save
@@ -4944,7 +4975,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v222';
+var APP_VERSION = 'v223';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7193,6 +7224,53 @@ function saveProdResp(){
   saveData();
   try{ const res=document.getElementById('sm-prod-resumo'); if(res){ const c=its.filter(x=>x.prodRespNome).length; res.textContent=c+' de '+its.length+' produto(s) com responsável indicado'; } }catch(_e){}
 }
+// v223 — ANESTÉSICO: QUEM ENVASOU + LOTE por produto (pedido do dono 31/08). Espelho do modal
+// "quem produziu": mesmo pool de executores da produção, um lote por produto (o MESMO número pode
+// se repetir entre produtos). NÃO entra na produtividade por enquanto (decisão expressa do dono) —
+// a produtividade segue lendo somente prodResp*. Campos gravados no ITEM: envaseRespId/envaseRespNome/lote.
+var _envaseOid=null;
+function openEnvaseModal(){
+  const _oid=(statusCtx&&statusCtx.oid); const o=orders.find(x=>String(x.id)===String(_oid)); if(!o){ alert('Pedido não encontrado.'); return; }
+  _envaseOid=o.id;
+  const its=Array.isArray(o.itens)?o.itens:[];
+  const execs=_setorExecutores('producao');
+  const _admEnv=(currentUser&&currentUser.perfil==='admin'); // v223 — editar quem envasou JÁ SALVO: só admin
+  const optHtml=(selId)=>'<option value="">— quem envasou —</option>'+execs.map(u=>'<option value="'+u.id+'"'+(String(u.id)===String(selId||'')?' selected':'')+'>'+escapeHtml(u.name||u.login||u.id)+'</option>').join('');
+  const _selCss='width:100%;font-size:13px;padding:8px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-primary)';
+  const rows= its.length ? its.map((it,i)=>{
+    const _lockSel=(!_admEnv && !!it.envaseRespId); // preenchido → trava p/ não-admin (vazio: qualquer um indica)
+    return '<div style="padding:11px 2px;border-bottom:.5px solid var(--border)"><div style="font-size:14px;font-weight:500;margin-bottom:7px;line-height:1.35">'+escapeHtml(it.nome||it.produto||'—')+' <span style="font-size:12px;color:var(--text-tertiary);font-weight:400;white-space:nowrap">· '+(parseFloat(it.qtd)||0)+' un.'+(it.volumetria?(' · '+escapeHtml(it.volumetria)):'')+'</span></div>'
+      +'<div style="display:flex;gap:8px;align-items:center"><div style="flex:1.4;min-width:0"><select id="envresp-'+i+'"'+(_lockSel?' disabled':'')+' style="'+_selCss+(_lockSel?';opacity:.7':'')+'">'+optHtml(it.envaseRespId)+'</select>'+(_lockSel?'<div style="font-size:10.5px;color:var(--text-tertiary);margin-top:3px">🔒 Já indicado — só admin altera</div>':'')+'</div>'
+      +'<div style="flex:1;min-width:0"><input id="envlote-'+i+'" type="text" placeholder="Lote" value="'+escapeHtml(String(it.lote||''))+'" style="'+_selCss+'"></div></div>'
+      +'</div>';
+  }).join('') : '<div style="font-size:12px;color:var(--text-tertiary);padding:10px 0">Nenhum produto informado neste pedido (o comercial informa os produtos primeiro).</div>';
+  const html='<div class="overlay open" id="envase-overlay" data-dyn="1"><div class="modal" style="width:640px;max-width:94vw;max-height:86vh;display:flex;flex-direction:column"><h2 style="flex-shrink:0">🧪 Quem envasou + lote — por produto</h2><div style="font-size:11px;color:var(--text-tertiary);margin:-2px 0 8px;flex-shrink:0">Pedido '+escapeHtml(o.num||'')+' — '+escapeHtml(o.cliente||'')+'. Indique quem envasou e o LOTE de cada produto (o mesmo número de lote pode se repetir). Obrigatório para marcar Concluído; quem envasou já indicado só o admin altera. Não entra na produtividade.</div><div style="flex:1;overflow:auto">'+rows+'</div><div class="modal-footer" style="flex-shrink:0"><button onclick="document.getElementById(\'envase-overlay\').remove()">Fechar</button>'+(!its.length?'':'<button class="btn-primary" onclick="saveEnvase()">Salvar envase e lotes</button>')+'</div></div></div>';
+  document.getElementById('envase-overlay')?.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function saveEnvase(){
+  const o=orders.find(x=>x.id===_envaseOid); if(!o) return;
+  const its=Array.isArray(o.itens)?o.itens:[];
+  var _mud=[];
+  const _admEnvS=(currentUser&&currentUser.perfil==='admin'); // v223 — reforço no salvamento (mexer no DOM não fura a regra)
+  its.forEach((it,i)=>{
+    const sel=document.getElementById('envresp-'+i), inp=document.getElementById('envlote-'+i);
+    if(!sel && !inp) return;
+    let id=sel?sel.value:'';
+    if(!_admEnvS && it.envaseRespId && id!==it.envaseRespId) id=it.envaseRespId; // já indicado: não-admin não altera
+    const u=id?users.find(x=>String(x.id)===String(id)):null;
+    const lote=inp?String(inp.value||'').trim():String(it.lote||'');
+    const antes=(it.envaseRespNome||'')+'|'+(it.lote||'');
+    it.envaseRespId=id||''; it.envaseRespNome=(u&&u.name)||'';
+    it.lote=lote;
+    const depois=(it.envaseRespNome||'')+'|'+(it.lote||'');
+    if(antes!==depois) _mud.push((it.nome||'produto')+': '+(it.envaseRespNome||'—')+' · lote '+(lote||'—'));
+  });
+  if(_mud.length){ try{ addAudit(o,'producao','envase/lote','', _mud.join(' | ')); }catch(_e){} }
+  document.getElementById('envase-overlay')?.remove();
+  saveData();
+  try{ const res=document.getElementById('sm-env-resumo'); if(res){ const c=its.filter(function(x){ return x.envaseRespNome && String(x.lote||'').trim(); }).length; res.textContent=c+' de '+its.length+' produto(s) com envase e lote indicados'; } }catch(_e){}
+}
 // v120 — OBSERVAÇÕES em THREAD (por setor): cada obs salva na hora; edita/exclui só quem criou (ou admin). Migra o formato antigo {texto,por,em}.
 function _obsThread(o, setor){
   if(!o) return [];
@@ -7441,6 +7519,8 @@ function openStatusModal(oid,setor){
       if(lbl) lbl.textContent='🎨 Quem executou (designer)';
       sel.innerHTML='<option value="">— selecione —</option>'+execs.map(u=>'<option value="'+u.id+'"'+(String(u.id)===String(atual)?' selected':'')+'>'+escapeHtml(u.name||u.login||u.id)+'</option>').join('');
       sel.disabled=false; sel.style.display=''; if(btn)btn.style.display='none'; if(res)res.style.display='none';
+      var _be0=document.getElementById('sm-env-btn'), _re0=document.getElementById('sm-env-resumo');
+      if(_be0)_be0.style.display='none'; if(_re0)_re0.style.display='none';
       w.style.display='';
     } else if(setor==='producao'){
       const _its=Array.isArray(o.itens)?o.itens:[]; const _c=_its.filter(it=>it.prodRespNome).length;
@@ -7448,6 +7528,13 @@ function openStatusModal(oid,setor){
       sel.style.display='none'; sel.disabled=true;
       if(btn) btn.style.display='';
       if(res){ res.style.display=''; res.textContent = _its.length ? (_c+' de '+_its.length+' produto(s) com responsável indicado') : 'Sem produtos informados neste pedido.'; }
+      // v223 — ANESTÉSICO: seção "quem envasou + lote" (por produto; fora da produtividade por enquanto)
+      var _be=document.getElementById('sm-env-btn'), _re=document.getElementById('sm-env-resumo');
+      var _ehAnesEnv=(o.linha==='anestesico');
+      if(_be) _be.style.display=_ehAnesEnv?'':'none';
+      if(_re){ _re.style.display=_ehAnesEnv?'':'none';
+        if(_ehAnesEnv){ var _ce=_its.filter(function(it){ return it.envaseRespNome && String(it.lote||'').trim(); }).length;
+          _re.textContent=_its.length?(_ce+' de '+_its.length+' produto(s) com envase e lote indicados'):'Sem produtos informados neste pedido.'; } }
       w.style.display='';
     } else { w.style.display='none'; }
   })();
@@ -7530,6 +7617,16 @@ function confirmStatus(){
     const _semRespP=_itsP.filter(function(it){ return !(it&&it.prodRespNome); }).length;
     if(_itsP.length>0 && _semRespP>0){
       alert('Não é possível marcar "'+selectedStatus+'": '+_semRespP+' de '+_itsP.length+' produto(s) ainda sem responsável de produção.\n\nUse "🏭 Indicar quem produziu (por produto)" aqui no modal do setor antes de finalizar.');
+      return;
+    }
+  }
+  // v223 — ANESTÉSICO (regra do dono 31/08): 'Concluído' da produção SÓ com QUEM ENVASOU + LOTE
+  // indicados em TODOS os produtos. Pedido sem itens informados passa (mesma exceção da v153).
+  if(statusCtx.setor==='producao' && selectedStatus==='Concluído' && o.linha==='anestesico'){
+    const _itsE=Array.isArray(o.itens)?o.itens:[];
+    const _faltaE=_itsE.filter(function(it){ return !(it&&it.envaseRespNome&&String(it.lote||'').trim()); }).length;
+    if(_itsE.length>0 && _faltaE>0){
+      alert('Não é possível marcar "Concluído": '+_faltaE+' de '+_itsE.length+' produto(s) ainda sem QUEM ENVASOU e LOTE.\n\nUse "🧪 Indicar quem envasou + lote (por produto)" aqui no modal antes de concluir.');
       return;
     }
   }
@@ -34999,6 +35096,17 @@ function _convHidratar(conv){
   _sb.from('conversas').select('data').eq('id', conv.id).maybeSingle().then(function(r){
     if(r && r.data && r.data.data){
       try{ _convUniaoMsgs(conv, r.data.data); }catch(_e){}
+      // v223 — FASE B (fix 1): as mensagens hidratadas vieram DO SERVIDOR; se após a união o conteúdo
+      // local é idêntico ao da linha do servidor (ordem de chaves não é diferença), atualiza a
+      // FOTOGRAFIA — sem isso o próximo sync regravava a conversa inteira que o servidor já tinha
+      // (prova: fase A/v222, amostras "mensagens(30>N)"). Diferença real (ex.: naoLidas zerado ao
+      // abrir, mensagem só local) → fotografia fica como está e o sync grava como sempre.
+      try{
+        if(typeof _canonStr==='function' && _sepSnap && _sepSnap.conversas &&
+           _canonStr(conv)===_canonStr(r.data.data)){
+          _sepSnap.conversas[String(conv.id)]=JSON.stringify(conv);
+        }
+      }catch(_e){}
       try{ if(typeof conversaAtivaId!=='undefined' && conversaAtivaId===conv.id) renderConversaTela(conv.id); }catch(_e){}
       try{ renderConversasLista(); }catch(_e){}
     } else { _convHidratadas[conv.id]=false; }

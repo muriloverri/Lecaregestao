@@ -4975,7 +4975,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v223';
+var APP_VERSION = 'v224';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -4987,6 +4987,11 @@ async function _checkVersionGate(){
     if(min > _verNum(APP_VERSION)){ _versionBlocked = true; _showVersionBlock(min); }
   }catch(e){ /* sem conexão não bloqueia */ }
   try{ await _waNumCfgLoad(); }catch(_e){} // v140 : config dos numeros de WhatsApp (dois numeros)
+  // v224 — POLLING das chaves sep_canon/sep_diag no MESMO relógio de 60s deste portão (caso 03/09:
+  // o gatilho realtime do app_config não entregava na prática — 12/13 sessões ficaram no modo velho
+  // 40min após a troca; sem isso, a REVERSÃO por SQL também não alcançava sessões abertas). A função
+  // re-lê e re-atribui ao completar (sem janela de modo nulo); o realtime, quando entrega, só antecipa.
+  try{ _sepCanonLoad(); }catch(_e){}
 }
 // v86 — Alerta visual quando o WhatsApp (Z-API) cai. Status vem da Edge Function wa-connection -> app_config.wa_status
 async function _checkWaStatus(){
@@ -5147,6 +5152,10 @@ async function _sessionHeartbeat(){
 function _startSession(){
   if(!currentUser) return;
   _kicked = false;
+  // v224 — carga EAGER do modo canônico no início da sessão (caso 03/09: sessão limpa nunca disparava a
+  // carga preguiçosa e o piloto admin não engatava; o mapeamento admin→all precisa do currentUser, que
+  // aqui já existe). Re-lê e re-atribui ao completar — sem janela de modo nulo.
+  try{ _sepCanonLoad(); }catch(_e){}
   _authUidLogin = null; window._authExpirada = false; // v151 : login novo zera o vigia (a 1ª batida recaptura o dono)
   try{ var _ab=document.getElementById('_auth-banner'); if(_ab&&_ab.parentNode) _ab.parentNode.removeChild(_ab); }catch(_e){}
   _sessionHeartbeat();
@@ -7180,6 +7189,11 @@ function openProdRespModal(){
   _prodRespOid=o.id;
   const its=Array.isArray(o.itens)?o.itens:[];
   const execs=_setorExecutores('producao');
+  // v224 — TRAVA POR ITEM (caso 103154, reporte do dono 10/09: "não permite indicar quem produziu"):
+  // a trava v119 congelava o modal INTEIRO quando a produção avançava — inclusive produto ainda SEM
+  // responsável, que aí ninguém (além do admin) conseguia preencher, travando o próprio gate v153.
+  // Regra corrigida (mesma do envase v223, aprovada pelo dono): produto VAZIO qualquer um preenche;
+  // responsável JÁ INDICADO com a produção avançada, só admin altera.
   const _lock=(o.prodRespAtStatus && o.prodRespAtStatus!==(o.statuses&&o.statuses.producao) && currentUser?.perfil!=='admin');
   const optHtml=(selId)=>'<option value="">— responsável —</option>'+execs.map(u=>'<option value="'+u.id+'"'+(String(u.id)===String(selId||'')?' selected':'')+'>'+escapeHtml(u.name||u.login||u.id)+'</option>').join('');
   // v203 — 2º RESPONSÁVEL OPCIONAL no mesmo item (até duas pessoas, a critério de quem indica;
@@ -7188,12 +7202,14 @@ function openProdRespModal(){
   const _selCss='width:100%;font-size:13px;padding:8px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-primary)';
   const rows= its.length ? its.map((it,i)=>{
     const tem2=!!it.prodResp2Id;
-    return '<div style="padding:11px 2px;border-bottom:.5px solid var(--border)"><div style="font-size:14px;font-weight:500;margin-bottom:7px;line-height:1.35">'+escapeHtml(it.nome||it.produto||'—')+' <span style="font-size:12px;color:var(--text-tertiary);font-weight:400;white-space:nowrap">· '+(parseFloat(it.qtd)||0)+' un.'+(it.volumetria?(' · '+escapeHtml(it.volumetria)):'')+'</span></div><select id="prodresp-'+i+'"'+(_lock?' disabled':'')+' style="'+_selCss+'">'+optHtml(it.prodRespId)+'</select>'
-      +((_lock&&!tem2)?'':('<a id="prodresp2a-'+i+'" onclick="_qpAdd2('+i+')" style="display:'+((tem2||_lock)?'none':'inline-block')+';font-size:12px;color:var(--text-info);cursor:pointer;margin-top:6px">+ adicionar 2º responsável</a>'
-      +'<div id="prodresp2w-'+i+'" style="display:'+(tem2?'':'none')+';margin-top:6px"><div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">2º responsável (opcional — a produtividade divide as unidades meio a meio)</div><select id="prodresp2-'+i+'"'+(_lock?' disabled':'')+' style="'+_selCss+'">'+optHtml(it.prodResp2Id)+'</select></div>'))
+    const _lk=_lock && !!it.prodRespId; // v224 — trava POR ITEM: só o já indicado congela
+    return '<div style="padding:11px 2px;border-bottom:.5px solid var(--border)"><div style="font-size:14px;font-weight:500;margin-bottom:7px;line-height:1.35">'+escapeHtml(it.nome||it.produto||'—')+' <span style="font-size:12px;color:var(--text-tertiary);font-weight:400;white-space:nowrap">· '+(parseFloat(it.qtd)||0)+' un.'+(it.volumetria?(' · '+escapeHtml(it.volumetria)):'')+'</span></div><select id="prodresp-'+i+'"'+(_lk?' disabled':'')+' style="'+_selCss+(_lk?';opacity:.7':'')+'">'+optHtml(it.prodRespId)+'</select>'
+      +(_lk?'<div style="font-size:10.5px;color:var(--text-tertiary);margin-top:3px">🔒 Já indicado e a produção avançou — só admin altera</div>':'')
+      +((_lk&&!tem2)?'':('<a id="prodresp2a-'+i+'" onclick="_qpAdd2('+i+')" style="display:'+((tem2||_lk)?'none':'inline-block')+';font-size:12px;color:var(--text-info);cursor:pointer;margin-top:6px">+ adicionar 2º responsável</a>'
+      +'<div id="prodresp2w-'+i+'" style="display:'+(tem2?'':'none')+';margin-top:6px"><div style="font-size:11px;color:var(--text-tertiary);margin-bottom:3px">2º responsável (opcional — a produtividade divide as unidades meio a meio)</div><select id="prodresp2-'+i+'"'+(_lk?' disabled':'')+' style="'+_selCss+'">'+optHtml(it.prodResp2Id)+'</select></div>'))
       +'</div>';
   }).join('') : '<div style="font-size:12px;color:var(--text-tertiary);padding:10px 0">Nenhum produto informado neste pedido (o comercial informa os produtos primeiro).</div>';
-  const html='<div class="overlay open" id="prod-resp-overlay" data-dyn="1"><div class="modal" style="width:600px;max-width:94vw;max-height:86vh;display:flex;flex-direction:column"><h2 style="flex-shrink:0">🏭 Quem produziu — por produto</h2><div style="font-size:11px;color:var(--text-tertiary);margin:-2px 0 8px;flex-shrink:0">Pedido '+escapeHtml(o.num||'')+' — '+escapeHtml(o.cliente||'')+'. Indique o responsável pela produção de cada item.'+(_lock?' <b style="color:var(--st-mid-tx)">🔒 Travado (produção já avançou) — só admin altera.</b>':'')+'</div><div style="flex:1;overflow:auto">'+rows+'</div><div class="modal-footer" style="flex-shrink:0"><button onclick="document.getElementById(\'prod-resp-overlay\').remove()">Fechar</button>'+((_lock||!its.length)?'':'<button class="btn-primary" onclick="saveProdResp()">Salvar responsáveis</button>')+'</div></div></div>';
+  const html='<div class="overlay open" id="prod-resp-overlay" data-dyn="1"><div class="modal" style="width:600px;max-width:94vw;max-height:86vh;display:flex;flex-direction:column"><h2 style="flex-shrink:0">🏭 Quem produziu — por produto</h2><div style="font-size:11px;color:var(--text-tertiary);margin:-2px 0 8px;flex-shrink:0">Pedido '+escapeHtml(o.num||'')+' — '+escapeHtml(o.cliente||'')+'. Indique o responsável pela produção de cada item.'+(_lock?' <b style="color:var(--st-mid-tx)">🔒 Produção avançou: responsável já indicado só o admin altera; produto ainda sem responsável continua liberado.</b>':'')+'</div><div style="flex:1;overflow:auto">'+rows+'</div><div class="modal-footer" style="flex-shrink:0"><button onclick="document.getElementById(\'prod-resp-overlay\').remove()">Fechar</button>'+((!its.length || (_lock && its.every(function(x){return !!x.prodRespId;})))?'':'<button class="btn-primary" onclick="saveProdResp()">Salvar responsáveis</button>')+'</div></div></div>';
   document.getElementById('prod-resp-overlay')?.remove();
   document.body.insertAdjacentHTML('beforeend', html);
 }
@@ -7205,7 +7221,11 @@ function _qpAdd2(i){
 function saveProdResp(){
   const o=orders.find(x=>x.id===_prodRespOid); if(!o) return;
   const its=Array.isArray(o.itens)?o.itens:[];
+  // v224 — reforço da trava por item no salvamento (mexer no DOM não fura a regra): com a produção
+  // avançada, item JÁ INDICADO não muda para não-admin; item vazio pode ser preenchido normalmente.
+  const _lockS=(o.prodRespAtStatus && o.prodRespAtStatus!==(o.statuses&&o.statuses.producao) && currentUser?.perfil!=='admin');
   its.forEach((it,i)=>{ const sel=document.getElementById('prodresp-'+i); if(!sel) return;
+    if(_lockS && it.prodRespId) return; // congelado: preserva 1º e 2º responsáveis como estão
     let id=sel.value;
     // v203 — 2º responsável opcional: mesma pessoa 2× vira uma; só o 2º preenchido promove a 1º
     const sel2=document.getElementById('prodresp2-'+i);
@@ -14475,8 +14495,9 @@ function _gpAddItem(){
   _gpExtras.push({ insumoId:ins.id, nome:ins.nome||'', codigo:ins.codigo||'', unidade:ins.unidade||'un', qtdPedida:0, qtd:q });
   _gpRender();
 }
-function _gpReceberConfirmar(){
-  var pc=(pedidosCompra||[]).find(function(p){ return p.id===_gpPcId; }); if(!pc) return;
+async function _gpReceberConfirmar(){
+  var pc=await _pcFrescor(_gpPcId); if(!pc) return; // v224 — guarda de cópia velha (incidente PC-057)
+  if(pc.status!=='em_recebimento' && pc.status!=='conciliado'){ alert('O pedido não está mais na fila de recebimento (status atual: '+String(pc.status||'—')+') — a tela foi atualizada; confira antes de receber.'); try{ var _ovG=document.getElementById('gp-fis-overlay'); if(_ovG) _ovG.classList.remove('open'); }catch(_e){} return; }
   var valorNota=parseFloat(document.getElementById('gp-valor-nota')?.value)||0;
   if(!(valorNota>0)){ alert('Informe o VALOR TOTAL da nota fiscal (R$) — campo obrigatório da conferência.'); return; }
   var recebidos=_gpRows.filter(function(r){ return r.qtd>0; });
@@ -14494,7 +14515,7 @@ function _gpReceberConfirmar(){
     try{
       var l=(listasCompra||[]).find(function(x){ return x.id===r.listaId; });
       var it=l?_lcItemByRef(l, r.ref):null;
-      if(it&&it.compra){ it.compra.recebFisicoQtd=r.qtd; it.compra.recebFisicoEm=now; }
+      if(it&&it.compra){ it.compra.recebFisicoQtd=r.qtd; it.compra.recebFisicoEm=now; it.compra.recebFisicoPor=(currentUser&&currentUser.name)||''; } // v224 — autor no carimbo POR ITEM (incidente PC-057: o "quem" morava só no pedido e foi perdido no clobber)
       // v218 — reporte do dono 26/08 (PC-047/FRASCO GAROPABA 0 de 60): o faltante detectado na
       // conferência FÍSICA não alimentava "Recebidos a menos" — o registro só rodava na conciliação,
       // que no fluxo v212 vem depois (às vezes dias). Registra JÁ no físico (rateio por D1 + alerta
@@ -14504,6 +14525,10 @@ function _gpReceberConfirmar(){
       if(it) (it.origem||[]).forEach(function(og){ _oidsFis[og.orderId]=1; }); // v213 — pedidos atendidos por este físico
     }catch(_e){}
   });
+  // v224 — FORA DO PEDIDO também entram no ESTOQUE na conferência física (reporte do dono 10/09,
+  // PC-065: aromas registrados pelo Luiz não davam entrada — o evento só era montado p/ itens do
+  // pedido). Na conciliação, o extra vindo do físico NÃO re-entra (marca fisico nos eventos de lá).
+  _gpExtras.forEach(function(e){ if(e && (parseFloat(e.qtd)||0)>0) _evts.push({ itemId:e.insumoId, codigo:e.codigo, qtd:(parseFloat(e.qtd)||0) }); });
   try{ _rcbEstoqueEntrada(_evts); }catch(_e){}
   // v213 — o recebimento FÍSICO já conta como recebido (regra do dono 19/08): reavalia o setor
   // Compras dos pedidos atendidos — "Produto entregue" não espera mais a conciliação de preços
@@ -14517,6 +14542,16 @@ function _gpReceberConfirmar(){
   alert('📦 Recebimento do '+(pc.numero||'pedido')+' registrado — estoque atualizado.\n\n🧾 Próximo passo: CONCILIAÇÃO com a nota (menu Compras › Recebimento de Pedido) — valores unitários, XML e o lançamento para o Caixa.');
 }
 var _pcMostrarRecebidos=false;
+// v224 — TOTAL NF do pedido de compra (pedido do dono 03/09): o valor REAL da nota, com encargos,
+// acréscimos e descontos — o que o colaborador preenche ao receber. Fonte: recebFisico.valorNota
+// (conferência física v212, campo obrigatório); fluxo anterior (levas conciliadas) = soma de
+// recebimentos[].valor. Sem recebimento ainda → 0 (a coluna mostra —).
+function _pcTotalNF(pc){
+  var v=parseFloat(pc&&pc.recebFisico&&pc.recebFisico.valorNota)||0;
+  if(v>0) return +v.toFixed(2);
+  var s=0; ((pc&&pc.recebimentos)||[]).forEach(function(r){ s+=parseFloat(r&&r.valor)||0; });
+  return +s.toFixed(2);
+}
 function _pcSecaoHtml(){
   var lista=[...(pedidosCompra||[])].sort(function(a,b){ return String(b.numero||'').localeCompare(String(a.numero||'')); });
   if(!_pcMostrarRecebidos) lista=lista.filter(function(p){ return p.status!=='recebido'; });
@@ -14535,6 +14570,7 @@ function _pcSecaoHtml(){
         (function(){ var ts=_pcStatusEmData(pc); return ts?'<div style="font-size:9.5px;color:var(--text-tertiary);margin-top:2px" title="Data em que o pedido entrou neste status">'+new Date(ts).toLocaleDateString('pt-BR')+'</div>':''; })()+'</td>'+
       '<td style="'+td+';text-align:right">'+t.n+(t.pendentes&&t.pendentes<t.n?' <span style="font-size:10px;color:var(--text-tertiary)">('+t.pendentes+' pend.)</span>':'')+'</td>'+
       '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(t.total)+'</td>'+
+      (function(){ var _tnf=_pcTotalNF(pc); return '<td style="'+td+';text-align:right"'+(_tnf>0?' title="Valor total da nota informado no recebimento (com encargos, acréscimos e descontos)"':'')+'>'+(_tnf>0?('<b>'+fmtMoney(_tnf)+'</b>'):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'; })()+
       '<td style="'+td+'">'+(pc.nf?('NF '+escapeHtml(pc.nf)):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
       '<td style="'+td+';text-align:right;white-space:nowrap">'+
         // v209 — RECEBIMENTO FÍSICO aqui (mudança de fluxo do dono 13/08): enviado p/ recebimento ganha o 📦
@@ -14544,7 +14580,7 @@ function _pcSecaoHtml(){
   }).join('');
   return '<div class="panel" style="padding:0;margin-bottom:14px">'+head+
     '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
-    '<th style="'+th+'">Pedido</th><th style="'+th+'">Fornecedor</th><th style="'+th+'">Status</th><th style="'+th+';text-align:right">Itens</th><th style="'+th+';text-align:right">Total</th><th style="'+th+'">NF</th><th style="'+th+'"></th>'+
+    '<th style="'+th+'">Pedido</th><th style="'+th+'">Fornecedor</th><th style="'+th+'">Status</th><th style="'+th+';text-align:right">Itens</th><th style="'+th+';text-align:right" title="Soma dos itens comprados (preço de compra × quantidade)">Total</th><th style="'+th+';text-align:right" title="Valor total da nota informado no recebimento — com encargos, acréscimos e descontos">Total NF</th><th style="'+th+'">NF</th><th style="'+th+'"></th>'+
     '</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
 }
 function renderRecebimento(){
@@ -14701,6 +14737,24 @@ function _renderPedidoCompraModal(){
       })()+'</td>'+
     '</tr>';
   }).join('');
+  // v224 — ITENS FORA DO PEDIDO da conferência física (reporte do dono 10/09, PC-065): o registro
+  // era gravado em recebFisico.extras e NENHUMA tela lia — sumia do modal, do estoque e da conciliação.
+  // Regra do dono: solicitado 0, comprado 0 e o recebido conforme a conferência.
+  rows+=(((pc.recebFisico&&pc.recebFisico.extras)||[]).map(function(e){
+    if(!e) return '';
+    var _unE=escapeHtml(e.unidade||'un'), _qE=(parseFloat(e.qtd)||0);
+    return '<tr style="background:var(--st-inf-bg,#EFF4FF)">'+
+      '<td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(e.codigo||'—')+'</td>'+
+      '<td style="'+td+'">'+escapeHtml(e.nome||'')+' <span style="font-size:9px;font-weight:700;color:var(--st-inf-tx);text-transform:uppercase">Fora do pedido</span></td>'+
+      '<td style="'+td+';font-size:10px;color:var(--text-tertiary)">—</td>'+
+      '<td style="'+td+';text-align:right">0 '+_unE+'</td>'+
+      '<td style="'+td+';text-align:right">0 '+_unE+'</td>'+
+      '<td style="'+td+';text-align:right"><b>'+_qE.toLocaleString('pt-BR')+' '+_unE+'</b></td>'+
+      '<td style="'+td+';text-align:right;color:var(--text-tertiary)" title="Preço vem da NOTA, na conciliação">—</td>'+
+      '<td style="'+td+';text-align:right;color:var(--text-tertiary)">—</td>'+
+      '<td style="'+td+';text-align:center"><span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">✓ recebido</span><br><span style="font-size:10px;color:var(--st-mid-tx)" title="Veio na entrega sem estar no pedido — o preço entra na conciliação com a NF">na conferência física</span></td>'+
+    '</tr>';
+  }).join(''));
   var levas=(pc.recebimentos||[]).map(function(r,i){
     return '<div style="font-size:11px;color:var(--text-secondary);padding:3px 0;border-top:.5px dashed var(--border)">📥 Leva '+(i+1)+' — '+new Date(r.em).toLocaleString('pt-BR')+(r.por?' por '+escapeHtml(r.por):'')+' · '+((r.itens||[]).length)+' item(ns) · <b>'+fmtMoney(r.valor||0)+'</b></div>';
   }).join('');
@@ -14737,8 +14791,32 @@ function _renderPedidoCompraModal(){
     ac.innerHTML=btns.join(' ');
   }
 }
-function fecharPedidoCompra(pcId){
-  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc||pc.status!=='aberto') return;
+// v224 — GUARDA DE CÓPIA VELHA (incidente PC-057, 31/08): uma aba aberta desde a manhã clicou
+// "Fechar" sobre um pedido que JÁ estava recebido — o upsert (última gravação vence) apagou NF,
+// status e o registro do recebimento. Toda ação que muda o status de um PC agora RELÊ a linha
+// atual do servidor imediatamente antes: cópia local divergente = ação abortada, versão atual
+// adotada na tela, a pessoa decide de novo. Falha de rede = NÃO grava (fail-closed). O trigger
+// pc_anti_clobber no banco é a segunda camada: bloqueia a regressão mesmo vinda de front antigo.
+async function _pcFrescor(pcId){
+  var loc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; });
+  if(!loc) return null;
+  if(!_sb){ alert('Sem conexão com o servidor — ações em pedidos de compra exigem confirmar a versão atual. Tente de novo.'); return null; }
+  var r=null;
+  try{ r=await _sb.from('pedidos_compra').select('data').eq('id', String(pcId)).limit(1); }catch(_e){ r=null; }
+  if(!r || r.error){ alert('Não foi possível confirmar a versão atual do pedido no servidor — verifique a conexão e tente de novo.'); return null; }
+  var srv=(r.data && r.data[0] && r.data[0].data) || null;
+  if(!srv) return loc; // linha ainda não existe no servidor (pedido recém-criado nesta sessão)
+  var dif = String(srv.status||'')!==String(loc.status||'') || String(srv.nf||'')!==String(loc.nf||'') || (!!srv.recebFisico)!==(!!loc.recebFisico);
+  if(dif){
+    var ix=pedidosCompra.indexOf(loc); if(ix>=0) pedidosCompra[ix]=srv;
+    try{ _renderPedidoCompraModal(); }catch(_e){} try{ renderRecebimento(); }catch(_e){} try{ if(typeof renderCompRecebimento==='function') renderCompRecebimento(); }catch(_e){}
+    alert('⚠ Este pedido foi movimentado por outra pessoa desde que a sua tela carregou (status atual: '+String(srv.status||'—')+(srv.nf?' · NF '+srv.nf:'')+').\n\nA tela foi atualizada com a versão atual — confira e repita a ação se ainda fizer sentido.');
+    return null;
+  }
+  return loc;
+}
+async function fecharPedidoCompra(pcId){
+  var pc=await _pcFrescor(pcId); if(!pc||pc.status!=='aberto') return;
   var t=_pcTotais(pc);
   if(!confirm('Fechar o pedido '+(pc.numero||'')+' de '+(pc.fornecedorNome||'')+' com '+t.n+' item(ns) ('+fmtMoney(t.total)+')?\n\nA composição trava — as próximas compras deste fornecedor abrem o pedido seguinte.')) return;
   pc.status='fechado'; pc.fechadoEm=Date.now(); pc.fechadoPor=(currentUser&&currentUser.name)||'';
@@ -14746,17 +14824,17 @@ function fecharPedidoCompra(pcId){
 }
 // v161 — estorna o FECHAMENTO do pedido de compra (admin): volta a 'aberto'. Bloqueado se já houve
 // recebimento (leva lançada no Caixa). A NF informada fica guardada (ao refechar, o Informar NF vem preenchido).
-function reabrirPedidoCompra(pcId){
+async function reabrirPedidoCompra(pcId){
   if(!currentUser||currentUser.perfil!=='admin'){ alert('Apenas o administrador pode reabrir um pedido fechado.'); return; }
-  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
+  var pc=await _pcFrescor(pcId); if(!pc) return; // v224 — guarda de cópia velha
   if((pc.recebimentos||[]).length){ alert('Este pedido já tem recebimento lançado no Caixa — não pode ser reaberto.'); return; }
   if(!(pc.status==='fechado'||pc.status==='faturado')) return;
   if(!confirm('↩ Reabrir o pedido '+(pc.numero||'')+' de '+(pc.fornecedorNome||'')+'?\n\nEle volta a ACEITAR novas compras do fornecedor (e libera estorno de compra / exclusão de lista dos itens dele).')) return;
   pc.status='aberto'; pc.reabertoEm=Date.now(); pc.reabertoPor=(currentUser&&currentUser.name)||'';
   _renderPedidoCompraModal(); renderRecebimento(); saveData();
 }
-function informarNfPedidoCompra(pcId){
-  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc||pc.status!=='fechado') return;
+async function informarNfPedidoCompra(pcId){
+  var pc=await _pcFrescor(pcId); if(!pc||pc.status!=='fechado') return; // v224 — guarda de cópia velha
   var nf=prompt('Nº da Nota Fiscal do pedido '+(pc.numero||'')+' ('+(pc.fornecedorNome||'')+'):', pc.nf||'');
   if(nf===null) return; nf=(nf||'').trim();
   if(!nf){ alert('Informe o número da NF.'); return; }
@@ -14765,21 +14843,22 @@ function informarNfPedidoCompra(pcId){
 }
 // v169 — ENVIAR PARA RECEBIMENTO (regra do dono 23/07): faturado → fila de Compras › Recebimento
 // de Pedido. O PC NÃO sai da Gestão de Pedidos — só o status anda (enviado → conciliado → recebido).
-function enviarParaRecebimento(pcId){
-  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc||pc.status!=='faturado') return;
+async function enviarParaRecebimento(pcId){
+  var pc=await _pcFrescor(pcId); if(!pc||pc.status!=='faturado') return; // v224 — guarda de cópia velha
   if(!(pc.nf||'').trim()){ alert('Informe a NF do pedido antes de enviar para recebimento.'); return; }
   if(!confirm('📤 Enviar o pedido '+(pc.numero||'')+' ('+(pc.fornecedorNome||'')+' · NF '+(pc.nf||'')+') para o RECEBIMENTO?\n\nEle aparece em Compras › Recebimento de Pedido para a conciliação com a NF.')) return;
   pc.status='em_recebimento'; pc.envRecebEm=Date.now(); pc.envRecebPor=(currentUser&&currentUser.name)||'';
   _renderPedidoCompraModal(); renderRecebimento(); try{ if(typeof renderCompRecebimento==='function') renderCompRecebimento(); }catch(_e){}
   saveData();
 }
-function voltarDeRecebimento(pcId){
+async function voltarDeRecebimento(pcId){
   if(!currentUser||currentUser.perfil!=='admin'){ alert('Apenas o administrador pode voltar um pedido do recebimento.'); return; }
-  var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
+  var pc=await _pcFrescor(pcId); if(!pc) return; // v224 — guarda de cópia velha
   if(!(pc.status==='em_recebimento'||pc.status==='conciliado')) return;
   if((pc.recebimentos||[]).length){ alert('Este pedido já tem recebimento lançado — não pode voltar.'); return; }
   if(!confirm('↩ Voltar o pedido '+(pc.numero||'')+' para FATURADO (sai da fila de recebimento)?')) return;
-  pc.status='faturado'; delete pc.envRecebEm; delete pc.envRecebPor; delete pc.conciliadoEm; delete pc.conciliadoPor;
+  pc.status='faturado'; pc.voltouEm=Date.now(); pc.voltouPor=(currentUser&&currentUser.name)||''; // v224 — carimbo do estorno (o trigger do banco exige)
+  delete pc.envRecebEm; delete pc.envRecebPor; delete pc.conciliadoEm; delete pc.conciliadoPor;
   _renderPedidoCompraModal(); renderRecebimento(); try{ if(typeof renderCompRecebimento==='function') renderCompRecebimento(); }catch(_e){}
   saveData();
 }
@@ -15580,11 +15659,29 @@ function openReceberPedido(pcId, checagem){
     _pcXml=_d.xml||null;
     _pcXmlSobra=(_d.xmlSobra||[]).slice(); // v198 — sobra do XML volta junto (vínculo manual segue possível)
     // v202 — rascunho salvo antes desta versão: extras sem qtd/preço ganham os valores DA NOTA
-    _pcXmlSobra.forEach(function(x){ if(x){ if(x.recQtd==null) x.recQtd=x.qtd; if(x.recPreco==null) x.recPreco=x.unit; if(x.incluir===undefined) x.incluir=true; x.editLivre=false; } }); // v202 — reabrir volta travado
+    _pcXmlSobra.forEach(function(x){ if(x){ if(x.recQtd==null) x.recQtd=x.qtd; if(x.recPreco==null) x.recPreco=x.unit; if(x.incluir===undefined) x.incluir=true; x.editLivre=!!x.fisico; } }); // v202 — reabrir volta travado; v224 — extra da conferência FÍSICA é manual por natureza: segue editável
     if(_rest){ try{ var _xi2=document.getElementById('pcr-xml-info');
       if(_xi2) _xi2.innerHTML='<div style="font-size:12px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:8px">💾 <b>Conciliação salva restaurada</b> — '+_rest+' item(ns) como '+escapeHtml(_d.por||'')+' deixou em '+(_d.em?new Date(_d.em).toLocaleString('pt-BR'):'')+(_pcXml?' · XML da NF-e '+escapeHtml(_pcXml.nNF||'')+' já importado (não precisa reimportar)':'')+'</div>';
     }catch(_e){} }
   }
+  // v224 — FORA DO PEDIDO da conferência FÍSICA entram na conciliação (reporte do dono 10/09,
+  // PC-065: aromas recebidos pelo Luiz não apareciam em lugar nenhum). Regra do dono: solicitado 0,
+  // comprado 0, recebido conforme a conferência; o preço vem DA NOTA (obrigatório p/ prosseguir) —
+  // o fechamento contra o valor da nota passa a enxergar TUDO o que veio. Entram como "na nota,
+  // fora do pedido" JÁ conciliados com o item do catálogo (o vínculo foi feito na conferência).
+  // Não entram: os já lançados em leva anterior e os que o rascunho/XML já trouxe (dedupe).
+  try{
+    var _jaLancX={}; (pc.recebimentos||[]).forEach(function(rc){ ((rc&&rc.itens)||[]).forEach(function(itl){ if(itl&&itl.foraPedido&&itl.insumoId!=null) _jaLancX[String(itl.insumoId)]=1; }); });
+    (((pc.recebFisico&&pc.recebFisico.extras)||[])).forEach(function(e){
+      if(!e || !((parseFloat(e.qtd)||0)>0) || e.insumoId==null) return;
+      if(_jaLancX[String(e.insumoId)]) return;
+      var _dupX=(_pcXmlSobra||[]).some(function(x){ return x && (String(x.insumoId||'')===String(e.insumoId) || (x.cod&&e.codigo&&String(x.cod)===String(e.codigo)) || _pcXmlNorm(x.nome)===_pcXmlNorm(e.nome)); });
+      if(_dupX) return;
+      _pcXmlSobra.push({ fisico:true, incluir:true, editLivre:true, nome:e.nome||'', cod:e.codigo||'', un:e.unidade||'',
+        qtd:(parseFloat(e.qtd)||0), unit:null, insumoId:e.insumoId, insumoNome:e.nome||'', insumoUn:e.unidade||'un',
+        recQtd:(parseFloat(e.qtd)||0), recPreco:null, ipi:0, frete:0, outros:0, conv:null });
+    });
+  }catch(_e){}
   var tt=document.getElementById('pcr-titulo'); if(tt) tt.textContent=(_pcRecebCheck?'🧾 Checagem (conciliação) ':'Conciliar ')+(pc.numero||'')+' — '+(pc.fornecedorNome||'')+' · NF '+(pc.nf||'');
   // v209 — resumo do RECEBIMENTO FÍSICO (Gestão de Pedidos) como referência da conciliação
   try{ var _fi=document.getElementById('pcr-fisico-info');
@@ -16207,7 +16304,7 @@ function _pcConciliarSemConta(levaIn, nDiv){
     _afx.push(it); _evx.push({itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:r.qtd, _doPedido:true});
     (it.origem||[]).forEach(function(og){ orderIds[og.orderId]=1; });
   });
-  (xtras||[]).forEach(function(x){ _evx.push({ itemId:x.insumoId, splitDe:null, codigo:'', qtd:(parseFloat(x.recQtd)||0) }); });
+  (xtras||[]).forEach(function(x){ _evx.push({ itemId:x.insumoId, splitDe:null, codigo:'', qtd:(parseFloat(x.recQtd)||0), _fisico:!!x.fisico }); }); // v224 — extra da conferência FÍSICA já entrou no estoque lá
   (pc.recebimentos=pc.recebimentos||[]).push({ em:now, por:(currentUser&&currentUser.name)||'', valor:valor, valorItens:_valorItens, frete:_exFre, impostos:_exIpi, outros:_exOut, compraLancId:pc.finLanc.compraId||null, divergentes:nDiv||0, semConta:true,
     itens:leva.map(function(r){ return {listaId:r.listaId, itemId:r.ref, nome:r.nome, qtd:r.qtd, preco:r.preco}; })
       .concat((xtras||[]).map(function(x){ return {foraPedido:true, insumoId:x.insumoId, nome:(x.insumoNome||x.nome), nomeNF:x.nome, cProd:x.cod||'', qtd:(parseFloat(x.recQtd)||0), preco:(parseFloat(x.recPreco)||0)}; })) });
@@ -16232,7 +16329,7 @@ function _pcConciliarSemConta(levaIn, nDiv){
   }catch(_e){ console.warn('de-para NF não gravado:', _e&&_e.message); }
   delete pc.conciliacaoDraft;
   try{ _syncCustosInsumo(_afx); }catch(_e){}
-  try{ _rcbEstoqueEntrada(pc.recebFisico ? _evx.filter(function(e){ return !e._doPedido; }) : _evx); }catch(_e){}
+  try{ _rcbEstoqueEntrada(pc.recebFisico ? _evx.filter(function(e){ return !e._doPedido && !e._fisico; }) : _evx); }catch(_e){} // v224 — extra do físico não re-entra
   if(_pcTotais(pc).pendentes===0){
     pc.conciliadoEm=now; pc.conciliadoPor=(currentUser&&currentUser.name)||'';
     try{ if(typeof _nfFilaPorNf==='function'){ var _feC=_nfFilaPorNf(pc.nf);
@@ -16314,7 +16411,7 @@ function saveRecebimento(){
     });
     // v201 — EXTRAS da NF (fora do pedido): entram no estoque (insumo conciliado) e no registro da leva
     (_pcx.xtras||[]).forEach(function(x){
-      _evx.push({ itemId:x.insumoId, splitDe:null, codigo:'', qtd:(parseFloat(x.recQtd)||0) });
+      _evx.push({ itemId:x.insumoId, splitDe:null, codigo:'', qtd:(parseFloat(x.recQtd)||0), _fisico:!!x.fisico }); // v224 — extra da conferência FÍSICA já entrou no estoque lá
     });
     (pc.recebimentos=pc.recebimentos||[]).push({ em:now, por:(currentUser&&currentUser.name)||'', valor:valor, valorItens:_valorItens, frete:_exNF.frete, impostos:_exNF.impostos, outros:_exNF.outros, compraLancId:compra.id, divergentes:_pcx.divergentes||0, direto:!!_pcx.direto,
       itens:_pcx.leva.map(function(r){ return {listaId:r.listaId, itemId:r.ref, nome:r.nome, qtd:r.qtd, preco:r.preco}; })
@@ -16349,7 +16446,7 @@ function saveRecebimento(){
     // v209 — pedido com RECEBIMENTO FÍSICO (Gestão de Pedidos): o estoque dos itens DO PEDIDO já
     // entrou lá — aqui só entram os EXTRAS conciliados ("na NF fora do pedido"). Sem físico (fluxo
     // legado/avulso), tudo entra aqui como sempre.
-    try{ _rcbEstoqueEntrada(pc.recebFisico ? _evx.filter(function(e){ return !e._doPedido; }) : _evx); }catch(_e){}
+    try{ _rcbEstoqueEntrada(pc.recebFisico ? _evx.filter(function(e){ return !e._doPedido && !e._fisico; }) : _evx); }catch(_e){} // v224 — extra do físico não re-entra
     if(_pcTotais(pc).pendentes===0){ pc.status='recebido'; pc.recebidoEm=now; pc.recebidoPor=(currentUser&&currentUser.name)||'';
       // v204 — baixa o XML na fila do Drive (pedido totalmente recebido = XML cumpriu o papel)
       // v207 — EXCETO no recebimento DIRETO: a checagem ainda vai usar este XML (consumido some da
@@ -22548,6 +22645,39 @@ function aplicarDcIntervalo(){
 }
 function _mesesEntre(ini,fim){ const out=[]; let y=parseInt(ini.slice(0,4)),m=parseInt(ini.slice(5,7)); const yf=parseInt(fim.slice(0,4)),mf=parseInt(fim.slice(5,7)); while(y<yf||(y===yf&&m<=mf)){ out.push(y+'-'+String(m).padStart(2,'0')); if(++m>12){m=1;y++;} } return out; }
 // v112 — gráfico Vendido (acumulado) × Meta (ritmo), valor × dia do mês
+// v224 — HOVER POR DIA (pedido do dono 10/09, padrão Mercos): passar o mouse num dia mostra o VENDIDO
+// NO DIA, o ACUMULADO até o dia e a META ACUMULADA projetada para o dia; linha-guia + ponto destacado.
+var _mcTipData={};
+function _mcTipShow(ev,cid,d){
+  try{
+    var dt=_mcTipData[cid]; if(!dt) return;
+    var w=document.getElementById(cid), t=document.getElementById(cid+'_t'), g=document.getElementById(cid+'_g'), c=document.getElementById(cid+'_c');
+    if(!w||!t) return;
+    var futuro=(dt.ehAtual && d>dt.diaHoje);
+    var metaAcum=dt.meta*d/dt.dias;
+    var dd=String(d).padStart(2,'0')+'/'+dt.mes.slice(5,7)+'/'+dt.mes.slice(0,4);
+    t.innerHTML='<div style="font-weight:600;margin-bottom:5px;padding-bottom:4px;border-bottom:.5px solid var(--border)">Dia '+d+' · '+dd+'</div>'
+      +'<table style="border-collapse:collapse;font-size:11.5px"><tbody>'
+      +'<tr><td style="padding:1px 12px 1px 0;color:var(--text-secondary)">Vendido no dia</td><td style="text-align:right;font-weight:600">'+(futuro?'—':fmtMoney(dt.porDia[d]||0))+'</td></tr>'
+      +'<tr><td style="padding:1px 12px 1px 0;color:var(--text-secondary)">Acumulado até o dia</td><td style="text-align:right;font-weight:600">'+(futuro?'—':fmtMoney(dt.cum[d]||0))+'</td></tr>'
+      +'<tr><td style="padding:1px 12px 1px 0;color:var(--text-secondary)">Meta acumulada do dia</td><td style="text-align:right;font-weight:600">'+fmtMoney(metaAcum)+'</td></tr>'
+      +'</tbody></table>';
+    var r=w.getBoundingClientRect();
+    var x=ev.clientX-r.left, y=ev.clientY-r.top;
+    t.style.display='block';
+    var tw=t.offsetWidth||180;
+    t.style.left=Math.max(0, Math.min(x+14, r.width-tw-4))+'px';
+    t.style.top=Math.max(0, y-64)+'px';
+    if(g){ g.setAttribute('x1',dt.xs[d]); g.setAttribute('x2',dt.xs[d]); g.style.display=''; }
+    if(c){ c.setAttribute('cx',dt.xs[d]); c.setAttribute('cy',futuro?dt.ym[d]:dt.yv[d]); c.style.display=''; }
+  }catch(_e){}
+}
+function _mcTipHide(cid){
+  try{
+    var t=document.getElementById(cid+'_t'), g=document.getElementById(cid+'_g'), c=document.getElementById(cid+'_c');
+    if(t) t.style.display='none'; if(g) g.style.display='none'; if(c) c.style.display='none';
+  }catch(_e){}
+}
 function _metaChartSvg(mes, metaTotal, cor){
   if(!metaTotal || !/^\d{4}-\d{2}$/.test(mes)) return '';
   const yy=+mes.slice(0,4), mm=+mes.slice(5,7);
@@ -22564,17 +22694,33 @@ function _metaChartSvg(mes, metaTotal, cor){
   const metaPts=[]; for(let d=1;d<=diasNoMes;d++) metaPts.push(X(d).toFixed(1)+','+Y(metaTotal*d/diasNoMes).toFixed(1));
   const vendPts=[]; for(let d=1;d<=diaHoje;d++) vendPts.push(X(d).toFixed(1)+','+Y(cum[d]).toFixed(1));
   const lastV=cum[diaHoje]||0; const meio=Math.round(diasNoMes/2); const baseY=(H-pb).toFixed(1);
-  return `<div style="margin-top:14px">
-    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;overflow:visible;font-family:inherit">
+  // v224 — dados do hover: registro por gráfico (id único; entradas de renders antigos são varridas)
+  const cid='mct_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  try{ Object.keys(_mcTipData).forEach(function(k){ if(!document.getElementById(k)) delete _mcTipData[k]; }); }catch(_e){}
+  const _xs=[0], _yv=[0], _ym=[0];
+  for(let d=1;d<=diasNoMes;d++){ _xs.push(+X(d).toFixed(1)); _yv.push(+Y(cum[Math.min(d,diaHoje)]||0).toFixed(1)); _ym.push(+Y(metaTotal*d/diasNoMes).toFixed(1)); }
+  _mcTipData[cid]={ porDia:porDia, cum:cum, meta:metaTotal, dias:diasNoMes, diaHoje:diaHoje, ehAtual:ehAtual, mes:mes, xs:_xs, yv:_yv, ym:_ym };
+  const passo=(W-pl-pr)/((diasNoMes-1)||1);
+  let faixas='';
+  for(let d=1;d<=diasNoMes;d++){
+    const x0=Math.max(pl, X(d)-passo/2), x1=Math.min(W-pr, X(d)+passo/2);
+    faixas+=`<rect x="${x0.toFixed(1)}" y="${pt}" width="${(x1-x0).toFixed(1)}" height="${(H-pt-pb).toFixed(1)}" fill="transparent" style="cursor:crosshair" onmousemove="_mcTipShow(event,'${cid}',${d})"/>`;
+  }
+  return `<div id="${cid}" style="margin-top:14px;position:relative">
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;overflow:visible;font-family:inherit" onmouseleave="_mcTipHide('${cid}')">
       <line x1="${pl}" y1="${baseY}" x2="${W-pr}" y2="${baseY}" stroke="var(--border)" stroke-width="1"/>
       ${ehAtual?`<line x1="${X(diaHoje).toFixed(1)}" y1="${pt}" x2="${X(diaHoje).toFixed(1)}" y2="${baseY}" stroke="var(--border-md)" stroke-width="1" stroke-dasharray="2 3"/>`:''}
       <polyline points="${metaPts.join(' ')}" fill="none" stroke="var(--text-tertiary)" stroke-width="1.5" stroke-dasharray="5 4" opacity=".7"/>
       <polyline points="${vendPts.join(' ')}" fill="none" stroke="${cor}" stroke-width="2.5" stroke-linejoin="round"/>
       <circle cx="${X(diaHoje).toFixed(1)}" cy="${Y(lastV).toFixed(1)}" r="3.5" fill="${cor}"/>
+      <line id="${cid}_g" x1="0" y1="${pt}" x2="0" y2="${baseY}" stroke="${cor}" stroke-width="1" opacity=".45" style="display:none;pointer-events:none"/>
+      <circle id="${cid}_c" cx="0" cy="0" r="4" fill="var(--bg-primary)" stroke="${cor}" stroke-width="2" style="display:none;pointer-events:none"/>
+      ${faixas}
       <text x="${pl}" y="${H-pb+15}" font-size="10" fill="var(--text-tertiary)">dia 1</text>
       <text x="${X(meio).toFixed(1)}" y="${H-pb+15}" font-size="10" fill="var(--text-tertiary)" text-anchor="middle">${meio}</text>
       <text x="${W-pr}" y="${H-pb+15}" font-size="10" fill="var(--text-tertiary)" text-anchor="end">${diasNoMes}</text>
     </svg>
+    <div id="${cid}_t" style="display:none;position:absolute;z-index:30;background:var(--bg-primary);border:.5px solid var(--border-md);border-radius:8px;padding:8px 11px;font-size:11.5px;line-height:1.5;color:var(--text-primary);box-shadow:0 4px 14px rgba(0,0,0,.14);pointer-events:none;white-space:nowrap"></div>
     <div style="display:flex;gap:16px;font-size:11px;color:var(--text-secondary);margin-top:2px;flex-wrap:wrap">
       <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:16px;height:2.5px;background:${cor};display:inline-block;border-radius:2px"></span>Vendido (acumulado)</span>
       <span style="display:inline-flex;align-items:center;gap:5px"><span style="width:16px;border-top:1.5px dashed var(--text-tertiary);display:inline-block"></span>Meta (ritmo do mês)</span>
@@ -27583,6 +27729,11 @@ function renderProdutividadeProducao(){
 
 // v82: período da Análise Gerencial — janela de dias OU intervalo (data início → data fim)
 var _agIni=null, _agFim=null, _rfvLinha='todos';
+// v224 — FRONTEIRA DE DATA CORRIGIDA (caso 10/09, "27 mil × 32 mil"): os limites daqui são montados
+// em HORÁRIO LOCAL, mas `new Date('YYYY-MM-DD')` interpreta o d1 como UTC (31/08 21:00 BRT) — todo
+// pedido do 1º dia da janela caía para fora (setembro perdeu R$ 5.304,19 do dia 01). Fix na classe
+// inteira: d1 passa a ser interpretado como MEIO-DIA LOCAL (`+'T12:00:00'`, mesmo padrão do diffDays
+// v148) nos 11 pontos da Análise Gerencial. O cartão de meta (compara texto) sempre esteve certo.
 function _agRange(){
   const v=document.getElementById('ag-periodo')?.value||'365';
   if(v==='intervalo' && _agIni && _agFim) return { ini:new Date(_agIni+'T00:00:00'), fim:new Date(_agFim+'T23:59:59') };
@@ -27623,7 +27774,7 @@ function calcRfv(){
   // Build per-client metrics from orders (type='venda' only)
   const byClient = {};
   orders.filter(o=>(_ehReceita(o))&&o.d1&&(_rfvLinha==='todos'||(o.linha||'personalizada')===_rfvLinha)).forEach(o=>{
-    const d=new Date(o.d1);
+    const d=new Date(o.d1+'T12:00:00');
     if(d<cutoff||d>fim) return;
     const cid=String(o.clienteId||o.cliente);
     if(!byClient[cid]){
@@ -30271,7 +30422,7 @@ function renderAgVendas(){
   var metric=(document.getElementById('vd-metric')||{}).value||'qtd';
   var isRec=metric==='receita';
   var fmt=function(v){return (typeof fmtMoney==='function')?fmtMoney(v):('R$ '+(parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2}));};
-  var base=orders.filter(function(o){ if(!o.d1) return false; var d=new Date(o.d1); if(isNaN(d)||d<cutoff||d>fim) return false; if(fTipo&&o.tipo!==fTipo) return false; if(fLinha&&o.linha!==fLinha) return false; return true; });
+  var base=orders.filter(function(o){ if(!o.d1) return false; var d=new Date(o.d1+'T12:00:00'); if(isNaN(d)||d<cutoff||d>fim) return false; if(fTipo&&o.tipo!==fTipo) return false; if(fLinha&&o.linha!==fLinha) return false; return true; });
   if(!base.length){ cont.innerHTML='<div style="padding:30px;text-align:center;color:var(--text-tertiary);font-size:13px">Nenhum pedido no período/filtros selecionados.</div>'; return; }
   var catById={}; (catalogo||[]).forEach(function(p){catById[p.id]=p;});
   var itemsOf=function(o){return Array.isArray(o.itens)?o.itens:[];};
@@ -30281,7 +30432,7 @@ function renderAgVendas(){
   // bonificação, amostra, avaria, P&D, embaixador). Usa SÓ o período selecionado — ignora os filtros
   // de tipo/linha abaixo (é o resumo geral). Receita canônica = Venda + Venda Mãe (regra do Dashboard);
   // Venda Filho abate crédito da mãe e por isso NÃO soma na receita (informativo).
-  var base0=orders.filter(function(o){ if(!o.d1) return false; var d=new Date(o.d1); return !isNaN(d)&&d>=cutoff&&d<=fim; });
+  var base0=orders.filter(function(o){ if(!o.d1) return false; var d=new Date(o.d1+'T12:00:00'); return !isNaN(d)&&d>=cutoff&&d<=fim; });
   var TIPO_ORD=['venda','venda_mae','venda_filho','bonificacao','amostra','avaria','pnd','embaixador'];
   var _linSec=function(lKey,titulo,icone){
     var ped=base0.filter(function(o){return (o.linha||'personalizada')===lKey;});
@@ -30384,7 +30535,7 @@ function renderIndicadores(){
 
   // ── Base de dados filtrada ────────────────────────────
   const ordersVenda = orders.filter(o=>(_ehReceita(o))&&o.d1);
-  const ordsPeriodo = ordersVenda.filter(o=>new Date(o.d1)>=cutoff&&new Date(o.d1)<=fim);
+  const ordsPeriodo = ordersVenda.filter(o=>new Date(o.d1+'T12:00:00')>=cutoff&&new Date(o.d1+'T12:00:00')<=fim);
 
   // ── 1. TICKET MÉDIO ──────────────────────────────────
   function calcTicketMedio(ords){
@@ -30396,8 +30547,8 @@ function renderIndicadores(){
   const ticket = calcTicketMedio(ordsPeriodo);
   const cut30  = new Date(); cut30.setDate(cut30.getDate()-30);
   const cut60  = new Date(); cut60.setDate(cut60.getDate()-60);
-  const ordsUlt30  = ordersVenda.filter(o=>new Date(o.d1)>=cut30);
-  const ords3060   = ordersVenda.filter(o=>new Date(o.d1)>=cut60&&new Date(o.d1)<cut30);
+  const ordsUlt30  = ordersVenda.filter(o=>new Date(o.d1+'T12:00:00')>=cut30);
+  const ords3060   = ordersVenda.filter(o=>new Date(o.d1+'T12:00:00')>=cut60&&new Date(o.d1+'T12:00:00')<cut30);
   const ticketPrev = calcTicketMedio(ords3060);
   const ticketDiff = ticketPrev>0 ? ((ticket-ticketPrev)/ticketPrev*100).toFixed(1) : null;
 
@@ -30414,7 +30565,7 @@ function renderIndicadores(){
   const barChart = el('ind-ticket-chart');
   if(barChart){
     const byMonth={};
-    ordersVenda.filter(o=>{ const d=new Date(o.d1); return d>=new Date(hoje.getFullYear(),hoje.getMonth()-5,1); })
+    ordersVenda.filter(o=>{ const d=new Date(o.d1+'T12:00:00'); return d>=new Date(hoje.getFullYear(),hoje.getMonth()-5,1); })
       .forEach(o=>{ const m=o.d1.slice(0,7); if(!byMonth[m])byMonth[m]=[]; byMonth[m].push(parseFloat(o.valor||0)); }); // v98 — sem frete
     const months=Object.keys(byMonth).sort().slice(-6);
     const avgs=months.map(m=>byMonth[m].reduce((s,v)=>s+v,0)/byMonth[m].length);
@@ -30441,7 +30592,7 @@ function renderIndicadores(){
   const lastPurchase={};
   ordersVenda.forEach(o=>{
     const cid=String(o.clienteId||o.cliente);
-    const d=new Date(o.d1);
+    const d=new Date(o.d1+'T12:00:00');
     if(!lastPurchase[cid]||d>lastPurchase[cid]) lastPurchase[cid]=d;
   });
   const inativos90  = allClients.filter(c=>{ const lp=lastPurchase[String(c.id)]; return lp&&lp<cut90; }).length;
@@ -30459,7 +30610,7 @@ function renderIndicadores(){
     if(!clientFreqs[cid]) clientFreqs[cid]={count:0,total:0,dates:[]};
     clientFreqs[cid].count++;
     clientFreqs[cid].total+=parseFloat(o.valor||0); // v98 — LTV sem frete
-    clientFreqs[cid].dates.push(new Date(o.d1));
+    clientFreqs[cid].dates.push(new Date(o.d1+'T12:00:00'));
   });
   const freqArr=Object.values(clientFreqs);
   const avgFreq = freqArr.length ? freqArr.reduce((s,c)=>s+c.count,0)/freqArr.length : 0;
@@ -30498,7 +30649,7 @@ function renderIndicadores(){
   const firstOrderDate={};
   ordersVenda.forEach(o=>{
     const cid=String(o.clienteId||o.cliente);
-    const d=new Date(o.d1);
+    const d=new Date(o.d1+'T12:00:00');
     if(!firstOrderDate[cid]||d<firstOrderDate[cid]) firstOrderDate[cid]={d,data:o.d1};
   });
   const novosClientes=Object.values(firstOrderDate).filter(v=>new Date(v.d)>=cutoff&&new Date(v.d)<=fim).length;
@@ -31190,7 +31341,7 @@ function exportIndicadoresCSV(){
   const dias=parseInt(document.getElementById('ag-periodo')?.value||365);
   const _agr=_agRange(), cutoff=_agr.ini, fim=_agr.fim; // v82: dias OU intervalo
   const byClient={};
-  orders.filter(o=>(_ehReceita(o))&&o.d1&&new Date(o.d1)>=cutoff&&new Date(o.d1)<=fim).forEach(o=>{
+  orders.filter(o=>(_ehReceita(o))&&o.d1&&new Date(o.d1+'T12:00:00')>=cutoff&&new Date(o.d1+'T12:00:00')<=fim).forEach(o=>{
     const cid=String(o.clienteId||o.cliente);
     if(!byClient[cid]) byClient[cid]={cliente:o.cliente,pedidos:0,receita:0};
     byClient[cid].pedidos++;
@@ -31375,11 +31526,11 @@ function mkOrd(id,num,cid,d1off,valor,transp,rastreio,fc,fr,urgente,prevDays,env
   {id:'l5',empresa:'Clínica Bem Estar',clienteId:'c6',segmento:'Clínica',tipoProduto:'anestesico',origem:'tiktok',motivoPerda:'concorrente',funil:3,etapa:'Orçamento Perdido',responsavel:'Atendente Marcos',responsavelId:'at3',equipeId:'cc2',criadoPor:'at3',followup:daysFromNow(15),valor:0,obs:'Optou por concorrente, tentar em 3 meses',contatos:[{nome:'Dr. Roberto Lima',cargo:'Doutor(a)',whats:'(31) 96666-3333',email:''}],tasks:[{txt:'Retomar contato em 3 meses',done:false}],historico:[{ts:Date.now()-1296000000,tipo:'📞',txt:'Cliente escolheu outro fornecedor por preço',por:'Atendente Marcos'}],entradaEtapa:daysAgo(15)},
 ); */
 
-const au={id:'admin',name:'Administrador'};currentUser=au;
-addAudit(orders[0],'financeiro','status','Não iniciado','Concluído');
-addAudit(orders[0],'producao','status','Não iniciado','Em produção');
-addAudit(orders[1],'financeiro','status','Não iniciado','Concluído');
-currentUser=null;
+// v224 — BLOCO-DEMO DE AUDITORIA REMOVIDO (caso "sessões Administrador fantasmas", 03/09): em máquina
+// sem cache local, orders[] estava vazio, addAudit(orders[0]) LANÇAVA e o currentUser=null nunca rodava —
+// o currentUser ficava preso no seed {id:'admin'} e o _startSession do boot criava sessão "Administrador"
+// NA TELA DE LOGIN (com o token auth persistido do último usuário da máquina). Também vazou 4 auditorias
+// falsas do demo PED-002 em 07/07 (apagadas do banco em 03/09).
 
 // v207 — SEED DE EVENTOS-DEMO DA AGENDA REMOVIDO (ev1..ev4 — "Atendente Pedro"/"Dr. Paulo Melo",
 // fictícios do template): eles VAZARAM para o banco pelo mesmo mecanismo do incidente PED-001 (v135)

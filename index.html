@@ -2776,6 +2776,10 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       <h2>Orçamentos CRM</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="btn-primary" onclick="openOrcBuilder()" style="font-size:12px;padding:6px 14px" title="Monta o orçamento pelo CATÁLOGO (fórmulas com QSP/embalagem, cálculo automático de preço, descontos, frete) e gera o PDF para enviar ao cliente">+ Novo orçamento</button><!-- v188 -->
+        <!-- v225 — importador do CSV da tela de vendas do Opery (decisões do dono 11/09): cria os EM ABERTO, baixa Aprovado→Vendido e Cancelado→Perdido; chave = nº Opery (nunca duplica); só admin -->
+        <button id="orc-opery-btn" onclick="document.getElementById('orc-opery-file').click()" style="font-size:12px;padding:6px 14px" title="Importa o CSV exportado da tela de vendas do Opery: cria os orçamentos EM ABERTO, baixa como Vendido os que vierem Aprovado e como Perdido os Cancelados. Nunca duplica (chave = nº do pedido no Opery); orçamento ausente do arquivo fica como está. Somente administrador.">📥 Importar CSV do Opery</button>
+        <input type="file" id="orc-opery-file" accept=".csv,text/csv,text/plain,*/*" style="display:none" onchange="_orcOperyImportar(this)">
+        <button id="orc-divg-btn" onclick="_orcDivgAbrir()" style="font-size:12px;padding:6px 14px" title="Divergências e pendências do último cruzamento Opery × sistema: pedido pago sem entrar no sistema, divergência de valor (apenas apresentação — vale o valor fechado com o cliente) e aprovados aguardando pagamento. Atualiza a cada importação de CSV.">⚠ Divergências</button>
         <input type="text" id="orc-crm-search" placeholder="Buscar empresa, produto..." oninput="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px;width:220px">
         <!-- v191 — o dropdown de status saiu: a etapa muda pelos botões Vendido/Perdido da linha e as sub-abas filtram -->
         <select id="orc-crm-filter-tipo" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
@@ -4353,12 +4357,14 @@ let _sbReady = false;   // Supabase conectado
 let _realtimeCh = null; // Canal realtime
 
 var usersRemovidos=[]; // v132 — ids de usuários EXCLUÍDOS de propósito (lápide do merge anti-clobber de users)
+var orcOperyDivg=null; // v225 — {em, por, itens:[{cat,num,data,cliente,atend,vOpery,vLecare,obs}]} da última importação do CSV do Opery
 function _collectData(){
   return {
     users, usersRemovidos, clients, orders, auditLog, crmLeads, orcamentosCrm, catalogo, equipes, conversas,
     agendaEventos, notificacoes, gastosGrafica, pagamentos, freteRealLanc, fornecedores,
     planoContas, compras, expedicoes, contasPagar, contasReceber, prazoExtensoes, metasMensais,
     paresDescartados, pendencias,
+    orcOperyDivg, // v225 — última análise de divergências do cruzamento Opery×Lecare (botão da tela Orçamentos)
     feriadosManuais:[...FERIADOS_MANUAIS], feriadosManuaisData, creditosCliente,
     alertasFinConfig,
     crmConfig:(typeof CRM_CONFIG!=='undefined'?CRM_CONFIG:undefined),
@@ -4975,7 +4981,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v224';
+var APP_VERSION = 'v225';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5428,6 +5434,7 @@ function loadData(){
     try{ _carregarPausas(); }catch(_e){} // v169 — ⏸ pausas de atendimento (registro dedicado)
     if(data.feriadosManuais) FERIADOS_MANUAIS = new Set(data.feriadosManuais);
     if(data.feriadosManuaisData) feriadosManuaisData = data.feriadosManuaisData;
+    if(data.orcOperyDivg) orcOperyDivg = data.orcOperyDivg; // v225
     creditosCliente  = data.creditosCliente  || {};
     // Migrate gastosGrafica → pagamentos (legacy)
     if(data.gastosGrafica && data.gastosGrafica.length > 0 && pagamentos.length === 0){
@@ -12245,7 +12252,9 @@ function _solPedidosLinha(){
 // mas também não bastam sozinhos) = Comprado.
 function _solStatusEfetivo(s){
   if(!s) return '';
-  if(s.status!=='em_lista' || !s.listaId) return s.status;
+  // v225 — pedido do dono 11/09: item comprado que JÁ FOI recebido avança o status da linha para
+  // 'Recebido' — por isso 'comprado' também passa pela análise da lista (antes retornava direto).
+  if((s.status!=='em_lista' && s.status!=='comprado') || !s.listaId) return s.status;
   var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; });
   // v218 — defesa (caso SA-58): se o listaId aponta para uma lista que NÃO contém a solicitação,
   // o status vale pela lista que realmente a contém (é nela que a compra aconteceu).
@@ -12254,20 +12263,23 @@ function _solStatusEfetivo(s){
     if(l2) l=l2;
   }
   if(!l) return s.status;
-  var algum=false;
+  var algum=false, todosReceb=true;
   for(var j=0;j<(s.itens||[]).length;j++){
     var lis=_lcPartesDoItem(l, s.itens[j].itemId); // v186 — compra dividida: TODAS as partes contam
     if(!lis.length) return s.status;
     for(var j2=0;j2<lis.length;j2++){ var li=lis[j2];
       if(li.naoComprado) continue;
-      if(!(li.compra&&li.compra.comprado) || li.compraParcial) return s.status; // v169 — parcial = pendente
+      if(!(li.compra&&li.compra.comprado) || li.compraParcial) return (s.status==='comprado')?'comprado':s.status; // v169 — parcial = pendente
       algum=true;
+      // v225 — recebido = conciliação carimbou (recebido) OU a conferência FÍSICA contou (v213)
+      if(!(li.compra.recebido || (typeof _recebFisicoConta==='function' && _recebFisicoConta(li.compra)))) todosReceb=false;
     }
   }
   // v200 — TODOS os itens resolvidos pelo "✕ Não comprar" (tinha estoque/ajustado/sem estoque) ficava
   // 'em_lista' PARA SEMPRE (caso 102798: solicitação de devolução com 2 itens "tinha estoque" segurava
   // o status do pedido; a v174 já tratava isso no cabeçalho do MODAL, mas não aqui).
-  return algum?'comprado':'resolvido';
+  // v225 — todos os comprados já recebidos → o rótulo avança para 'Recebido'.
+  return algum?(todosReceb?'recebido':'comprado'):'resolvido';
 }
 // v200 — status DO PEDIDO na aba (caso 102798): a linha mostrava o status da ÚLTIMA solicitação;
 // agora agrega TODAS as do tipo — qualquer pendência vence; tudo fechado mostra o melhor rótulo.
@@ -12277,6 +12289,7 @@ function _solStatusPedido(orderId, tab){
   if(efs.indexOf('solicitado')>=0) return 'solicitado';
   if(efs.indexOf('em_lista')>=0) return 'em_lista';
   if(efs.indexOf('comprado')>=0) return 'comprado';
+  if(efs.indexOf('recebido')>=0) return 'recebido'; // v225 — tudo comprado e recebido
   return 'resolvido';
 }
 // v210 — sub-abas por MÊS na Solicitação de Compra (organização pedida pelo dono 13/08): o mês é o
@@ -12307,8 +12320,8 @@ function renderSolCompra(tab){
       _meses.map(function(m){ return '<button class="month-tab'+(_solMesFiltro===m?' active':'')+'" onclick="_solMesSet(\''+m+'\')">'+monthLabel(m)+'</button>'; }).join('');
   }catch(_e){}
   if(_solMesFiltro) lista=lista.filter(function(o){ return _solMesDe(o)===_solMesFiltro; });
-  var _statLbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado', resolvido:'Resolvido s/ compra'}; // v200
-  var _statCor={solicitado:'var(--text-info)', em_lista:'var(--st-mid-tx)', comprado:'var(--st-ok-tx)', resolvido:'var(--st-inf-tx)'};
+  var _statLbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado', recebido:'✓ Recebido', resolvido:'Resolvido s/ compra'}; // v200; v225 — recebido
+  var _statCor={solicitado:'var(--text-info)', em_lista:'var(--st-mid-tx)', comprado:'var(--st-ok-tx)', recebido:'var(--st-ok-tx)', resolvido:'var(--st-inf-tx)'};
   var rows=[];
   // v155 — "só sem solicitação" também esconde os marcados "não necessário" (já estão resolvidos)
   lista.forEach(function(o){ var s=_solGetSolic(o.id, tab); var nn=o.compraNaoNec&&o.compraNaoNec[tab]; if(soPend && (s||nn)) return; rows.push({o:o, s:s}); });
@@ -12318,7 +12331,7 @@ function renderSolCompra(tab){
   _healSolNumSA(); // v168 — garante SA-N em todos antes de renderizar
   var _pseudo=(solicitacoesCompra||[]).filter(function(s){ return s && _solEhPseudo(s.orderId) && s.tipo===tab && (s.itens||[]).length; })
     .sort(function(a,b){ return (a.criadoEm||0)-(b.criadoEm||0); }); // v210 — data da solicitação CRESCENTE (coerente com o D1 dos pedidos)
-  if(busca) _pseudo=_pseudo.filter(function(s){ var lbl=(_solPseudoInfo(s.orderId).rotulo+' '+_solPseudoInfo(s.orderId).num+' '+_solCodSeq(s)+' '+(s.cliente||'')+' anestesico avulsa').toLowerCase(); return lbl.indexOf(busca)>=0; });
+  if(busca) _pseudo=_pseudo.filter(function(s){ var lbl=(_solPseudoInfo(s.orderId).rotulo+' '+_solPseudoInfo(s.orderId).num+' '+_solCodSeq(s)+' '+(s.cliente||'')+' '+((s.pedidoUso&&(s.pedidoUso.num+' '+(s.pedidoUso.cliente||'')))||'')+' anestesico avulsa').toLowerCase(); return lbl.indexOf(busca)>=0; }); // v225 — busca acha pelo pedido de destino
   if(_solMesFiltro) _pseudo=_pseudo.filter(function(s){ return _solMesPseudo(s)===_solMesFiltro; }); // v210 — avulsa filtra pela data da solicitação
   if(soPend) _pseudo=[];
   var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
@@ -12333,7 +12346,8 @@ function renderSolCompra(tab){
       (podeEd?'<button onclick="openSolicitarModal(\''+s.orderId+'\',\''+s.id+'\')" style="font-size:11px;padding:4px 10px">Editar</button>':'<button disabled title="Já entrou numa lista de compra" style="font-size:11px;padding:4px 10px;opacity:.5;cursor:not-allowed">Editar</button>');
     return '<tr style="background:var(--bg-secondary)">'+
       '<td style="'+td+';font-weight:600;white-space:nowrap">'+pi.rotulo+(s.numSeq?' <span style="font-family:monospace;font-size:11px;color:var(--text-secondary)">'+_solCodSeq(s)+'</span>':'')+'</td>'+
-      '<td style="'+td+';color:var(--text-secondary)">'+escapeHtml(s.cliente||pi.cliente)+'</td>'+
+      '<td style="'+td+';color:var(--text-secondary)">'+escapeHtml(s.cliente||pi.cliente)+
+        (s.pedidoUso?'<div style="font-size:10.5px;color:var(--st-inf-tx);margin-top:2px" title="Pedido em que a embalagem será utilizada (obrigatório na avulsa de embalagem, regra 11/09)">📋 p/ pedido '+escapeHtml(s.pedidoUso.num||'')+(s.pedidoUso.cliente?' — '+escapeHtml(s.pedidoUso.cliente):'')+'</div>':'')+'</td>'+
       '<td style="'+td+'">'+(s.criadoEm?fmtDate(_gstDataDe(s.criadoEm)):'—')+'</td>'+
       '<td style="'+td+'">'+(s.itens||[]).length+' item(ns)</td>'+
       '<td style="'+td+'">'+stTxt+'</td>'+
@@ -12477,9 +12491,10 @@ function _solItemLinhaInfo(s, it, lst){
        : _r==='sem_estoque' ? '<span style="color:var(--st-bad-tx)">🚫 sem estoque<br><span style="'+sub+'">volta na próxima lista</span></span>'
        : '<span style="color:var(--st-bad-tx)">✕ não comprado'+(li.naoCompradoMotivo?'<br><span style="'+sub+'">'+escapeHtml(li.naoCompradoMotivo)+'</span>':'')+'</span>';
   } else if(li && ((li.cotacoes||[]).length || li.escolhida!=null)){
-    k='cotado'; st='<span style="color:#B45309;font-weight:600">💰 cotado<br><span style="'+sub+'">aguardando compra</span></span>';
+    // v225 — pedido do dono 11/09: item dentro de lista mostra QUAL lista (código LA-N)
+    k='cotado'; st='<span style="color:#B45309;font-weight:600">💰 cotado<br><span style="'+sub+'">aguardando compra</span>'+(lst?'<br><span style="'+sub+'" title="Lista de compra em que este item está">lista '+escapeHtml(_lcCodigo(lst))+'</span>':'')+'</span>';
   } else if(li){
-    k='aguarda_cot'; st='<span style="color:var(--text-tertiary)">⏳ em lista<br><span style="'+sub+'">aguardando cotação</span></span>';
+    k='aguarda_cot'; st='<span style="color:var(--text-tertiary)">⏳ em lista<br><span style="'+sub+'">aguardando cotação</span>'+(lst?'<br><span style="'+sub+'" title="Lista de compra em que este item está">lista '+escapeHtml(_lcCodigo(lst))+'</span>':'')+'</span>'; // v225 — qual lista
   } else {
     k='aguarda_lista'; st='<span style="color:var(--text-tertiary)">📨 solicitado<br><span style="'+sub+'">aguardando entrar em lista</span></span>';
   }
@@ -12545,7 +12560,7 @@ function _solItemLinhaInfo(s, it, lst){
   return { li:li, inf:inf, c:c, k:k, st:st, qtdS:_qtdS, colCompra:colCompra, colReceb:colReceb, colPed:colPed, colNf:colNf };
 }
 function _solVerBlocoSolic(s, tally){
-  var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado', resolvido:'Resolvida — sem compra'}; // v200
+  var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado', recebido:'Recebido', resolvido:'Resolvida — sem compra'}; // v200; v225 — recebido
   var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
   // v174 — solicitação com TODOS os itens resolvidos pelo "✕ Não comprar" (ajustado/tinha estoque/sem
   // estoque) ficava como "EM LISTA" no cabeçalho e parecia pendente (caso EDULCORANTE 102707, 28/07)
@@ -12746,6 +12761,14 @@ function openSolicitarModal(orderId, solicId){
   document.getElementById('solicitar-item-label').textContent=ehAtivo?'Buscar insumo (ativo) do catálogo':'Buscar embalagem do catálogo';
   document.getElementById('solicitar-pedido-info').innerHTML=ehPseudo
     ? '<b>'+_pi.rotulo+'</b>'+(_solEditId&&s&&s.numSeq?' <b>'+_solCodSeq(s)+'</b>':'')+' — '+escapeHtml(_pi.cliente)+' (sem vínculo com pedido)'+(_solEditId?'':'<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">Lançamento novo — ao salvar, entra na tela como uma linha própria (ganha um número '+_pi.sigla+'-N).</div>')
+      // v225 — regra do dono 11/09: avulsa de EMBALAGEM só é permitida indicando o PEDIDO que vai usá-la
+      +((String(orderId)==='__geral__'&&_solTab==='embalagem')?(
+        '<div style="margin-top:10px;padding:8px 10px;background:var(--bg-secondary);border-radius:8px">'+
+        '<label style="font-size:12px;font-weight:600;display:block">Pedido em que a embalagem será utilizada <span style="color:var(--st-bad-tx)">*</span></label>'+
+        '<input type="text" id="sol-pedido-uso" list="sol-pedido-uso-dl" placeholder="número do pedido…" value="'+escapeHtml((_solEditId&&s&&s.pedidoUso&&s.pedidoUso.num)||'')+'" style="width:100%;font-size:13px;padding:6px 8px;margin-top:4px">'+
+        '<datalist id="sol-pedido-uso-dl">'+(orders||[]).slice().sort(function(a,b){ return (b.criadoEm||0)-(a.criadoEm||0); }).slice(0,800).map(function(o2){ return '<option value="'+escapeHtml(String((o2&&o2.num)||''))+'">'+escapeHtml((o2&&o2.cliente)||'')+'</option>'; }).join('')+'</datalist>'+
+        '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px">Obrigatório: o número precisa ser de um pedido existente.</div></div>'
+      ):'')
     : 'Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+(complementar?'<div style="font-size:11px;color:var(--st-mid-tx);margin-top:2px">⚠ A solicitação original já está numa lista de compra (fica como está). Estes itens entram como solicitação NOVA — na próxima lista gerada, ou numa lista aberta via "Complementar lista".</div>':'');
   document.getElementById('sol-item-busca').value='';
   document.getElementById('sol-item-ac').classList.remove('open');
@@ -12804,6 +12827,16 @@ function saveSolicitacao(){
   var ehPseudo=_solEhPseudo(_solOrderId); // v168 — avulsa/anestésico
   // v218 — trava no SALVAR também (defesa em profundidade da regra do botão): avulsa de embalagem só admin
   if(String(_solOrderId)==='__geral__' && _solTab==='embalagem' && currentUser?.perfil!=='admin'){ alert('Solicitação avulsa de EMBALAGEM: somente o administrador.'); return; }
+  // v225 — regra do dono 11/09: avulsa de EMBALAGEM só com o PEDIDO de destino indicado (existente)
+  var _pedidoUso=null;
+  if(String(_solOrderId)==='__geral__' && _solTab==='embalagem'){
+    var _puTxt=String(document.getElementById('sol-pedido-uso')?.value||'').trim();
+    if(!_puTxt){ alert('Informe o PEDIDO em que a embalagem será utilizada.\n\nA solicitação avulsa de embalagem só é permitida indicando o pedido de destino.'); return; }
+    var _puNum=_puTxt.split('—')[0].trim();
+    var _oUso=(orders||[]).find(function(x){ return x && String(x.num||'')===_puNum; });
+    if(!_oUso){ alert('Pedido "'+_puNum+'" não encontrado.\n\nInforme o número exato de um pedido existente.'); return; }
+    _pedidoUso={ orderId:_oUso.id, num:String(_oUso.num||''), cliente:_oUso.cliente||'' };
+  }
   var o=ehPseudo?null:(orders||[]).find(function(x){ return String(x.id)===String(_solOrderId); });
   var s=null; var now=Date.now();
   if(ehPseudo){
@@ -12815,12 +12848,14 @@ function saveSolicitacao(){
   }
   if(s){
     s.itens=itens; s.atualizadoEm=now; s.status='solicitado';
+    if(_pedidoUso) s.pedidoUso=_pedidoUso; // v225 — edição atualiza o pedido de destino
   } else {
     var _pi=ehPseudo?_solPseudoInfo(_solOrderId):null;
     if(ehPseudo) _healSolNumSA(); // v168 — numera os antigos ANTES, para a sequência ficar cronológica
     var _sa=ehPseudo?_solProxSA(_solOrderId):0;
     s={ id:'solc'+now, orderId:_solOrderId, orderNum:ehPseudo?(_pi.num+' '+_pi.sigla+'-'+_sa):((o&&o.num)||''), cliente:ehPseudo?_pi.cliente:((o&&o.cliente)||''), tipo:_solTab, itens:itens, status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
     if(ehPseudo) s.numSeq=_sa; // v168 — SA-N (avulsa) / AN-N (anestésico)
+    if(_pedidoUso) s.pedidoUso=_pedidoUso; // v225 — pedido em que a embalagem avulsa será utilizada
     solicitacoesCompra.push(s);
   }
   if(o && o.compraNaoNec && o.compraNaoNec[_solTab]) delete o.compraNaoNec[_solTab]; // v155 — solicitar desfaz o "não necessário" do tipo
@@ -12836,6 +12871,104 @@ function _autoEstoqueSolicitado(o, motivo){
   if(!o.statusDates) o.statusDates={};
   o.statusDates.estoque={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:prev,to:'Solicitado compra'};
   try{ addAudit(o,'estoque','status',prev,'Solicitado compra (automático — '+(motivo||'solicitação de embalagem')+')'); }catch(_e){}
+}
+// v225 — pedido do dono 11/09 (caso 103151): pedido ENVIADO com o setor Compras em aberto ficava
+// PENDENTE PARA SEMPRE — o pedido some da Solicitação de Compra (regra v131: quem já saiu não
+// solicita) e ninguém mais tem onde fechar o setor; o chip vermelho fica eterno na Gestão a Vista.
+// Ordem do dono: "se foi enviado, marca automaticamente e ajusta o carimbo em Gestão a Vista".
+// Regra coerente com a já aprovada (tinha estoque/ajustado "conta como entregue"): pedido que saiu
+// POR COMPLETO (Enviado/Entregue — Entregue Parcial NÃO fecha: a parte restante ainda pode depender
+// da compra) foi atendido com o material disponível → carimbo final automático com auditoria.
+// A compra pendente NÃO some: segue na lista de compra como reposição de estoque (decisão do comprador).
+function _healComprasPedidoEnviado(){
+  try{
+    (orders||[]).forEach(function(o){
+      if(!o || (o.linha||'personalizada')!=='personalizada') return;
+      if(typeof _geraProducao==='function' && !_geraProducao(o.tipo)) return;
+      var e=(o.statuses&&o.statuses.expedicao)||'';
+      if(e!=='Enviado' && e!=='Entregue') return;
+      var prev=(o.statuses&&o.statuses.compras)||'Não iniciado';
+      if(prev==='Produto entregue') return;
+      if(!o.statuses) o.statuses={};
+      o.statuses.compras='Produto entregue';
+      if(!o.statusDates) o.statusDates={};
+      o.statusDates.compras={ts:Date.now(),by:'Sistema',from:prev,to:'Produto entregue'};
+      try{ addAudit(o,'compras','status',prev,'Produto entregue (automático — pedido enviado; atendido com o material disponível; compra pendente na lista vira reposição de estoque)'); }catch(_e){}
+    });
+  }catch(_e){}
+}
+// v225 — ITEM DE LISTA CUJOS PEDIDOS DE ORIGEM JÁ SAÍRAM (ordem do dono 11/09, caso BASE GEL
+// CREME/103151): item ainda NÃO comprado cuja origem é EXCLUSIVAMENTE pedido(s) enviados por
+// completo (Enviado/Entregue) não precisa ficar na lista — resolvido automaticamente como
+// "🔧 ajustado" (conta como entregue, padrão v171) com motivo e autoria Sistema. Origem com
+// avulsa/anestésico (estoque) ou pedido ainda não enviado mantém o item. Se o comprador decidir
+// comprar depois, o caminho é a COMPRA AVULSA (estoque) ou nova solicitação em outro pedido.
+function _healListaPedidosEnviados(){
+  try{
+    var agora=Date.now();
+    (listasCompra||[]).forEach(function(l){
+      if(!l || l.status==='finalizada') return;
+      var mudou=false;
+      (l.itens||[]).forEach(function(li){
+        if(!li || li.naoComprado) return;
+        if(li.compra && li.compra.comprado) return;
+        var og=(li.origem||[]);
+        if(!og.length) return;
+        var todosEnviados=og.every(function(g){
+          if(!g || (typeof _solEhPseudo==='function' && _solEhPseudo(g.orderId))) return false;
+          var o=(orders||[]).find(function(x){ return x && String(x.id)===String(g.orderId); });
+          if(!o) return false;
+          var e=(o.statuses&&o.statuses.expedicao)||'';
+          return e==='Enviado'||e==='Entregue';
+        });
+        if(!todosEnviados) return;
+        li.naoComprado=true; li.ncResolucao='ajustado';
+        li.naoCompradoMotivo='pedido(s) de origem já enviados — compra desnecessária (se ainda precisar, use a compra avulsa)';
+        li.naoCompradoEm=agora; li.naoCompradoPor='Sistema';
+        mudou=true;
+      });
+      if(mudou){ try{ _atualizaStatusLista(l); }catch(_e2){} }
+    });
+  }catch(_e){}
+}
+// v225 — AUTOCURA DO ITEM PRESO EM LISTA (caso CALMALINE/SA-77, 11/09): escrita concorrente na
+// linha da lista (last-write-wins) pode engolir um item recém-complementado — a solicitação fica
+// 'em_lista' mas o item NÃO consta na lista, e como o Gerar lista só puxa 'solicitado', o item
+// entra em limbo eterno ("aguardando entrar em lista" para sempre). Detecta solicitação em_lista
+// com item SEM parte correspondente na lista (defesa v218: vale a lista que a contém) e DEVOLVE o
+// item à fila como solicitação própria 'solicitado' (mesmo padrão de divisão v190). Idempotente;
+// roda no refreshAll e persiste no próximo save.
+function _healSolicOrfas(){
+  try{
+    var mudou=false, now=Date.now();
+    (solicitacoesCompra||[]).slice().forEach(function(s){
+      if(!s || s.status!=='em_lista' || !(s.itens||[]).length) return;
+      var l=(listasCompra||[]).find(function(x){ return x && x.id===s.listaId; });
+      if(!l || (l.solicIds||[]).indexOf(s.id)<0){
+        var l2=(listasCompra||[]).find(function(x){ return x && (x.solicIds||[]).indexOf(s.id)>=0; });
+        if(l2) l=l2;
+      }
+      if(!l) return; // sem lista localizável: fora do escopo desta cura (status efetivo já degrada sozinho)
+      var presos=(s.itens||[]).filter(function(it){ return it && it.itemId!=null && !_lcPartesDoItem(l, it.itemId).length; });
+      if(!presos.length) return;
+      s.itens=(s.itens||[]).filter(function(it){ return presos.indexOf(it)<0; });
+      s.atualizadoEm=now;
+      var _pseudoH=_solEhPseudo(s.orderId);
+      if(_pseudoH) _healSolNumSA();
+      var _saH=_pseudoH?_solProxSA(s.orderId):0;
+      var _piH=_pseudoH?_solPseudoInfo(s.orderId):null;
+      var novo={ id:'solc'+now+'hl'+Math.floor(Math.random()*1000), orderId:s.orderId,
+        orderNum:_pseudoH?(_piH.num+' '+_piH.sigla+'-'+_saH):(s.orderNum||''), cliente:s.cliente||'',
+        tipo:s.tipo, itens:presos, status:'solicitado', listaId:null,
+        criadoPor:s.criadoPor||'', criadoEm:s.criadoEm||now, atualizadoEm:now,
+        recuperadoDe:s.id+' (item preso em_lista sem constar na lista — autocura v225)' };
+      if(_pseudoH){ novo.numSeq=_saH; if(s.pedidoUso) novo.pedidoUso=s.pedidoUso; }
+      solicitacoesCompra.push(novo);
+      mudou=true;
+      try{ console.warn('autocura v225: '+presos.length+' item(ns) de '+(s.orderNum||s.id)+' devolvido(s) à fila (não constavam na lista)'); }catch(_e2){}
+    });
+    return mudou;
+  }catch(_e){ return false; }
 }
 // v168 — regra do dono 21/07 (caso 102741): embalagem "não necessário" JÁ CONSIDERA 'Solicitado
 // compra' marcado no estoque — e a sequência libera 'Separação completa' sozinha. Auto-corrige os
@@ -19919,6 +20052,9 @@ function _renderDFC(mk){
 function refreshAll(){
   _rebuildCreditosFromOrders(); // v112 — crédito SEMPRE derivado dos pedidos (mata o clobber do blob)
   if(typeof _healEstoqueNaoNec==='function') _healEstoqueNaoNec(); // v168 — embalagem "não necessário" = estoque 'Solicitado compra' (auto-corrige antigos)
+  if(typeof _healSolicOrfas==='function') _healSolicOrfas(); // v225 — item preso em_lista sem constar na lista volta à fila (caso CALMALINE)
+  if(typeof _healComprasPedidoEnviado==='function') _healComprasPedidoEnviado(); // v225 — pedido enviado fecha o setor Compras (caso 103151)
+  if(typeof _healListaPedidosEnviados==='function') _healListaPedidosEnviados(); // v225 — item de lista com origem toda enviada = ajustado automático
   if(typeof _healComprasEnvio==='function') _healComprasEnvio(); // v205 — enviado sem lado definido = não necessário automático (regra do dono 10/08)
   if(typeof _healComercialPI==='function') _healComercialPI(); // v208 — "Produtos informados" sem produtos = reversão lógica (ordem do dono 11/08, caso 102926)
   if(typeof _healCadastroCompleto==='function') _healCadastroCompleto(); // v208 — completude do cadastro = derivação nome+doc+contato (ordem do dono 11/08)
@@ -27771,9 +27907,14 @@ function calcRfv(){
   const _agr=_agRange(), cutoff=_agr.ini, fim=_agr.fim; // v82: dias OU intervalo
   const today  = new Date();
 
-  // Build per-client metrics from orders (type='venda' only)
+  // v225 — caso TRS (reporte do dono 11/09: "última compra em junho, mas ela comprou depois por
+  // VENDA FILHO"): o filtro usava _ehReceita, que exclui a venda filho de TUDO — mas a tabela
+  // canônica de tipos (v106) sempre disse rfvRF:true p/ venda filho (consome o crédito, mantém o
+  // vínculo). Agora o RFV usa as flags certas: R e F pela ATIVIDADE (_rfvRF: venda + venda mãe +
+  // venda filho + embaixador); o VALOR monetário segue _rfvValor (sem venda filho — o dinheiro já
+  // contou na mãe; somar de novo seria dupla contagem).
   const byClient = {};
-  orders.filter(o=>(_ehReceita(o))&&o.d1&&(_rfvLinha==='todos'||(o.linha||'personalizada')===_rfvLinha)).forEach(o=>{
+  orders.filter(o=>(_rfvRF(o))&&o.d1&&(_rfvLinha==='todos'||(o.linha||'personalizada')===_rfvLinha)).forEach(o=>{
     const d=new Date(o.d1+'T12:00:00');
     if(d<cutoff||d>fim) return;
     const cid=String(o.clienteId||o.cliente);
@@ -27789,7 +27930,7 @@ function calcRfv(){
     const b=byClient[cid];
     b.pedidos.push(o);
     if(d>b.lastDate) b.lastDate=d;
-    b.totalValor+=parseFloat(o.valor||0);
+    if(_rfvValor(o)) b.totalValor+=parseFloat(o.valor||0); // venda filho fica fora do V (já contado na mãe)
   });
 
   const clientes=Object.values(byClient);
@@ -32548,9 +32689,183 @@ function _obPdfDoc(o){
     '</div><script>window.onload=function(){ setTimeout(function(){ window.print(); }, 200); };<\/script></body></html>');
   w.document.close();
 }
+// ═══════ v225 — IMPORTADOR DE ORÇAMENTOS DO OPERY (decisões do dono 11/09) ═══════
+// O CSV da tela de VENDAS do Opery (Latin-1, separador ;) alimenta SÓ este menu — acompanhamento
+// de oportunidade, sem tocar Gestão a Vista/cadastros (o pedido real entra pelo Drive como sempre).
+// Cliente e atendente ficam como TEXTO (sem vínculo, decisão do dono). Regras: Pendente sem
+// registro → cria EM ABERTO; nº já importado ainda aberto → Aprovado baixa como VENDIDO,
+// Cancelado como PERDIDO, Pendente atualiza os dados; etapa fechada aqui NUNCA regride;
+// Aprovado/Cancelado sem registro correspondente não cria nada; ausente do arquivo fica como está.
+function _orcOperyImportar(inp){
+  try{
+    if(!currentUser||currentUser.perfil!=='admin'){ alert('Importação do CSV do Opery: somente o administrador.'); if(inp) inp.value=''; return; }
+    var f=inp&&inp.files&&inp.files[0]; if(!f) return;
+    var rd=new FileReader();
+    rd.onload=function(){ try{ _orcOperyProcessar(String(rd.result||'')); }catch(e){ alert('Falha ao processar o CSV: '+((e&&e.message)||e)); } inp.value=''; };
+    rd.onerror=function(){ alert('Não consegui ler o arquivo.'); inp.value=''; };
+    rd.readAsText(f,'ISO-8859-1'); // a exportação do Opery vem em Latin-1
+  }catch(e){ alert('Falha na importação: '+((e&&e.message)||e)); if(inp) inp.value=''; }
+}
+function _orcOperyObs(tipoDoc, desc){
+  var p=[]; if(tipoDoc && tipoDoc!=='PEDIDO DE VENDA') p.push(tipoDoc.charAt(0)+tipoDoc.slice(1).toLowerCase());
+  if(desc) p.push('Categorias: '+desc);
+  p.push('Importado do Opery');
+  return p.join(' · ');
+}
+function _orcOperyProcessar(txt){
+  var lin=String(txt||'').replace(/^﻿/,'').split(/\r?\n/).filter(function(l){ return l.trim(); });
+  if(lin.length<2){ alert('Arquivo vazio ou sem linhas de pedido.'); return; }
+  var hd=lin[0].split(';').map(function(h){ return h.trim(); });
+  var ix={}; hd.forEach(function(h,i){ if(ix[h]==null) ix[h]=i; });
+  var req=['Código','Tipo Documento','Status','Data','Cliente','Valor Total','Total C/Entrega'];
+  for(var ri=0;ri<req.length;ri++) if(ix[req[ri]]==null){ alert('CSV não reconhecido — faltou a coluna "'+req[ri]+'".\n\nExporte a tela de VENDAS do Opery (separador ponto e vírgula).'); return; }
+  var _num=function(v){ return parseFloat(String(v==null?'':v).trim().replace(',','.'))||0; }; // Opery: vírgula decimal, sem separador de milhar
+  var novos=0, vend=0, perd=0, att=0, mant=0, ign=0, agora=Date.now();
+  // v225 — CRUZAMENTO Opery×Lecare no mesmo passo (pedido do dono 11/09): pedidos APROVADOS do CSV
+  // conferidos contra os pedidos do sistema (soma das partes a/l). Divergência de VALOR só se
+  // APRESENTA (regra do dono: vale o valor fechado com o cliente, que é o do Lecare — o Opery muda
+  // por troca de lote). Resultado persiste em orcOperyDivg (botão ⚠ Divergências da tela).
+  var _ordMap={};
+  (orders||[]).forEach(function(o){ if(!o||o.num==null) return; var b=String(o.num).replace(/[al]$/,''); (_ordMap[b]=_ordMap[b]||[]).push(o); });
+  var divg=[];
+  for(var li=1; li<lin.length; li++){
+    var c=lin[li].split(';');
+    var cod=String(c[ix['Código']]||'').trim(); if(!cod) continue;
+    var st=String(c[ix['Status']]||'').trim();
+    var tipoDoc=String(c[ix['Tipo Documento']]||'').trim();
+    var cli=String(c[ix['Cliente']]||'').trim();
+    var cliNome=cli.indexOf(' - ')>=0?cli.split(' - ').slice(1).join(' - ').trim():cli;
+    var atend=String((ix['Func./Aprov.']!=null?c[ix['Func./Aprov.']]:'')||(ix['Usu. Inclusão']!=null?c[ix['Usu. Inclusão']]:'')||'').trim();
+    var vTot=_num(c[ix['Valor Total']]);
+    var frete=+(_num(c[ix['Total C/Entrega']])-vTot).toFixed(2); if(!(frete>0)) frete=0;
+    var dBr=String(c[ix['Data']]||'').slice(0,10);
+    var dIso=/^\d{2}\/\d{2}\/\d{4}$/.test(dBr)?(dBr.slice(6,10)+'-'+dBr.slice(3,5)+'-'+dBr.slice(0,2)):'';
+    var desc=String(ix['Descrição']!=null?(c[ix['Descrição']]||''):'').trim();
+    // v225 — cruzamento dos APROVADOS contra o sistema (nada disso mexe nos pedidos — só relatório)
+    if(st==='Aprovado'){
+      var fin=String(ix['Financeiro']!=null?(c[ix['Financeiro']]||''):'').trim();
+      var partes=_ordMap[cod]||[];
+      if(!partes.length){
+        if(fin==='Concluído') divg.push({cat:'ausente', num:cod, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:null, obs:'Aprovado e PAGO no Opery, sem registro no sistema — exportar o PDF para o Drive (o agente insere na próxima rodada)'});
+        else divg.push({cat:'aguardando', num:cod, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:null, obs:'Aprovado aguardando pagamento ('+(fin||'—')+') — fora do sistema por regra; acompanhar a cobrança'});
+      } else {
+        var vLec=partes.reduce(function(s,o){ return s+(parseFloat(o.valor)||0); },0);
+        var fLec=partes.reduce(function(s,o){ return s+(parseFloat(o.freteCob)||0); },0);
+        if(Math.abs(vLec-vTot)>0.01 || Math.abs(fLec-frete)>0.01)
+          divg.push({cat:'valor', num:cod, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:+vLec.toFixed(2),
+            obs:(Math.abs(fLec-frete)>0.01?('frete Opery '+fmtMoney(frete)+' × sistema '+fmtMoney(fLec)+' · '):'')+'apenas apresentar — vale o valor fechado com o cliente (sistema); Opery muda por troca de lote'});
+      }
+    }
+    var ex=(orcamentosCrm||[]).find(function(x){ return x && x.origem==='opery' && String(x.operyNum)===cod; });
+    if(ex){
+      if(ex.status==='ganho'||ex.status==='perdido'){ mant++; continue; } // etapa fechada aqui NUNCA regride
+      if(st==='Aprovado'){ ex.status='ganho'; ex.vendidoEm=agora; ex.pedidoNum=cod; vend++; }
+      else if(st==='Cancelado'){ ex.status='perdido'; ex.perdidoEm=agora; perd++; }
+      else { ex.valor=vTot; ex.frete=frete; if(dIso) ex.data=dIso; if(cliNome){ ex.clienteNome=cliNome; ex.empresa=cliNome; } if(atend) ex.responsavel=atend; ex.obs=_orcOperyObs(tipoDoc,desc); att++; }
+      continue;
+    }
+    if(st!=='Pendente'){ ign++; continue; } // aprovado/cancelado sem orçamento aberto aqui não cria nada
+    orcamentosCrm.push({ id:'orcop_'+cod, origem:'opery', operyNum:cod, num:cod, detalhado:false,
+      data:dIso||(typeof today==='function'?today():''), status:'aberto',
+      clienteNome:cliNome, empresa:cliNome,
+      tipoProduto:(desc.toUpperCase().indexOf('ANEST')>=0?'anestesico':'linha'),
+      valor:vTot, frete:frete, forma:'', formaPag:'',
+      obs:_orcOperyObs(tipoDoc,desc), responsavel:atend,
+      criadoEm:agora, criadoPor:'Importação Opery', importadoEm:agora, importadoPor:(currentUser&&currentUser.name)||'' });
+    novos++;
+  }
+  orcOperyDivg={ em:agora, por:(currentUser&&currentUser.name)||'', itens:divg }; // v225 — persiste a última análise
+  saveData(); try{ renderOrcamentosCrm(); }catch(_e){}
+  alert('📥 Importação do Opery concluída:\n\n• '+novos+' orçamento(s) novo(s) em aberto\n• '+vend+' baixado(s) como VENDIDO (aprovado no Opery)\n• '+perd+' marcado(s) como PERDIDO (cancelado no Opery)\n• '+att+' atualizado(s) (seguem em aberto)\n• '+mant+' mantido(s) (etapa já fechada aqui)\n• '+ign+' fora do escopo (aprovado/cancelado sem orçamento aberto correspondente)\n\n⚠ Cruzamento com o sistema: '+divg.length+' divergência(s)/pendência(s) — veja no botão "⚠ Divergências".');
+}
+// v225 — RECONFERÊNCIA AO VIVO das pendências (pedido do dono 11/09: "gerou pendências, mas em
+// seguida o sistema já importou novos pedidos"): antes de exibir, cada item ainda aberto é
+// re-checado contra os pedidos DO SISTEMA — 'ausente'/'aguardando' cujo pedido já entrou vira
+// RESOLVIDO com carimbo; 'valor' re-compara (se agora confere, resolve; se mudou, atualiza).
+// O que depende do Opery (pagamento pendente lá) só se resolve por nova importação de CSV.
+var _orcDivgLastChk=0;
+function _orcDivgReconferir(){
+  try{
+    var d=orcOperyDivg; if(!d||!(d.itens||[]).length) return false;
+    var map={}; (orders||[]).forEach(function(o){ if(!o||o.num==null) return; var b=String(o.num).replace(/[al]$/,''); (map[b]=map[b]||[]).push(o); });
+    var mudou=false, agora=Date.now();
+    (d.itens||[]).forEach(function(x){
+      if(!x||x.resolvidoEm) return;
+      var partes=map[String(x.num)]||[];
+      if(!partes.length) return;
+      if(x.cat==='ausente'){ x.resolvidoEm=agora; x.resolvidoComo='pedido entrou no sistema (importação do Drive)'; mudou=true; }
+      else if(x.cat==='aguardando'){ x.resolvidoEm=agora; x.resolvidoComo='pedido entrou no sistema (pagamento concluído)'; mudou=true; }
+      else if(x.cat==='valor'){
+        var v=partes.reduce(function(s,o){ return s+(parseFloat(o.valor)||0); },0);
+        if(Math.abs(v-(parseFloat(x.vOpery)||0))<=0.01){ x.resolvidoEm=agora; x.resolvidoComo='valores conferem agora'; mudou=true; }
+        else if(Math.abs(v-(parseFloat(x.vLecare)||0))>0.01){ x.vLecare=+v.toFixed(2); mudou=true; }
+      }
+    });
+    _orcDivgLastChk=agora;
+    if(mudou) saveData();
+    return mudou;
+  }catch(_e){ return false; }
+}
+// v225 — modal do botão ⚠ Divergências (pedido do dono 11/09): apresenta a ÚLTIMA análise do
+// cruzamento (pedido pago sem entrar no sistema; divergência de valor Opery×Lecare — só
+// apresentação, regra do dono; aprovados aguardando pagamento). Atualiza a cada importação de CSV
+// e RECONFERE ao vivo contra o sistema a cada abertura.
+function _orcDivgAbrir(){
+  _orcDivgReconferir();
+  var d=orcOperyDivg;
+  var ov=document.getElementById('orc-divg-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='orc-divg-overlay'; ov.className='overlay'; ov.style.zIndex='470'; document.body.appendChild(ov); }
+  var th='padding:7px 10px;background:var(--bg-secondary);font-size:10.5px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
+  var td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
+  var cats={ausente:['🚫 Aprovado e pago, SEM ENTRAR no sistema','var(--st-bad-tx)'], valor:['⚖ Divergência de valor Opery × sistema (apenas apresentação)','var(--st-mid-tx)'], aguardando:['⏳ Aprovado aguardando pagamento','var(--text-secondary)']};
+  var corpo;
+  var _abertas=(d&&(d.itens||[]).filter(function(x){ return x && !x.resolvidoEm; }))||[];
+  var _resolv=(d&&(d.itens||[]).filter(function(x){ return x && x.resolvidoEm; }))||[];
+  if(!d || !(d.itens||[]).length){
+    corpo='<div class="empty" style="padding:26px">'+(d?'Nenhuma divergência na última análise ('+new Date(d.em).toLocaleString('pt-BR')+').':'Nenhuma análise ainda — importe o CSV do Opery (botão 📥) para gerar o cruzamento.')+'</div>';
+  } else if(!_abertas.length){
+    corpo='<div class="empty" style="padding:20px">Nenhuma pendência em aberto — as '+_resolv.length+' da última análise já se resolveram (reconferido agora contra os pedidos do sistema).</div>';
+  } else {
+    corpo=['ausente','valor','aguardando'].map(function(cat){
+      var its=_abertas.filter(function(x){ return x.cat===cat; });
+      if(!its.length) return '';
+      return '<div style="font-size:12.5px;font-weight:700;color:'+cats[cat][1]+';margin:12px 0 6px">'+cats[cat][0]+' ('+its.length+')</div>'+
+        '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:680px"><thead><tr>'+
+        '<th style="'+th+'">Pedido</th><th style="'+th+'">Data</th><th style="'+th+'">Cliente</th><th style="'+th+'">Atendente</th><th style="'+th+';text-align:right">Valor Opery</th><th style="'+th+';text-align:right">Valor sistema</th><th style="'+th+'">Observação</th>'+
+        '</tr></thead><tbody>'+its.map(function(x){
+          return '<tr><td style="'+td+';font-family:monospace;font-weight:600">'+escapeHtml(x.num||'')+'</td>'+
+            '<td style="'+td+';white-space:nowrap">'+escapeHtml(x.data||'—')+'</td>'+
+            '<td style="'+td+'">'+escapeHtml(x.cliente||'')+'</td>'+
+            '<td style="'+td+'">'+escapeHtml((x.atend||'—').split(' ')[0])+'</td>'+
+            '<td style="'+td+';text-align:right;white-space:nowrap">'+fmtMoney(x.vOpery||0)+'</td>'+
+            '<td style="'+td+';text-align:right;white-space:nowrap">'+(x.vLecare!=null?fmtMoney(x.vLecare):'—')+'</td>'+
+            '<td style="'+td+';font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.obs||'')+'</td></tr>';
+        }).join('')+'</tbody></table></div>';
+    }).join('');
+  }
+  // v225 — resolvidas desde a análise (reconferência ao vivo): ficam visíveis com o carimbo do desfecho
+  var _resolvHtml=_resolv.length?('<div style="font-size:12px;font-weight:700;color:var(--st-ok-tx);margin:14px 0 6px">✓ Resolvidas desde a análise ('+_resolv.length+')</div>'+
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:560px"><tbody>'+_resolv.map(function(x){
+      return '<tr><td style="'+td+';font-family:monospace">'+escapeHtml(x.num||'')+'</td><td style="'+td+'">'+escapeHtml(x.cliente||'')+'</td><td style="'+td+';text-align:right;white-space:nowrap">'+fmtMoney(x.vOpery||0)+'</td><td style="'+td+';font-size:11px;color:var(--st-ok-tx)">✓ '+escapeHtml(x.resolvidoComo||'resolvida')+' — '+new Date(x.resolvidoEm).toLocaleString('pt-BR')+'</td></tr>';
+    }).join('')+'</tbody></table></div>'):'';
+  ov.innerHTML='<div class="modal" style="width:960px;max-width:96vw;max-height:90vh;overflow-y:auto">'+
+    '<h2 style="font-size:16px;margin:0 0 2px">⚠ Divergências do cruzamento Opery × sistema</h2>'+
+    '<div style="font-size:11.5px;color:var(--text-tertiary);margin-bottom:8px">'+(d?('Última análise: '+new Date(d.em).toLocaleString('pt-BR')+(d.por?' por '+escapeHtml(d.por):'')+' — atualiza a cada importação de CSV (botão 📥) e é RECONFERIDA contra os pedidos do sistema a cada abertura.'):'')+'</div>'+
+    corpo+_resolvHtml+
+    '<div class="modal-footer" style="margin-top:14px"><button onclick="document.getElementById(\'orc-divg-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
+  ov.classList.add('open');
+}
 function renderOrcamentosCrm(){
   const tbody = document.getElementById('orc-crm-tbody');
   if(!tbody) return;
+  try{ var _obt=document.getElementById('orc-opery-btn'); if(_obt) _obt.style.display=(currentUser&&currentUser.perfil==='admin')?'':'none'; }catch(_e){} // v225 — importador só admin
+  try{
+    // v225 — reconferência ao vivo também no render da tela (no máx. a cada 60s): pendência cujo
+    // pedido já entrou pelo Drive se resolve sozinha e o contador não mente (pedido do dono 11/09)
+    if(orcOperyDivg && (orcOperyDivg.itens||[]).some(function(x){ return x&&!x.resolvidoEm; }) && Date.now()-_orcDivgLastChk>60000) _orcDivgReconferir();
+    var _dbt=document.getElementById('orc-divg-btn');
+    if(_dbt){ var _nD=(orcOperyDivg&&(orcOperyDivg.itens||[]).filter(function(x){ return x&&!x.resolvidoEm; }).length)||0; _dbt.style.display=(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial'))?'':'none'; _dbt.textContent='⚠ Divergências'+(_nD?' ('+_nD+')':''); }
+  }catch(_e){} // v225 — admin+diretora; contador só das pendências EM ABERTO
 
   // Populate month filter
   const mesSelect = document.getElementById('orc-crm-filter-mes');
@@ -32618,14 +32933,16 @@ function renderOrcamentosCrm(){
     const criado = o.criadoEm?dtMs(o.criadoEm):(o.data?fmtDate(o.data):'—');
     const colE = tab==='ganho' ? `<td style="padding:8px 10px;font-size:11px">${dtMs(o.vendidoEm)}</td><td style="padding:8px 10px;font-size:11px;font-family:monospace">${escapeHtml(o.pedidoNum||'—')}</td>`
                : (tab==='perdido' ? `<td style="padding:8px 10px;font-size:11px">${dtMs(o.perdidoEm)}</td>` : '');
+    const ehOpery = o.origem==='opery'; // v225 — importado da tela de vendas do Opery: só acompanhamento (sem editor/PDF; Vendido apenas marca)
     const btnAbrir = o.detalhado?`<button onclick="openOrcBuilder('${o.id}',true)" style="font-size:11px;padding:3px 8px" title="Ver o orçamento completo (somente leitura)">👁 Abrir</button> `:'';
-    const btnEditar = o.detalhado?`<button onclick="openOrcBuilder('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> `:`<button onclick="abrirOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> `;
+    const btnEditar = o.detalhado?`<button onclick="openOrcBuilder('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> `:(ehOpery?'':`<button onclick="abrirOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> `);
     const btnPdf = o.detalhado?`<button onclick="_obPdfById('${o.id}')" style="font-size:11px;padding:3px 8px" title="Gerar o PDF do orçamento">📄</button> `:'';
+    const _tipVend = o.detalhado?'Efetivar a venda — informa o nº do pedido no Opery e lança em Gestão a Vista (entra PENDENTE no Caixa)':'Marcar como vendido — só nesta tela (o pedido real entra pela importação do Drive, como sempre)'; // v225
     const btnEtapa = tab==='aberto'
-      ? `<button onclick="_orcVendido('${o.id}')" style="font-size:11px;padding:3px 8px;background:var(--st-ok-bg);color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:6px" title="Efetivar a venda — informa o nº do pedido no Opery e lança em Gestão a Vista (entra PENDENTE no Caixa)">✅ Vendido</button> <button onclick="_orcPerdido('${o.id}')" style="font-size:11px;padding:3px 8px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)" title="Marcar como perdido — move para a sub-aba Perdidos">✕ Perdido</button> `
+      ? `<button onclick="_orcVendido('${o.id}')" style="font-size:11px;padding:3px 8px;background:var(--st-ok-bg);color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:6px" title="${_tipVend}">✅ Vendido</button> <button onclick="_orcPerdido('${o.id}')" style="font-size:11px;padding:3px 8px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)" title="Marcar como perdido — move para a sub-aba Perdidos">✕ Perdido</button> `
       : (tab==='perdido' ? `<button onclick="_orcReabrir('${o.id}')" style="font-size:11px;padding:3px 8px" title="Volta para a sub-aba Orçamentos">↩ Reabrir</button> ` : '');
     return `<tr style="border-bottom:.5px solid var(--border)">
-      <td style="padding:8px 10px;font-weight:500">${o.num?'<span style="font-family:monospace;font-size:10.5px;color:var(--text-secondary)">'+escapeHtml(o.num)+'</span> ':''}${escapeHtml(o.clienteNome||o.empresa)}</td>
+      <td style="padding:8px 10px;font-weight:500">${o.num?'<span style="font-family:monospace;font-size:10.5px;color:var(--text-secondary)">'+escapeHtml(o.num)+'</span> ':''}${ehOpery?'<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;background:var(--st-inf-bg);color:var(--st-inf-tx)" title="Importado da tela de vendas do Opery — acompanhamento de oportunidade; o orçamento completo vive no Opery">OPERY</span> ':''}${escapeHtml(o.clienteNome||o.empresa)}</td>
       <td style="padding:8px 10px"><span style="font-size:10px;padding:1px 7px;border-radius:20px;background:${o.tipoProduto==='linha'?'var(--st-inf-bg)':'var(--st-urg-bg)'};color:${o.tipoProduto==='linha'?'var(--st-inf-tx)':'var(--st-urg-tx)'}">${tp}</span></td>
       <td style="padding:8px 10px;font-weight:500;color:var(--st-ok-tx)">${fmtMoney(o.valor)}</td>
       <td style="padding:8px 10px;color:var(--text-secondary)">${o.frete?fmtMoney(o.frete):'—'}</td>

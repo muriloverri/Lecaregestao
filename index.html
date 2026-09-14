@@ -4981,7 +4981,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v226';
+var APP_VERSION = 'v227';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -8269,13 +8269,25 @@ function _dupUnificar(canonId){
 // Fusão segura: move conversas (sem perder mensagem), pedidos, contas a receber e card do 'drop' para o 'keep'; remove o 'drop'.
 // v110 — na fusão de clientes, os cards do CRM também se fundem em 1: sobrevive o mais avançado no funil,
 // absorve histórico/tasks/funilLog/contatos/obs dos demais (e maior valor/responsável se faltar) e remove-os.
-function _unirCardsNaFusao(clienteId){
+function _unirCardsNaFusao(clienteId, dropCardIds){
   const cards=(crmLeads||[]).filter(l=>l.clienteId===clienteId);
   if(cards.length<=1) return;
   // v110 (A3) — prioridade ao juntar: Funil 1 > 2 > 3 (mantém o de menor número); empate = card mais recente. Number() cobre funil salvo como string.
   cards.sort((a,b)=> ((Number(a.funil)||9)-(Number(b.funil)||9)) || String(b.entradaEtapa||'').localeCompare(String(a.entradaEtapa||'')));
-  const win=cards[0];
-  cards.slice(1).forEach(c=>{
+  let win=cards[0];
+  // v227 — o VENCEDOR local tem que ser o MESMO do servidor (incidente Fontoura & Decusati 14/09):
+  // o RPC cliente_fundir_repontar (v208) SEMPRE mantém o card que já era do cadastro sobrevivente e
+  // apaga o do absorvido; o front escolhia por funil — quando o card do absorvido "vencia" aqui, a aba
+  // ficava re-upsertando um id que o servidor apagou e batia PARA SEMPRE no índice de 1 card por
+  // cliente (23505, faixa vermelha eterna). Agora: existindo card que já era do sobrevivente, ELE é o
+  // vencedor; o conteúdo do absorvido migra (nada se perde — funil/etapa mais avançados inclusive).
+  if(dropCardIds && dropCardIds.size){
+    const doKeep=cards.find(c=>!dropCardIds.has(c.id));
+    if(doKeep) win=doKeep;
+  }
+  cards.filter(c=>c!==win).forEach(c=>{
+    // funil mais avançado (menor número) do absorvido migra para o vencedor (regra v110 preservada)
+    if((Number(c.funil)||9)<(Number(win.funil)||9)){ win.funil=c.funil; win.etapa=c.etapa; win.entradaEtapa=c.entradaEtapa||win.entradaEtapa; }
     win.historico=[...(win.historico||[]),...(c.historico||[])].sort((a,b)=>(a.ts||0)-(b.ts||0));
     win.tasks=[...(win.tasks||[]),...(c.tasks||[])];
     win.funilLog=[...(win.funilLog||[]),...(c.funilLog||[])];
@@ -8320,6 +8332,7 @@ function _fundirClientes(keepId, dropId){
   });
   (orders||[]).forEach(o=>{ if(o.clienteId===dropId){ o.clienteId=keepId; o.cliente=keep.nome||o.cliente; } });
   (contasReceber||[]).forEach(x=>{ if(x.clienteId===dropId){ x.clienteId=keepId; x.clienteNome=keep.nome||x.clienteNome; } });
+  const _dropCardIds=new Set((crmLeads||[]).filter(l=>l.clienteId===dropId).map(l=>l.id)); // v227 — antes do re-aponte, p/ o vencedor local = o do servidor
   (crmLeads||[]).forEach(l=>{ if(l.clienteId===dropId) l.clienteId=keepId; });
   // v151 : REDE DE SEGURANÇA server-side — os re-apontamentos acima só alcançam o que esta aba tem na memória;
   // o RPC re-aponta no SERVIDOR qualquer conversa/card/pedido/conta que sobrou no cadastro apagado (caso Stefanelli 13/07)
@@ -8327,7 +8340,7 @@ function _fundirClientes(keepId, dropId){
   // de segurança foi código morto da v151 até a v178 (órfãos das fusões de 27-29/07: Ingrid/Mailla/Aline/
   // AGENDAMENTOS). Se falhar, o usuário é avisado e o vigia REGISTRO ÓRFÃO pega em até 1h.
   try{ if(_sb) _sb.rpc('cliente_fundir_repontar',{ p_de:dropId, p_para:keepId, p_nome:keep.nome||null }).then(function(r){ if(r&&r.error){ try{ alert('⚠ A fusão foi aplicada neste navegador, mas a repontagem no SERVIDOR falhou ('+r.error.message+'). Avise o suporte — o vigia também vai acusar.'); }catch(_e2){} } }); }catch(_e){}
-  _unirCardsNaFusao(keepId); // v110 — funde os cards do CRM do cliente unificado (2 viram 1)
+  _unirCardsNaFusao(keepId, _dropCardIds); // v110 — funde os cards do CRM (2 viram 1); v227 — vencedor = o card que já era do sobrevivente (espelho do servidor)
   // v186 — FUSÃO NUNCA PERDE INFORMAÇÃO (regra do dono 03/08; casos Ritha/Ingrid/Kamilla):
   // tudo que o absorvido tinha e o principal não comporta nos campos únicos é PRESERVADO.
   if(!Array.isArray(keep.pessoasVinculadas)) keep.pessoasVinculadas=[];
@@ -11854,16 +11867,29 @@ function _cnSimBuscaEmb(inputId, acId, alvo){
   ac.classList.add('open');
 }
 function _cnSimPickEmb(alvo,id){ _cnSimSel[alvo]=id; renderCnSimulador(); }
+// v227 — seletor de fórmula do simulador virou BUSCA por código ou nome (pedido do dono 14/09:
+// "ajustar no simulador o código do produto para conseguir pesquisar mais facilmente"); o select
+// antigo listava só o nome. Campo vazio lista as primeiras (ordenadas por código) — navegação mantida.
+function _cnSimFLbl(x){ return ((x.codigo?x.codigo+' — ':'')+(x.nome||''))+' ('+_cnFormaLbl(x.forma)+')'; }
+function _cnSimBuscaFormula(){
+  var inp=document.getElementById('cn-sim-f'), ac=document.getElementById('cn-sim-f-ac'); if(!inp||!ac) return;
+  var q=(inp.value||'').trim().toLowerCase();
+  var m=(catalogoNovo||[]).filter(function(x){ return x.ativo!==false && (!q || ((x.codigo||'')+' '+(x.nome||'')).toLowerCase().indexOf(q)>=0); });
+  m.sort(function(a,b){ return ((a.codigo||'￿')+' '+(a.nome||'')).localeCompare((b.codigo||'￿')+' '+(b.nome||'')); });
+  m=m.slice(0,40);
+  ac.innerHTML=m.length?m.map(function(x){ return '<div class="autocomplete-item" onmousedown="_cnSimPickFormula(\''+x.id+'\')"><div class="ac-name">'+escapeHtml(x.nome||'')+'</div><div class="ac-doc">'+escapeHtml((x.codigo||'sem código')+' · '+_cnFormaLbl(x.forma))+'</div></div>'; }).join(''):'<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nada encontrado.</div>';
+  ac.classList.add('open');
+}
+function _cnSimPickFormula(id){ _cnSimSet('fId', id); }
 function renderCnSimulador(){
   var box=document.getElementById('cn-sim-box'); if(!box) return;
   var s=_cnSimSel;
-  var fs=(catalogoNovo||[]).filter(function(f){ return f.ativo!==false; }).sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
   var f=(catalogoNovo||[]).find(function(x){ return x.id===s.fId; });
   var nomeIns=function(id){ var x=(insumos||[]).find(function(p){ return p.id===id; }); return x?x.nome:''; };
   var h='<div class="panel" style="padding:14px;margin-bottom:12px">'+
     '<div style="font-weight:600;margin-bottom:8px">🧮 Simulador de orçamento — custo e preço calculados da composição</div>'+
     '<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">'+
-    '<div class="form-group" style="min-width:260px;margin:0"><label>Fórmula</label><select onchange="_cnSimSet(\'fId\',this.value)" style="width:100%">'+'<option value="">— escolha —</option>'+fs.map(function(x){ return '<option value="'+x.id+'"'+(x.id===s.fId?' selected':'')+'>'+escapeHtml(x.nome)+' ('+_cnFormaLbl(x.forma)+')</option>'; }).join('')+'</select></div>';
+    '<div class="form-group" style="min-width:300px;margin:0"><label>Fórmula '+(f?'<span style="color:var(--st-ok-tx)">✓ '+escapeHtml((f.codigo?f.codigo+' — ':'')+(f.nome||''))+'</span>':'')+'</label><div class="autocomplete-wrap"><input type="text" id="cn-sim-f" placeholder="Buscar por código ou nome..." oninput="_cnSimBuscaFormula()" onfocus="_cnSimBuscaFormula()" onblur="setTimeout(function(){ var a=document.getElementById(\'cn-sim-f-ac\'); if(a) a.classList.remove(\'open\'); },150)" autocomplete="off"><div class="autocomplete-list" id="cn-sim-f-ac"></div></div></div>'; // v227 — busca por CÓDIGO ou nome (pedido do dono 14/09); o select antigo não mostrava o código
   if(f&&f.forma==='capsula'){
     h+='<div class="form-group" style="margin:0"><label>Nº de cápsulas</label><input type="number" min="1" step="1" value="'+(s.nCaps||60)+'" onchange="_cnSimSet(\'nCaps\',this.value)" style="width:90px"></div>'+
        '<div class="form-group" style="margin:0"><label>Tamanho</label><select onchange="_cnSimSet(\'capsTam\',this.value)" style="width:110px"><option value="">sugestão</option>'+['00','0','1','2','3','4'].map(function(t){ return '<option value="'+t+'"'+(t===s.capsTam?' selected':'')+'>'+t+'</option>'; }).join('')+'</select></div>'+
@@ -18954,7 +18980,7 @@ function _finGerarPdf(tipo){
       '<td style="text-align:center;white-space:nowrap">'+(r.venc?fmtDate(r.venc):'—')+'</td>'+
       '<td style="text-align:center;white-space:nowrap">'+(dtBx?fmtDate(dtBx):'—')+'</td>'+
       '<td>'+escapeHtml(forma)+'</td>'+
-      (ehP?'':'<td style="font-family:monospace">'+escapeHtml(r.p.boleto||r.c.nsu||'—')+'</td>')+
+      (ehP?'':'<td style="font-family:monospace">'+escapeHtml(r.p.boleto||r.p.nsu||r.c.nsu||'—')+'</td>')+
       '<td style="text-align:center;white-space:nowrap">'+(r.nparc>1?(r.pi+1)+'/'+r.nparc:'única')+'</td>'+
       '<td style="text-align:center;white-space:nowrap">'+escapeHtml(statusLabels[r.st]||r.st)+((!ehP&&!r.p.pago&&r.p.antecipado)?' (antecipado)':'')+'</td>'+
     '</tr>';
@@ -19000,7 +19026,7 @@ function _finSortKey(r,col){
     case 'venc':    return r.venc||'';
     case 'baixa':   return (r.p.baixa&&r.p.baixa.data)||(r.st==='pago'?(r.venc||''):''); // mesma regra da célula
     case 'forma':   return String((typeof _formaLabel==='function'?_formaLabel(r.p.forma||r.c.formaPag):(r.p.forma||r.c.formaPag))||'').toLowerCase(); // v226 — forma da parcela (troca de recebimento) prevalece
-    case 'boleto':  return String(r.p.boleto||r.c.nsu||'');
+    case 'boleto':  return String(r.p.boleto||r.p.nsu||r.c.nsu||''); // v227 — NSU da parcela (troca de forma) conta
     case 'parcela': return r.pi||0;
     case 'status':  return r.st||'';
   }
@@ -19094,7 +19120,7 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
         <td style="${td};text-align:center;color:${r.st==='vencido'?'var(--st-bad-tx)':'var(--text-secondary)'}">${r.venc?fmtDate(r.venc):'—'}</td>
         <td style="${td};text-align:center;color:${r.st==='pago'?'var(--st-ok-tx)':'var(--text-tertiary)'}">${(()=>{ if(r.st!=='pago') return '—'; const d=(r.p.baixa&&r.p.baixa.data)||r.venc; return d?fmtDate(d):'—'; })()}</td>
         <td style="${td}">${escapeHtml(_formaLabel(r.p.forma||r.c.formaPag))}${r.nparc>1?` <span style="font-size:9px;color:var(--text-tertiary)">${r.nparc}×</span>`:''}${(tipo==='receber'&&r.c.recebAjuste)?(()=>{ const lt=(r.c.recebTrocas||[]).filter(t=>!t.descartado).slice(-1)[0]; const era=lt&&lt.antes&&lt.antes[0]?_formaLbl(lt.antes[0].forma):''; return ` <span style="font-size:9px;padding:0 5px;border-radius:20px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:600;cursor:help" title="${escapeHtml('Forma/vencimento AJUSTADOS pelo Financeiro'+(r.c.recebAjuste.por?' por '+r.c.recebAjuste.por:'')+(r.c.recebAjuste.em?' em '+fmtDate(r.c.recebAjuste.em):'')+(era?' — era '+era:'')+'. O valor fechado não mudou; a evolução completa está no detalhe da conta.')}">ajustado</span>`; })():''}</td>
-        ${tipo==='receber'?`<td style="${td};font-family:monospace;font-size:11px">${(r.p.boleto||r.c.nsu)?escapeHtml(r.p.boleto||r.c.nsu):'—'}</td>`:''}
+        ${tipo==='receber'?`<td style="${td};font-family:monospace;font-size:11px">${(r.p.boleto||r.p.nsu||r.c.nsu)?escapeHtml(r.p.boleto||r.p.nsu||r.c.nsu):'—'}</td>`:''}
         <td style="${td};text-align:center">${r.nparc>1?(r.pi+1)+'/'+r.nparc:'única'}</td>
         <td style="${td};text-align:center"><span style="font-size:10px;font-weight:600;padding:1px 8px;border-radius:20px;color:${statusColor[r.st]};background:var(--bg-secondary)">${statusLabels[r.st]}</span>${(tipo==='receber'&&!r.p.pago&&r.p.antecipado)?`<br><span style="font-size:9px;font-weight:700;color:var(--text-info)" title="Recebimento ANTECIPADO pelo banco${r.p.antecipado.data?' em '+fmtDate(r.p.antecipado.data):''}${r.p.antecipado.por?' ('+escapeHtml(r.p.antecipado.por)+')':''} — o boleto segue em aberto com o cliente (a quitação ainda é nossa responsabilidade); o valor está FORA das projeções de recebimento e do fluxo de caixa">⚡ antecipado</span>`:''}</td>
       </tr>`).join('')}</tbody>
@@ -19464,7 +19490,7 @@ function openContaDetalhe(tipo, contaId){
     <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;margin:10px 0 4px">Parcelas</div>
     <div style="max-height:240px;overflow:auto">
       ${parc.map((p,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:.5px solid var(--border)">
-        <span style="flex:1;font-size:12px">${p.num||i+1}× ${fmtMoney(p.valor)} ${p.vencimento?'· venc. '+fmtDate(p.vencimento):''}${(p.forma||c.formaPag)?' · <span style="color:var(--text-secondary)">'+escapeHtml(_formaLbl(p.forma||c.formaPag))+'</span>':''}</span>
+        <span style="flex:1;font-size:12px">${p.num||i+1}× ${fmtMoney(p.valor)} ${p.vencimento?'· venc. '+fmtDate(p.vencimento):''}${(p.forma||c.formaPag)?' · <span style="color:var(--text-secondary)">'+escapeHtml(_formaLbl(p.forma||c.formaPag))+'</span>':''}${p.nsu?' · <span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)" title="NSU">NSU '+escapeHtml(p.nsu)+'</span>':''}</span>
         ${p.pago
           ? `<span style="font-size:10px;padding:1px 8px;border-radius:20px;background:var(--st-ok-bg);color:var(--st-ok-tx)">${ehReceber?'Recebido':'Pago'}${((p.baixa&&p.baixa.data)||p.vencimento)?' '+fmtDate((p.baixa&&p.baixa.data)||p.vencimento):''}</span>
              <button onclick="estornarBaixa('${tipo}','${c.id}',${i})" style="font-size:10px;padding:2px 7px;color:var(--st-bad-tx)">estornar</button>`
@@ -19477,7 +19503,7 @@ function openContaDetalhe(tipo, contaId){
       ${c.recebTrocas.map(t=>{
         const dt=t.ts?fmtDate(new Date(t.ts).toISOString().slice(0,10)):'—';
         if(t.descartado) return `<div style="padding:6px 0;border-bottom:.5px solid var(--border);color:var(--st-bad-tx)">${dt} · ${escapeHtml(t.por||'—')} — ${escapeHtml(t.motivo||'ajuste descartado')}</div>`;
-        const fmt=arr=>(arr||[]).map(x=>escapeHtml(_formaLbl(x.forma))+' '+fmtMoney(x.valor)+(x.vencimento?' venc. '+fmtDate(x.vencimento):'')).join(' + ')||'—';
+        const fmt=arr=>(arr||[]).map(x=>escapeHtml(_formaLbl(x.forma))+' '+fmtMoney(x.valor)+(x.vencimento?' venc. '+fmtDate(x.vencimento):'')+(x.nsu?' NSU '+escapeHtml(x.nsu):'')).join(' + ')||'—';
         return `<div style="padding:6px 0;border-bottom:.5px solid var(--border)"><b>${dt}</b> · por ${escapeHtml(t.por||'—')}<br><span style="color:var(--text-tertiary)">era:</span> ${fmt(t.antes)}<br><span style="color:var(--text-tertiary)">virou:</span> ${fmt(t.depois)}</div>`;
       }).join('')}
     </div>`:''}
@@ -19654,7 +19680,7 @@ function _finTrocaAbrir(contaId){
     const raw=p.forma||c.formaPag||'';
     const lbl=_formaLbl(raw);
     const f=FORMAS_PAG.includes(raw)?raw:(FORMAS_PAG.includes(lbl)?lbl:FORMAS_PAG[0]);
-    if(!gmap[f]) gmap[f]={forma:f,valor:0,nsu:(c.nsu||''),parcelas:[]};
+    if(!gmap[f]) gmap[f]={forma:f,valor:0,nsu:(p.nsu||c.nsu||''),parcelas:[]}; // v227 — pré-preenche NSU da parcela (troca anterior) ou da conta
     const v=parseFloat(p.valor)||0;
     gmap[f].valor=+(gmap[f].valor+v).toFixed(2);
     gmap[f].parcelas.push({num:gmap[f].parcelas.length+1,valor:v,vencimento:p.vencimento||today(),pago:false,boleto:(p.boleto||'')});
@@ -19702,12 +19728,18 @@ function _finTrocaSalvar(){
   const pagas=(c.parcelas||[]).filter(p=>p.pago);
   const antes=(c.parcelas||[]).filter(p=>!p.pago).map(p=>({forma:p.forma||c.formaPag||'',valor:parseFloat(p.valor)||0,vencimento:p.vencimento||''}));
   const novas=[];
-  bls.forEach(b=>{ (b.parcelas||[]).forEach(p=>{ novas.push({valor:parseFloat(p.valor)||0,vencimento:p.vencimento,pago:false,boleto:(p.boleto||'').trim(),forma:b.forma}); }); });
+  bls.forEach(b=>{
+    // v227 — NSU do bloco de cartão viaja COM as parcelas (reporte do dono 14/09: convênio recebido em
+    // cartão, NSU digitado no editor e não registrado na conta). Por parcela, para sobreviver ao sync
+    // (a conta ajustada é preservada inteira) e não vazar para parcelas de outras formas num split.
+    const bnsu=(b.forma==='Cartão de Crédito'||b.forma==='Cartão de Débito')?String(b.nsu||'').trim():'';
+    (b.parcelas||[]).forEach(p=>{ novas.push(Object.assign({valor:parseFloat(p.valor)||0,vencimento:p.vencimento,pago:false,boleto:(p.boleto||'').trim(),forma:b.forma}, bnsu?{nsu:bnsu}:{})); });
+  });
   novas.sort((a,b2)=>String(a.vencimento||'').localeCompare(String(b2.vencimento||'')));
   c.parcelas=pagas.concat(novas).map((p,i)=>Object.assign(p,{num:i+1}));
   const por=(currentUser&&currentUser.name)||'—';
   c.recebAjuste={em:today(),por:por,ts:Date.now()};
-  (c.recebTrocas=c.recebTrocas||[]).push({ts:Date.now(),por:por,antes:antes,depois:novas.map(p=>({forma:p.forma,valor:p.valor,vencimento:p.vencimento,boleto:p.boleto||''}))});
+  (c.recebTrocas=c.recebTrocas||[]).push({ts:Date.now(),por:por,antes:antes,depois:novas.map(p=>({forma:p.forma,valor:p.valor,vencimento:p.vencimento,boleto:p.boleto||'',nsu:p.nsu||''}))});
   _finTrocaCtx=null; _peCtx=null;
   const ovT=document.getElementById('fintroca-overlay'); if(ovT) ovT.classList.remove('open');
   saveData();

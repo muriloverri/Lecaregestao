@@ -4981,7 +4981,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v225';
+var APP_VERSION = 'v226';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -18473,14 +18473,40 @@ function sincronizarContasReceberDePedidos(orderId){
     // Create one contaReceber per payment block
     _blocos.forEach((b,bi)=>{
       const ant=antigas[bi]||null;
-      const parcelas=b.parcelas.map((p,pi)=>({
-        num:p.num,
-        valor:parseFloat(p.valor)||0,
-        vencimento:p.vencimento||today(),
-        boleto:(p.boleto||'').trim(),
-        pago:(ant&&ant.parcelas&&ant.parcelas[pi]&&ant.parcelas[pi].pago!==undefined)?ant.parcelas[pi].pago:(p.pago||false)
-      }));
-      contasReceber.push({
+      // v226 — AJUSTE DE RECEBIMENTO do Financeiro (troca de forma/vencimento pós-Caixa): a conta
+      // ajustada é preservada COMO ESTÁ — o pedido segue intocado com o pagamento fechado no Caixa
+      // (as telas dele ganham só o carimbo "ajustado"). Guarda: se o VALOR do bloco mudou (pagamento
+      // re-editado no Caixa após estorno), o Caixa volta a mandar — reconstrói do bloco e o descarte
+      // fica registrado no histórico de trocas (nada some em silêncio).
+      if(ant && ant.recebAjuste){
+        if(Math.abs((parseFloat(ant.valor)||0)-(parseFloat(b.valor)||0))<=0.01){
+          contasReceber.push(Object.assign({}, ant, {
+            origemNum:_origemNum, clienteId:_alvo.clienteId||null, clienteNome:clienteNome,
+            statusCaixa:stCaixa, nsu:(b.nsu||'').trim(),
+            contaPlanoId:ant.contaPlanoId||_alvo.contaPlanoId||planoVendaId||null
+          }));
+          return;
+        }
+        (ant.recebTrocas=ant.recebTrocas||[]).push({ts:Date.now(),por:'Sistema',descartado:true,motivo:'Pagamento re-editado no Caixa com outro valor — o ajuste de forma/vencimento do Financeiro foi descartado (o Caixa manda).'});
+      }
+      const parcelas=b.parcelas.map((p,pi)=>{
+        const ap=(ant&&ant.parcelas&&ant.parcelas[pi])||null;
+        const np={
+          num:p.num,
+          valor:parseFloat(p.valor)||0,
+          vencimento:p.vencimento||today(),
+          boleto:(p.boleto||'').trim(),
+          pago:(ap&&ap.pago!==undefined)?ap.pago:(p.pago||false)
+        };
+        // v226 — o sync agora preserva o que NASCE no Financeiro e não existe no pedido: o objeto da
+        // baixa (data/conta/taxa/desconto — a DRE/DFC e a coluna Data Recebimento leem daqui) e o
+        // marcador de boleto antecipado (v218). Antes eram descartados a cada login (provado no banco
+        // em 14/09: 0 de 567 parcelas pagas de pedidos ainda tinham o objeto baixa).
+        if(ap&&ap.baixa) np.baixa=ap.baixa;
+        if(ap&&ap.antecipado) np.antecipado=ap.antecipado;
+        return np;
+      });
+      contasReceber.push(Object.assign({
         id:'cr_ped_'+_alvo.id+'_'+bi,
         origem:'pedido',
         origemId:_alvo.id,
@@ -18495,7 +18521,7 @@ function sincronizarContasReceberDePedidos(orderId){
         statusCaixa:stCaixa,
         contaPlanoId:(ant&&ant.contaPlanoId)||_alvo.contaPlanoId||planoVendaId||null,
         criadoEm:(ant&&ant.criadoEm)||Date.now()
-      });
+      }, (ant&&ant.recebTrocas)?{recebTrocas:ant.recebTrocas}:{}));
     });
   });
 }
@@ -18789,6 +18815,7 @@ function _formaCurta(f){
   return c[f]||_formaLabel(f);
 }
 var _finConvFiltro={pagar:false,receber:false}, _finCtxRender={}; // v108 — filtro "só Convênio"
+var _finRowsCache={pagar:[],receber:[]}; // v226 — linhas exibidas (pós-filtro/ordenação) p/ o Gerar PDF exportar EXATAMENTE o que está na tela
 function _finToggleConv(tipo){ _finConvFiltro[tipo]=!_finConvFiltro[tipo]; const c=_finCtxRender[tipo]; if(c) _renderFinTabela(tipo, c.containerId, c.statusFilterId); }
 // v109 — filtro avançado (modal) das contas a receber / a pagar
 function _finFiltroDefault(){ return {statusArr:['pendente','vencido']}; } // v110 — Recebido/Pago oculto por padrão
@@ -18887,6 +18914,74 @@ function _finLimparFiltro(tipo){
   document.getElementById('fin-filtro-overlay').classList.remove('open');
   const c=_finCtxRender[tipo]; if(c) _renderFinTabela(tipo,c.containerId,c.statusFilterId);
 }
+// v226 — GERAR PDF de Contas a Pagar/Receber (pedido do dono 14/09): exporta EXATAMENTE o que a tela
+// mostra (linhas do último render, já com filtro e ordenação aplicados — _finRowsCache), no padrão
+// v157 da lista de compra: janela de impressão limpa → "Salvar como PDF" do navegador.
+function _finFiltroResumoTxt(tipo){
+  const ehP=tipo==='pagar';
+  const parts=[];
+  const stLbl={pendente:ehP?'A pagar':'A receber',vencido:'Vencido',pago:ehP?'Pago':'Recebido'};
+  const cctx=_finCtxRender[tipo];
+  const stEl=cctx?document.getElementById(cctx.statusFilterId):null;
+  const stF=(stEl&&stEl.value)||'';
+  if(stF) parts.push('Status: '+(stLbl[stF]||stF));
+  if(_finConvFiltro[tipo]) parts.push('Só Convênio');
+  const f=_finFiltro[tipo]||{};
+  if(f.cliente) parts.push((ehP?'Fornecedor: ':'Cliente: ')+f.cliente);
+  if(f.pedidoQ) parts.push('Pedido: '+f.pedidoQ);
+  if(f.nf) parts.push('NF: '+f.nf);
+  if(!stF && Array.isArray(f.statusArr) && f.statusArr.length && f.statusArr.length<3) parts.push('Status: '+f.statusArr.map(s=>stLbl[s]||s).join(', '));
+  if(Array.isArray(f.formaArr) && f.formaArr.length && f.formaArr.length<FORMAS_PAG.length) parts.push('Forma: '+f.formaArr.join(', '));
+  const per=(lbl,de,ate)=>{ if(de||ate) parts.push(lbl+': '+(de?fmtDate(de):'…')+' a '+(ate?fmtDate(ate):'…')); };
+  per('Emissão',f.emisDe,f.emisAte); per('Vencimento',f.vencDe,f.vencAte); per(ehP?'Pagamento':'Recebimento',f.baixaDe,f.baixaAte);
+  return parts.join(' · ');
+}
+function _finGerarPdf(tipo){
+  const ehP=tipo==='pagar';
+  const rows=_finRowsCache[tipo]||[];
+  if(!rows.length){ alert('Não há parcelas na tela para exportar — ajuste o filtro e tente de novo.'); return; }
+  const statusLabels={pendente:ehP?'Pendente':'A receber',vencido:'Vencido',pago:ehP?'Pago':'Recebido',bonificacao:'Bonificação'};
+  const tot=rows.reduce((s,r)=>s+(parseFloat(r.p.valor)||0),0);
+  const linhas=rows.map(r=>{
+    const dtBx=(r.st==='pago')?(((r.p.baixa&&r.p.baixa.data)||r.venc)||''):'';
+    const forma=_formaLabel(ehP?r.c.formaPag:(r.p.forma||r.c.formaPag))+((!ehP&&r.c.recebAjuste)?' (ajustado)':'');
+    return '<tr>'+
+      '<td style="white-space:nowrap">'+escapeHtml(r.id)+'</td>'+
+      '<td>'+escapeHtml(r.nome)+'</td>'+
+      (ehP?'<td style="font-family:monospace">'+escapeHtml(r.c.notaFiscal||'—')+'</td>':'')+
+      '<td style="text-align:right;white-space:nowrap;font-weight:600">'+fmtMoney(r.p.valor)+'</td>'+
+      '<td style="text-align:center;white-space:nowrap">'+(r.emissao?fmtDate(r.emissao):'—')+'</td>'+
+      '<td style="text-align:center;white-space:nowrap">'+(r.venc?fmtDate(r.venc):'—')+'</td>'+
+      '<td style="text-align:center;white-space:nowrap">'+(dtBx?fmtDate(dtBx):'—')+'</td>'+
+      '<td>'+escapeHtml(forma)+'</td>'+
+      (ehP?'':'<td style="font-family:monospace">'+escapeHtml(r.p.boleto||r.c.nsu||'—')+'</td>')+
+      '<td style="text-align:center;white-space:nowrap">'+(r.nparc>1?(r.pi+1)+'/'+r.nparc:'única')+'</td>'+
+      '<td style="text-align:center;white-space:nowrap">'+escapeHtml(statusLabels[r.st]||r.st)+((!ehP&&!r.p.pago&&r.p.antecipado)?' (antecipado)':'')+'</td>'+
+    '</tr>';
+  }).join('');
+  const titulo='Contas a '+(ehP?'Pagar':'Receber');
+  const filtroTxt=_finFiltroResumoTxt(tipo);
+  const ths=(ehP
+    ? ['Conta','Fornecedor','Nº NF','Valor','Emissão','Vencimento','Data Pagamento','Forma','Parcela','Status']
+    : ['Conta','Cliente','Valor','Emissão','Vencimento','Data Recebimento','Forma','Boleto / NSU','Parcela','Status']
+  ).map(h=>'<th>'+h+'</th>').join('');
+  const colsAntesValor=ehP?3:2, colsDepoisValor=ehP?6:7;
+  const html='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>'+titulo+' — Lecare</title>'+
+    '<style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:24px}h1{font-size:19px;margin:0 0 2px}h2{font-size:12px;font-weight:normal;color:#555;margin:0 0 6px}'+
+    '.filtro{font-size:11px;color:#555;background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:5px 9px;margin:0 0 14px;display:inline-block}'+
+    'table{width:100%;border-collapse:collapse;font-size:11px}th{background:#f0f0f0;border:1px solid #ccc;padding:6px 8px;text-align:left;font-size:10px}td{border:1px solid #ccc;padding:5px 8px;vertical-align:middle}'+
+    'tfoot td{background:#f0f0f0;font-weight:bold;font-size:12px}.rodape{margin-top:14px;font-size:10px;color:#777}@media print{body{margin:0}}</style></head><body>'+
+    '<h1>Lecare — '+titulo+'</h1>'+
+    '<h2>Gerado em '+new Date().toLocaleString('pt-BR')+' · '+rows.length+' parcela(s)</h2>'+
+    (filtroTxt?'<div class="filtro">Filtro aplicado: '+escapeHtml(filtroTxt)+'</div>':'')+
+    '<table><thead><tr>'+ths+'</tr></thead><tbody>'+linhas+'</tbody>'+
+    '<tfoot><tr><td colspan="'+colsAntesValor+'" style="text-align:right">Total na tela ('+rows.length+' parc.)</td><td style="text-align:right;white-space:nowrap">'+fmtMoney(tot)+'</td><td colspan="'+colsDepoisValor+'"></td></tr></tfoot></table>'+
+    '<div class="rodape">Documento gerado pelo sistema Lecare — reflete as parcelas exibidas na tela no momento da geração (contas aprovadas no Caixa'+(filtroTxt?', com o filtro indicado acima':'')+').</div>'+
+    '<script>window.onload=function(){ setTimeout(function(){ window.print(); }, 250); };<\/script></body></html>';
+  const w=window.open('','_blank');
+  if(!w){ alert('O navegador bloqueou a janela do PDF — libere pop-ups para este site e tente de novo.'); return; }
+  w.document.write(html); w.document.close(); w.focus();
+}
 // v207 — ORDENAÇÃO POR COLUNA em Contas a Pagar/Receber (pedido do dono 11/08): clique no
 // cabeçalho ordena crescente; 2º clique inverte; 3º volta à ordem padrão (vencimento).
 var _finSort={pagar:null, receber:null};
@@ -18904,7 +18999,7 @@ function _finSortKey(r,col){
     case 'emissao': return r.emissao||'';
     case 'venc':    return r.venc||'';
     case 'baixa':   return (r.p.baixa&&r.p.baixa.data)||(r.st==='pago'?(r.venc||''):''); // mesma regra da célula
-    case 'forma':   return String((typeof _formaLabel==='function'?_formaLabel(r.c.formaPag):r.c.formaPag)||'').toLowerCase();
+    case 'forma':   return String((typeof _formaLabel==='function'?_formaLabel(r.p.forma||r.c.formaPag):(r.p.forma||r.c.formaPag))||'').toLowerCase(); // v226 — forma da parcela (troca de recebimento) prevalece
     case 'boleto':  return String(r.p.boleto||r.c.nsu||'');
     case 'parcela': return r.pi||0;
     case 'status':  return r.st||'';
@@ -18943,10 +19038,11 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
     <button onclick="_finEstornarSelecionada('${tipo}')" title="Estornar 1 ${tipo==='pagar'?'pagamento':'recebimento'} já baixado (volta para em aberto)" style="font-size:12px;padding:5px 12px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">↩ Estornar selecionada</button>
     ${tipo==='receber'?`<button onclick="_finAnteciparSelecionadas()" title="Antecipação de recebíveis: o banco adiantou o valor do(s) boleto(s), mas o cliente ainda deve pagá-lo(s) — a parcela NÃO é baixada e o valor sai das projeções de recebimento e do fluxo de caixa (não vai entrar de novo). Selecione parcela(s) de BOLETO em aberto; para desfazer, selecione parcela(s) já antecipada(s)." style="font-size:12px;padding:5px 12px">⚡ Antecipado</button> `:''}
     <button onclick="_finAbrirFiltro('${tipo}')" style="font-size:12px;padding:5px 12px;${_finFiltroAtivo(tipo)?'background:var(--text-info);color:#fff;border-color:var(--text-info)':''}">⚙ Filtro${_finFiltroAtivo(tipo)?' ✓':''}</button>
+    <button onclick="_finGerarPdf('${tipo}')" title="Exporta em PDF exatamente as parcelas exibidas na tela (respeitando o filtro e a ordenação atuais)" style="font-size:12px;padding:5px 12px">🖨 Gerar PDF</button>
     <span id="fin-sel-tot-${tipo}" style="display:none;font-size:12.5px;font-weight:700;color:${tipo==='pagar'?'var(--st-bad-tx)':'var(--st-ok-tx)'};background:var(--bg-secondary);border:.5px solid var(--border);border-radius:14px;padding:3px 12px"></span><!-- v199 — somatório dos marcados -->
     <span style="font-size:11px;color:var(--text-tertiary);margin-left:auto">${rows.length} parcela(s)${_finFiltroAtivo(tipo)?' · filtrado':''}</span>
   </div>`;
-  if(!rows.length){ container.innerHTML=toolbar+'<div class="empty" style="padding:20px">Nenhuma conta '+(tipo==='pagar'?'a pagar':'a receber')+' aprovada.</div>'; return; }
+  if(!rows.length){ _finRowsCache[tipo]=[]; container.innerHTML=toolbar+'<div class="empty" style="padding:20px">Nenhuma conta '+(tipo==='pagar'?'a pagar':'a receber')+' aprovada.</div>'; return; }
   // v207 — ordenação escolhida no cabeçalho prevalece; sem escolha, ordem padrão de sempre
   const _srt=_finSort[tipo];
   if(_srt){
@@ -18959,6 +19055,7 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
   } else {
   rows.sort((a,b)=> convF ? ((a.nome||'').localeCompare(b.nome||'')||(a.venc||'9999').localeCompare(b.venc||'9999')) : (a.venc||'9999').localeCompare(b.venc||'9999')); // v108 — Convênio agrupa por cliente
   }
+  _finRowsCache[tipo]=rows; // v226 — espelho fiel do que está na tela (pós-filtro e pós-ordenação) p/ o Gerar PDF
   // v117 — somatório da coluna Valor (soma exatamente as parcelas exibidas na tela, após os filtros)
   const _totTela = rows.reduce((s,r)=>s+(parseFloat(r.p.valor)||0),0);
   const _colsAntes = tipo==='pagar'?4:3; // colunas antes de "Valor" (checkbox+Conta+Nome[+NF])
@@ -18996,7 +19093,7 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
         <td style="${td};text-align:center;color:var(--text-secondary)">${r.emissao?fmtDate(r.emissao):'—'}</td>
         <td style="${td};text-align:center;color:${r.st==='vencido'?'var(--st-bad-tx)':'var(--text-secondary)'}">${r.venc?fmtDate(r.venc):'—'}</td>
         <td style="${td};text-align:center;color:${r.st==='pago'?'var(--st-ok-tx)':'var(--text-tertiary)'}">${(()=>{ if(r.st!=='pago') return '—'; const d=(r.p.baixa&&r.p.baixa.data)||r.venc; return d?fmtDate(d):'—'; })()}</td>
-        <td style="${td}">${escapeHtml(_formaLabel(r.c.formaPag))}${r.nparc>1?` <span style="font-size:9px;color:var(--text-tertiary)">${r.nparc}×</span>`:''}</td>
+        <td style="${td}">${escapeHtml(_formaLabel(r.p.forma||r.c.formaPag))}${r.nparc>1?` <span style="font-size:9px;color:var(--text-tertiary)">${r.nparc}×</span>`:''}${(tipo==='receber'&&r.c.recebAjuste)?(()=>{ const lt=(r.c.recebTrocas||[]).filter(t=>!t.descartado).slice(-1)[0]; const era=lt&&lt.antes&&lt.antes[0]?_formaLbl(lt.antes[0].forma):''; return ` <span style="font-size:9px;padding:0 5px;border-radius:20px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:600;cursor:help" title="${escapeHtml('Forma/vencimento AJUSTADOS pelo Financeiro'+(r.c.recebAjuste.por?' por '+r.c.recebAjuste.por:'')+(r.c.recebAjuste.em?' em '+fmtDate(r.c.recebAjuste.em):'')+(era?' — era '+era:'')+'. O valor fechado não mudou; a evolução completa está no detalhe da conta.')}">ajustado</span>`; })():''}</td>
         ${tipo==='receber'?`<td style="${td};font-family:monospace;font-size:11px">${(r.p.boleto||r.c.nsu)?escapeHtml(r.p.boleto||r.c.nsu):'—'}</td>`:''}
         <td style="${td};text-align:center">${r.nparc>1?(r.pi+1)+'/'+r.nparc:'única'}</td>
         <td style="${td};text-align:center"><span style="font-size:10px;font-weight:600;padding:1px 8px;border-radius:20px;color:${statusColor[r.st]};background:var(--bg-secondary)">${statusLabels[r.st]}</span>${(tipo==='receber'&&!r.p.pago&&r.p.antecipado)?`<br><span style="font-size:9px;font-weight:700;color:var(--text-info)" title="Recebimento ANTECIPADO pelo banco${r.p.antecipado.data?' em '+fmtDate(r.p.antecipado.data):''}${r.p.antecipado.por?' ('+escapeHtml(r.p.antecipado.por)+')':''} — o boleto segue em aberto com o cliente (a quitação ainda é nossa responsabilidade); o valor está FORA das projeções de recebimento e do fluxo de caixa">⚡ antecipado</span>`:''}</td>
@@ -19367,13 +19464,23 @@ function openContaDetalhe(tipo, contaId){
     <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;margin:10px 0 4px">Parcelas</div>
     <div style="max-height:240px;overflow:auto">
       ${parc.map((p,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:.5px solid var(--border)">
-        <span style="flex:1;font-size:12px">${p.num||i+1}× ${fmtMoney(p.valor)} ${p.vencimento?'· venc. '+fmtDate(p.vencimento):''}</span>
+        <span style="flex:1;font-size:12px">${p.num||i+1}× ${fmtMoney(p.valor)} ${p.vencimento?'· venc. '+fmtDate(p.vencimento):''}${(p.forma||c.formaPag)?' · <span style="color:var(--text-secondary)">'+escapeHtml(_formaLbl(p.forma||c.formaPag))+'</span>':''}</span>
         ${p.pago
           ? `<span style="font-size:10px;padding:1px 8px;border-radius:20px;background:var(--st-ok-bg);color:var(--st-ok-tx)">${ehReceber?'Recebido':'Pago'}${((p.baixa&&p.baixa.data)||p.vencimento)?' '+fmtDate((p.baixa&&p.baixa.data)||p.vencimento):''}</span>
              <button onclick="estornarBaixa('${tipo}','${c.id}',${i})" style="font-size:10px;padding:2px 7px;color:var(--st-bad-tx)">estornar</button>`
           : `<button class="btn-primary" style="font-size:11px;padding:3px 10px" onclick="openBaixaModal('${tipo}','${c.id}',${i})">${ehReceber?'💵 Receber':'💵 Baixar'}</button>`}
       </div>`).join('')}
     </div>
+    ${(ehReceber&&c.recebTrocas&&c.recebTrocas.length)?`
+    <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;margin:12px 0 4px">⇄ Ajustes de forma de recebimento</div>
+    <div style="max-height:160px;overflow:auto;font-size:11px">
+      ${c.recebTrocas.map(t=>{
+        const dt=t.ts?fmtDate(new Date(t.ts).toISOString().slice(0,10)):'—';
+        if(t.descartado) return `<div style="padding:6px 0;border-bottom:.5px solid var(--border);color:var(--st-bad-tx)">${dt} · ${escapeHtml(t.por||'—')} — ${escapeHtml(t.motivo||'ajuste descartado')}</div>`;
+        const fmt=arr=>(arr||[]).map(x=>escapeHtml(_formaLbl(x.forma))+' '+fmtMoney(x.valor)+(x.vencimento?' venc. '+fmtDate(x.vencimento):'')).join(' + ')||'—';
+        return `<div style="padding:6px 0;border-bottom:.5px solid var(--border)"><b>${dt}</b> · por ${escapeHtml(t.por||'—')}<br><span style="color:var(--text-tertiary)">era:</span> ${fmt(t.antes)}<br><span style="color:var(--text-tertiary)">virou:</span> ${fmt(t.depois)}</div>`;
+      }).join('')}
+    </div>`:''}
     <div class="modal-footer">
       <button onclick="closeContaDetalhe()">Fechar</button>
       ${parc.some(p=>!p.pago)?`<button class="btn-primary" onclick="openBaixaModal('${tipo}','${c.id}',-1)">${ehReceber?'Receber várias / renegociar':'Pagar várias / renegociar'}</button>`:''}
@@ -19451,8 +19558,9 @@ function _renderBaixa(){
       <div style="font-size:12px;color:var(--text-secondary)">Valor original: <b id="baixa-bruto">R$ 0</b></div>
       <div style="font-size:14px;font-weight:700;color:${ehReceber?'var(--st-ok-tx)':'var(--st-bad-tx)'}">${ehReceber?'Líquido recebido':'Líquido pago'}: <span id="baixa-liquido">R$ 0</span></div>
     </div>
-    <div class="modal-footer">
-      <button onclick="closeBaixaModal()">Cancelar</button>
+    <div class="modal-footer" style="display:flex;align-items:center">
+      ${ehReceber?`<button onclick="_finTrocaAbrirDaBaixa()" title="Trocar a forma de recebimento e/ou o vencimento das parcelas em aberto desta conta — SEM dar baixa. Uso típico: conta em Convênio que fechou com o cliente em PIX/Boleto/Cartão com nova data. O valor não muda e a evolução fica no histórico." style="margin-right:auto;font-size:12px;color:var(--text-info);border-color:var(--text-info)">⇄ Trocar forma / vencimento</button>`:''}
+      <button onclick="closeBaixaModal()" style="${ehReceber?'':'margin-left:auto'}">Cancelar</button>
       <button class="btn-primary" onclick="confirmarBaixa()">Confirmar baixa</button>
     </div>
   </div>`;
@@ -19510,6 +19618,103 @@ function estornarBaixa(tipo, contaId, parcIdx){
   saveData();
   if(tipo==='pagar') renderFinAPagar(); else renderFinAReceber();
   renderFinPainel(); openContaDetalhe(tipo, contaId);
+}
+
+// ═══════════ v226 — TROCA DE FORMA DE RECEBIMENTO (pedido do dono 14/09) ═══════════
+// A conta em Convênio (ou qualquer forma) que fechou com o cliente em outra forma/vencimento é
+// ajustada AQUI no Financeiro, sem baixa: as parcelas EM ABERTO são substituídas pela nova estrutura
+// (re-parcelamento e divisão em formas permitidos), com o VALOR TOTAL travado ao centavo. Parcelas já
+// recebidas não são tocadas. O pedido e o Caixa NÃO são alterados (decisão do dono: "não mexer para
+// trás") — as telas deles ganham o carimbo "ajustado". A evolução fica em c.recebTrocas (auditável) e
+// o sync preserva a conta ajustada (c.recebAjuste), salvo re-edição de valor no Caixa (descarte logado).
+var _finTrocaCtx=null;
+function _recebAjustePed(orderId){
+  try{ return (contasReceber||[]).find(cr=>cr&&cr.origem==='pedido'&&String(cr.origemId)===String(orderId)&&cr.recebAjuste)||null; }catch(_e){ return null; }
+}
+function _recebAjusteChip(orderId){
+  const a=_recebAjustePed(orderId); if(!a) return '';
+  const i=a.recebAjuste||{};
+  const tit='Forma de recebimento AJUSTADA pelo Financeiro'+(i.por?' por '+i.por:'')+(i.em?' em '+fmtDate(i.em):'')+' — aqui fica o pagamento fechado no Caixa; a forma vigente está em Financeiro → Contas a Receber.';
+  return ' <span style="font-size:9px;padding:0 6px;border-radius:20px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:600;vertical-align:middle;cursor:help" title="'+escapeHtml(tit)+'">ajustado</span>';
+}
+function _finTrocaAbrirDaBaixa(){
+  const st=_baixaState; if(!st) return;
+  closeBaixaModal();
+  _finTrocaAbrir(st.contaId);
+}
+function _finTrocaAbrir(contaId){
+  const c=contasReceber.find(x=>x.id===contaId); if(!c) return;
+  if(!_temSetor('financeiro')){ alert('Apenas o setor financeiro pode trocar a forma de recebimento.'); return; }
+  const abertas=(c.parcelas||[]).filter(p=>!p.pago);
+  if(!abertas.length){ alert('Todas as parcelas desta conta já foram recebidas — não há o que trocar.'); return; }
+  const totalAberto=+abertas.reduce((s,p)=>s+(parseFloat(p.valor)||0),0).toFixed(2);
+  // blocos iniciais = parcelas em aberto agrupadas pela forma atual (o financeiro parte do que existe)
+  const gmap={};
+  abertas.forEach(p=>{
+    const raw=p.forma||c.formaPag||'';
+    const lbl=_formaLbl(raw);
+    const f=FORMAS_PAG.includes(raw)?raw:(FORMAS_PAG.includes(lbl)?lbl:FORMAS_PAG[0]);
+    if(!gmap[f]) gmap[f]={forma:f,valor:0,nsu:(c.nsu||''),parcelas:[]};
+    const v=parseFloat(p.valor)||0;
+    gmap[f].valor=+(gmap[f].valor+v).toFixed(2);
+    gmap[f].parcelas.push({num:gmap[f].parcelas.length+1,valor:v,vencimento:p.vencimento||today(),pago:false,boleto:(p.boleto||'')});
+  });
+  _finTrocaCtx={contaId:contaId, totalAberto:totalAberto, blocos:Object.values(gmap)};
+  const nPagas=(c.parcelas||[]).length-abertas.length;
+  let ov=document.getElementById('fintroca-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='fintroca-overlay'; ov.className='overlay'; ov.style.zIndex='480'; document.body.appendChild(ov); }
+  ov.innerHTML=`<div class="modal" style="width:580px;max-height:90vh;overflow-y:auto">
+    <h2>⇄ Trocar forma de recebimento</h2>
+    <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">${escapeHtml(c.descricao||'—')} · ${escapeHtml(c.clienteNome||'—')}</div>
+    <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Nada é baixado aqui: a conta segue em aberto com a nova forma e os novos vencimentos. O valor em aberto é travado — a soma das parcelas tem que bater ao centavo.${nPagas?' Parcela(s) já recebida(s): '+nPagas+' — não entram na troca.':''}</div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px"><span>Valor em aberto (travado)</span><b>${fmtMoney(totalAberto)}</b></div>
+    <div id="fintroca-distrib" style="font-size:11px;margin-bottom:10px"></div>
+    <div id="fintroca-blocos"></div>
+    <button onclick="_peAddBloco()" style="font-size:12px;padding:5px 12px;margin-top:6px">+ Adicionar forma de pagamento</button>
+    <div class="modal-footer" style="margin-top:14px">
+      <button onclick="document.getElementById('fintroca-overlay').classList.remove('open');_finTrocaCtx=null">Cancelar</button>
+      <button class="btn-primary" onclick="_finTrocaSalvar()">✓ Aplicar troca</button>
+    </div>
+  </div>`;
+  _peOpen(_finTrocaCtx.blocos,'fintroca-blocos',totalAberto,_finTrocaDistrib);
+  ov.classList.add('open');
+  _finTrocaDistrib();
+}
+function _finTrocaDistrib(){
+  if(!_finTrocaCtx) return;
+  const d=(_finTrocaCtx.blocos||[]).reduce((s,b)=>s+(parseFloat(b.valor)||0),0);
+  const ok=Math.abs(d-_finTrocaCtx.totalAberto)<0.005;
+  const e=document.getElementById('fintroca-distrib');
+  if(e) e.innerHTML=`Configurado: <b>${fmtMoney(d)}</b> / ${fmtMoney(_finTrocaCtx.totalAberto)} ${ok?'<span style="color:var(--st-ok-tx)">✓ valor exato</span>':'<span style="color:var(--st-bad-tx)">⚠ valores não batem</span>'}`;
+}
+function _finTrocaSalvar(){
+  const ctx=_finTrocaCtx; if(!ctx) return;
+  const c=contasReceber.find(x=>x.id===ctx.contaId); if(!c) return;
+  const bls=(ctx.blocos||[]).filter(b=>(parseFloat(b.valor)||0)>0);
+  if(!bls.length){ alert('Adicione ao menos uma forma com valor.'); return; }
+  for(const b of bls){
+    const somaB=(b.parcelas||[]).reduce((s,p)=>s+(parseFloat(p.valor)||0),0);
+    if(Math.abs(somaB-(parseFloat(b.valor)||0))>0.005){ alert('Na forma "'+b.forma+'": a soma das parcelas ('+fmtMoney(somaB)+') não bate com o valor da forma ('+fmtMoney(parseFloat(b.valor)||0)+').\n\nAjuste ou use o ⚡ para regerar.'); return; }
+    for(const p of (b.parcelas||[])){ if(!p.vencimento){ alert('Informe o vencimento de todas as parcelas.'); return; } }
+  }
+  const soma=bls.reduce((s,b)=>s+(parseFloat(b.valor)||0),0);
+  if(Math.abs(soma-ctx.totalAberto)>0.005){ alert('🚫 As formas somam '+fmtMoney(soma)+', mas o valor em aberto da conta é '+fmtMoney(ctx.totalAberto)+'.\n\nO valor fechado com o cliente NÃO muda aqui — ajuste as parcelas até bater exatamente.'); return; }
+  const pagas=(c.parcelas||[]).filter(p=>p.pago);
+  const antes=(c.parcelas||[]).filter(p=>!p.pago).map(p=>({forma:p.forma||c.formaPag||'',valor:parseFloat(p.valor)||0,vencimento:p.vencimento||''}));
+  const novas=[];
+  bls.forEach(b=>{ (b.parcelas||[]).forEach(p=>{ novas.push({valor:parseFloat(p.valor)||0,vencimento:p.vencimento,pago:false,boleto:(p.boleto||'').trim(),forma:b.forma}); }); });
+  novas.sort((a,b2)=>String(a.vencimento||'').localeCompare(String(b2.vencimento||'')));
+  c.parcelas=pagas.concat(novas).map((p,i)=>Object.assign(p,{num:i+1}));
+  const por=(currentUser&&currentUser.name)||'—';
+  c.recebAjuste={em:today(),por:por,ts:Date.now()};
+  (c.recebTrocas=c.recebTrocas||[]).push({ts:Date.now(),por:por,antes:antes,depois:novas.map(p=>({forma:p.forma,valor:p.valor,vencimento:p.vencimento,boleto:p.boleto||''}))});
+  _finTrocaCtx=null; _peCtx=null;
+  const ovT=document.getElementById('fintroca-overlay'); if(ovT) ovT.classList.remove('open');
+  saveData();
+  const ctxR=_finCtxRender['receber']; if(ctxR) _renderFinTabela('receber',ctxR.containerId,ctxR.statusFilterId);
+  try{ renderFinPainel&&renderFinPainel(); }catch(_e){}
+  try{ renderFinFluxo&&renderFinFluxo(); }catch(_e){}
+  alert('✓ Forma de recebimento ajustada.\n\nNada foi baixado — a conta segue em aberto com a nova forma e os novos vencimentos.\nO pedido e o Caixa mantêm o registro original com o carimbo "ajustado", e a evolução ficou no histórico da conta.');
 }
 
 // ═══════════ v89 FASE 3.x — Fluxo de Caixa projetado ═══════════
@@ -20596,7 +20801,8 @@ function openDetailModal(oid){
             '<span style="font-size:11px;color:var(--text-tertiary)">'+(b.parcelas.length===1?'à vista':b.parcelas.length+'× parcelas')+'</span>'+
             '</div>'+parcs+'</div>';
         }).join('');
-        return '<div style="border:.5px solid var(--border);border-radius:var(--r-md);overflow:hidden;margin-bottom:4px">'+blocosHtml+'</div>'+
+        return (typeof _recebAjusteChip==='function'&&_recebAjusteChip(o.id)?'<div style="margin-bottom:4px">'+_recebAjusteChip(o.id)+'</div>':'')+
+          '<div style="border:.5px solid var(--border);border-radius:var(--r-md);overflow:hidden;margin-bottom:4px">'+blocosHtml+'</div>'+
           '<button onclick="openPgtoViewModal('+o.id+')" style="font-size:11px;padding:4px 12px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:transparent;color:var(--text-secondary);cursor:pointer;font-family:inherit">👁 Ver pagamento</button>';
       } else if(o.formaPag){
         return '<div style="font-size:12px;color:var(--text-secondary);padding:4px 0">'+o.formaPag+(o.parcelas&&o.parcelas!=='1'?' · '+o.parcelas+'×':' · à vista')+'</div>'+
@@ -22007,7 +22213,8 @@ function openPgtoViewModal(oid){
         <div style="font-size:15px;font-weight:500;color:var(--st-ok-tx)">${fmtMoney(total)}</div>
       </div>
     </div>
-    <div style="text-align:right;margin-bottom:12px">${diffHtml}</div>`;
+    <div style="text-align:right;margin-bottom:12px">${diffHtml}</div>
+    ${(typeof _recebAjusteChip==='function'&&_recebAjusteChip(o.id))?`<div style="margin-bottom:10px">${_recebAjusteChip(o.id)}<span style="font-size:11px;color:var(--text-tertiary)"> — este é o pagamento fechado no Caixa; a forma vigente está em Financeiro → Contas a Receber.</span></div>`:''}`;
 
   // Blocos de pagamento
   let blocosHtml='';
@@ -30041,7 +30248,7 @@ function renderCaixaAbertos(){
           <td style="${td}">${tipoBadgeHtml(om.tipo||'venda')}</td>
           <td style="${td}text-align:center;color:var(--text-secondary)">${fmtDate(om.d1)}</td>
           <td style="${td}text-align:right;font-weight:600;color:var(--st-ok-tx)">${fmtMoney(total)}</td>
-          <td style="${td}">${pgtoSumm}</td>
+          <td style="${td}">${pgtoSumm}${typeof _recebAjusteChip==='function'?_recebAjusteChip(om.id):''}</td>
           <td style="${td}">${_semFin?'<span style="font-size:11px;color:var(--text-tertiary)">— (sem financeiro)</span>':(()=>{const _pp=(planoContas||[]).find(p=>p.id===_curPlano);const _nm=_pp?((_pp.codigo?_pp.codigo+' — ':'')+_pp.nome):'— sem conta —';return `<span style="font-size:11px;color:${_curPlano?'var(--text-primary)':'var(--st-bad-tx)'}" title="Para editar, use o botão ✏ Pgto">${escapeHtml(_nm)}</span>`;})()}</td>
           <td style="${td}text-align:center">${origem}</td>
           <td style="${td}text-align:center;white-space:nowrap">
@@ -30320,7 +30527,7 @@ function renderCaixaFinalizados(){
       <td style="${tdc}">${escapeHtml((_ehPagar?c0.fornecedorNome:c0.clienteNome)||'—')}</td>
       ${!_ehPagar?`<td style="${tdc}">${tipoBadgeHtml((orders.find(x=>String(x.id)===String(c0.origemId))||{}).tipo||'venda')}</td>`:''}
       <td style="${tdc};color:var(--text-secondary)">${escapeHtml(_descParcela(nParc))}</td>
-      <td style="${tdc}">${escapeHtml(formasG||'—')}</td>
+      <td style="${tdc}">${escapeHtml(formasG||'—')}${typeof _recebAjusteChip==='function'?_recebAjusteChip(c0.origemId):''}</td>
       ${_ehPagar?`<td style="${tdc};font-family:monospace;font-size:11px">${c0.notaFiscal?escapeHtml(c0.notaFiscal):'—'}</td>`:''}
       <td style="${tdc};text-align:right;font-weight:600">${fmtMoney(valorG)}</td>
       <td style="${tdc};text-align:center;color:var(--text-secondary)">${fmtDate(ap.slice(0,10))}</td>
@@ -32706,6 +32913,9 @@ function _orcOperyImportar(inp){
     rd.readAsText(f,'ISO-8859-1'); // a exportação do Opery vem em Latin-1
   }catch(e){ alert('Falha na importação: '+((e&&e.message)||e)); if(inp) inp.value=''; }
 }
+// v226 — rótulo do TIPO do documento do Opery (pedido do dono 12/09: mostrar o tipo na tela)
+var _ORC_TIPO_LBL={'PEDIDO DE VENDA':'Venda','BONIFICACAO':'Bonificação','VENDA FILHO':'Venda Filho','VENDA MAE':'Venda Mãe','EMBAIXADOR':'Embaixador','AVARIA':'Avaria','AMOSTRA':'Amostra'};
+function _orcOperyTipoLbl(tipoDoc){ var t=String(tipoDoc||'').trim().toUpperCase(); return _ORC_TIPO_LBL[t]||(t?t.charAt(0)+t.slice(1).toLowerCase():'Venda'); }
 function _orcOperyObs(tipoDoc, desc){
   var p=[]; if(tipoDoc && tipoDoc!=='PEDIDO DE VENDA') p.push(tipoDoc.charAt(0)+tipoDoc.slice(1).toLowerCase());
   if(desc) p.push('Categorias: '+desc);
@@ -32745,14 +32955,15 @@ function _orcOperyProcessar(txt){
     if(st==='Aprovado'){
       var fin=String(ix['Financeiro']!=null?(c[ix['Financeiro']]||''):'').trim();
       var partes=_ordMap[cod]||[];
+      var _tipoLbl=_orcOperyTipoLbl(tipoDoc); // v226 — tipo do documento também nas divergências
       if(!partes.length){
-        if(fin==='Concluído') divg.push({cat:'ausente', num:cod, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:null, obs:'Aprovado e PAGO no Opery, sem registro no sistema — exportar o PDF para o Drive (o agente insere na próxima rodada)'});
-        else divg.push({cat:'aguardando', num:cod, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:null, obs:'Aprovado aguardando pagamento ('+(fin||'—')+') — fora do sistema por regra; acompanhar a cobrança'});
+        if(fin==='Concluído') divg.push({cat:'ausente', num:cod, tipo:_tipoLbl, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:null, obs:'Aprovado e PAGO no Opery, sem registro no sistema — exportar o PDF para o Drive (o agente insere na próxima rodada)'});
+        else divg.push({cat:'aguardando', num:cod, tipo:_tipoLbl, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:null, obs:'Aprovado aguardando pagamento ('+(fin||'—')+') — fora do sistema por regra; acompanhar a cobrança'});
       } else {
         var vLec=partes.reduce(function(s,o){ return s+(parseFloat(o.valor)||0); },0);
         var fLec=partes.reduce(function(s,o){ return s+(parseFloat(o.freteCob)||0); },0);
         if(Math.abs(vLec-vTot)>0.01 || Math.abs(fLec-frete)>0.01)
-          divg.push({cat:'valor', num:cod, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:+vLec.toFixed(2),
+          divg.push({cat:'valor', num:cod, tipo:_tipoLbl, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:+vLec.toFixed(2),
             obs:(Math.abs(fLec-frete)>0.01?('frete Opery '+fmtMoney(frete)+' × sistema '+fmtMoney(fLec)+' · '):'')+'apenas apresentar — vale o valor fechado com o cliente (sistema); Opery muda por troca de lote'});
       }
     }
@@ -32761,11 +32972,12 @@ function _orcOperyProcessar(txt){
       if(ex.status==='ganho'||ex.status==='perdido'){ mant++; continue; } // etapa fechada aqui NUNCA regride
       if(st==='Aprovado'){ ex.status='ganho'; ex.vendidoEm=agora; ex.pedidoNum=cod; vend++; }
       else if(st==='Cancelado'){ ex.status='perdido'; ex.perdidoEm=agora; perd++; }
-      else { ex.valor=vTot; ex.frete=frete; if(dIso) ex.data=dIso; if(cliNome){ ex.clienteNome=cliNome; ex.empresa=cliNome; } if(atend) ex.responsavel=atend; ex.obs=_orcOperyObs(tipoDoc,desc); att++; }
+      else { ex.valor=vTot; ex.frete=frete; if(dIso) ex.data=dIso; if(cliNome){ ex.clienteNome=cliNome; ex.empresa=cliNome; } if(atend) ex.responsavel=atend; ex.obs=_orcOperyObs(tipoDoc,desc); ex.tipoOpery=_orcOperyTipoLbl(tipoDoc); att++; }
       continue;
     }
     if(st!=='Pendente'){ ign++; continue; } // aprovado/cancelado sem orçamento aberto aqui não cria nada
     orcamentosCrm.push({ id:'orcop_'+cod, origem:'opery', operyNum:cod, num:cod, detalhado:false,
+      tipoOpery:_orcOperyTipoLbl(tipoDoc), // v226 — tipo do documento visível na tela
       data:dIso||(typeof today==='function'?today():''), status:'aberto',
       clienteNome:cliNome, empresa:cliNome,
       tipoProduto:(desc.toUpperCase().indexOf('ANEST')>=0?'anestesico':'linha'),
@@ -32831,9 +33043,10 @@ function _orcDivgAbrir(){
       if(!its.length) return '';
       return '<div style="font-size:12.5px;font-weight:700;color:'+cats[cat][1]+';margin:12px 0 6px">'+cats[cat][0]+' ('+its.length+')</div>'+
         '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:680px"><thead><tr>'+
-        '<th style="'+th+'">Pedido</th><th style="'+th+'">Data</th><th style="'+th+'">Cliente</th><th style="'+th+'">Atendente</th><th style="'+th+';text-align:right">Valor Opery</th><th style="'+th+';text-align:right">Valor sistema</th><th style="'+th+'">Observação</th>'+
+        '<th style="'+th+'">Pedido</th><th style="'+th+'">Tipo</th><th style="'+th+'">Data</th><th style="'+th+'">Cliente</th><th style="'+th+'">Atendente</th><th style="'+th+';text-align:right">Valor Opery</th><th style="'+th+';text-align:right">Valor sistema</th><th style="'+th+'">Observação</th>'+
         '</tr></thead><tbody>'+its.map(function(x){
           return '<tr><td style="'+td+';font-family:monospace;font-weight:600">'+escapeHtml(x.num||'')+'</td>'+
+            '<td style="'+td+';white-space:nowrap;font-size:11px">'+(x.tipo?(x.tipo==='Venda'?'<span style="color:var(--text-secondary)">Venda</span>':'<span style="font-weight:600;color:var(--st-mid-tx)">'+escapeHtml(x.tipo)+'</span>'):'—')+'</td>'+ // v226 — tipo do documento
             '<td style="'+td+';white-space:nowrap">'+escapeHtml(x.data||'—')+'</td>'+
             '<td style="'+td+'">'+escapeHtml(x.cliente||'')+'</td>'+
             '<td style="'+td+'">'+escapeHtml((x.atend||'—').split(' ')[0])+'</td>'+
@@ -32920,10 +33133,10 @@ function renderOrcamentosCrm(){
   // v191 — cabeçalho com as COLUNAS DE DATA da etapa: Criado sempre; Vendido em / Perdido em conforme a sub-aba
   const thead=document.getElementById('orc-crm-thead');
   const colEtapa = tab==='ganho' ? '<th>Vendido em</th><th>Pedido</th>' : (tab==='perdido' ? '<th>Perdido em</th>' : '');
-  if(thead) thead.innerHTML='<tr><th>Empresa</th><th>Produto</th><th>Valor</th><th>Frete</th><th>Forma Pgto</th><th>Criado</th>'+colEtapa+'<th>Atendente</th><th>Ações</th></tr>';
+  if(thead) thead.innerHTML='<tr><th>Empresa</th><th>Produto</th><th>Tipo</th><th>Valor</th><th>Frete</th><th>Forma Pgto</th><th>Criado</th>'+colEtapa+'<th>Atendente</th><th>Ações</th></tr>'; // v226 — coluna Tipo (venda/bonificação/embaixador/…)
 
   if(!filtered.length){
-    tbody.innerHTML='<tr><td colspan="10" class="empty" style="padding:32px;text-align:center">Nenhum orçamento nesta etapa.</td></tr>';
+    tbody.innerHTML='<tr><td colspan="11" class="empty" style="padding:32px;text-align:center">Nenhum orçamento nesta etapa.</td></tr>'; // v226 — +1 coluna (Tipo)
     return;
   }
 
@@ -32944,6 +33157,10 @@ function renderOrcamentosCrm(){
     return `<tr style="border-bottom:.5px solid var(--border)">
       <td style="padding:8px 10px;font-weight:500">${o.num?'<span style="font-family:monospace;font-size:10.5px;color:var(--text-secondary)">'+escapeHtml(o.num)+'</span> ':''}${ehOpery?'<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;background:var(--st-inf-bg);color:var(--st-inf-tx)" title="Importado da tela de vendas do Opery — acompanhamento de oportunidade; o orçamento completo vive no Opery">OPERY</span> ':''}${escapeHtml(o.clienteNome||o.empresa)}</td>
       <td style="padding:8px 10px"><span style="font-size:10px;padding:1px 7px;border-radius:20px;background:${o.tipoProduto==='linha'?'var(--st-inf-bg)':'var(--st-urg-bg)'};color:${o.tipoProduto==='linha'?'var(--st-inf-tx)':'var(--st-urg-tx)'}">${tp}</span></td>
+      <td style="padding:8px 10px;font-size:11px">${(function(){ // v226 — tipo do documento (pedido do dono 12/09)
+        var tl=o.tipoOpery||({venda:'Venda',venda_mae:'Venda Mãe',venda_filho:'Venda Filho',bonificacao:'Bonificação',embaixador:'Embaixador',amostra:'Amostra',avaria:'Avaria'}[o.tipo]||'Venda');
+        return tl==='Venda'?('<span style="color:var(--text-secondary)">Venda</span>'):('<span style="font-weight:600;color:var(--st-mid-tx)">'+escapeHtml(tl)+'</span>');
+      })()}</td>
       <td style="padding:8px 10px;font-weight:500;color:var(--st-ok-tx)">${fmtMoney(o.valor)}</td>
       <td style="padding:8px 10px;color:var(--text-secondary)">${o.frete?fmtMoney(o.frete):'—'}</td>
       <td style="padding:8px 10px;font-size:11px">${formaCfg[o.forma]||o.formaPag||o.forma||'—'}</td>

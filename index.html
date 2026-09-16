@@ -4981,7 +4981,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v227';
+var APP_VERSION = 'v228';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -12740,6 +12740,37 @@ function verListaCompraPedido(orderId){
     '<div class="modal-footer"><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
   ov.classList.add('open');
 }
+// v228 — COMPROVANTE em PDF do 👁 Itens solicitados (pedido do dono 15/09, caso "sumiu a
+// solicitação" do 103268): o estoque baixa e guarda no computador o registro do que foi solicitado
+// — uma seção por solicitação (data/hora, autor, sequência e lista) com código, item e quantidade.
+function _solVerPedidoPdf(orderId, tipo, solicId){
+  var todas=_solTodasSolic(orderId, tipo);
+  if(solicId) todas=todas.filter(function(s){ return s.id===solicId; });
+  if(!todas.length){ alert('Nenhuma solicitação deste pedido.'); return; }
+  var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); })||{};
+  if(_solEhPseudo(orderId)){ var _pi=_solPseudoInfo(orderId); o={num:_pi.num, cliente:_pi.cliente}; }
+  var blocos='';
+  todas.slice().sort(function(a,b){ return (a.criadoEm||0)-(b.criadoEm||0); }).forEach(function(s){
+    var lst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s.id)>=0; });
+    var rows=(s.itens||[]).map(function(it,i){
+      return '<tr><td style="text-align:center">'+(i+1)+'</td><td style="font-family:monospace">'+escapeHtml(it.codigo||'—')+'</td><td>'+escapeHtml(it.nome||'')+'</td><td style="text-align:right;white-space:nowrap">'+(parseFloat(it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td></tr>';
+    }).join('');
+    blocos+='<h3>Solicitação'+(s.numSeq?' '+_solCodSeq(s):'')+' — '+(s.criadoEm?new Date(s.criadoEm).toLocaleString('pt-BR'):'sem data')+(s.criadoPor?' · por '+escapeHtml(s.criadoPor):'')+(lst?' · lista '+escapeHtml(_lcCodigo(lst)):' · ainda sem lista')+'</h3>'+
+      '<table><thead><tr><th style="width:36px;text-align:center">#</th><th style="width:90px">Código</th><th>Item</th><th style="width:130px;text-align:right">Qtd solicitada</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  });
+  var html='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Itens solicitados — Pedido '+escapeHtml(o.num||'')+' ('+(tipo==='ativo'?'Ativos':'Embalagem')+')</title>'+
+    '<style>body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:32px}h1{font-size:20px;margin:0 0 2px}h2{font-size:13px;font-weight:normal;color:#555;margin:0 0 18px}h3{font-size:13px;margin:18px 0 6px}'+
+    'table{width:100%;border-collapse:collapse;font-size:13px}th{background:#f0f0f0;border:1px solid #ccc;padding:7px 10px;text-align:left;font-size:12px}td{border:1px solid #ccc;padding:6px 10px}'+
+    '.rodape{margin-top:18px;font-size:11px;color:#777}@media print{body{margin:12mm}}</style></head><body>'+
+    '<h1>Lecare — Itens solicitados ('+(tipo==='ativo'?'Ativos':'Embalagem')+')</h1>'+
+    '<h2>Pedido '+escapeHtml(o.num||'')+' — '+escapeHtml(o.cliente||'')+'</h2>'+
+    blocos+
+    '<div class="rodape">Comprovante gerado pelo sistema Lecare em '+new Date().toLocaleString('pt-BR')+(currentUser&&currentUser.name?' por '+escapeHtml(currentUser.name):'')+'. Registro das solicitações de compra do pedido (itens e quantidades).</div>'+
+    '<script>window.onload=function(){ setTimeout(function(){ window.print(); }, 250); };<\/script></body></html>';
+  var w=window.open('','_blank');
+  if(!w){ alert('O navegador bloqueou a janela do PDF — libere pop-ups para este site e tente de novo.'); return; }
+  w.document.write(html); w.document.close(); w.focus();
+}
 // v165 — 👁 VER solicitação (pedido do dono 20/07): modal SOMENTE LEITURA com tudo que foi
 // solicitado no pedido (todas as solicitações do tipo: original + complementares), item a item,
 // mostrando a lista onde cada uma está e, quando já comprado, fornecedor + preço pago.
@@ -12757,7 +12788,7 @@ function _solVerPedido(orderId, tipo, solicId){
     '<h2 style="font-size:16px">👁 Itens solicitados — '+(tipo==='ativo'?'Ativos':'Embalagem')+'</h2>'+
     '<div style="font-size:12px;color:var(--text-secondary)">Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+' <span style="color:var(--text-tertiary)">· somente leitura</span></div>'+
     _solTabelaWrap(linhas)+
-    '<div class="modal-footer"><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
+    '<div class="modal-footer"><button onclick="_solVerPedidoPdf(\''+String(orderId)+'\',\''+tipo+'\','+(solicId?('\''+String(solicId)+'\''):'null')+')" title="Baixa o comprovante em PDF do que foi solicitado neste pedido (itens e quantidades, por solicitação) — para o setor guardar como registro">⬇ Baixar PDF</button><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
   ov.classList.add('open');
 }
 function openSolicitarModal(orderId, solicId){
@@ -13560,6 +13591,28 @@ function gerarPdfListaCompra(listaId){
   if(!w){ alert('O navegador bloqueou a janela do PDF — libere pop-ups para este site e tente de novo.'); return; }
   w.document.write(html); w.document.close(); w.focus();
 }
+// v228 — DATA LIMITE DE COMPRA por item da lista (pedido do dono 15/09): o prazo do setor Compras
+// de cada pedido de ORIGEM — embalagem = 'Compra finalizada' (D4), ativos = 'Compra ativo finalizado'
+// (D5); pedido urgente/programado usa os prazos manuais (customDeadlines) — convertido em DATA pela
+// mesma régua da Gestão à Vista (dias úteis a partir do D1, deadlineDate). O limite do item é o MAIS
+// APERTADO entre os pedidos de origem; pseudo-pedidos (avulsa/uso interno) ficam fora.
+function _lcLimiteCompraItem(l, it){
+  var alvo=(l && l.tipo==='ativo')?'Compra ativo finalizado':'Compra finalizada';
+  var best=null, det=[];
+  ((it&&it.origem)||[]).forEach(function(og){
+    if(typeof _solEhPseudo==='function' && _solEhPseudo(og.orderId)) return;
+    var o=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+    if(!o || !o.d1) return;
+    var rules=getOrderRules(o)||[];
+    var r=rules.find(function(rr){ return rr.setor==='compras' && rr.status===alvo; });
+    if(!r) r=rules.filter(function(rr){ return rr.setor==='compras'; }).sort(function(a,b){ return (a.limitDay||99)-(b.limitDay||99); })[0];
+    if(!r) return;
+    var dt=deadlineDate(o.d1, r.limitDay);
+    det.push((og.orderNum||o.num||'')+': '+fmtDate(dt));
+    if(!best || dt<best) best=dt;
+  });
+  return best?{date:best, det:det.join(' · ')}:null;
+}
 // v155 — tabela de ITENS de uma lista (o miolo que antes ficava solto na tela; agora vive no modal)
 function _lcItensTableHtml(l){
   // v160 — colunas compactadas (pedido do dono 16/07): tudo numa tela, sem arrastar pro lado
@@ -13575,6 +13628,7 @@ function _lcItensTableHtml(l){
           '<td style="'+_tdNc+';text-align:right;text-decoration:line-through">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
           '<td style="'+_tdNc+';text-align:right;color:var(--text-tertiary)">—</td>'+
           '<td style="'+_tdNc+';font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' ped.</td>'+
+          '<td style="'+_tdNc+';color:var(--text-tertiary)">—</td>'+ // v228 — coluna Limite compra (item resolvido: sem prazo)
           '<td style="'+_tdNc+'" colspan="4">'+(function(){ // v171 — rótulo por resolução (ajustado/sem estoque/tinha estoque; sem resolucao = legado v138)
             var r=it.ncResolucao;
             var lbl = r==='ajustado' ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">🔧 Ajustado</span>'
@@ -13611,11 +13665,20 @@ function _lcItensTableHtml(l){
       var _corPU=_c.comprado?'color:var(--st-ok-tx);font-weight:600':'';
       var _puCell=(_precoU!=null)?('<span style="'+_corPU+'">'+fmtMoney(_precoU)+'</span>'+(_srcLbl?' <span style="font-size:9px;color:var(--text-tertiary)">'+_srcLbl+'</span>':'')):'<span style="color:var(--text-tertiary)">—</span>';
       var _totCell=(_precoU!=null)?('<span style="'+_corPU+'">'+fmtMoney(_precoU*_qtdBase)+'</span>'):'<span style="color:var(--text-tertiary)">—</span>';
+      // v228 — LIMITE DE COMPRA: data mais apertada entre os pedidos de origem (tooltip abre por pedido);
+      // vencido e ainda não comprado = vermelho; vence HOJE = laranja; comprado = cinza (prazo cumprido).
+      var _lim=_lcLimiteCompraItem(l, it), _limCell='<span style="color:var(--text-tertiary)">—</span>';
+      if(_lim){
+        var _hj=_toDateStr(new Date());
+        var _limSty=_c.comprado?'color:var(--text-tertiary)':(_lim.date<_hj?'color:var(--st-bad-tx);font-weight:600':(_lim.date===_hj?'color:#B7791F;font-weight:600':''));
+        _limCell='<span style="'+_limSty+'" title="'+escapeHtml(_lim.det)+'">'+fmtDate(_lim.date)+(!_c.comprado&&_lim.date<_hj?' ⚠':'')+'</span>';
+      }
       return '<tr><td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(it.codigo||'—')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(it.nome||'')+'</td>'+
         '<td style="'+td+';text-align:right">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
         '<td style="'+td+';text-align:right">'+_qtdCmp+'</td>'+
         '<td style="'+td+';font-size:10px;color:var(--text-tertiary);white-space:nowrap" title="'+escapeHtml(origTxt)+'">'+((it.origem||[]).length)+' ped.</td>'+
+        '<td style="'+td+';white-space:nowrap;font-size:11px">'+_limCell+'</td>'+
         '<td style="'+td+';font-size:11px;max-width:180px" title="'+escapeHtml(_fornTxt)+'"><div style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(_fornTxt?escapeHtml(_fornTxt):'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+ /* v188 — razão social longa não invade mais Preço/Total (nome completo no tooltip) */
         '<td style="'+td+';text-align:right;white-space:nowrap">'+_puCell+'</td>'+
         '<td style="'+td+';text-align:right;white-space:nowrap">'+_totCell+'</td>'+
@@ -13628,7 +13691,7 @@ function _lcItensTableHtml(l){
         '</td></tr>';
   }).join('');
   return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
-    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solic.</th><th style="'+th+';text-align:right">Qtd compr.</th><th style="'+th+'">Origem</th><th style="'+th+'">Fornecedor</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    '<th style="'+th+'">Código</th><th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solic.</th><th style="'+th+';text-align:right">Qtd compr.</th><th style="'+th+'">Origem</th><th style="'+th+'" title="Prazo do setor Compras do pedido de origem mais apertado (dias úteis a partir do D1; pedidos urgentes/programados seguem a data manual)">Limite compra</th><th style="'+th+'">Fornecedor</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th><th style="'+th+'"></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 // ── Cotação ──
 // v159 — resolve o item pela IDENTIDADE (itemId); '#N' é fallback por posição (item legado sem itemId).
@@ -20081,16 +20144,17 @@ function _ctrlVerEspeciais(mk){
   const linhas=lista.map(o=>`<tr>
       <td style="${td};font-weight:600">${escapeHtml(o.num||'')}</td>
       <td style="${td}">${tipoBadgeHtml(o.tipo||'')}</td>
+      <td style="${td};white-space:nowrap"><span class="badge b-inf" style="font-size:10px">${(o.linha||'personalizada')==='anestesico'?'Anestésico':'Linha'}</span></td>
       <td style="${td};color:var(--text-secondary)">${escapeHtml(o.cliente||'—')}</td>
       <td style="${td};text-align:center;color:var(--text-secondary)">${o.d1?fmtDate(o.d1):'—'}</td>
       <td style="${td};text-align:right;font-weight:600">${fmtMoney(o.valor)}</td>
       <td style="${td};text-align:center"><button onclick="document.getElementById('ctrl-esp-overlay').classList.remove('open');openDetailModal('${o.id}')" style="font-size:11px;padding:2px 8px">👁 Ver</button></td>
-    </tr>`).join('') || '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--text-tertiary)">Nenhum pedido especial neste mês.</td></tr>';
-  ov.innerHTML=`<div class="modal" style="width:580px;max-height:82vh;overflow-y:auto">
+    </tr>`).join('') || '<tr><td colspan="7" style="padding:16px;text-align:center;color:var(--text-tertiary)">Nenhum pedido especial neste mês.</td></tr>';
+  ov.innerHTML=`<div class="modal" style="width:880px;max-width:96vw;max-height:82vh;overflow-y:auto">
     <h2 style="font-size:16px">Amostras / Bonificação / Avaria / P&D — ${monthLabel(mk)}</h2>
     <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">${lista.length} pedido(s) · total emitido <b>${fmtMoney(total)}</b></div>
     <table style="width:100%;border-collapse:collapse">
-      <thead><tr><th style="${th};text-align:left">Pedido</th><th style="${th};text-align:left">Tipo</th><th style="${th};text-align:left">Cliente</th><th style="${th};text-align:center">Data</th><th style="${th};text-align:right">Valor</th><th style="${th}"></th></tr></thead>
+      <thead><tr><th style="${th};text-align:left">Pedido</th><th style="${th};text-align:left">Tipo</th><th style="${th};text-align:left">Linha</th><th style="${th};text-align:left">Cliente</th><th style="${th};text-align:center">Data</th><th style="${th};text-align:right">Valor</th><th style="${th}"></th></tr></thead>
       <tbody>${linhas}</tbody>
     </table>
     <div class="modal-footer"><button onclick="document.getElementById('ctrl-esp-overlay').classList.remove('open')">Fechar</button></div>
@@ -20718,7 +20782,7 @@ function editFromDetail(){
 
 function openDetailModal(oid){
   const o=orders.find(x=>String(x.id)===String(oid));if(!o)return; // v101 — id pode vir como texto (botão Ver do Caixa)
-  detailOrderId=oid;
+  detailOrderId=o.id; // v228 — guarda o id CANÔNICO do pedido: aberto pelo Caixa/Financeiro o id chega como texto e os botões do modal (Anexos, Excluir) buscam com ===, falhando em silêncio
   const{setorKeys,setores}=getLinhaConfig(o);
   const c=o.clienteId?clients.find(x=>x.id===o.clienteId):null;
   const tipo=TIPOS_PEDIDO[o.tipo||'venda']||TIPOS_PEDIDO.venda;
@@ -37114,10 +37178,22 @@ function _convUniaoMsgs(base, other){
   // do servidor — sem isso, a aba desfazia as correções de vínculo re-salvando o id morto (caso Stefanelli 13/07,
   // conversa presa no título "Cliente" mesmo depois de re-apontada no banco).
   try{ if(other.clienteId && other.clienteId!==base.clienteId && (!base.clienteId || !(clients||[]).some(function(c){ return c&&c.id===base.clienteId; }))) base.clienteId=other.clienteId; }catch(_e){}
+  // v228 — NÃO LIDAS entram na união (reporte do dono 15/09: mensagem de cliente chegando JÁ LIDA):
+  // a união reconciliava mensagens/atendente/status mas NÃO o contador — os caminhos de ESCRITA
+  // (_waUpsertConversa e o save por linha) gravavam o naoLidas local (0, defasado) por cima do
+  // incremento do wa-inbound, e no poll a conversa ativa-mas-não-visível (ponteiro pós-modal, v159)
+  // nunca adotava o contador do servidor. Regra: o MAIOR contador vence; aberta E visível, o guard
+  // abaixo zera (está sendo lida agora).
+  let _nlMudou=false;
+  if(typeof other.naoLidas==='number' && (other.naoLidas||0)>(base.naoLidas||0)){ base.naoLidas=other.naoLidas; _nlMudou=true; }
   // v151 — conversa ABERTA nesta tela é lida por definição: o realtime não ressuscita o badge dela.
   // v159 — "aberta" agora exige estar DE FATO visível (página Conversas ou modal do card, aba em foco):
   // o ponteiro fantasma pós-fechar-modal zerava não-lidas de mensagem nova para todos.
-  try{ if(typeof conversaAtivaId!=='undefined' && conversaAtivaId===base.id && _convVisivelEmTela()) base.naoLidas=0; }catch(_e){}
+  try{ if(typeof conversaAtivaId!=='undefined' && conversaAtivaId===base.id && _convVisivelEmTela()){
+    // v228 — lendo AGORA: zera TAMBÉM no servidor (senão o contador ficava lá e o badge voltava depois)
+    if((base.naoLidas||0)>0){ try{ if(_sb) _sb.rpc('conv_zerar_nao_lidas', { p_conv_id: base.id }).then(function(_r){}); }catch(_e2){} }
+    base.naoLidas=0; _nlMudou=false;
+  } }catch(_e){}
   // v143 : atendente com carimbo mais novo vence (assumir/transferir de outra tela nao e desfeito)
   if((other.atendEm||0) > (base.atendEm||0)){ base.atendenteId=other.atendenteId||null; base.atendEm=other.atendEm; if(other.equipeId) base.equipeId=other.equipeId; }
   // v143 : STATUS (encerrada/ativa) idem: carimbo mais novo vence (aba velha 'ativa' nao desfaz um encerramento)
@@ -37127,7 +37203,7 @@ function _convUniaoMsgs(base, other){
     if(other.encerradaEm!==undefined) base.encerradaEm=other.encerradaEm;
     if(other.encerradaPor!==undefined) base.encerradaPor=other.encerradaPor;
   }
-  return added;
+  return added||_nlMudou; // v228 — contador adotado também repinta a lista (badge aparece na hora)
 }
 // v107 — grava a conversa SEM sobrescrever: lê o estado do banco e mescla antes de escrever (não apaga inbound que o app ainda não tem)
 // v145 : push ATÔMICO de assumir/transferir — atendente + msg de sistema por RPC (zero blob).

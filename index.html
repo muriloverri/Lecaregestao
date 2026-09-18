@@ -4164,6 +4164,10 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <button onclick="document.getElementById('lead-proxima-acao').value='Aguardar retorno do cliente'" style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg-secondary);border:.5px solid var(--border-md)">⏳ Aguardar</button>
             <button onclick="document.getElementById('lead-proxima-acao').value='Reunião/visita agendada'" style="font-size:10px;padding:2px 8px;border-radius:20px;background:var(--bg-secondary);border:.5px solid var(--border-md)">🤝 Reunião</button>
           </div>
+          <div class="form-group" id="lead-acao-resp-wrap" style="display:none;margin-top:8px"><!-- v229 — só admin/diretora: agendar a ação PARA outro usuário (os demais agendam para si) -->
+            <label>Agendar para</label>
+            <select id="lead-acao-resp" style="width:100%;font-size:13px;padding:6px 10px"></select>
+          </div>
           <button onclick="event.stopPropagation();registrarNaAgendaFromCard()" style="margin-top:10px;width:100%;padding:9px 14px;border-radius:var(--r-md);border:.5px solid var(--st-inf-bd);background:var(--st-inf-bg);color:var(--st-inf-tx);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px">📅 Registrar na agenda</button>
           <button onclick="event.stopPropagation();abrirRegistroContato(editingLeadId)" style="margin-top:8px;width:100%;padding:9px 14px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:6px">📞 Registrar tentativa de contato</button>
         </div>
@@ -4922,7 +4926,16 @@ function _sepOnRealtime(cfg,payload){
         // snapshot), NÃO substitui — a edição seria perdida em silêncio. Mantém a local e NÃO avança o snapshot
         // (fica como base antiga): o próximo sync grava a edição e, nos pedidos, o merge-3-vias reconcilia campo a campo.
         var _snapJ=_sepSnap[cfg.key]&&_sepSnap[cfg.key][rid];
-        if(_snapJ!==undefined && JSON.stringify(arr[idx])!==_snapJ){ _sepScheduleRefresh(); return; }
+        if(_snapJ!==undefined && JSON.stringify(arr[idx])!==_snapJ){
+          // v229 — caso Juliana/Juliana Ferreira (18/09, "não está sincronizando"): a comparação CRUA
+          // acusava "edição local" em linha que difere do snapshot só pela ORDEM DE CHAVES (jsonb×JS,
+          // doença provada na v221) e a aba recusava TODA atualização do realtime daquela linha — o
+          // nome novo do cadastro/card nunca chegava sem F5. A igualdade CANÔNICA decide: diferença
+          // cosmética → adota o servidor; edição REAL → guard v134 intacto (nada local se perde).
+          var _soOrdem=false;
+          try{ if(typeof _canonStr==='function') _soOrdem=(_canonStr(arr[idx])===_canonStr(JSON.parse(_snapJ))); }catch(_e2){}
+          if(!_soOrdem){ _sepScheduleRefresh(); return; }
+        }
         arr[idx]=row.data;
       }
     } else arr.push(row.data);
@@ -4981,7 +4994,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v228';
+var APP_VERSION = 'v229';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6988,10 +7001,12 @@ async function saveOrder(){
   if(!selectedClientId){alert('Selecione um cliente do cadastro.\nSe o cliente ainda não está cadastrado, clique em "Cadastrar novo cliente →".');return;}
   if(!num){alert('Informe o número do pedido.');return;}
   // v120 — NÃO permite dois pedidos com o mesmo número (na criação). Cobre também as divisões anestésico+linha (num+a / num+l).
+  // v229 — a unicidade é NÚMERO+TIPO (caso Embaixador 32 × venda 32/2025): o Opery numera POR TIPO
+  // de documento — sequências diferentes repetem número e os pedidos convivem; duplicata real é só no MESMO tipo.
   if(!editingOrderId){
     const _numsNovos=[String(num), String(num)+'a', String(num)+'l'];
-    const _dupN=(orders||[]).find(x=>x && _numsNovos.includes(String(x.num||'')));
-    if(_dupN){ alert('🚫 Já existe um pedido com o número '+num+' ('+(_dupN.cliente||'')+').\n\nNão é permitido dois pedidos com o mesmo número. Se for para alterar, abra o pedido existente e edite.'); return; }
+    const _dupN=(orders||[]).find(x=>x && _numsNovos.includes(String(x.num||'')) && String(x.tipo||'venda')===String(tipo||'venda'));
+    if(_dupN){ alert('🚫 Já existe um pedido '+(TIPOS_PEDIDO[tipo||'venda']?TIPOS_PEDIDO[tipo||'venda'].label:tipo)+' com o número '+num+' ('+(_dupN.cliente||'')+').\n\nNão é permitido dois pedidos do MESMO TIPO com o mesmo número. Se for para alterar, abra o pedido existente e edite.'); return; }
   }
   if(!d1){alert('Informe a data D1.');return;}
   // v82: equipe de venda + vendedor obrigatórios
@@ -9440,6 +9455,20 @@ function openLeadModal(id, funil, etapa){
     const _nPend=_renderLeadProximasAgenda(lead);
     if(_nPend>0){ if(_drEl) _drEl.value=''; if(_paEl) _paEl.value=''; }
   }catch(_e){}
+  // v229 — "Agendar para" (pedido do dono 18/09): admin/diretora escolhem o RESPONSÁVEL da próxima
+  // ação; os demais agendam só para si (seletor fica oculto e o fluxo antigo segue idêntico).
+  try{
+    const _arW=document.getElementById('lead-acao-resp-wrap'), _arS=document.getElementById('lead-acao-resp');
+    if(_arW&&_arS){
+      const _g=currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial');
+      if(_g){
+        const _us=(users||[]).filter(u=>u&&u.name).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+        const _def=(lead&&lead.responsavelId)||(currentUser&&currentUser.id)||'';
+        _arS.innerHTML=_us.map(u=>'<option value="'+u.id+'"'+(u.id===_def?' selected':'')+'>'+escapeHtml(u.name)+'</option>').join('');
+        _arW.style.display='';
+      } else { _arW.style.display='none'; _arS.innerHTML=''; }
+    }
+  }catch(_e){}
   document.getElementById('lead-followup').value=lead?lead.followup||'':'';
   document.getElementById('lead-valor').value=lead?lead.valor||'':'';
   document.getElementById('lead-tipo-produto').value=lead?lead.tipoProduto||'':'';
@@ -10008,13 +10037,15 @@ function renderAgenda(){
           <span>📅 ${fmtDate(e.data)} ${e.hora}</span>
           ${antLabel}${prazoLabel}${localLabel}
           ${eqNome?`<span style="color:var(--text-secondary)">🏷 Equipe: ${escapeHtml(eqNome)}</span>`:''}
-          ${resps?`<span>👤 ${escapeHtml(resps)}</span>`:''}
-          ${lead?`<span style="color:var(--text-info)">🔗 ${escapeHtml(lead.empresa)}</span>`:''}
+          ${resps?`<span style="background:var(--st-inf-bg);color:var(--st-inf-tx);border:.5px solid var(--st-inf-bd);border-radius:20px;padding:1px 9px;font-weight:600" title="Quem deve EXECUTAR este ${e.tipo==='reuniao'?'compromisso':e.tipo==='tarefa'?'tarefa':'lembrete'}">👤 Executa: ${escapeHtml(resps)}</span>`:`<span style="background:var(--st-mid-bg);color:var(--st-mid-tx);border:.5px solid var(--st-mid-bd);border-radius:20px;padding:1px 9px;font-weight:600">⚠ sem responsável</span>`}
+          ${(()=>{ const _cp=e.criadoPor?((users.find(u=>u.id===e.criadoPor)||{}).name||''):''; const _lbl=_cp||(e.autoCadencia?'Sistema (cadência da etapa)':''); return _lbl?`<span style="color:var(--text-secondary)" title="Quem registrou este agendamento">✍ Agendado por: ${escapeHtml(_lbl)}</span>`:''; })()}
+          ${lead?`<span style="color:var(--text-info)" title="Cliente vinculado — abre o card">🔗 Cliente: ${escapeHtml(lead.empresa)}</span>`:''}
         </div>
         ${e.obs?`<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${escapeHtml(e.obs)}</div>`:''}
         ${st==='concluido'?`<div style="font-size:11px;color:var(--st-ok-tx);background:var(--st-ok-bg);border:.5px solid var(--st-ok-bd);border-radius:6px;padding:5px 9px;margin-top:5px">✔ Encerrado${e.concluidoEm?' em '+new Date(e.concluidoEm).toLocaleDateString('pt-BR'):''}${e.concluidoPor?' por '+escapeHtml(e.concluidoPor):''}${e.conclusaoObs?' — “'+escapeHtml(e.conclusaoObs)+'”':' — <i>sem justificativa (encerrado antes da regra de 11/08)</i>'}</div>`:''}
       </div>
       <div class="ag-actions">
+        ${(lead&&lead.clienteId)?`<button onclick="abrirConversaCliente('${lead.clienteId}')" title="Abrir a conversa de WhatsApp deste cliente" style="padding:3px 10px;font-size:11px;background:var(--st-ok-bg);color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd)">💬 Conversa</button>`:''}
         <button onclick="openAgendaModal('${e.id}')" style="padding:3px 10px;font-size:11px">Editar</button>
         ${st!=='concluido'?`<button onclick="concluirEventoDireto('${e.id}')" class="btn-success" style="padding:3px 10px;font-size:11px">Encerrar</button>`:''}
       </div>
@@ -20063,13 +20094,16 @@ function _mesRefRateio(r, lancMes){ return _mesRefPedido(r&&r.pedidoId, r&&r.ped
 function _religarRateiosOrfaos(){
   try{
     const byId={}, byNum={};
-    (orders||[]).forEach(o=>{ if(!o) return; byId[String(o.id)]=1; if(o.num!=null&&o.num!=='') byNum[String(o.num).trim()]=o.id; });
+    // v229 — número pode repetir entre TIPOS (sequências do Opery são por tipo de documento):
+    // religar só quando o número é INEQUÍVOCO entre os vivos; ambíguo (2+ pedidos) = não religa
+    // (o órfão fica visível, em vez de pendurar o frete/rateio no pedido errado).
+    (orders||[]).forEach(o=>{ if(!o) return; byId[String(o.id)]=1; if(o.num!=null&&o.num!==''){ const k=String(o.num).trim(); byNum[k]=(k in byNum)?'__ambiguo__':o.id; } });
     const liga=(item)=>{
       if(item==null||typeof item!=='object') return;
       const pid=item.pedidoId;
       if(pid!=null && pid!=='' && byId[String(pid)]) return; // vínculo vivo — não mexe
       const num=String(item.pedidoNum==null?'':item.pedidoNum).trim();
-      if(num && byNum[num]!=null) item.pedidoId=byNum[num];  // religa no pedido relançado
+      if(num && byNum[num]!=null && byNum[num]!=='__ambiguo__') item.pedidoId=byNum[num];  // religa no pedido relançado (v229: só número inequívoco)
     };
     (pagamentos||[]).forEach(p=>{ if(p) (p.rateios||[]).forEach(liga); });
     (freteRealLanc||[]).forEach(liga);
@@ -32864,7 +32898,7 @@ function _obFechar(){
   var orc=_obSalvar(false, true); if(!orc) return;
   var num=String(prompt('FECHAR ORÇAMENTO '+orc.num+' — informe o Nº DO PEDIDO NO OPERY:\n\n(o pedido será lançado em Gestão a Vista e entra PENDENTE no Caixa; o D1 será a data da aprovação no Caixa)')||'').trim();
   if(!num) return;
-  if((orders||[]).some(function(o){ return String(o.num)===num; })){ alert('Já existe pedido com o número '+num+' no sistema — confira o número no Opery.'); return; }
+  if((orders||[]).some(function(o){ return String(o.num)===num && String(o.tipo||'venda')===String(_ob.tipo||'venda'); })){ alert('Já existe pedido deste TIPO com o número '+num+' no sistema — confira o número no Opery.'); return; } // v229 — unicidade por número+tipo (sequências do Opery são por tipo de documento)
   var t=_obTotais();
   var soma=(_ob.pgtosBlocos||[]).reduce(function(s,b){ var pp=b.parcelas||[]; return s+(pp.length?pp.reduce(function(ss,p){return ss+(parseFloat(p.valor)||0);},0):(parseFloat(b.valor)||0)); },0);
   if(Math.abs(soma-t.tot)>0.01 && !confirm('⚠ As formas de pagamento somam '+fmtMoney(soma)+' e o total do orçamento é '+fmtMoney(t.tot)+'.\n\nFechar mesmo assim? O financeiro revisa no Caixa.')) return;
@@ -33012,6 +33046,15 @@ function _orcOperyImportar(inp){
 // v226 — rótulo do TIPO do documento do Opery (pedido do dono 12/09: mostrar o tipo na tela)
 var _ORC_TIPO_LBL={'PEDIDO DE VENDA':'Venda','BONIFICACAO':'Bonificação','VENDA FILHO':'Venda Filho','VENDA MAE':'Venda Mãe','EMBAIXADOR':'Embaixador','AVARIA':'Avaria','AMOSTRA':'Amostra'};
 function _orcOperyTipoLbl(tipoDoc){ var t=String(tipoDoc||'').trim().toUpperCase(); return _ORC_TIPO_LBL[t]||(t?t.charAt(0)+t.slice(1).toLowerCase():'Venda'); }
+// v229 — rótulo do Opery → tipo(s) do sistema (caso Embaixador 32 × venda 32/2025: o Opery numera
+// POR TIPO de documento, então TODO casamento por número precisa conferir o tipo junto). Rótulo
+// desconhecido/vazio devolve null = sem filtro (comportamento antigo, fail-open).
+var _ORC_LBL2TIPOS={'Venda':['venda'],'Venda Mãe':['venda_mae'],'Venda Filho':['venda_filho'],'Embaixador':['embaixador'],'Bonificação':['bonificacao'],'Amostra':['amostra'],'Avaria':['avaria'],'P&D':['pnd']};
+function _orcOperyTiposSys(lbl){ return _ORC_LBL2TIPOS[String(lbl||'').trim()]||null; }
+function _orcPartesPorTipo(partes, lbl){
+  var ts=_orcOperyTiposSys(lbl); if(!ts) return partes||[];
+  return (partes||[]).filter(function(o){ return ts.indexOf(String((o&&o.tipo)||'venda'))>=0; });
+}
 function _orcOperyObs(tipoDoc, desc){
   var p=[]; if(tipoDoc && tipoDoc!=='PEDIDO DE VENDA') p.push(tipoDoc.charAt(0)+tipoDoc.slice(1).toLowerCase());
   if(desc) p.push('Categorias: '+desc);
@@ -33047,11 +33090,11 @@ function _orcOperyProcessar(txt){
     var dBr=String(c[ix['Data']]||'').slice(0,10);
     var dIso=/^\d{2}\/\d{2}\/\d{4}$/.test(dBr)?(dBr.slice(6,10)+'-'+dBr.slice(3,5)+'-'+dBr.slice(0,2)):'';
     var desc=String(ix['Descrição']!=null?(c[ix['Descrição']]||''):'').trim();
+    var _tipoLbl=_orcOperyTipoLbl(tipoDoc); // v226 — tipo do documento; v229 — passa a fazer parte da IDENTIDADE (número repete entre tipos)
     // v225 — cruzamento dos APROVADOS contra o sistema (nada disso mexe nos pedidos — só relatório)
     if(st==='Aprovado'){
       var fin=String(ix['Financeiro']!=null?(c[ix['Financeiro']]||''):'').trim();
-      var partes=_ordMap[cod]||[];
-      var _tipoLbl=_orcOperyTipoLbl(tipoDoc); // v226 — tipo do documento também nas divergências
+      var partes=_orcPartesPorTipo(_ordMap[cod]||[], _tipoLbl); // v229 — só pedidos do MESMO tipo (Embaixador 32 ≠ venda 32)
       if(!partes.length){
         if(fin==='Concluído') divg.push({cat:'ausente', num:cod, tipo:_tipoLbl, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:null, obs:'Aprovado e PAGO no Opery, sem registro no sistema — exportar o PDF para o Drive (o agente insere na próxima rodada)'});
         else divg.push({cat:'aguardando', num:cod, tipo:_tipoLbl, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:null, obs:'Aprovado aguardando pagamento ('+(fin||'—')+') — fora do sistema por regra; acompanhar a cobrança'});
@@ -33063,7 +33106,11 @@ function _orcOperyProcessar(txt){
             obs:(Math.abs(fLec-frete)>0.01?('frete Opery '+fmtMoney(frete)+' × sistema '+fmtMoney(fLec)+' · '):'')+'apenas apresentar — vale o valor fechado com o cliente (sistema); Opery muda por troca de lote'});
       }
     }
-    var ex=(orcamentosCrm||[]).find(function(x){ return x && x.origem==='opery' && String(x.operyNum)===cod; });
+    // v229 — o orçamento Opery também se identifica por NÚMERO+TIPO (dois documentos "32" de tipos
+    // diferentes são registros distintos). Linha legada sem tipoOpery (pré-v226) com o mesmo número
+    // é adotada UMA vez e carimbada com o tipo do CSV.
+    var ex=(orcamentosCrm||[]).find(function(x){ return x && x.origem==='opery' && String(x.operyNum)===cod && String(x.tipoOpery||'')===_tipoLbl; });
+    if(!ex){ var _leg=(orcamentosCrm||[]).find(function(x){ return x && x.origem==='opery' && String(x.operyNum)===cod && !x.tipoOpery; }); if(_leg){ _leg.tipoOpery=_tipoLbl; ex=_leg; } }
     if(ex){
       if(ex.status==='ganho'||ex.status==='perdido'){ mant++; continue; } // etapa fechada aqui NUNCA regride
       if(st==='Aprovado'){ ex.status='ganho'; ex.vendidoEm=agora; ex.pedidoNum=cod; vend++; }
@@ -33072,8 +33119,12 @@ function _orcOperyProcessar(txt){
       continue;
     }
     if(st!=='Pendente'){ ign++; continue; } // aprovado/cancelado sem orçamento aberto aqui não cria nada
-    orcamentosCrm.push({ id:'orcop_'+cod, origem:'opery', operyNum:cod, num:cod, detalhado:false,
-      tipoOpery:_orcOperyTipoLbl(tipoDoc), // v226 — tipo do documento visível na tela
+    // v229 — id por NÚMERO+TIPO: Venda mantém o id legado (orcop_N, compatível com as linhas
+    // existentes); os demais tipos ganham sufixo do tipo — dois "32" de tipos diferentes não
+    // brigam mais pela mesma linha. Rótulo desconhecido segue no id legado (fail-open).
+    var _ts9=_orcOperyTiposSys(_tipoLbl);
+    orcamentosCrm.push({ id:'orcop_'+cod+((_tipoLbl!=='Venda'&&_ts9)?('_'+_ts9[0]):''), origem:'opery', operyNum:cod, num:cod, detalhado:false,
+      tipoOpery:_tipoLbl, // v226 — tipo do documento visível na tela
       data:dIso||(typeof today==='function'?today():''), status:'aberto',
       clienteNome:cliNome, empresa:cliNome,
       tipoProduto:(desc.toUpperCase().indexOf('ANEST')>=0?'anestesico':'linha'),
@@ -33100,6 +33151,7 @@ function _orcDivgReconferir(){
     (d.itens||[]).forEach(function(x){
       if(!x||x.resolvidoEm) return;
       var partes=map[String(x.num)]||[];
+      if(typeof _orcPartesPorTipo==='function' && x.tipo) partes=_orcPartesPorTipo(partes, x.tipo); // v229 — pendência só se resolve com pedido do MESMO tipo (Embaixador 32 não se resolvia com a venda 32)
       if(!partes.length) return;
       if(x.cat==='ausente'){ x.resolvidoEm=agora; x.resolvidoComo='pedido entrou no sistema (importação do Drive)'; mudou=true; }
       else if(x.cat==='aguardando'){ x.resolvidoEm=agora; x.resolvidoComo='pedido entrou no sistema (pagamento concluído)'; mudou=true; }
@@ -34861,7 +34913,8 @@ function criarEventoAgendaDoLead(lead, opts){
   opts = opts || {};
   if(!lead || !opts.data) return null;
   var auto = !!opts.autoCadencia;
-  var respId = lead.responsavelId || (currentUser ? currentUser.id : null);
+  // v229 — opts.respId (seletor "Agendar para", só gestores) vence; senão o fluxo antigo intacto
+  var respId = opts.respId || lead.responsavelId || (currentUser ? currentUser.id : null);
   var resp = null;
   if(respId){
     var ru = (users||[]).find(function(u){ return u.id===respId; });
@@ -34977,7 +35030,10 @@ function registrarNaAgendaFromCard(){
   if(!d){ alert('Informe a data de retorno em "Pr\u00f3xima a\u00e7\u00e3o".'); return; }
   lead.dataRetorno = d;
   lead.proximaAcao = a || null;
-  criarEventoAgendaDoLead(lead, { data:d, acao:a, autoCadencia:false, origem:'manual' });
+  // v229 \u2014 gestor pode agendar PARA outro usu\u00e1rio (seletor "Agendar para"; oculto p/ os demais)
+  var _respSel=document.getElementById('lead-acao-resp');
+  var _respId=(_respSel && _respSel.offsetParent!==null && _respSel.value) ? _respSel.value : null;
+  criarEventoAgendaDoLead(lead, { data:d, acao:a, autoCadencia:false, origem:'manual', respId:_respId });
   saveData();
   try{ renderCrm(); }catch(_e){}
   // v152 : a a\u00e7\u00e3o registrada sobe pro quadro "pr\u00f3ximas a\u00e7\u00f5es" e os campos ESVAZIAM \u2014 livres p/ o pr\u00f3ximo compromisso (pedido do dono 13/07)
@@ -36336,6 +36392,20 @@ function renderConversasLista(){
   const el = document.getElementById('conv-lista');
   if(!el) return;
   _migrarConvTelefone(); // v106 — garante telefone nas conversas legadas (idempotente)
+  // v229 — 📅 sinal de tarefa agendada (pedido do dono 18/09): mapa clienteId → data da próxima ação
+  // PENDENTE da agenda (via card), montado UMA vez por render; a linha da conversa mostra o sinal.
+  _convAgMap={};
+  try{
+    const _l2c={}; (crmLeads||[]).forEach(l=>{ if(l&&l.id&&l.clienteId) _l2c[l.id]=l.clienteId; });
+    (agendaEventos||[]).forEach(ev=>{
+      if(!ev||ev.status!=='pendente'||!ev.leadId) return; const cid=_l2c[ev.leadId]; if(!cid) return;
+      const d=String(ev.data||''); if(!d) return;
+      if(!_convAgMap[cid]||d<_convAgMap[cid]) _convAgMap[cid]=d;
+    });
+    (crmLeads||[]).forEach(l=>{ // retorno salvo só no card (sem evento de agenda) também conta
+      if(l&&l.clienteId&&l.dataRetorno&&(!_convAgMap[l.clienteId]||String(l.dataRetorno)<_convAgMap[l.clienteId])) _convAgMap[l.clienteId]=String(l.dataRetorno);
+    });
+  }catch(_e){}
   const termo = (document.getElementById('conv-search')?.value||'').toLowerCase();
   let visiveis = getConversasVisiveis();
   if(termo){
@@ -36445,6 +36515,19 @@ function renderConversasLista(){
   }
   el.innerHTML = html;
 }
+var _convAgMap={}; // v229 — clienteId → data da próxima ação pendente (montado no renderConversasLista)
+// v229 — sinais visuais da linha: 🔶 atenção marcada (com autor/hora no title) + 📅 tarefa agendada
+function _convSinaisHtml(conv){
+  let h='';
+  if(conv&&conv.atencao) h+='<span title="⚠ Atenção'+(conv.atencaoPor?(' — marcada por '+escapeHtml(conv.atencaoPor)):'')+(conv.atencaoEm?(' em '+fmtTs(conv.atencaoEm)):'')+'" style="font-size:12px;line-height:1">🔶</span>';
+  const _ag=conv&&conv.clienteId?_convAgMap[conv.clienteId]:null;
+  if(_ag){
+    const _hj=(typeof today==='function')?today():'';
+    const _atras=!!(_hj&&_ag<_hj);
+    h+='<span title="📅 Retorno/tarefa agendada para '+fmtDate(_ag)+(_atras?' — ATRASADA':'')+'" style="font-size:12px;line-height:1">'+(_atras?'⏰':'📅')+'</span>';
+  }
+  return h;
+}
 function _convItemHtml(conv, semDono){
   if(conv.grupo){ // v148 : item de GRUPO — só nome do grupo, hora e badge (sem cliente/equipe/pool)
     const ativa=conv.id===conversaAtivaId;
@@ -36452,7 +36535,7 @@ function _convItemHtml(conv, semDono){
     return '<div onclick="abrirConversa(\''+conv.id+'\')" style="padding:10px 14px;border-bottom:.5px solid var(--border);cursor:pointer;'+(ativa?'background:var(--bg-secondary);':'')+'">'
       +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">'
       +'<span style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">👥 '+escapeHtml(conv.nome||'Grupo')+'</span>'
-      +'<span style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+(conv.naoLidas?('<span style="background:#25D366;color:#fff;border-radius:20px;font-size:10px;font-weight:700;padding:1px 7px">'+conv.naoLidas+'</span>'):'')+'<span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(hora)+'</span></span></div>'
+      +'<span style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+_convSinaisHtml(conv)+(conv.naoLidas?('<span style="background:#25D366;color:#fff;border-radius:20px;font-size:10px;font-weight:700;padding:1px 7px">'+conv.naoLidas+'</span>'):'')+'<span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(hora)+'</span></span></div>'
       +'<div style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:3px">'+escapeHtml(conv.ultimaMsg||'')+'</div></div>';
   }
   const cli = clients.find(x=>x.id===conv.clienteId);
@@ -36467,6 +36550,7 @@ function _convItemHtml(conv, semDono){
     <div style="display:flex;align-items:center;gap:6px">
       <span style="flex:1;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(nome)}</span>
       ${_enc?`<span style="font-size:9px;color:var(--text-tertiary);border:.5px solid var(--border);padding:1px 6px;border-radius:20px">${escapeHtml(conv.resultado||'Encerrada')}</span>`:''}
+      ${_convSinaisHtml(conv)}
       ${conv.naoLidas?`<span style="background:#E74C3C;color:#fff;font-size:9px;padding:1px 6px;border-radius:20px">${conv.naoLidas}</span>`:''}
       <span style="font-size:10px;color:var(--text-tertiary)">${hora}</span>
     </div>
@@ -36772,6 +36856,22 @@ function abrirConversa(convId){
   renderConversasLista();
   renderConversaTela(convId);
 }
+// v229 — SINAL DE ATENÇÃO na conversa (pedido do dono 18/09, caso Naruna: "ficamos de dar um
+// retorno... um sinal visual para saber que aquela conversa merece atenção específica"). Toggle
+// de quem pode responder (dono/pool/gestão); fica na lista como o badge de não lida até alguém
+// desmarcar. Persistência ATÔMICA pela RPC conv_set_atencao (carimbo+autor; nada de regravar a
+// linha inteira) e carimbo mais-novo-vence no merge entre abas.
+function _convToggleAtencao(convId){
+  const conv=(conversas||[]).find(c=>c.id===convId); if(!conv) return;
+  const _gestor=currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial');
+  if(!_gestor && !_podeResponderConv(conv)){ alert('Somente quem atende esta conversa (ou a gestão) pode marcar/desmarcar a atenção.'); return; }
+  const novo=!conv.atencao;
+  conv.atencao=novo; conv.atencaoEm=Date.now(); conv.atencaoPor=(currentUser&&currentUser.name)||'';
+  // v179 — builder do Supabase só envia com then/await
+  try{ if(_sb) _sb.rpc('conv_set_atencao', { p_conv_id: convId, p_on: novo, p_por: conv.atencaoPor }).then(function(_r){}); }catch(_e){}
+  saveData(); renderConversasLista();
+  try{ renderConversaTela(convId); }catch(_e){}
+}
 // v107 — marcar conversa como NÃO lida (flag p/ follow-up): fecha a conversa e mostra badge na lista. Some ao reabrir.
 function _convMarcarNaoLida(convId){
   const conv=(conversas||[]).find(c=>c.id===convId); if(!conv) return;
@@ -36999,6 +37099,7 @@ function renderConversaTela(convId, containerId){
       ${conv.grupo?'':`<button onclick="openClienteFichaPorId('${conv.clienteId}')" title="Ver dados do cliente" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">👤 Cliente</button>`}
       ${conv.grupo?'':`<button onclick="_fichaGerarLink('${conv.id}')" title="Gera um link de FICHA DE CADASTRO online para enviar ao cliente — ele preenche (nome, CPF/CNPJ, conselho, contato, endereço) e os dados entram no cadastro sozinhos, com o resumo aparecendo nesta conversa. Link de uso único." style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📝 Ficha</button>`}
       <button onclick="_convMarcarNaoLida('${conv.id}')" title="Marcar como não lida" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">✉️ Não lida</button>
+      <button onclick="_convToggleAtencao('${conv.id}')" title="${conv.atencao?('Atenção marcada'+(conv.atencaoPor?(' por '+escapeHtml(conv.atencaoPor)):'')+(conv.atencaoEm?(' em '+fmtTs(conv.atencaoEm)):'')+' — clique para desmarcar'):'Marcar esta conversa com um sinal de ATENÇÃO (ex.: ficamos de dar um retorno) — fica visível na lista até alguém desmarcar'}" style="font-size:11px;padding:5px 10px;background:${conv.atencao?'#FFF4D6':'#fff'};color:${conv.atencao?'#946200':'#54656f'};border:.5px solid ${conv.atencao?'#EAD9A8':'#d1d7db'};border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;${conv.atencao?'font-weight:600':''}">🔶 Atenção</button>
       ${(currentUser?.perfil==='admin' && !conv.grupo)?`<button onclick="_convImportarHistorico('${conv.id}')" title="Importar histórico exportado do WhatsApp do celular (.txt) — apenas admin" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📥 Importar</button>`:''}
       ${conv.grupo?'':(_encerrada
         ? `<button onclick="reabrirConversa('${conv.id}')" style="font-size:11px;padding:5px 12px;background:var(--st-ok-bg);color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:var(--r-md);cursor:pointer">Reabrir</button>`
@@ -37194,6 +37295,8 @@ function _convUniaoMsgs(base, other){
     if((base.naoLidas||0)>0){ try{ if(_sb) _sb.rpc('conv_zerar_nao_lidas', { p_conv_id: base.id }).then(function(_r){}); }catch(_e2){} }
     base.naoLidas=0; _nlMudou=false;
   } }catch(_e){}
+  // v229 — sinal de ATENÇÃO (pedido do dono 18/09): carimbo mais novo vence, como atendente/status
+  if((other.atencaoEm||0) > (base.atencaoEm||0)){ base.atencao=!!other.atencao; base.atencaoEm=other.atencaoEm; if(other.atencaoPor!==undefined) base.atencaoPor=other.atencaoPor; }
   // v143 : atendente com carimbo mais novo vence (assumir/transferir de outra tela nao e desfeito)
   if((other.atendEm||0) > (base.atendEm||0)){ base.atendenteId=other.atendenteId||null; base.atendEm=other.atendEm; if(other.equipeId) base.equipeId=other.equipeId; }
   // v143 : STATUS (encerrada/ativa) idem: carimbo mais novo vence (aba velha 'ativa' nao desfaz um encerramento)
@@ -37367,6 +37470,12 @@ function abrirAtribuirConversa(convId){
   if(_waModoDois()){
     const _nInfo2=_waNumInfo(_waNumDaConv(conv));
     const _membros=_waMembrosDoNumero(conv);
+    // v229 — reporte do dono 18/09 ("estou tentando assumir essa conversa e não estou conseguindo"):
+    // gestores (admin/diretor) JÁ SÃO autorizados a atender em qualquer número (_waAtendAutorizadoNum
+    // v144), mas a lista do modal só trazia os membros das equipes do número — o admin não conseguia
+    // atribuir a conversa a SI MESMO. Entram no fim, rotulados (gestão); a equipe da conversa não
+    // muda (confirmarAtribuir já mantém conv.equipeId quando o escolhido não tem equipe no número).
+    try{ (users||[]).filter(u=>u&&(u.perfil==='admin'||u.perfil==='diretor_comercial')&&!_membros.some(m=>m.id===u.id)).forEach(u=>_membros.push({id:u.id,nome:u.name||u.id,equipeId:null,equipeNome:'gestão'})); }catch(_e){}
     const _optsU='<option value="">— Sem atendente (volta pro pool) —</option>'+
       _membros.map(m=>`<option value="${m.id}" ${conv.atendenteId===m.id?'selected':''}>${escapeHtml(m.nome)}${m.equipeNome?' ('+escapeHtml(m.equipeNome)+')':''}</option>`).join('');
     const html2 = `<div class="overlay open" id="atribuir-conv-overlay" data-dyn="1">

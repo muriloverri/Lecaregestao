@@ -4994,7 +4994,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v229';
+var APP_VERSION = 'v230';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7820,12 +7820,13 @@ function openClientModal(id){
   if(c && c.id){ try{ _sincronizarContatos(c.id, 'cliente'); }catch(_e){} }
   _cliCtEdit=null; { const _b=document.getElementById('c-ct-add-btn'); if(_b) _b.textContent='+ Adicionar'; } // v220 — reseta edição de contato pendente
   // v106 — contatos: usa c.contatos; se vazio, semeia de tel1/tel2/contato financeiro
-  if(c && Array.isArray(c.contatos) && c.contatos.length){ _cliContatos=c.contatos.map(x=>({nome:x.nome||'',cargo:x.cargo||'',telefone:x.telefone||x.whats||'',email:x.email||'',principal:!!x.principal})); } // v176 — carrega o ★ principal
+  if(c && Array.isArray(c.contatos) && c.contatos.length){ _cliContatos=c.contatos.map(x=>({nome:x.nome||'',cargo:x.cargo||'',telefone:x.telefone||x.whats||'',email:x.email||'',principal:!!x.principal,nomeEm:x.nomeEm})); } // v176 — carrega o ★ principal; v230 — carimbo junto
   else if(c){ _cliContatos=[]; // v173 — semeadura respeita a LÁPIDE (contato excluído não renasce do tel1/tel2)
     if(c.tel1 && !_ctTombHit(c,c.tel1)) _cliContatos.push({nome:c.nome||'Contato principal',cargo:'',telefone:c.tel1,email:c.email||''});
     if(c.tel2 && !_ctTombHit(c,c.tel2)) _cliContatos.push({nome:(c.nome||'Contato')+' (2)',cargo:'',telefone:c.tel2,email:''});
     if((c.finContato||c.finTel) && !(c.finTel&&_ctTombHit(c,c.finTel))) _cliContatos.push({nome:c.finContato||'Financeiro',cargo:'Financeiro',telefone:c.finTel||'',email:c.finEmail||''}); }
   else { _cliContatos=[]; }
+  _cliContatosSnap=JSON.parse(JSON.stringify(_cliContatos)); // v230 — snapshot da abertura (régua do carimbo de edição)
   if(typeof _renderCliContatos==='function') _renderCliContatos();
   if(typeof _onTipoPessoaChange==='function') _onTipoPessoaChange();
   const paEl=document.getElementById('c-prod-anest');if(paEl)paEl.checked=c?c.prodAnest||false:false;
@@ -8096,7 +8097,7 @@ function saveClient(){
     intermediaria:(tipoPessoa==='intermediario'),
     pessoasVinculadas:(tipoPessoa==='intermediario'?[]:_cliVinc.map(v=>({tipoPessoa:v.tipoPessoa,nome:v.nome,doc:v.doc}))),
     atendidosIds:(tipoPessoa==='intermediario'?_cliAtend.slice():[]),
-    contatos:_cliContatos.map(c=>({nome:c.nome||'',cargo:c.cargo||'',telefone:c.telefone||c.whats||'',email:c.email||'',principal:!!c.principal})), // v176 — ★ principal persiste
+    contatos:_ctCarimbaEdicao(_cliContatos.map(c=>({nome:c.nome||'',cargo:c.cargo||'',telefone:c.telefone||c.whats||'',email:c.email||'',principal:!!c.principal,nomeEm:c.nomeEm})), _cliContatosSnap, (clients.find(x=>x.id===editingClientId)||{}).contatos), // v176 — ★ principal persiste; v230 — carimbo de edição (renomear vence cópia velha; snapshot da abertura é a régua)
     rtNome,
     prodLinha,prodAnest,conselhoTipo:document.getElementById('c-conselho-tipo').value.trim(),conselhoNum:document.getElementById('c-conselho-num').value.trim(),tag:document.getElementById('c-tag').value.trim(),email:document.getElementById('c-email').value.trim(),tel1:tel1,tel2:tel2Esp,/* v208 — espelho derivado dos CONTATOS DA EMPRESA (★ = principal) */finContato:(_editCli&&_editCli.finContato)||'',finEmail:document.getElementById('c-fin-email').value.trim(),finTel:(_editCli&&_editCli.finTel)||'',site:(document.getElementById('c-site')?.value||'').trim(),instagram:(document.getElementById('c-instagram')?.value||'').trim(),cep:document.getElementById('c-cep').value.trim(),uf:document.getElementById('c-uf').value.trim().toUpperCase(),cidade:document.getElementById('c-cidade').value.trim(),bairro:document.getElementById('c-bairro').value.trim(),rua:document.getElementById('c-rua').value.trim(),numero:document.getElementById('c-numero').value.trim(),comp:document.getElementById('c-comp').value.trim(),obs:document.getElementById('c-obs').value.trim(),carteiraLinha:document.getElementById('c-carteira-linha')?.value.trim()||'',carteiraAnest:document.getElementById('c-carteira-anest')?.value.trim()||'',cadastroIncompleto:!((docClean.length===11||docClean.length===14) && _ctsFone.length>0),/* v208 — derivação: nome+doc+contato = completo */modificadoEm:new Date().toISOString(),deliveryAddresses:[...deliveryAddresses]};
   // v144 : interno/fornecedor — so admin/diretora alteram o campo; para os demais o valor atual e preservado
@@ -8150,6 +8151,21 @@ function saveClient(){
   try{ _ctTombAtualiza(clients.find(x=>x.id===(editingClientId||newId)), _ctUnivAntigo, _cliContatos); }catch(_e){}
   // v106 — espelha os contatos do cadastro para o card do CRM
   if(typeof _sincronizarContatos==='function') _sincronizarContatos(editingClientId||newId, 'cliente');
+  // v230 — CARD ABERTO POR BAIXO adota a lista nova NA HORA (caso J.L.S./Jessica Cunha 19/09: a
+  // ficha foi salva de dentro do card; o card seguia com leadContatos VELHOS em memória e tanto o
+  // "Salvar" do card quanto o restore do Cancelar reverteriam a renomeação). Atualiza a lista, o
+  // snapshot do Cancelar e a tela do card.
+  try{
+    const _cid8=editingClientId||newId;
+    if(editingLeadId && _cid8){
+      const _ld8=(crmLeads||[]).find(l=>l&&l.id===editingLeadId&&l.clienteId===_cid8);
+      if(_ld8){
+        leadContatos=[...(_ld8.contatos||[])];
+        if(_leadSnapshot){ _leadSnapshot.contatos=JSON.parse(JSON.stringify(_ld8.contatos||[])); }
+        if(typeof renderLeadContatosList==='function' && document.getElementById('lead-contatos-list')) renderLeadContatosList();
+      }
+    }
+  }catch(_e){}
   // v120 — AUTO-VÍNCULO de pedidos órfãos (lançados pelo agente sem cadastro) por CPF/CNPJ.
   // Quando o cliente é finalmente cadastrado, todo pedido com o mesmo doc e marcado
   // aguardandoCadastro (ou sem clienteId) é vinculado automaticamente ao novo cadastro.
@@ -9729,7 +9745,7 @@ async function saveLead(){
     // apagar sem querer era o risco); campo DIGITADO substitui.
     dataRetorno: (document.getElementById('lead-data-retorno')?.value) || (editingLeadId?((crmLeads.find(l=>l.id===editingLeadId)||{}).dataRetorno||null):null),
     proximaAcao: (document.getElementById('lead-proxima-acao')?.value?.trim()) || (editingLeadId?((crmLeads.find(l=>l.id===editingLeadId)||{}).proximaAcao||null):null),
-    contatos:[...leadContatos],
+    contatos:_ctCarimbaEdicao(leadContatos.map(c=>({...c})), (_leadSnapshot&&_leadSnapshot.contatos)||null, (editingLeadId?((crmLeads.find(l=>l.id===editingLeadId)||{}).contatos):null)), // v230 — carimbo de edição (renomear vence cópia velha; snapshot da abertura é a régua)
     tasks:JSON.parse(JSON.stringify(leadTasks)),
     entradaEtapa:today(),
   };
@@ -14393,6 +14409,20 @@ function _reavaliarComprasPedido(orderId){
   try{ addAudit(o,'compras','status',cur,alvo+' (automático — compra vinculada)'); }catch(_e){}
 }
 // ── Comprar (setor compras) ──
+// v230 — resolve fornecedor pelo TEXTO com a MESMA régua da cotação v171 (caso VIP EMBALAGENS,
+// 18/09: a cotação aceitou o APELIDO e gravou o vínculo, mas a compra re-resolvia só pelo NOME e
+// recusava um fornecedor cadastrado): nome exato → apelido exato → documento que identifique UMA
+// única empresa. Devolve null quando não resolve (a trava v200 continua decidindo).
+function _fornResolvePorTexto(txt){
+  var v=String(txt||'').trim(); if(!v) return null; var lv=v.toLowerCase();
+  var f=(fornecedores||[]).find(function(x){ return (x.nome||'').toLowerCase()===lv; });
+  if(!f) f=(fornecedores||[]).find(function(x){ return (x.apelido||'').toLowerCase()===lv; });
+  if(!f && typeof _fornDocMatch==='function'){
+    var ms=(fornecedores||[]).filter(function(x){ return _fornDocMatch(x, lv); });
+    if(ms.length===1) f=ms[0];
+  }
+  return f||null;
+}
 var _cmpListaId=null, _cmpItemIdx=null;
 function openComprarModal(listaId, idx){
   var l=(listasCompra||[]).find(function(x){return x.id===listaId;}); if(!l) return;
@@ -14416,7 +14446,7 @@ function openComprarModal(listaId, idx){
   var esc=_cotItemEscolhida(it), cmp=it.compra||{};
   document.getElementById('cmp-item-info').textContent=(it.codigo?it.codigo+' — ':'')+(it.nome||'');
   document.getElementById('cmp-sub-info').textContent='Qtd solicitada: '+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' · '+((it.origem||[]).length)+' pedido(s)';
-  document.getElementById('cmp-forn-dl').innerHTML=(fornecedores||[]).slice(0,400).map(function(f){return '<option value="'+escapeHtml(f.nome||'')+'">';}).join('');
+  document.getElementById('cmp-forn-dl').innerHTML=(fornecedores||[]).slice(0,400).map(function(f){var o='<option value="'+escapeHtml(f.nome||'')+'">'; if(f.apelido&&String(f.apelido).trim()&&f.apelido!==f.nome) o+='<option value="'+escapeHtml(f.apelido)+'">'; return o;}).join(''); // v230 — apelido também é opção válida (mesma identidade da cotação)
   // v160 — o FORNECEDOR da compra é o ESCOLHIDO na cotação (regra do dono 16/07): campo travado.
   // (Na edição ✏ fica travado no fornecedor já comprado; o preço pago segue editável — é o valor real da NF.)
   var _fEl=document.getElementById('cmp-fornec');
@@ -14523,9 +14553,9 @@ function _salvarCompraDual(l, it){
   var T=parseFloat(it.qtdTotal)||0;
   if(Math.abs((q1+q2)-T)>0.0001 && !confirm('A soma das quantidades ('+(q1+q2).toLocaleString('pt-BR')+') é DIFERENTE do solicitado ('+T.toLocaleString('pt-BR')+' '+(it.unidade||'')+').\n\nContinuar mesmo assim?')) return;
   var f1nome=(document.getElementById('cmp-fornec').value||'').trim()||esc.fornecedorNome||'';
-  var f1=(fornecedores||[]).find(function(x){ return (x.nome||'').toLowerCase()===f1nome.toLowerCase(); });
+  var f1=_fornResolvePorTexto(f1nome); // v230 — nome/apelido/doc (caso VIP EMBALAGENS)
   var f2nome=c2.fornecedorNome||'';
-  var f2=(fornecedores||[]).find(function(x){ return (x.nome||'').toLowerCase()===f2nome.toLowerCase(); });
+  var f2=_fornResolvePorTexto(f2nome);
   // v200 — mesma trava do vínculo da compra normal (caso RICARO "LTDA3"): os DOIS lados precisam
   // resolver para fornecedor do cadastro (por nome ou pelo id gravado na cotação) — senão nasceria
   // pedido de compra fantasma com o nome digitado.
@@ -14588,7 +14618,13 @@ function saveCompraItem(){
   if(preco<=0){ alert('Informe o preço unitário pago.'); return; }
   // v157 — NF deixou de ser obrigatória na hora da compra (pedido do dono 15/07): pode comprar e
   // preencher a NF depois pelo ✏ da lista; a linha fica com aviso "NF pendente" até preencher.
-  var f=(fornecedores||[]).find(function(x){return (x.nome||'').toLowerCase()===forn.toLowerCase();});
+  // v230 — o VÍNCULO da cotação escolhida é a FONTE (caso VIP EMBALAGENS, 18/09: o Cotar já grava o
+  // fornecedorId do cadastro — inclusive quando digitado pelo APELIDO — e a compra re-resolvia só
+  // pelo texto do nome e recusava). Compra nova usa o fornecedorId da cotação; o texto (nome/
+  // apelido/documento) é apoio p/ edição de legado; a trava v200 fica só p/ o que está mesmo fora.
+  var f=null;
+  if(!(it.compra&&it.compra.comprado)){ var _esc9=_cotItemEscolhida(it); if(_esc9&&_esc9.fornecedorId) f=(fornecedores||[]).find(function(x){ return x.id===_esc9.fornecedorId; })||null; }
+  if(!f) f=_fornResolvePorTexto(forn);
   var _eraComprado=!!(it.compra&&it.compra.comprado);
   // v200 — TRAVA do vínculo (caso RICARO "LTDA3", 07/08): compra NOVA com fornecedor que não casa
   // com o cadastro seguia com fornecedorId NULO e o texto digitado — nascia um pedido de compra
@@ -19273,7 +19309,7 @@ function _finEstornarSelecionada(tipo){
   const noGrupo=grupoId?lista2.reduce((n,cc)=>n+(cc.parcelas||[]).filter(pp=>pp.baixa&&pp.baixa.grupo===grupoId).length,0):1;
   const avisoGrupo=grupoId?('\n\n⚠ Esta baixa foi em GRUPO com '+noGrupo+' parcela(s) (renegociação). TODAS voltarão para em aberto.'):'';
   if(!confirm('↩ ESTORNAR este '+(tipo==='pagar'?'pagamento':'recebimento')+'?\n\n'+nome+' — '+fmtMoney(p.valor)+(quando?' ('+quando+')':'')+avisoGrupo+'\n\nUse só se foi registrado por engano.')) return;
-  const _estPar=(cc,pp,ix)=>{ pp.pago=false; delete pp.baixa; if(tipo==='pagar'&&cc.origem==='compra'){ const comp=compras.find(z=>z.id===cc.origemId); if(comp&&comp.parcelas&&comp.parcelas[ix]) comp.parcelas[ix].pago=false; } };
+  const _estPar=(cc,pp,ix)=>{ pp.pago=false; delete pp.baixa; pp.estornoEm=Date.now(); pp.estornoPor=(currentUser&&currentUser.name)||''; if(tipo==='pagar'&&cc.origem==='compra'){ const comp=compras.find(z=>z.id===cc.origemId); if(comp&&comp.parcelas&&comp.parcelas[ix]) comp.parcelas[ix].pago=false; } }; // v230 — carimbo forense do estorno (o anti-clobber do banco só aceita despagar com carimbo NOVO)
   if(grupoId){ lista2.forEach(cc=>(cc.parcelas||[]).forEach((pp,ix)=>{ if(pp.baixa&&pp.baixa.grupo===grupoId) _estPar(cc,pp,ix); })); }
   else { _estPar(c,p,parcIdx); }
   saveData();
@@ -19733,7 +19769,7 @@ function estornarBaixa(tipo, contaId, parcIdx){
   const lista=tipo==='pagar'?contasPagar:contasReceber;
   const c=lista.find(x=>x.id===contaId); if(!c||!c.parcelas[parcIdx]) return;
   if(!confirm('Estornar esta baixa? A parcela volta a ficar em aberto.')) return;
-  const p=c.parcelas[parcIdx]; p.pago=false; delete p.baixa;
+  const p=c.parcelas[parcIdx]; p.pago=false; delete p.baixa; p.estornoEm=Date.now(); p.estornoPor=(currentUser&&currentUser.name)||''; // v230 — carimbo forense (anti-clobber do banco exige carimbo NOVO p/ despagar)
   if(tipo==='pagar'&&c.origem==='compra'){ const comp=compras.find(z=>z.id===c.origemId); if(comp&&comp.parcelas&&comp.parcelas[parcIdx]) comp.parcelas[parcIdx].pago=false; }
   saveData();
   if(tipo==='pagar') renderFinAPagar(); else renderFinAReceber();
@@ -38561,7 +38597,36 @@ function _carteiraDefineProduto(tipo){
 // ── Tipo de pessoa (PF/PJ) + Responsável Técnico ──
 // v106 — contatos do cliente (nome+cargo+telefone) sincronizados com os contatos do card do CRM
 var _cliContatos=[];
+var _cliContatosSnap=[]; // v230 — fotografia da abertura do modal do cliente (régua do carimbo de edição)
 function _ctKey(c){ const d=String((c&&(c.telefone||c.whats))||'').replace(/\D/g,''); return d.length>=8?d.slice(-8):(((c&&c.nome)||'').toLowerCase().trim()); }
+// v230 — CARIMBO DE EDIÇÃO do contato (caso J.L.S./Jessica Cunha 19/09: a Tairine renomeou o
+// contato na ficha aberta DE DENTRO do card; o card, com a lista velha em memória, salvou 7s
+// depois e a união — que só preenchia campos vazios — reverteu o nome nos DOIS lados). Todo save
+// compara o contato com a versão anterior da MESMA chave: mudou nome/cargo/email → nomeEm=agora;
+// não mudou → carrega o carimbo antigo. A união (_sincronizarContatos) passa a decidir pelo
+// carimbo mais novo — cópia velha nunca mais reverte uma renomeação.
+// A régua compara com o SNAPSHOT DA ABERTURA do modal (o que o usuário VIU): contato intocado
+// neste modal → adota a versão ATUAL da memória (edição feita em outra tela não é revertida) com
+// o carimbo dela; contato tocado/novo aqui → carimbo de agora. (Comparar com a memória atual seria
+// armadilha: a cópia velha do modal pareceria "edição" e ganharia carimbo novo.)
+function _ctCarimbaEdicao(novos, snapAbertura, atuais){
+  try{
+    var mapS={}; (snapAbertura||[]).forEach(function(c){ var k=_ctKey(c); if(k&&!mapS[k]) mapS[k]=c; });
+    var mapA={}; (atuais||[]).forEach(function(c){ var k=_ctKey(c); if(k&&!mapA[k]) mapA[k]=c; });
+    (novos||[]).forEach(function(c){ if(!c) return; var k=_ctKey(c); var s=k?mapS[k]:null; var a=k?mapA[k]:null;
+      var igualSnap = s && String(c.nome||'').trim()===String(s.nome||'').trim()
+                        && String(c.cargo||'').trim()===String(s.cargo||'').trim()
+                        && String(c.email||'').trim()===String(s.email||'').trim();
+      if(igualSnap){
+        if(a){ if(String(a.nome||'').trim()) c.nome=a.nome; c.cargo=(a.cargo!=null?a.cargo:c.cargo); c.email=(a.email!=null?a.email:c.email); c.nomeEm=Number(a.nomeEm)||0; }
+        else c.nomeEm=Number(s&&s.nomeEm)||0;
+      } else {
+        c.nomeEm=Date.now(); // editado ou criado NESTE modal
+      }
+    });
+  }catch(_e){}
+  return novos;
+}
 // v173 — LÁPIDE de contato (caso VerriFarma 24/07: contato excluído SEMPRE voltava — a união
 // cadastro↔card e as semeaduras por tel1/tel2 ressuscitavam). Padrão lápide (como usersRemovidos
 // v132): exclusão VENCE. Guardada em cliente.contatosRemovidos {chave _ctKey: ts}; re-adicionar limpa.
@@ -38636,9 +38701,15 @@ function _sincronizarContatos(clienteId, fonte){
   const lead=(crmLeads||[]).find(l=>l.clienteId===clienteId);
   if(!cli && !lead) return;
   const merged={};
-  const addAll=(arr)=>{ (arr||[]).forEach(c=>{ const k=_ctKey(c); if(!k) return; const tel=String(c.telefone||c.whats||'').trim();
-    if(!merged[k]) merged[k]={nome:(c.nome||'').trim(),cargo:(c.cargo||'').trim(),tel,email:(c.email||'').trim(),principal:!!c.principal};
-    else { const M=merged[k]; if(!M.nome&&c.nome)M.nome=String(c.nome).trim(); if(!M.cargo&&c.cargo)M.cargo=String(c.cargo).trim(); if(!M.tel&&tel)M.tel=tel; if(!M.email&&c.email)M.email=String(c.email).trim(); if(c.principal)M.principal=true; } }); }; // v176 — ★ atravessa a união
+  // v230 — o CARIMBO nomeEm decide nome/cargo/email na união (renomeação nunca mais é revertida
+  // por cópia velha — caso J.L.S./Jessica Cunha 19/09); sem carimbo dos dois lados, vale a regra
+  // antiga (a fonte entra primeiro e só campo vazio é preenchido).
+  const addAll=(arr)=>{ (arr||[]).forEach(c=>{ const k=_ctKey(c); if(!k) return; const tel=String(c.telefone||c.whats||'').trim(); const em=Number(c.nomeEm)||0;
+    if(!merged[k]) merged[k]={nome:(c.nome||'').trim(),cargo:(c.cargo||'').trim(),tel,email:(c.email||'').trim(),principal:!!c.principal,nomeEm:em};
+    else { const M=merged[k];
+      if(em>(M.nomeEm||0)){ if(String(c.nome||'').trim()) M.nome=String(c.nome).trim(); M.cargo=String(c.cargo||'').trim(); M.email=String(c.email||'').trim(); M.nomeEm=em; }
+      else { if(!M.nome&&c.nome)M.nome=String(c.nome).trim(); if(!M.cargo&&c.cargo)M.cargo=String(c.cargo).trim(); if(!M.email&&c.email)M.email=String(c.email).trim(); }
+      if(!M.tel&&tel)M.tel=tel; if(c.principal)M.principal=true; } }); }; // v176 — ★ atravessa a união
   if(fonte==='card'){ addAll(lead&&lead.contatos); addAll(cli&&cli.contatos); }
   else { addAll(cli&&cli.contatos); addAll(lead&&lead.contatos); }
   // v173 — a união NUNCA ressuscita contato com lápide (exclusão vence)
@@ -38646,8 +38717,8 @@ function _sincronizarContatos(clienteId, fonte){
   const lista=Object.values(merged).filter(c=>{ const k=_ctKey({nome:c.nome,telefone:c.tel}); return !(k&&_tb[k]); });
   // v176 — garante UM principal só (o primeiro marcado vence)
   { let _achou=false; lista.forEach(c=>{ if(c.principal){ if(_achou) c.principal=false; else _achou=true; } }); }
-  if(cli) cli.contatos=lista.map(c=>({nome:c.nome,cargo:c.cargo,telefone:c.tel,email:c.email,principal:!!c.principal}));
-  if(lead) lead.contatos=lista.map(c=>({nome:c.nome,cargo:c.cargo,whats:c.tel,email:c.email,principal:!!c.principal}));
+  if(cli) cli.contatos=lista.map(c=>({nome:c.nome,cargo:c.cargo,telefone:c.tel,email:c.email,principal:!!c.principal,nomeEm:c.nomeEm||0})); // v230 — carimbo persiste
+  if(lead) lead.contatos=lista.map(c=>({nome:c.nome,cargo:c.cargo,whats:c.tel,email:c.email,principal:!!c.principal,nomeEm:c.nomeEm||0}));
 }
 function _cliTipoAtual(){
   if(document.getElementById('c-tipo-pf')?.checked) return 'pf';

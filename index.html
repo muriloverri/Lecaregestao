@@ -1554,6 +1554,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <option value="Sem estoque">Sem estoque</option>
               <option value="Ajustado">Ajustado</option>
               <option value="Tinha estoque">Tinha estoque</option>
+              <option value="Trocada — tinha estoque">Trocada — tinha estoque</option><!-- v232 -->
+              <option value="Trocada — solicitada">Trocada — solicitada</option><!-- v232 -->
             </select>
             <input type="text" id="acomp-busca" placeholder="Buscar item, pedido ou fornecedor..." oninput="renderSolAcomp()" style="min-width:220px;font-size:12px;padding:5px 10px">
             <span id="acomp-info" style="margin-left:auto;font-size:12px;color:var(--text-secondary)"></span>
@@ -5122,7 +5124,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v231';
+var APP_VERSION = 'v232';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -12724,6 +12726,8 @@ function _solItemLinhaInfo(s, it, lst){
     k = _r==='sem_estoque'?'sem_estoque':(_r?'resolvido':'nao_comprado');
     st = _r==='ajustado' ? '<span style="color:var(--st-ok-tx)">🔧 ajustado'+(li.naoCompradoMotivo?'<br><span style="'+sub+'">'+escapeHtml(li.naoCompradoMotivo)+'</span>':'')+'<br><span style="'+sub+'">conta como entregue</span></span>'
        : _r==='tinha_estoque' ? '<span style="color:var(--st-inf-tx)">📦 tinha estoque<br><span style="'+sub+'">conta como entregue</span></span>'
+       : _r==='troca_estoque' ? '<span style="color:var(--st-inf-tx)">🔁 trocada'+(li.trocadoPor?'<br><span style="'+sub+'">por '+escapeHtml((li.trocadoPor.codigo?li.trocadoPor.codigo+' — ':'')+(li.trocadoPor.nome||''))+'</span>':'')+'<br><span style="'+sub+'">tinha estoque — conta como entregue</span></span>' // v232
+       : _r==='troca_solicitada' ? '<span style="color:#B45309">🔁 trocada'+(li.trocadoPor?'<br><span style="'+sub+'">por '+escapeHtml((li.trocadoPor.codigo?li.trocadoPor.codigo+' — ':'')+(li.trocadoPor.nome||''))+'</span>':'')+'<br><span style="'+sub+'">substituta solicitada na mesma quantidade</span></span>' // v232
        : _r==='sem_estoque' ? '<span style="color:var(--st-bad-tx)">🚫 sem estoque<br><span style="'+sub+'">volta na próxima lista</span></span>'
        : '<span style="color:var(--st-bad-tx)">✕ não comprado'+(li.naoCompradoMotivo?'<br><span style="'+sub+'">'+escapeHtml(li.naoCompradoMotivo)+'</span>':'')+'</span>';
   } else if(li && ((li.cotacoes||[]).length || li.escolhida!=null)){
@@ -12894,6 +12898,8 @@ function verListaCompraPedido(orderId){
             desf = _r2==='sem_estoque' ? '↪ fornecedor SEM ESTOQUE — re-solicitada'
                  : _r2==='ajustado' ? '✕ resolvida sem compra (ajustada'+(li2.naoCompradoMotivo?': '+escapeHtml(li2.naoCompradoMotivo):'')+')'
                  : _r2==='tinha_estoque' ? '✕ resolvida sem compra (tinha estoque)'
+                 : _r2==='troca_estoque' ? '🔁 embalagem TROCADA'+(li2.trocadoPor?' por '+escapeHtml((li2.trocadoPor.codigo?li2.trocadoPor.codigo+' — ':'')+(li2.trocadoPor.nome||'')):'')+' — tinha estoque' // v232
+                 : _r2==='troca_solicitada' ? '🔁 embalagem TROCADA'+(li2.trocadoPor?' por '+escapeHtml((li2.trocadoPor.codigo?li2.trocadoPor.codigo+' — ':'')+(li2.trocadoPor.nome||'')):'')+' — substituta re-solicitada' // v232
                  : '✕ NÃO comprada'+(li2.naoCompradoMotivo?' — motivo: '+escapeHtml(li2.naoCompradoMotivo):' (sem motivo registrado)');
           } else if(c2 && c2.recebFaltanteRes && c2.recebFaltanteRes.acao==='recompra'){
             desf='📉 entrega veio A MENOR — re-solicitada';
@@ -13546,7 +13552,7 @@ function _lcPregaoHtml(l){
       return '<tr style="opacity:.5"><td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(it.codigo||'—')+'</td>'+
         '<td style="'+td+';text-decoration:line-through">'+escapeHtml(it.nome||'')+'</td>'+
         '<td style="'+td+';text-align:right;text-decoration:line-through">'+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
-        '<td style="'+td+'" colspan="'+forns.length+'"><span style="font-size:11px;color:var(--text-tertiary)">'+(it.ncResolucao==='ajustado'?'🔧 Ajustado':(it.ncResolucao==='tinha_estoque'?'📦 Tinha estoque':(it.ncResolucao==='sem_estoque'?'🚫 Sem estoque':'✕ Não comprado')))+'</span></td></tr>';
+        '<td style="'+td+'" colspan="'+forns.length+'"><span style="font-size:11px;color:var(--text-tertiary)">'+(it.ncResolucao==='ajustado'?'🔧 Ajustado':(it.ncResolucao==='tinha_estoque'?'📦 Tinha estoque':(it.ncResolucao==='troca_estoque'?'🔁 Trocada (tinha estoque)':(it.ncResolucao==='troca_solicitada'?'🔁 Trocada (solicitada)':(it.ncResolucao==='sem_estoque'?'🚫 Sem estoque':'✕ Não comprado')))))+'</span></td></tr>';
     }
     var precos=forns.map(function(f){ var c=(it.cotacoes||[]).find(function(cc){ return _lcFornKey(cc)===f.k; }); var v=c?parseFloat(c.preco):NaN; return isNaN(v)?NaN:v; });
     var validos=precos.filter(function(p){ return !isNaN(p); });
@@ -13843,8 +13849,11 @@ function _lcItensTableHtml(l){
             var r=it.ncResolucao;
             var lbl = r==='ajustado' ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">🔧 Ajustado</span>'
                     : r==='tinha_estoque' ? '<span style="font-size:11px;color:var(--st-inf-tx);font-weight:600">📦 Tinha estoque</span>'
+                    : r==='troca_estoque' ? '<span style="font-size:11px;color:var(--st-inf-tx);font-weight:600">🔁 Trocada (tinha estoque)</span>' // v232
+                    : r==='troca_solicitada' ? '<span style="font-size:11px;color:#B45309;font-weight:600">🔁 Trocada (solicitada)</span>' // v232
                     : '<span style="font-size:11px;color:var(--st-bad-tx);font-weight:600">'+(r==='sem_estoque'?'🚫 Sem estoque':'✕ Não comprado')+'</span>';
-            var cauda = (r==='ajustado'||r==='tinha_estoque') ? ' <span style="font-size:10px;color:var(--text-tertiary)">→ conta como entregue no status</span>'
+            var cauda = (r==='ajustado'||r==='tinha_estoque'||r==='troca_estoque') ? ' <span style="font-size:10px;color:var(--text-tertiary)">→ conta como entregue no status</span>'
+                      : r==='troca_solicitada' ? ' <span style="font-size:10px;color:var(--text-tertiary)">→ substituta solicitada na mesma quantidade</span>' // v232
                       : ' <span style="font-size:10px;color:var(--text-tertiary)">→ voltou p/ próxima lista</span>';
             return lbl+(it.naoCompradoMotivo?' <span style="font-size:11px;color:var(--text-tertiary)">· '+escapeHtml(it.naoCompradoMotivo)+'</span>':'')+cauda;
           })()+'</td></tr>';
@@ -14135,6 +14144,15 @@ function naoComprarItem(listaId, idx){
       _ncOpHtml('ajustado','🔧 Ajustado','Foi resolvido de outra forma — descreva abaixo o que foi feito. O item sai da lista e conta como COMPRADO e ENTREGUE no status do pedido.')+
       _ncOpHtml('sem_estoque','🚫 Sem estoque','O fornecedor não tinha o produto. O item sai desta lista e a quantidade VOLTA para a próxima lista de compra.')+
       _ncOpHtml('tinha_estoque','📦 Tinha estoque','A solicitação foi equivocada — já tínhamos o item, não precisava comprar. Conta como ENTREGUE no status do pedido.')+
+      (l.tipo==='embalagem'?_ncOpHtml('trocar','🔁 Trocar embalagem','Usar OUTRA embalagem do catálogo no lugar desta. Escolha a substituta abaixo e diga se ela já está em estoque ou se precisa ser comprada.'):'')+ // v232 — pedido do dono 21/09
+    '</div>'+
+    '<div id="nc-troca-wrap" style="display:none;margin-bottom:10px;border:.5px solid var(--border);border-radius:8px;padding:10px">'+
+      '<div class="form-group" style="margin-bottom:8px"><label>Embalagem substituta *</label>'+
+        '<input type="text" id="nc-troca-item" list="nc-troca-dl" placeholder="Digite o código ou o nome da embalagem..." style="width:100%;font-size:12px"><datalist id="nc-troca-dl"></datalist></div>'+
+      '<label style="display:flex;gap:8px;align-items:flex-start;margin-bottom:6px;cursor:pointer"><input type="radio" name="nc-troca-sub" value="tem_estoque" style="width:auto;margin-top:2px">'+
+        '<span><b style="font-size:12.5px">📦 Tem estoque</b><br><span style="font-size:11px;color:var(--text-secondary)">A substituta já está em estoque — a troca resolve o item, que conta como ENTREGUE no status do pedido.</span></span></label>'+
+      '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="radio" name="nc-troca-sub" value="solicitar" style="width:auto;margin-top:2px">'+
+        '<span><b style="font-size:12.5px">🛒 Solicitar compra</b><br><span style="font-size:11px;color:var(--text-secondary)">A substituta entra na fila de solicitações NA MESMA QUANTIDADE; a necessidade desta embalagem deixa de existir.</span></span></label>'+
     '</div>'+
     '<div class="form-group" id="nc-obs-wrap" style="display:none;margin-bottom:10px"><label id="nc-obs-label">O que foi feito? *</label><textarea id="nc-obs" rows="2" style="width:100%;font-size:12px"></textarea></div>'+
     '<div class="modal-footer"><button onclick="document.getElementById(\'nc-overlay\').classList.remove(\'open\')">Cancelar</button><button class="btn-primary" onclick="_ncConfirmar()">Confirmar</button></div>'+
@@ -14151,19 +14169,54 @@ function _ncEscolher(op){
   var w=document.getElementById('nc-obs-wrap'), lb=document.getElementById('nc-obs-label');
   if(w) w.style.display='';
   if(lb) lb.textContent = op==='ajustado' ? 'O que foi feito? *' : 'Observação (opcional)';
+  // v232 — TROCAR EMBALAGEM: mostra o bloco da substituta e carrega o catálogo (só embalagens)
+  var tw=document.getElementById('nc-troca-wrap');
+  if(tw) tw.style.display = (op==='trocar') ? '' : 'none';
+  if(op==='trocar'){
+    var dl=document.getElementById('nc-troca-dl');
+    if(dl && !dl.childElementCount){
+      dl.innerHTML=(insumos||[]).filter(function(x){ return x && x.tipo==='embalagem'; }).slice(0,1500)
+        .map(function(x){ return '<option value="'+escapeHtml((x.codigo?x.codigo+' — ':'')+(x.nome||''))+'">'; }).join('');
+    }
+  }
+}
+// v232 — resolve o texto digitado para UMA embalagem do catálogo: "código — nome" exato, código
+// exato ou nome exato (sem diferenciar maiúsculas); ambíguo/desconhecido = null (nunca se chuta).
+function _ncTrocaResolver(txt){
+  var t=String(txt||'').trim(); if(!t) return null;
+  var tl=t.toLowerCase();
+  var embs=(insumos||[]).filter(function(x){ return x && x.tipo==='embalagem'; });
+  var hit=embs.filter(function(x){ return ((x.codigo?x.codigo+' — ':'')+(x.nome||'')).toLowerCase()===tl; });
+  if(hit.length===1) return hit[0];
+  hit=embs.filter(function(x){ return String(x.codigo||'').toLowerCase()===tl; });
+  if(hit.length===1) return hit[0];
+  hit=embs.filter(function(x){ return String(x.nome||'').toLowerCase()===tl; });
+  if(hit.length===1) return hit[0];
+  return null;
 }
 function _ncConfirmar(){
   if(!_ncCtx || !_ncCtx.op){ alert('Escolha uma das opções.'); return; }
   var op=_ncCtx.op, obs=(document.getElementById('nc-obs')?.value||'').trim();
   if(op==='ajustado' && !obs){ alert('Descreva o que foi feito — é obrigatório no "Ajustado".'); return; }
+  // v232 — TROCAR EMBALAGEM (pedido do dono 21/09): valida a substituta e a decisão ANTES de mexer
+  var _nv=null, _ncSub=null;
+  if(op==='trocar'){
+    _nv=_ncTrocaResolver(document.getElementById('nc-troca-item')?.value);
+    if(!_nv){ alert('Escolha a embalagem substituta DA LISTA (código ou nome exato do catálogo).'); return; }
+    var _sEl=document.querySelector('input[name="nc-troca-sub"]:checked');
+    _ncSub=_sEl?_sEl.value:null;
+    if(!_ncSub){ alert('Diga o que fazer com a substituta: "Tem estoque" ou "Solicitar compra".'); return; }
+  }
   var l=(listasCompra||[]).find(function(x){ return x.id===_ncCtx.listaId; }); if(!l) return;
   var it=_lcItemByRef(l, _ncCtx.ref);
   var _fecha=function(){ document.getElementById('nc-overlay').classList.remove('open'); _ncCtx=null; };
   if(!it){ alert('Este item não está mais nesta lista (ela mudou em outra tela). Feche e reabra a lista.'); _fecha(); return; }
+  if(op==='trocar' && String(_nv.id)===String(it.itemId)){ alert('A substituta é a MESMA embalagem deste item — escolha outra.'); return; }
   if(it.compra && it.compra.comprado){ alert('Este item já foi comprado (em outra tela).'); _fecha(); return; }
   if(it.naoComprado){ _fecha(); return; }
   it.naoComprado=true;
-  it.ncResolucao=op; // v171 — 'ajustado' | 'sem_estoque' | 'tinha_estoque' (ausente = legado v138)
+  it.ncResolucao = op==='trocar' ? (_ncSub==='tem_estoque'?'troca_estoque':'troca_solicitada') : op; // v171 — 'ajustado' | 'sem_estoque' | 'tinha_estoque' (ausente = legado v138); v232 — 'troca_estoque' | 'troca_solicitada'
+  if(op==='trocar') it.trocadoPor={ itemId:_nv.id, codigo:_nv.codigo||'', nome:_nv.nome||'' }; // v232 — rastro auditável da troca
   it.naoCompradoMotivo=obs;
   it.naoCompradoEm=Date.now();
   it.naoCompradoPor=(currentUser&&currentUser.name)||'';
@@ -14188,11 +14241,35 @@ function _ncConfirmar(){
       alvo.atualizadoEm=now; devolvidos++;
     });
     msg='🚫 Item marcado SEM ESTOQUE.\n↩ Quantidades devolvidas ('+devolvidos+' origem(ns)) — ficam na fila "Fora de estoque"; o Gerar lista pergunta se inclui.';
+  } else if(op==='trocar' && _ncSub==='solicitar'){
+    // v232 — TROCA COM COMPRA: a necessidade da embalagem original morre (item resolvido) e a
+    // SUBSTITUTA entra na fila de solicitações NA MESMA QUANTIDADE, por origem — mesmo agrupamento
+    // do sem_estoque (solicitação ABERTA de cada pedido, ou nova), SEM a marca semEstoque (fila
+    // normal "aguardando entrar em lista"). O pedido segue pendente pela nova solicitação.
+    var nowT=Date.now(), solicitadas=0;
+    (it.origem||[]).forEach(function(og,oi){
+      var qtd=parseFloat(og.qtd)||0; if(qtd<=0) return;
+      var alvo=(solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(og.orderId) && s.tipo===l.tipo && s.status==='solicitado'; });
+      if(!alvo){
+        var ehPseudoT=_solEhPseudo(og.orderId);
+        var oT=ehPseudoT?null:(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+        var _piT=ehPseudoT?_solPseudoInfo(og.orderId):null;
+        alvo={ id:'solc'+nowT+'t'+oi, orderId:og.orderId, orderNum:ehPseudoT?_piT.num:((oT&&oT.num)||og.orderNum||''), cliente:ehPseudoT?_piT.cliente:((oT&&oT.cliente)||''), tipo:l.tipo, itens:[], status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:nowT, atualizadoEm:nowT };
+        solicitacoesCompra.push(alvo);
+      }
+      var exT=(alvo.itens||[]).find(function(x){ return x.itemId===_nv.id; });
+      if(exT){ exT.qtd=(parseFloat(exT.qtd)||0)+qtd; exT.trocaDe={ itemId:it.itemId, codigo:it.codigo||'', nome:it.nome||'' }; }
+      else alvo.itens.push({ itemId:_nv.id, codigo:_nv.codigo||'', nome:_nv.nome||'', qtd:qtd, unidade:_nv.unidade||it.unidade||'UN', trocaDe:{ itemId:it.itemId, codigo:it.codigo||'', nome:it.nome||'' } });
+      alvo.atualizadoEm=nowT; solicitadas++;
+    });
+    msg='🔁 Embalagem TROCADA por "'+((_nv.codigo?_nv.codigo+' — ':'')+(_nv.nome||''))+'".\n🛒 Substituta SOLICITADA na mesma quantidade ('+solicitadas+' origem(ns)) — entra na próxima lista de compra; a necessidade da original deixou de existir.';
   } else {
-    // ajustado / tinha_estoque: NÃO devolve — o item conta como resolvido; reavalia o status dos pedidos de origem
+    // ajustado / tinha_estoque / troca com estoque: NÃO devolve — o item conta como resolvido; reavalia o status dos pedidos de origem
     (it.origem||[]).forEach(function(og){ try{ _reavaliarComprasPedido(og.orderId); }catch(_e){} });
     msg = op==='ajustado'
       ? '🔧 Item marcado como AJUSTADO.\nConta como comprado e entregue no status do pedido.'
+      : op==='trocar'
+      ? '🔁 Embalagem TROCADA por "'+((_nv.codigo?_nv.codigo+' — ':'')+(_nv.nome||''))+'" (tem estoque).\nConta como entregue no status do pedido.' // v232
       : '📦 Item marcado como TINHA ESTOQUE.\nA solicitação foi considerada equivocada — conta como entregue no status do pedido.';
   }
   _atualizaStatusLista(l);
@@ -14208,7 +14285,7 @@ function _acompStatusItem(s, it){
   var li=parts[0]||null;
   if(!li) return {st:'Em lista', li:null};
   // (usa _recebFisicoConta — v218: conferência física com qtd ZERO não conta como recebido)
-  if(parts.every(function(p){ return p.naoComprado; })) return {st: li.ncResolucao==='ajustado'?'Ajustado':li.ncResolucao==='tinha_estoque'?'Tinha estoque':li.ncResolucao==='sem_estoque'?'Sem estoque':'Não comprado', li:li}; // v171 — resolução por item
+  if(parts.every(function(p){ return p.naoComprado; })) return {st: li.ncResolucao==='ajustado'?'Ajustado':li.ncResolucao==='tinha_estoque'?'Tinha estoque':li.ncResolucao==='troca_estoque'?'Trocada — tinha estoque':li.ncResolucao==='troca_solicitada'?'Trocada — solicitada':li.ncResolucao==='sem_estoque'?'Sem estoque':'Não comprado', li:li}; // v171 — resolução por item; v232 — troca de embalagem
   if(parts.some(function(p){ return p.compraParcial && p.compra && p.compra.comprado; })) return {st:'Compra parcial', li:li}; // v169 — solicitado subiu acima do comprado
   var vivos=parts.filter(function(p){ return !p.naoComprado; });
   // v211 — recebimento FÍSICO (recebFisicoEm, fluxo v210) conta como recebido no Acompanhamento;
@@ -14272,7 +14349,7 @@ function renderSolAcomp(){
   var info=document.getElementById('acomp-info');
   if(info) info.innerHTML=linhas.length+' item(ns)'+(totComprado>0?' · comprado: <b>'+fmtMoney(totComprado)+'</b>':'');
   if(!linhas.length){ el.innerHTML='<div class="empty" style="padding:24px">Nenhum item solicitado'+(fMes?' neste mês':'')+'.</div>'; return; }
-  var _cor={ 'Solicitado':'var(--text-info)', 'Em lista':'var(--st-mid-tx)', 'Orçado':'var(--st-mid-tx)', 'Comprado':'var(--st-ok-tx)', 'Recebido':'var(--st-ok-tx)', 'Recebido a menos':'var(--st-bad-tx)', 'Não comprado':'var(--st-bad-tx)', 'Sem estoque':'var(--st-bad-tx)', 'Ajustado':'var(--st-ok-tx)', 'Tinha estoque':'var(--st-inf-tx)' };
+  var _cor={ 'Solicitado':'var(--text-info)', 'Em lista':'var(--st-mid-tx)', 'Orçado':'var(--st-mid-tx)', 'Comprado':'var(--st-ok-tx)', 'Recebido':'var(--st-ok-tx)', 'Recebido a menos':'var(--st-bad-tx)', 'Não comprado':'var(--st-bad-tx)', 'Sem estoque':'var(--st-bad-tx)', 'Ajustado':'var(--st-ok-tx)', 'Tinha estoque':'var(--st-inf-tx)', 'Trocada — tinha estoque':'var(--st-inf-tx)', 'Trocada — solicitada':'#B45309' };
   var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
   var td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
   el.innerHTML='<div class="panel" style="padding:0"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:1000px">'+

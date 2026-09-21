@@ -2546,6 +2546,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
                     <option value="K">K — Perdidos</option>
                   </select>
                   <input type="text" id="rfv-search-cli" placeholder="Buscar cliente..." oninput="renderRfvTable()" style="font-size:12px;padding:5px 10px;width:180px">
+                  <button onclick="_rfvExportPdf()" title="Gera o PDF com exatamente os clientes exibidos abaixo (filtro de segmento + busca + linha)" style="font-size:12px;padding:5px 12px">📄 Exportar PDF</button><!-- v231 — pedido do dono 21/09 -->
                 </div>
               </div>
               <div id="rfv-table" style="overflow-x:auto"></div>
@@ -2562,7 +2563,15 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:.5px solid var(--border)">
               <!-- Ticket Médio -->
               <div style="padding:20px;border-right:.5px solid var(--border)">
-                <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">🎟 Ticket Médio</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+                  <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em">🎟 Ticket Médio</div>
+                  <!-- v231 — pedido do dono 21/09: linha pode ser 50 mil, anestésico em geral até mil — juntos distorcem a leitura -->
+                  <select id="ind-ticket-linha" onchange="renderIndicadores()" title="Ticket médio por produto: uma Linha pode valer dezenas de milhares e um Anestésico em geral até mil reais — separar melhora a leitura" style="font-size:11px;padding:3px 8px">
+                    <option value="todos">Ambos</option>
+                    <option value="personalizada">Linha</option>
+                    <option value="anestesico">Anestésico</option>
+                  </select>
+                </div>
                 <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
                   <div>
                     <div style="font-size:28px;font-weight:700;color:var(--text-info)" id="ind-ticket-val">—</div>
@@ -2689,6 +2698,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
                       <th style="padding:7px 10px;text-align:right;font-size:11px;color:var(--text-secondary)">% total</th>
                       <th style="padding:7px 10px;text-align:right;font-size:11px;color:var(--text-secondary)">% acumulado</th>
                       <th style="padding:7px 10px;text-align:center;font-size:11px;color:var(--text-secondary)">Pedidos</th>
+                      <th style="padding:7px 10px;text-align:right;font-size:11px;color:var(--text-secondary)">Última compra</th><!-- v231 — pedido do dono 21/09 -->
                       <th style="padding:7px 10px;text-align:left;font-size:11px;color:var(--text-secondary)">Situação</th>
                     </tr>
                   </thead>
@@ -4460,6 +4470,15 @@ var _sepSnap={};
 // (d) rede de segurança: o resync periódico (3min/foco) usa a lista COMPLETA após a fase 1 —
 //     qualquer falha da carga diferida se auto-corrige no próximo resync.
 var _SEP_DEFER={ auditLog:1, notificacoes:1, agendaEventos:1, insumos:1, catalogo:1, catalogoNovo:1, gruposEmbalagem:1 };
+// v231 — EGRESS (aviso Fair Use do Supabase 21/09: a recarga de 3min baixava as tabelas INTEIRAS
+// ~800x/dia; audit_log 8MB + notificacoes 4MB eram ~29% do tráfego). Entidades de LOG (append-mostly)
+// passam a recarga INCREMENTAL no resync: o boot carrega tudo (como sempre) e os resyncs baixam SÓ
+// linhas com updated_at novo, com margem de 15min contra relógio torto (re-baixa pouco; união por id).
+// Segurança: linha nunca baixada não entra no snapshot → nunca vira "removed" (v77 intacta); edição
+// local pendente (memória≠snapshot) NUNCA é sobrescrita pelo incremento; qualquer falha → carga
+// completa de sempre (fail-open). Recuperação anti-delete-em-massa força carga COMPLETA (forceFull).
+var _SEP_INCR={ auditLog:1, notificacoes:1 };
+var _sepIncrMax={}; // maior updated_at do SERVIDOR visto por entidade (régua do incremento)
 var _sepBootFase1=true, _sepDeferRodando=false;
 async function _sepCarregarDiferidas(){
   if(_sepDeferRodando) return; _sepDeferRodando=true;
@@ -4501,6 +4520,15 @@ var _sepDirty={};
 // PADRÃO — zero mudança de comportamento) | 'all' (linha canonicamente IGUAL não regrava — pular escrita
 // de conteúdo idêntico não perde nada de ninguém, por definição). Reverter = trocar a chave via SQL.
 var _sepCanonModo=null, _sepCanonLendo=false;
+// v231 — SOMBRA DO DELTA (preparação da v232, autorizada 21/09; zero mudança de comportamento):
+// a cada resync, SEM alterar nada, mede-se o que a sincronização por delta TERIA baixado
+// (updated_at >= régua-15min) contra o que a carga completa provou ter mudado de verdade
+// (diferença canônica vs fotografia). "perdidas" = mudança real que o delta NÃO teria visto —
+// a métrica que decide se o delta pode ser ligado (meta: zero por N dias). Chave remota
+// app_config 'sep_delta': off (padrão) | shadow. Telemetria em sessions.diag.delta.
+var _sepDeltaModo=null;
+var _sepDeltaMax={};   // régua por entidade: maior updated_at (ms) visto na carga anterior
+var _sepDeltaDiag={ ciclos:0, teria:{}, reais:{}, perdidas:{}, am:[] };
 var _sepCanonDiag={iguais:0, reais:0, porTabela:{}, reaisTab:{}};
 // v222 — ETAPA 3 FASE A (autorizada 28/08): INSTRUMENTAÇÃO do detector de mudanças. Quando uma linha
 // é marcada "alterada", registra QUAIS campos de topo diferem entre a fotografia e a memória (só NOMES
@@ -4540,13 +4568,14 @@ function _canonStr(v){
 async function _sepCanonLoad(){
   if(_sepCanonLendo || !_sb) return; _sepCanonLendo=true;
   try{
-    const { data }=await _sb.from('app_config').select('key,value').in('key',['sep_canon','sep_diag']);
-    var m='shadow', d='on';
-    (data||[]).forEach(function(r){ if(r.key==='sep_canon') m=String(r.value||'').trim()||'shadow'; if(r.key==='sep_diag') d=String(r.value||'').trim()||'on'; });
+    const { data }=await _sb.from('app_config').select('key,value').in('key',['sep_canon','sep_diag','sep_delta']);
+    var m='shadow', d='on', dl='off';
+    (data||[]).forEach(function(r){ if(r.key==='sep_canon') m=String(r.value||'').trim()||'shadow'; if(r.key==='sep_diag') d=String(r.value||'').trim()||'on'; if(r.key==='sep_delta') dl=String(r.value||'').trim()||'off'; });
     if(m==='admin'){ m=(currentUser && currentUser.perfil==='admin')?'all':'shadow'; } // v221 — piloto: skip só na sessão do admin, demais seguem medindo
     _sepCanonModo=(m==='off'||m==='all'||m==='shadow')?m:'shadow';
     _sepDiagModo=(d==='off')?'off':'on'; // v222 — instrumentação desligável por SQL
-  }catch(_e){ if(_sepCanonModo===null) _sepCanonModo='shadow'; if(_sepDiagModo===null) _sepDiagModo='on'; }
+    _sepDeltaModo=(dl==='shadow')?'shadow':'off'; // v231 — sombra do delta; QUALQUER outro valor = off (conservador; 'admin'/'all' só existirão na v232)
+  }catch(_e){ if(_sepCanonModo===null) _sepCanonModo='shadow'; if(_sepDiagModo===null) _sepDiagModo='on'; if(_sepDeltaModo===null) _sepDeltaModo='off'; }
   _sepCanonLendo=false;
 }
 function _sepMarkDirty(cfg, changed){ if(!changed||!changed.length) return; if(!_sepDirty[cfg.key]) _sepDirty[cfg.key]={}; for(var i=0;i<changed.length;i++){ if(changed[i]!=null) _sepDirty[cfg.key][String(cfg.id(changed[i]))]=changed[i]; } }
@@ -4691,7 +4720,7 @@ async function _sepSyncOne(cfg){
         for(var _ai=0;_ai<changed.length;_ai++){ try{ const { data:_ar }=await _sb.from('conversas').select('data').eq('id', String(changed[_ai].id)).maybeSingle(); if(_ar && _ar.data) _convUniaoMsgs(changed[_ai], _ar.data); }catch(_e){} }
       }
       if(changed.length){ try{ const { error:_ce }=await _sb.from(cfg.table).upsert(changed.map(cfg.row),{onConflict:'id'}); if(_ce){ _savedChg=false; console.warn(cfg.table+' upsert (anti-mass):', _ce.message); } }catch(_e2){ _savedChg=false; } }
-      await _sepLoadOne(cfg);
+      await _sepLoadOne(cfg, true); // v231 — recuperação exige carga COMPLETA (o incremento não vale aqui)
       if(_savedChg) _sepClearDirty(cfg, changed); // v119 — confirmado no servidor → libera a proteção
       try{ refreshAll(); }catch(_e){}
       return { ok:_savedChg, table:cfg.table, error:_savedChg?'':'delete em massa bloqueado (estado defasado); recarregado do servidor' };
@@ -4764,10 +4793,47 @@ async function _sepLoadPool(cfgs, nWorkers, onDone){
   await Promise.all(ws);
   return falhas; // quem falhou volta pro caminho sequencial
 }
-async function _sepLoadOne(cfg){
+async function _sepLoadOne(cfg, forceFull){
   if(!_sb) return false;
+  // v231 — RECARGA INCREMENTAL (egress): entidade de log com baseline carregada baixa só o que mudou.
+  // Regras: (1) só roda com baseline (_sepIncrMax) e memória povoada — senão cai na carga completa;
+  // (2) margem de 15min no updated_at (relógio torto / gravação em voo — a união por id dedupa);
+  // (3) linha nova do servidor entra por push COM snapshot (não é "edição local" a gravar);
+  // (4) linha já em memória: edição local pendente (memória≠snapshot) VENCE e não é tocada (v134);
+  //     sem edição pendente, adota o servidor e atualiza o snapshot DAQUELA linha (nunca o resto);
+  // (5) exclusão feita em outra aba NÃO remove aqui (log é append-mostly; o F5/boot realinha);
+  // (6) qualquer erro → carga completa de sempre (fail-open).
+  if(!forceFull && _SEP_INCR[cfg.key] && _sepIncrMax[cfg.key] && (cfg.get()||[]).length){
+    try{
+      var _incDesde=new Date(Date.parse(_sepIncrMax[cfg.key])-15*60000).toISOString();
+      var _incRows=[], _incFrom=0, _incPg=1000;
+      while(true){
+        const { data:_ir, error:_ie }=await _sb.from(cfg.table).select('id,data,updated_at').gte('updated_at',_incDesde).order('id').range(_incFrom,_incFrom+_incPg-1);
+        if(_ie) throw _ie;
+        if(!_ir||!_ir.length) break;
+        _incRows=_incRows.concat(_ir);
+        if(_ir.length<_incPg) break;
+        _incFrom+=_incPg;
+      }
+      var _arrI=cfg.get()||[]; var _idxI={};
+      for(var _qi=0;_qi<_arrI.length;_qi++){ var _oq=_arrI[_qi]; if(_oq!=null&&typeof _oq==='object') _idxI[String(cfg.id(_oq))]=_qi; }
+      var _snapI=_sepSnap[cfg.key]||(_sepSnap[cfg.key]={});
+      for(var _wi=0;_wi<_incRows.length;_wi++){
+        var _rw=_incRows[_wi]; if(!_rw||!_rw.data) continue;
+        if(_rw.data.id==null && _rw.id!=null) _rw.data.id=_rw.id; // v175 — anti-clone
+        var _rid=String(_rw.id);
+        if(_rw.updated_at && _rw.updated_at>_sepIncrMax[cfg.key]) _sepIncrMax[cfg.key]=_rw.updated_at;
+        var _pos=_idxI[_rid];
+        if(_pos===undefined){ _arrI.push(_rw.data); _snapI[_rid]=JSON.stringify(_rw.data); continue; }
+        if(_snapI[_rid]!==undefined && JSON.stringify(_arrI[_pos])!==_snapI[_rid]) continue; // edição local pendente vence
+        _arrI[_pos]=_rw.data; _snapI[_rid]=JSON.stringify(_rw.data);
+      }
+      cfg.set(_arrI);
+      return true;
+    }catch(_e){ console.warn(cfg.table+' incremental falhou; carga completa:', _e&&_e.message); }
+  }
   try{
-    var all=[]; var from=0; var page=1000;
+    var all=[]; var from=0; var page=1000; var _skipFull=false; var _updMap={}; // v231 — id→updated_at do servidor (régua do incremento + sombra do delta)
     // v145 : conversas chegam FATIADAS (últimas 30 msgs por conversa) — boot muito mais leve.
     // A thread completa desce só ao ABRIR a conversa (_convHidratar). Toda gravação continua
     // passando pela UNIÃO com o servidor (v107) — cópia fatiada NUNCA sobrescreve a completa.
@@ -4793,11 +4859,36 @@ async function _sepLoadOne(cfg){
         }
       }catch(_e){ all=[]; console.warn('conversas_boot falhou; carga completa:', _e && _e.message); }
     }
-    if(!all.length)
+    // v231 — NOTIFICAÇÕES (egress): a carga completa desce NÃO LIDAS (todas, sempre) + lidas dos
+    // últimos 60 dias (a tabela acumula tudo desde sempre — 7.400+ linhas / 4MB re-baixados a cada
+    // resync). As lidas antigas descem sob demanda no modal "Ver todas" (lista local, fora do sync).
+    // RPC indisponível/erro → carga completa de sempre (fail-open). Resultado VAZIO legítimo (tudo
+    // lido e antigo) NÃO cai na carga completa (_skipFull).
+    if(cfg.key==='notificacoes'){
+      try{
+        var _nbFrom=0,_nbPg=1000,_nbAll=[];
+        while(true){
+          const { data:_nb, error:_ne }=await _sb.rpc('notif_boot',{ p_dias:60 }).range(_nbFrom,_nbFrom+_nbPg-1);
+          if(_ne) throw _ne;
+          var _nbN=Array.isArray(_nb)?_nb.length:0;
+          for(var _nj=0;_nj<_nbN;_nj++){ var _nr=_nb[_nj]; if(!_nr||!_nr.data) continue;
+            if(_nr.data.id==null&&_nr.id!=null) _nr.data.id=_nr.id; // v175 — anti-clone
+            _nbAll.push(_nr.data);
+            if(_nr.updated_at&&(!_sepIncrMax[cfg.key]||_nr.updated_at>_sepIncrMax[cfg.key])) _sepIncrMax[cfg.key]=_nr.updated_at;
+          }
+          if(_nbN<_nbPg) break;
+          _nbFrom+=_nbPg;
+        }
+        all=_nbAll; _skipFull=true;
+      }catch(_e){ all=[]; _skipFull=false; console.warn('notif_boot falhou; carga completa:', _e&&_e.message); }
+    }
+    if(!all.length && !_skipFull)
     while(true){
-      const { data, error }=await _sb.from(cfg.table).select('id,data').order('id').range(from,from+page-1); // v174 — ordem estável: sem .order a paginação pode pular/duplicar linhas (insumos já passa de 4.700)
+      const { data, error }=await _sb.from(cfg.table).select('id,data,updated_at').order('id').range(from,from+page-1); // v174 — ordem estável: sem .order a paginação pode pular/duplicar linhas (insumos já passa de 4.700); v231 — updated_at sempre presente (régua do incremento + sombra do delta)
       if(error){ console.warn(cfg.table+' load:', error.message); return false; }
       if(!data || !data.length) break;
+      for(var _ui=0;_ui<data.length;_ui++){ var _ur=data[_ui]; if(!_ur||!_ur.updated_at) continue; _updMap[String(_ur.id)]=_ur.updated_at;
+        if(_SEP_INCR[cfg.key] && (!_sepIncrMax[cfg.key]||_ur.updated_at>_sepIncrMax[cfg.key])) _sepIncrMax[cfg.key]=_ur.updated_at; }
       // v175 — BLINDAGEM (incidente da migração 28/07, mesmo DNA do PED-001): registro cujo data veio SEM
       // 'id' interno ficava sem identidade no SEP e era RE-CHAVEADO e re-salvo como CLONE a cada sync
       // (~3.000 clones em 3 ciclos). O id da LINHA vira o id do objeto — clone impossível.
@@ -4854,6 +4945,43 @@ async function _sepLoadOne(cfg){
         var _cur=cfg.get()||[];
         for(var _pp=0;_pp<_cur.length;_pp++){ var _po=_cur[_pp]; if(_po==null||typeof _po!=='object') continue;
           var _pid=String(cfg.id(_po)); if(_snAnt[_pid]!==JSON.stringify(_po)) _pend[_pid]=_po; }
+      }
+    }catch(_e){}
+    // v231 — SOMBRA DO DELTA (só mede, nunca muda nada; try/catch total; chave sep_delta='shadow'):
+    // compara "o que o delta TERIA baixado" (updated_at do servidor >= régua-15min, a mesma regra
+    // que a v232 usará) com "o que mudou de verdade" (linha do servidor canonicamente diferente da
+    // fotografia da última carga). Mudança real que o delta não teria visto = PERDIDA (a métrica).
+    // Linha nova/excluída fica fora (o delta real cobre pela varredura de ids). O 1º ciclo de cada
+    // entidade só estabelece a régua. Fora do escopo: conversas (o delta delas é o poll v107, já
+    // provado) e as incrementais em recuperação forceFull.
+    try{
+      if(_sepDeltaModo==='shadow' && !forceFull && _snAnt && cfg.key!=='conversas'){
+        var _dPrev=_sepDeltaMax[cfg.key];
+        var _dThr=_dPrev?(_dPrev-900000):null; // margem de 15min, idêntica ao delta real
+        var _dMax=_dPrev||0;
+        _sepDeltaDiag.ciclos++;
+        for(var _dv=0;_dv<all.length;_dv++){
+          var _dro=all[_dv]; if(_dro==null) continue;
+          var _did=String(cfg.id(_dro));
+          var _dts=Date.parse(_updMap[_did]||'')||0;
+          if(_dts>_dMax) _dMax=_dts;
+          var _dsn=_snAnt[_did];
+          if(_dsn===undefined || _dThr===null) continue;
+          var _teria=(_dts>=_dThr);
+          if(_teria) _sepDeltaDiag.teria[cfg.table]=(_sepDeltaDiag.teria[cfg.table]||0)+1;
+          if(_dsn!==JSON.stringify(_dro)){
+            var _dreal=true;
+            try{ _dreal=(_canonStr(JSON.parse(_dsn))!==_canonStr(_dro)); }catch(_e){}
+            if(_dreal){
+              _sepDeltaDiag.reais[cfg.table]=(_sepDeltaDiag.reais[cfg.table]||0)+1;
+              if(!_teria){
+                _sepDeltaDiag.perdidas[cfg.table]=(_sepDeltaDiag.perdidas[cfg.table]||0)+1;
+                if(_sepDeltaDiag.am.length<5) _sepDeltaDiag.am.push({ t:cfg.table, id:_did, up:_updMap[_did]||null });
+              }
+            }
+          }
+        }
+        if(_dMax) _sepDeltaMax[cfg.key]=_dMax;
       }
     }catch(_e){}
     cfg.set(all);
@@ -4994,7 +5122,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v230';
+var APP_VERSION = 'v231';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5162,7 +5290,8 @@ async function _sessionHeartbeat(){
   try{
     var _hbDiag=null; // v221 — telemetria da correção 2 (contadores do detector canônico), lida por SQL na coluna sessions.diag
     try{ _hbDiag={ canon:{ modo:(_sepCanonModo||'shadow'), iguais:_sepCanonDiag.iguais, reais:_sepCanonDiag.reais, tab:_sepCanonDiag.porTabela, reaisTab:_sepCanonDiag.reaisTab },
-                   dirty:{ ciclos:_sepDirtyDiag.ciclos, tab:_sepDirtyDiag.porTabela, campos:_sepDirtyDiag.campos, am:_sepDirtyDiag.amostras } }; }catch(_e){ _hbDiag=null; } // v222 — fase A: o que é marcado "alterado" e POR QUAIS CAMPOS
+                   dirty:{ ciclos:_sepDirtyDiag.ciclos, tab:_sepDirtyDiag.porTabela, campos:_sepDirtyDiag.campos, am:_sepDirtyDiag.amostras },
+                   delta:{ modo:(_sepDeltaModo||'off'), ciclos:_sepDeltaDiag.ciclos, teria:_sepDeltaDiag.teria, reais:_sepDeltaDiag.reais, perdidas:_sepDeltaDiag.perdidas, am:_sepDeltaDiag.am } }; }catch(_e){ _hbDiag=null; } // v222 — fase A; v231 — sombra do delta (perdidas=0 por N dias é o portão da v232)
     await _sb.from('sessions').upsert({ tab_id:_tabId, user_id:currentUser.id, user_name:currentUser.name, version:APP_VERSION, last_seen:new Date().toISOString(), updated_at:new Date().toISOString(), diag:_hbDiag }, { onConflict:'tab_id' });
     const r = await _sb.from('sessions').select('kicked').eq('tab_id',_tabId).limit(1);
     if(r && r.data && r.data[0] && r.data[0].kicked){ _doKickLogout(); }
@@ -10135,18 +10264,21 @@ function addNotificacao(n){
 // v138 — tipos de notificação que usuários NÃO-ADMIN recebem (pedido do dono: começar SÓ com menções
 // em pendências — abertura e comentários — e ir liberando outros tipos aos poucos, adicionando aqui).
 const _NOTIF_TIPOS_NAO_ADMIN=['pendencia'];
+// v231 — predicado extraído de getMyNotifs (o modal "Ver todas" aplica a MESMA régua às antigas buscadas sob demanda)
+function _notifMinha(n){
+  if(!n) return false;
+  // Extensões de prazo: só para admin
+  if(n.tipo==='extensao_prazo'&&currentUser?.perfil!=='admin') return false;
+  // v138 — não-admin: SÓ notificações DIRECIONADAS a ele (paraUserId) e de tipo liberado (menção em pendência)
+  if(currentUser?.perfil!=='admin'){
+    if(!n.paraUserId || n.paraUserId!==currentUser?.id) return false;
+    if(!_NOTIF_TIPOS_NAO_ADMIN.includes(n.tipo)) return false;
+    return true;
+  }
+  return !n.paraUserId||n.paraUserId===currentUser?.id;
+}
 function getMyNotifs(){
-  return notificacoes.filter(n=>{
-    // Extensões de prazo: só para admin
-    if(n.tipo==='extensao_prazo'&&currentUser?.perfil!=='admin') return false;
-    // v138 — não-admin: SÓ notificações DIRECIONADAS a ele (paraUserId) e de tipo liberado (menção em pendência)
-    if(currentUser?.perfil!=='admin'){
-      if(!n.paraUserId || n.paraUserId!==currentUser?.id) return false;
-      if(!_NOTIF_TIPOS_NAO_ADMIN.includes(n.tipo)) return false;
-      return true;
-    }
-    return !n.paraUserId||n.paraUserId===currentUser?.id;
-  });
+  return notificacoes.filter(_notifMinha);
 }
 function renderNotifBadge(){
   const unread=getMyNotifs().filter(n=>!n.lida).length;
@@ -10212,10 +10344,12 @@ function markAllNotifRead(){
   const _nm=document.getElementById('notif-modal-body'); if(_nm) abrirNotifModal(); // v138 — se o modal está aberto, re-renderiza
 }
 // v138 — modal "Ver todas": lista completa das notificações do usuário (o painel do sino corta em 20)
-function abrirNotifModal(){
-  const p=document.getElementById('notif-panel'); if(p) p.style.display='none';
-  const mine=getMyNotifs();
-  const rows=mine.length?mine.slice(0,300).map(n=>`
+// v231 — EGRESS: a memória agora carrega não lidas (todas) + lidas de 60 dias (notif_boot); as lidas
+// ANTIGAS descem AQUI, sob demanda, para uma lista LOCAL (_notifModalExtra) que NÃO entra na memória
+// do sync (zero gravação/snapshot; clique em antiga funciona pelo fallback do handleNotifClick).
+var _notifModalExtra={};
+function _notifModalRows(arr){
+  return arr.length?arr.slice(0,300).map(n=>`
     <div style="padding:11px 16px;border-bottom:.5px solid var(--border);background:${n.lida?'':'var(--bg-info)'};cursor:pointer"
       onclick="handleNotifClick('${n.id}')">
       <div style="display:flex;justify-content:space-between;gap:10px">
@@ -10224,19 +10358,48 @@ function abrirNotifModal(){
       </div>
       <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${n.sub||''}</div>
     </div>`).join(''):'<div class="empty" style="padding:28px">Nenhuma notificação.</div>';
+}
+function abrirNotifModal(){
+  const p=document.getElementById('notif-panel'); if(p) p.style.display='none';
+  const mine=getMyNotifs();
+  const rows=_notifModalRows(mine);
   document.getElementById('notif-modal-overlay')?.remove();
   document.body.insertAdjacentHTML('beforeend', `<div class="overlay open" id="notif-modal-overlay" data-dyn="1">
     <div class="modal" style="width:640px;max-width:94vw;max-height:86vh;display:flex;flex-direction:column">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;margin-bottom:8px">
-        <h2 style="margin:0">🔔 Notificações <span style="font-size:12px;color:var(--text-tertiary);font-weight:400">(${mine.length})</span></h2>
+        <h2 style="margin:0">🔔 Notificações <span id="notif-modal-count" style="font-size:12px;color:var(--text-tertiary);font-weight:400">(${mine.length})</span></h2>
         <button onclick="markAllNotifRead()" style="font-size:11px;padding:3px 10px;color:var(--text-info)">Marcar todas lidas</button>
       </div>
       <div id="notif-modal-body" style="flex:1;overflow:auto;border:.5px solid var(--border);border-radius:var(--r-md)">${rows}</div>
       <div class="modal-footer" style="flex-shrink:0;margin-top:10px"><button onclick="document.getElementById('notif-modal-overlay').remove()">Fechar</button></div>
     </div></div>`);
+  _notifModalCarregaAntigas(); // v231 — histórico antigo em segundo plano (não bloqueia a abertura)
+}
+async function _notifModalCarregaAntigas(){
+  try{
+    if(!_sb) return;
+    var tem={}; (notificacoes||[]).forEach(function(n){ if(n&&n.id!=null) tem[String(n.id)]=1; });
+    var extras=[], _hFrom=0, _hPg=1000;
+    while(true){
+      const { data:_hD, error:_hE }=await _sb.from('notificacoes').select('id,data').order('id').range(_hFrom,_hFrom+_hPg-1);
+      if(_hE) throw _hE;
+      if(!_hD||!_hD.length) break;
+      for(var _hi=0;_hi<_hD.length;_hi++){ var _hr=_hD[_hi]; if(!_hr||!_hr.data) continue;
+        if(_hr.data.id==null&&_hr.id!=null) _hr.data.id=_hr.id;
+        if(!tem[String(_hr.data.id)] && _notifMinha(_hr.data)) extras.push(_hr.data); }
+      if(_hD.length<_hPg) break;
+      _hFrom+=_hPg;
+    }
+    if(!extras.length) return;
+    _notifModalExtra={}; extras.forEach(function(n){ _notifModalExtra[String(n.id)]=n; });
+    var body=document.getElementById('notif-modal-body'); if(!body) return; // modal já fechado
+    var jun=getMyNotifs().concat(extras).sort(function(a,b){ return (Number(b.ts)||0)-(Number(a.ts)||0); });
+    body.innerHTML=_notifModalRows(jun);
+    var cnt=document.getElementById('notif-modal-count'); if(cnt) cnt.textContent='('+jun.length+')';
+  }catch(_e){ console.warn('histórico de notificações indisponível:', _e&&_e.message); }
 }
 function handleNotifClick(nid){
-  const n=notificacoes.find(x=>x.id===nid);if(!n)return;
+  const n=notificacoes.find(x=>x.id===nid)||_notifModalExtra[String(nid)];if(!n)return; // v231 — antiga (fora da memória) clica pelo fallback
   markNotifRead(nid);
   document.getElementById('notif-modal-overlay')?.remove(); // v138 — clicou vindo do modal "Ver todas"
   document.getElementById('notif-panel').style.display='none';
@@ -28514,16 +28677,21 @@ function renderRfvLegend(){
   }).join('');
 }
 
-function renderRfvTable(){
-  const el=document.getElementById('rfv-table');
-  if(!el) return;
+// v231 — filtro da tabela extraído: a tela e o PDF de exportação usam a MESMA lista (o PDF sai
+// com exatamente o que está sendo exibido — filtro de segmento + busca + linha do RFV).
+function _rfvListaFiltrada(){
   const segFil=(document.getElementById('rfv-filter-seg')?.value||'').trim();
   const q=(document.getElementById('rfv-search-cli')?.value||'').toLowerCase();
-
   let list=[..._rfvData];
   if(segFil) list=list.filter(c=>c.segmento===segFil);
   if(q)      list=list.filter(c=>(c.nome||'').toLowerCase().includes(q));
   list.sort((a,b)=>b.valor-a.valor);
+  return list;
+}
+function renderRfvTable(){
+  const el=document.getElementById('rfv-table');
+  if(!el) return;
+  const list=_rfvListaFiltrada();
 
   if(!list.length){
     el.innerHTML='<div class="empty" style="padding:24px">Nenhum cliente encontrado.</div>';
@@ -28560,6 +28728,47 @@ function renderRfvTable(){
       </tr>`;
     }).join('')}</tbody>
   </table>`;
+}
+// v231 — EXPORTAR PDF da lista "Clientes por segmento" (pedido do dono 21/09): gera janela de
+// impressão (padrão da casa, mesmo desenho do _solVerPedidoPdf) com EXATAMENTE os clientes exibidos
+// na tela — _rfvListaFiltrada() é a mesma função que alimenta a tabela. Somente leitura, zero gravação.
+function _rfvExportPdf(){
+  var list=_rfvListaFiltrada();
+  if(!list.length){ alert('Nenhum cliente na lista atual — ajuste o filtro/busca e tente de novo.'); return; }
+  var segFil=(document.getElementById('rfv-filter-seg')?.value||'').trim();
+  var q=(document.getElementById('rfv-search-cli')?.value||'').trim();
+  var segLabel=segFil?(segFil+' — '+((RFV_SEGMENTS[segFil]||{}).label||'')):'Todos os segmentos';
+  var linhaSel=document.getElementById('rfv-linha');
+  var linhaLabel=(linhaSel&&linhaSel.selectedIndex>=0)?linhaSel.options[linhaSel.selectedIndex].text:'';
+  var totalValor=list.reduce(function(s,c){ return s+(parseFloat(c.valor)||0); },0);
+  var rows=list.map(function(c,i){
+    var s=RFV_SEGMENTS[c.segmento]||{label:''};
+    var ult='';
+    try{ ult=fmtDate(c.lastDate.toISOString().split('T')[0]); }catch(_e){}
+    return '<tr><td style="text-align:center">'+(i+1)+'</td>'+
+      '<td>'+escapeHtml(c.nome||'')+'</td>'+
+      '<td style="text-align:center;white-space:nowrap">'+escapeHtml(c.segmento+' — '+s.label)+'</td>'+
+      '<td style="text-align:center">'+c.R+'</td><td style="text-align:center">'+c.F+'</td><td style="text-align:center">'+c.V+'</td>'+
+      '<td style="text-align:right;white-space:nowrap">'+ult+'</td>'+
+      '<td style="text-align:center">'+(c.frequencia||0)+'</td>'+
+      '<td style="text-align:right;white-space:nowrap">'+fmtMoney(c.valor)+'</td></tr>';
+  }).join('');
+  var html='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>RFV — Clientes por segmento — '+escapeHtml(segLabel)+'</title>'+
+    '<style>body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:32px}h1{font-size:20px;margin:0 0 2px}h2{font-size:13px;font-weight:normal;color:#555;margin:0 0 18px}'+
+    'table{width:100%;border-collapse:collapse;font-size:12px}th{background:#f0f0f0;border:1px solid #ccc;padding:7px 8px;text-align:left;font-size:11px}td{border:1px solid #ccc;padding:6px 8px}'+
+    'tfoot td{font-weight:bold;background:#f7f7f7}.rodape{margin-top:18px;font-size:11px;color:#777}@media print{body{margin:12mm}}</style></head><body>'+
+    '<h1>Lecare — Análise RFV: clientes por segmento</h1>'+
+    '<h2>Segmento: '+escapeHtml(segLabel)+(linhaLabel?' · Linha: '+escapeHtml(linhaLabel):'')+(q?' · Busca: "'+escapeHtml(q)+'"':'')+' · '+list.length+' cliente'+(list.length>1?'s':'')+'</h2>'+
+    '<table><thead><tr><th style="width:34px;text-align:center">#</th><th>Cliente</th><th style="text-align:center">Segmento</th>'+
+    '<th style="width:30px;text-align:center">R</th><th style="width:30px;text-align:center">F</th><th style="width:30px;text-align:center">V</th>'+
+    '<th style="width:90px;text-align:right">Último pedido</th><th style="width:60px;text-align:center">Pedidos</th><th style="width:110px;text-align:right">Valor total</th></tr></thead>'+
+    '<tbody>'+rows+'</tbody>'+
+    '<tfoot><tr><td colspan="8" style="text-align:right">Total ('+list.length+' cliente'+(list.length>1?'s':'')+')</td><td style="text-align:right">'+fmtMoney(totalValor)+'</td></tr></tfoot></table>'+
+    '<div class="rodape">Relatório gerado pelo sistema Lecare em '+new Date().toLocaleString('pt-BR')+(currentUser&&currentUser.name?' por '+escapeHtml(currentUser.name):'')+'. Reflete os filtros aplicados na tela no momento da exportação.</div>'+
+    '<script>window.onload=function(){ setTimeout(function(){ window.print(); }, 250); };<\/script></body></html>';
+  var w=window.open('','_blank');
+  if(!w){ alert('O navegador bloqueou a janela do PDF — libere pop-ups para este site e tente de novo.'); return; }
+  w.document.write(html); w.document.close(); w.focus();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -31058,12 +31267,18 @@ function renderIndicadores(){
     return total/ords.length;
   }
 
-  const ticket = calcTicketMedio(ordsPeriodo);
+  // v231 — pedido do dono 21/09: ticket médio por PRODUTO (Ambos/Linha/Anestésico). Uma Linha pode
+  // sair por dezenas de milhares e um anestésico em geral até mil — juntos, a média distorce a leitura.
+  // Mesma régua do filtro de linha do RFV (v82): o.linha vazio = 'personalizada'. SÓ o cartão do
+  // ticket usa o filtro (valor, comparação com o mês anterior e gráfico); LTV/churn/demais intactos.
+  const tkLinha=(document.getElementById('ind-ticket-linha')?.value)||'todos';
+  const _tkF=o=>tkLinha==='todos'||((o.linha||'personalizada')===tkLinha);
+  const ticket = calcTicketMedio(ordsPeriodo.filter(_tkF));
   const cut30  = new Date(); cut30.setDate(cut30.getDate()-30);
   const cut60  = new Date(); cut60.setDate(cut60.getDate()-60);
   const ordsUlt30  = ordersVenda.filter(o=>new Date(o.d1+'T12:00:00')>=cut30);
   const ords3060   = ordersVenda.filter(o=>new Date(o.d1+'T12:00:00')>=cut60&&new Date(o.d1+'T12:00:00')<cut30);
-  const ticketPrev = calcTicketMedio(ords3060);
+  const ticketPrev = calcTicketMedio(ords3060.filter(_tkF));
   const ticketDiff = ticketPrev>0 ? ((ticket-ticketPrev)/ticketPrev*100).toFixed(1) : null;
 
   const el=id=>document.getElementById(id);
@@ -31079,7 +31294,7 @@ function renderIndicadores(){
   const barChart = el('ind-ticket-chart');
   if(barChart){
     const byMonth={};
-    ordersVenda.filter(o=>{ const d=new Date(o.d1+'T12:00:00'); return d>=new Date(hoje.getFullYear(),hoje.getMonth()-5,1); })
+    ordersVenda.filter(o=>{ if(!_tkF(o)) return false; const d=new Date(o.d1+'T12:00:00'); return d>=new Date(hoje.getFullYear(),hoje.getMonth()-5,1); }) // v231 — gráfico acompanha o filtro de produto
       .forEach(o=>{ const m=o.d1.slice(0,7); if(!byMonth[m])byMonth[m]=[]; byMonth[m].push(parseFloat(o.valor||0)); }); // v98 — sem frete
     const months=Object.keys(byMonth).sort().slice(-6);
     const avgs=months.map(m=>byMonth[m].reduce((s,v)=>s+v,0)/byMonth[m].length);
@@ -31226,6 +31441,13 @@ function renderIndicadores(){
     clientRevenue[cid].receita+=parseFloat(o.valor||0); // v98 — 80/20 sem frete
     clientRevenue[cid].pedidos++;
   });
+  // v231 — pedido do dono 21/09: data da ÚLTIMA COMPRA do cliente (a mais recente entre TODOS os
+  // pedidos de receita, não só do período — é o dado de recência que acompanha a Situação).
+  const _ultCompra={};
+  ordersVenda.forEach(o=>{
+    const cid=String(o.clienteId||o.cliente);
+    if(!_ultCompra[cid]||o.d1>_ultCompra[cid]) _ultCompra[cid]=o.d1;
+  });
   const sorted=Object.values(clientRevenue).sort((a,b)=>b.receita-a.receita);
   const totalRev=sorted.reduce((s,c)=>s+c.receita,0)||1;
   let acum=0;
@@ -31244,7 +31466,10 @@ function renderIndicadores(){
   const tbody=el('ind-8020-tbody');
   if(tbody){
     let acc=0;
-    tbody.innerHTML=sorted.slice(0,30).map((c,i)=>{
+    // v231 — reporte do dono 21/09 ("o acumulado da tela está apresentando 47%"): a tabela cortava
+    // nos 30 primeiros e o grupo dos 80% (143 clientes no caso) nunca aparecia inteiro. Agora lista
+    // TODO o grupo que forma os 80% da receita (mínimo de 30 linhas para bases pequenas).
+    tbody.innerHTML=sorted.slice(0,Math.max(count80,30)).map((c,i)=>{
       acc+=c.receita;
       const accPct=(acc/totalRev*100).toFixed(1);
       const pctDo=(c.receita/totalRev*100).toFixed(1);
@@ -31268,6 +31493,7 @@ function renderIndicadores(){
           </div>
         </td>
         <td style="padding:7px 10px;text-align:center;font-size:12px;color:var(--text-secondary)">${c.pedidos}</td>
+        <td style="padding:7px 10px;text-align:right;font-size:12px;color:var(--text-secondary);white-space:nowrap">${_ultCompra[c.cid]?fmtDate(_ultCompra[c.cid]):'—'}</td>
         <td style="padding:7px 10px">
           <span style="font-size:10px;padding:1px 7px;border-radius:20px;background:${ss.bg};color:${ss.color}">${ss.label}</span>
         </td>
@@ -31861,12 +32087,16 @@ function exportIndicadoresCSV(){
     byClient[cid].pedidos++;
     byClient[cid].receita+=(parseFloat(o.valor||0)); // v98 — receita sem frete
   });
+  // v231 — última compra (todos os pedidos de receita, mesma régua da tela)
+  const _ultC={};
+  orders.filter(o=>(_ehReceita(o))&&o.d1).forEach(o=>{ const cid=String(o.clienteId||o.cliente); if(!_ultC[cid]||o.d1>_ultC[cid]) _ultC[cid]=o.d1; });
+  Object.keys(byClient).forEach(cid=>{ byClient[cid].ult=_ultC[cid]||''; });
   const sorted=Object.values(byClient).sort((a,b)=>b.receita-a.receita);
   const totalRev=sorted.reduce((s,c)=>s+c.receita,0)||1;
   let acc=0;
   const rows=sorted.map((c,i)=>{
     acc+=c.receita;
-    return{'#':i+1,Cliente:c.cliente,'Receita R$':c.receita.toFixed(2),'% do Total':(c.receita/totalRev*100).toFixed(1)+'%','% Acumulado':(acc/totalRev*100).toFixed(1)+'%',Pedidos:c.pedidos};
+    return{'#':i+1,Cliente:c.cliente,'Receita R$':c.receita.toFixed(2),'% do Total':(c.receita/totalRev*100).toFixed(1)+'%','% Acumulado':(acc/totalRev*100).toFixed(1)+'%',Pedidos:c.pedidos,'Última compra':c.ult};
   });
   exportCSV(rows,`lecare-ranking-${new Date().toISOString().slice(0,10)}.csv`);
 }
@@ -34225,10 +34455,28 @@ document.addEventListener('visibilitychange', function(){
 setInterval(function(){ if(!document.hidden) _resyncFromServer(); }, 180000);
 // v107 — POLL leve das conversas (~10s): rede de segurança p/ mensagens RECEBIDAS aparecerem sozinhas, mesmo se o realtime falhar.
 var _convSeenUpd={}, _convPollFirst=false, _convRemovidas={};
+// v231 — GUARDA BARATA do poll (egress): antes de varrer a lista inteira (id+updated_at de todas as
+// conversas, ~45kB a cada 10s por aba), UMA chamada de 1 linha (conv_poll_guard: count + max
+// updated_at) decide se algo mudou. Guarda dupla: append/edição avança o max; exclusão/inserção muda
+// o count. A guarda só vira "vista" quando a varredura termina SEM erro (semântica v178) — falha no
+// meio → o próximo tique revarre. RPC indisponível/erro → varre como sempre (fail-open). A guarda só
+// vale DEPOIS da baseline (primeira varredura), senão a 1ª mudança ficaria sem conteúdo processado.
+var _convPollGuard=null, _convPollGuardPend=null;
 async function _pollConversas(){
   try{
     if(!_sb || !_sbReady || !currentUser || _versionBlocked || document.hidden) return;
     if(_resyncTravado()) return; // v178 — trava presa >60s não segura mais o poll
+    _convPollGuardPend=null;
+    if(_convPollFirst){
+      try{
+        const { data:_g, error:_ge }=await _sb.rpc('conv_poll_guard');
+        if(!_ge && _g && typeof _g==='object' && _g.n!==undefined){
+          var _gk=String(_g.n)+'|'+String(_g.mx||'');
+          if(_convPollGuard===_gk) return; // nada mudou no servidor desde a última varredura completa
+          _convPollGuardPend=_gk;
+        }
+      }catch(_e){}
+    }
     Object.keys(_convRemovidas).forEach(function(id){ if(Date.now()-_convRemovidas[id]>60000) delete _convRemovidas[id]; });
     // v174 — paginado (PostgREST corta em 1000; o sistema passou de 1000 conversas — incidente 28/07)
     var rows=[];
@@ -34241,10 +34489,10 @@ async function _pollConversas(){
         _pf+=_pp;
       }
     }
-    if(!Array.isArray(rows)||!rows.length) return;
+    if(!Array.isArray(rows)||!rows.length){ if(_convPollGuardPend) _convPollGuard=_convPollGuardPend; return; }
     if(!_convPollFirst){ _convPollFirst=true; rows.forEach(function(r){ _convSeenUpd[r.id]=r.updated_at; }); return; }
     const changed = rows.filter(function(r){ const p=_convSeenUpd[r.id]; return (!p || p < r.updated_at) && !_convRemovidas[r.id]; });
-    if(!changed.length) return;
+    if(!changed.length){ if(_convPollGuardPend) _convPollGuard=_convPollGuardPend; return; } // v231 — varredura completa e limpa → guarda vista
     // v178 — marca "visto" SÓ DEPOIS do conteúdo chegar: antes, uma falha na busca do conteúdo
     // (rede) deixava a mudança marcada como vista e ela nunca mais era reprocessada por este poll.
     const ids = changed.map(function(r){ return r.id; }).slice(0,300);
@@ -34264,6 +34512,7 @@ async function _pollConversas(){
       }
     });
     if(mudou){ try{ renderConversasLista(); }catch(_e){} if(typeof _updateConvBadge==='function') _updateConvBadge(); if(ativaMudou && conversaAtivaId){ try{ renderConversaMsgs(conversaAtivaId); }catch(_e){} } }
+    if(_convPollGuardPend) _convPollGuard=_convPollGuardPend; // v231 — ciclo completo sem erro → guarda vista
   }catch(_e){}
 }
 setInterval(_pollConversas, 10000);

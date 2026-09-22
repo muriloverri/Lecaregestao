@@ -165,6 +165,7 @@ tr.row-crit td:first-child{border-left:3px solid var(--st-bad-tx)}
 tr.row-warn td:first-child{border-left:3px solid var(--st-mid-tx)}
 tr.row-urgent{background:var(--st-urg-bg)}
 tr.row-prog{background:var(--st-inf-bg)} /* v127 — venda PROGRAMADA (saída depois do prazo padrão): azul */
+tr.row-evento{background:var(--st-mid-bg)} /* v233 — 🎪 EVENTO: fundo amarelo de destaque (não pode atrasar) */
 tr.row-prog td:first-child{border-left:3px solid var(--st-inf-bd)}
 /* Alternating rows */
 .gestao-table tbody tr:nth-child(odd) td{background:var(--bg-primary)}
@@ -172,6 +173,7 @@ tr.row-prog td:first-child{border-left:3px solid var(--st-inf-bd)}
 .gestao-table tbody tr.row-urgent td{background:var(--st-urg-bg)!important}
 .gestao-table tbody tr.row-prog td{background:var(--st-inf-bg)!important}
 .gestao-table tbody tr.row-crit td{background:var(--st-bad-bg)!important}
+.gestao-table tbody tr.row-evento td{background:var(--st-mid-bg)!important} /* v233 — 🎪 EVENTO */
 /* Column separators */
 .gestao-table td, .gestao-table th{border-right:.5px solid var(--border)}
 .gestao-table td:last-child, .gestao-table th:last-child{border-right:none}
@@ -673,6 +675,16 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div class="s-card warning clickable" onclick="openDelayModal()"><div class="lbl">Alertas de Atraso</div><div class="val" id="sc-warn">0</div><div class="sub">clique para detalhar</div></div>
           <div class="s-card danger clickable" onclick="openDelayModal()"><div class="lbl">Críticos</div><div class="val" id="sc-crit">0</div><div class="sub">clique para detalhar</div></div>
           <div class="s-card" style="cursor:default"><div class="lbl">OTD — Entrega no Prazo</div><div class="val" id="sc-otd" style="color:var(--st-ok-tx)">—</div><div class="sub" id="sc-otd-sub">mês atual</div></div>
+        </div>
+
+        <!-- v233 — 🎪 EVENTOS acima dos urgentes (pedido do dono 22/09: compra para evento NÃO PODE atrasar) -->
+        <div id="dc-eventos-wrap" style="display:none;margin-bottom:16px">
+          <div class="panel" style="border:.5px solid var(--st-mid-bd);background:var(--st-mid-bg)">
+            <div class="panel-header" style="border-bottom-color:var(--st-mid-bd)">
+              <h2 style="color:var(--st-mid-tx)">🎪 Pedidos de EVENTO em andamento</h2>
+            </div>
+            <div id="dc-eventos-list" style="padding:4px 0"></div>
+          </div>
         </div>
 
         <!-- Urgentes com contagem regressiva -->
@@ -3639,6 +3651,11 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
     </div>
     <div class="urgency-info" id="urg-info"></div>
     </div>
+    <!-- v233 — 🎪 EVENTO (pedido do dono 22/09): só admin e diretora comercial marcam -->
+    <div class="urgency-toggle" id="evt-section" style="display:none;border-color:var(--st-mid-bd);background:var(--st-mid-bg)" onclick="if(event.target!==document.getElementById('f-evento')){document.getElementById('f-evento').checked=!document.getElementById('f-evento').checked;}">
+      <input type="checkbox" id="f-evento">
+      <div><div class="urg-label">🎪 Evento</div><div style="font-size:11px;color:var(--text-secondary);margin-top:1px">Compra feita para um EVENTO — <b>não pode atrasar de jeito nenhum</b>. Fica no topo do mês na Gestão a Vista (fundo amarelo) e acima dos urgentes no Dashboard.</div></div>
+    </div>
     <div class="modal-section">
       <div class="modal-section-title">Cliente *</div>
       <div class="form-group" style="margin-bottom:8px">
@@ -5124,7 +5141,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v232';
+var APP_VERSION = 'v233';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6921,7 +6938,13 @@ async function doLogin(){
   document.getElementById('nav-dashboard-comercial').classList.toggle('hidden',!isComercial&&!isAdmin&&!(u.setores?.includes('financeiro')||u.coordSetores?.includes('financeiro'))); // v134 — financeiro também acessa (leitura das metas/receita)
   document.getElementById('nav-agenda').classList.toggle('hidden',!isComercial&&!isAdmin);
   document.getElementById('nav-orcamentos-crm')?.classList.toggle('hidden',!isComercial&&!isAdmin);
-  document.getElementById('nav-catalogo')?.classList.toggle('hidden',!isComercial&&!isAdmin&&!canAccessCompras()); // v130 — compras acessa p/ cadastrar insumos/embalagens
+  const _ehEstoque=(u.setores?.includes('estoque')||u.coordSetores?.includes('estoque')); // v233
+  document.getElementById('nav-catalogo')?.classList.toggle('hidden',!isComercial&&!isAdmin&&!canAccessCompras()&&!_ehEstoque); // v130 — compras acessa p/ cadastrar insumos/embalagens; v233 — estoque acessa (aba Embalagens; caso Luiz, importação)
+  // v233 — pedido do dono 22/09: quem SÓ tem estoque vê o Catálogo apenas na aba EMBALAGENS
+  // (importar/cadastrar); Produtos, Insumos, Grupos e Catálogo Novo ficam ocultos para ele.
+  const _soEmb=!isAdmin&&!isComercial&&!canAccessCompras()&&_ehEstoque;
+  ['produtos','insumos','grpemb','catnovo'].forEach(t=>document.getElementById('cat-tab-'+t)?.classList.toggle('hidden',_soEmb));
+  if(_soEmb){ try{ setCatalogoTab('embalagens'); }catch(_e){} }
   document.getElementById('nav-venda-prog').classList.toggle('hidden',!isComercial&&!isAdmin&&!(u.setores?.includes('financeiro')||u.coordSetores?.includes('financeiro'))); // v106 — financeiro (Rhuan) também acessa Venda Programada
 
   // Setores
@@ -7021,6 +7044,9 @@ function openOrderModal(id){
   _popularComercialPedido(o);
   updatePgtoResumoBase();
   document.getElementById('f-urgente').checked=o?o.urgente:false;
+  // v233 — 🎪 EVENTO: carrega o valor e mostra o toggle SÓ para admin/diretora comercial
+  { const _evEl=document.getElementById('f-evento'); if(_evEl) _evEl.checked=o?!!o.evento:false;
+    const _evSec=document.getElementById('evt-section'); if(_evSec) _evSec.style.display=(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial'))?'':'none'; }
   const linha=o?o.linha||'personalizada':'personalizada';
   document.getElementById('f-linha-pers').checked=linha==='personalizada';
   document.getElementById('f-linha-anes').checked=linha==='anestesico';
@@ -7124,6 +7150,11 @@ async function saveOrder(){
   const d1=document.getElementById('f-d1').value;
   const cliente=document.getElementById('f-cliente').value.trim();
   let urgente=document.getElementById('f-urgente').checked; // v127 — vale nas 2 linhas
+  // v233 — 🎪 EVENTO (pedido do dono 22/09): compra para evento, NÃO PODE atrasar. Só admin e
+  // diretora comercial marcam/desmarcam; para os demais perfis o valor existente é PRESERVADO.
+  const _evAllowed=(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial'));
+  const _oEvAtual=editingOrderId?((orders||[]).find(x=>x.id===editingOrderId)||{}):{};
+  const evento=_evAllowed?!!document.getElementById('f-evento')?.checked:!!_oEvAtual.evento;
   const prevManual=document.getElementById('f-previsao-manual').value;
   const tipo=document.getElementById('f-tipo').value||'venda';
   const isMae=tipo==='venda_mae';
@@ -7235,8 +7266,8 @@ async function saveOrder(){
     const _totPg=_vT+_frete;                        // soma do pagamento original (valor + frete)
     const _ratA=_totPg>0?_vA/_totPg:0; const _ratL=_totPg>0?(_vL+_frete)/_totPg:0;
     const _blOrig=(extraFields.pgtosBlocos||[]);     // pagamento que a IA preencheu (do pedido inteiro)
-    const _efA=Object.assign({},extraFields,{splitGrupo:_grp,pgtosBlocos:_ratearBlocos(_blOrig,_ratA)}); // anestésico (sem frete)
-    const _efL=Object.assign({},extraFields,{splitGrupo:_grp,pgtosBlocos:_ratearBlocos(_blOrig,_ratL)}); // linha (leva o frete)
+    const _efA=Object.assign({},extraFields,{splitGrupo:_grp,pgtosBlocos:_ratearBlocos(_blOrig,_ratA),evento:evento}); // anestésico (sem frete); v233 — evento vale nas 2 partes
+    const _efL=Object.assign({},extraFields,{splitGrupo:_grp,pgtosBlocos:_ratearBlocos(_blOrig,_ratL),evento:evento}); // linha (leva o frete); v233 — evento vale nas 2 partes
     _construirOrdemNova({id:_baseId, linha:'anestesico', num:num+'a', cliente, d1, doc:_docv, clienteId:_cid, valor:_vA, valorBruto:_bA, freteCob:0, freteReal:0, urgente, prevManual, extraFields:_efA, itens:_splitGroups.an.map(_mapIt)}); // v127 — data manual vale nas 2 partes
     const _oL=_construirOrdemNova({id:_baseId+1, linha:'personalizada', num:num+'l', cliente, d1, doc:_docv, clienteId:_cid, valor:_vL, valorBruto:_bL, freteCob:_frete, freteReal:_freteReal, urgente, prevManual, extraFields:_efL, itens:_splitGroups.li.map(_mapIt)});
     (_iaProdutosNovos||[]).forEach(p=>{ if(!(catalogo||[]).some(c=>c.id===p.id)) catalogo.push(p); });
@@ -7246,7 +7277,7 @@ async function saveOrder(){
   } else if(editingOrderId){
     const o=orders.find(x=>x.id===editingOrderId);
     const prevTipo=o.tipo;
-    const f={num,cliente,d1,linha,doc:document.getElementById('f-doc').value.trim(),clienteId:selectedClientId||o.clienteId,valor:parseFloat(document.getElementById('f-valor').value)||0,freteCob:parseFloat(document.getElementById('f-frete-cob').value)||0,previsao,urgente,customDeadlines,...extraFields};
+    const f={num,cliente,d1,linha,doc:document.getElementById('f-doc').value.trim(),clienteId:selectedClientId||o.clienteId,valor:parseFloat(document.getElementById('f-valor').value)||0,freteCob:parseFloat(document.getElementById('f-frete-cob').value)||0,previsao,urgente,evento,customDeadlines,...extraFields}; // v233 — evento
     // Trava do Caixa: pedido aprovado → preserva os dados FINANCEIROS (estorne p/ editar). Produção/expedição seguem livres.
     if(o.caixaFinalizado && !o.caixaReprovado){ // v116 — trava do Caixa: preserva valores/tipo/forma/nº e AVISA se tentaram mudar
       let _bloqMudou=false;
@@ -7268,7 +7299,7 @@ async function saveOrder(){
       cfg.forEach(k=>s[k]='Não iniciado'); // stays não iniciado, no tracking
     } else if(linha==='anestesico'){s.comercial='Concluído';}
     else{s.comercial='Fechamento concluído';}
-    const o={id:Date.now(),criadoEm:Date.now(),num,cliente,linha,d1,doc:document.getElementById('f-doc').value.trim(),clienteId:selectedClientId||null,valor:parseFloat(document.getElementById('f-valor').value)||0,previsao,transp:'',rastreio:'',freteCob:isMae?0:(parseFloat(document.getElementById('f-frete-cob').value)||0),freteReal:isMae?0:(parseFloat(document.getElementById('f-frete-real').value)||0),envioReal:'',urgente,customDeadlines,...extraFields,statuses:s,statusDates:{},pendencies:{}};
+    const o={id:Date.now(),criadoEm:Date.now(),num,cliente,linha,d1,doc:document.getElementById('f-doc').value.trim(),clienteId:selectedClientId||null,valor:parseFloat(document.getElementById('f-valor').value)||0,previsao,transp:'',rastreio:'',freteCob:isMae?0:(parseFloat(document.getElementById('f-frete-cob').value)||0),freteReal:isMae?0:(parseFloat(document.getElementById('f-frete-real').value)||0),envioReal:'',urgente,evento,customDeadlines,...extraFields,statuses:s,statusDates:{},pendencies:{}}; // v233 — evento
     orders.push(o);
     savedOrder=o;
     addAudit(o,'geral','pedido','—',`Criado — Tipo: ${TIPOS_PEDIDO[tipo]?.label||tipo}`);
@@ -7577,12 +7608,13 @@ function openStatusModal(oid,setor){
   try{
     for(let _ai=0;_ai<auditLog.length;_ai++){ const _ae=auditLog[_ai];
       if(_ae.field!=='status'||String(_ae.orderId)!==String(o.id)||_ae.setor!==setor) continue;
+      if(/retorno automático/i.test(String(_ae.to||''))) continue; // v233 — regra do dono 22/09: regressão automática NÃO é carimbo (carimbo = prova do fato; só a auditoria guarda o retorno)
       const _to=String(_ae.to||'').replace(/\s*\(.*$/,'').trim();
       if(_to && (!_selDates[_to]||_ae.ts>_selDates[_to])) _selDates[_to]=_ae.ts;
     }
   }catch(_e){}
   const _sdCar=o.statusDates&&o.statusDates[setor];
-  if(_sdCar&&_sdCar.to&&_sdCar.ts){ const _to2=String(_sdCar.to).replace(/\s*\(.*$/,'').trim(); if(_to2&&(!_selDates[_to2]||_sdCar.ts>_selDates[_to2])) _selDates[_to2]=_sdCar.ts; }
+  if(_sdCar&&_sdCar.to&&_sdCar.ts&&!_sdCar.regressao){ const _to2=String(_sdCar.to).replace(/\s*\(.*$/,'').trim(); if(_to2&&(!_selDates[_to2]||_sdCar.ts>_selDates[_to2])) _selDates[_to2]=_sdCar.ts; } // v233 — regressão fora dos ✓
 
   document.getElementById('sm-options').innerHTML=statuses.map((s,si)=>{
     const rule=statusDlMap[s];
@@ -7623,6 +7655,19 @@ function openStatusModal(oid,setor){
     if(setor==='estoque' && s==='Solicitado compra' && linha==='personalizada'){
       locked = true;
       lockReason = 'Automático — carimbado pelo menu Solicitação de Compra';
+    }
+    // v233 — regra do dono 22/09 (caso 103493: separação marcada "completa" com o frasco ainda
+    // aguardando recebimento): 'Separação completa' SÓ libera com o lado EMBALAGEM definido e
+    // atendido — solicitação recebida (lançamento ou recebimento físico) ou resolvida sem compra
+    // (Ajustado / Tinha estoque / Troca com estoque), OU "Não necessário" marcado no menu
+    // Solicitação de Compra. Mesmo motor (_ladoComprasEstado) e mesmo desenho da trava v156 do
+    // 'Produto entregue'. Pedidos legados (pré-virada do motor) ficam fora, como na v156.
+    if(setor==='estoque' && s==='Separação completa' && linha==='personalizada' && !locked && typeof _pedidoNovoCompras==='function' && _pedidoNovoCompras(o)){
+      try{
+        var _se9=_ladoComprasEstado(o,'embalagem');
+        if(!_se9.definido){ locked=true; lockReason='Solicite a embalagem OU marque "Não necessário" (menu Solicitação de Compra)'; }
+        else if(!_se9.recebidoOk){ locked=true; lockReason='Embalagem solicitada ainda não recebida'; }
+      }catch(_e){}
     }
     // v168 — caso 102741 (21/07, regra do dono): embalagem "não necessário" CARIMBA 'Solicitado
     // compra' de verdade (marcarCompraNaoNec + _healEstoqueNaoNec p/ os antigos) — a sequência
@@ -7758,6 +7803,21 @@ function confirmStatus(){
     var _vd=parseFloat(o.valor)||0;
     if(Math.round(Math.abs(_pt-_vd)*100)>10){ // v149 — tolerância 10 centavos
       alert('Não é possível marcar "Produtos informados": o total dos produtos ('+fmtMoney(_pt)+') não confere com o valor da venda sem frete ('+fmtMoney(_vd)+').\nDiferença de '+fmtMoney(Math.abs(_pt-_vd))+'. Ajuste os produtos (ou o valor do pedido) antes de informar.');
+      return;
+    }
+  }
+
+  // v233 — ESTOQUE (regra do dono 22/09, caso 103493): "Separação completa" só com o lado EMBALAGEM
+  // definido e atendido — a MESMA régua da trava do render (modal aberto antes da mudança não escapa).
+  if(statusCtx.setor==='estoque' && selectedStatus==='Separação completa' && (o.linha||'personalizada')!=='anestesico' && typeof _pedidoNovoCompras==='function' && _pedidoNovoCompras(o)){
+    var _cse=_ladoComprasEstado(o,'embalagem');
+    if(!_cse.definido){
+      alert('🚫 "Separação completa" bloqueada: o lado EMBALAGEM deste pedido não está definido.\n\nNo menu Solicitação de Compra, SOLICITE a embalagem OU marque "Não necessário".');
+      return;
+    }
+    if(!_cse.recebidoOk){
+      var _pe9=[]; try{ _pe9=_ladoComprasPendentes(o,'embalagem'); }catch(_e){}
+      alert('🚫 "Separação completa" bloqueada: há embalagem solicitada ainda não recebida.'+(_pe9.length?'\n\nPendentes:\n'+_pe9.slice(0,10).join('\n')+(_pe9.length>10?'\n… e mais '+(_pe9.length-10)+' item(ns)':''):'')+'\n\nLibera com o RECEBIMENTO da compra, ou resolvendo o item no "Não comprar" (Ajustado / Tinha estoque / Trocar embalagem com estoque).');
       return;
     }
   }
@@ -11375,6 +11435,10 @@ function _catToggleIncompletos(){ _catSoIncompletos=!_catSoIncompletos; renderCa
 var _catTab='produtos';
 // v130 — insumos/embalagens: admin/comercial (catálogo) OU setor de compras podem cadastrar
 function _canEditInsumos(){ return (typeof canEditCatalogo==='function'&&canEditCatalogo()) || (typeof canAccessCompras==='function'&&canAccessCompras()); }
+// v233 — pedido do dono 22/09 (caso Luiz, importação do arquivo de embalagens): o setor ESTOQUE
+// ganha acesso à aba EMBALAGENS do Catálogo — importar/cadastrar/editar/excluir embalagens (as
+// mesmas ações que compras já tem nessa aba). SÓ embalagens: insumos/produtos/grupos seguem como eram.
+function _canEditEmbalagens(){ return _canEditInsumos() || (typeof _temSetor==='function' && _temSetor('estoque')); }
 function setCatalogoTab(tab){
   _catTab=tab;
   ['produtos','insumos','embalagens','grpemb','catnovo'].forEach(function(t){
@@ -11459,7 +11523,7 @@ function _histItemToggle(btn){
 }
 function renderCatSimples(tipo){
   var tb=document.getElementById(tipo==='insumo'?'ins-tbody':'emb-tbody'); if(!tb) return;
-  var pode=_canEditInsumos();
+  var pode = tipo==='embalagem' ? _canEditEmbalagens() : _canEditInsumos(); // v233 — estoque edita embalagens
   var nb=document.getElementById(tipo==='insumo'?'ins-novo-btn':'emb-novo-btn'); if(nb) nb.style.display=pode?'':'none';
   var busca=(document.getElementById(tipo==='insumo'?'ins-busca':'emb-busca')?.value||'').toLowerCase().trim();
   var lista=(insumos||[]).filter(function(x){ return x.tipo===tipo; });
@@ -11487,7 +11551,7 @@ function renderCatSimples(tipo){
 }
 var _insEditId=null, _insTipo='insumo';
 function openInsumoModal(tipo, id){
-  if(!_canEditInsumos()){ alert('Sem permissão para editar o catálogo.'); return; }
+  if(!(tipo==='embalagem'?_canEditEmbalagens():_canEditInsumos())){ alert('Sem permissão para editar o catálogo.'); return; } // v233 — estoque edita embalagens
   _insTipo=tipo; _insEditId=id||null;
   var x = id ? (insumos||[]).find(function(p){ return p.id===id; }) : null;
   var ehIns = tipo==='insumo';
@@ -11578,8 +11642,9 @@ function saveInsumo(){
   closeInsumoModal(); renderCatSimples(_insTipo); saveData();
 }
 function deleteInsumo(id){
-  if(!_canEditInsumos()){ alert('Sem permissão.'); return; }
-  var x=(insumos||[]).find(function(p){ return p.id===id; }); if(!x) return;
+  var _xg=(insumos||[]).find(function(p){ return p.id===id; });
+  if(!((_xg&&_xg.tipo==='embalagem')?_canEditEmbalagens():_canEditInsumos())){ alert('Sem permissão.'); return; } // v233 — estoque exclui embalagens (mesma régua de compras na aba)
+  var x=_xg; if(!x) return;
   if(!confirm('Excluir "'+(x.nome||'')+'"?')) return;
   var tipo=x.tipo;
   insumos=insumos.filter(function(p){ return p.id!==id; });
@@ -12303,6 +12368,7 @@ function _rmIncluirProxima(listaId, itemId){
     else alvo.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:(parseFloat(og.qtd)||0), unidade:un||'UN' });
     alvo.atualizadoEm=now;
     solicIds.push(alvo.id);
+    if(l.tipo==='embalagem') _autoEstoqueSolicitadoPorOrderId(og.orderId,'faltante do recebimento devolvido à próxima lista'); // v233
     var o2=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
     if(o2){ try{ addAudit(o2,'compras','recompra do faltante','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': '+(parseFloat(og.qtd)||0).toLocaleString('pt-BR')+' '+un+' re-solicitados (entrega veio a menos)'); }catch(_e){} }
     try{ _reavaliarComprasPedido(og.orderId); }catch(_e){}
@@ -13135,15 +13201,38 @@ function saveSolicitacao(){
   if(_solTab==='embalagem' && o) _autoEstoqueSolicitado(o); // v130 — embalagem solicitada → estoque 'Solicitado compra'
   closeSolicitarModal(); renderSolCompra(_solTab); saveData();
 }
-// auto-status: só AVANÇA a partir de 'Não iniciado' (não regride quem já passou)
+// auto-status: AVANÇA a partir de 'Não iniciado' e, desde a v233 (regra do dono 22/09), REGRIDE
+// 'Separação completa' quando chega solicitação NOVA de embalagem — "foi e voltou" fica visível:
+// os ✓ de data por degrau vêm do audit (v158), então o histórico das marcações anteriores permanece.
+// A regressão é carimbada pelo Sistema e auditada (o vigia de regressão reconhece o registro).
 function _autoEstoqueSolicitado(o, motivo){
   if(!o) return; if(!o.statuses) o.statuses={};
-  if((o.statuses.estoque||'Não iniciado')!=='Não iniciado') return;
-  var prev=o.statuses.estoque||'Não iniciado';
+  var cur=o.statuses.estoque||'Não iniciado';
+  if(cur==='Separação completa'){
+    o.statuses.estoque='Solicitado compra';
+    if(!o.statusDates) o.statusDates={};
+    // regra do dono 22/09: CARIMBO ≠ STATUS — o carimbo é PROVA do fato e nunca é alterado. A
+    // regressão muda só o status; o registro leva a marca 'retorno automático' + regressao:true,
+    // que os ✓ do modal IGNORAM (o ✓ 14/09 do Solicitado compra e o ✓ da Separação ficam intactos).
+    o.statusDates.estoque={ts:Date.now(),by:'Sistema',from:cur,to:'Solicitado compra',regressao:true};
+    try{ addAudit(o,'estoque','status',cur,'Solicitado compra (retorno automático — nova pendência de embalagem: '+(motivo||'solicitação de embalagem')+'; carimbos preservados)'); }catch(_e){}
+    return;
+  }
+  if(cur!=='Não iniciado') return;
+  var prev=cur;
   o.statuses.estoque='Solicitado compra';
   if(!o.statusDates) o.statusDates={};
   o.statusDates.estoque={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:prev,to:'Solicitado compra'};
   try{ addAudit(o,'estoque','status',prev,'Solicitado compra (automático — '+(motivo||'solicitação de embalagem')+')'); }catch(_e){}
+}
+// v233 — pontos que criam pendência NOVA de embalagem para um pedido REAL chamam isto por origem
+// (avança de 'Não iniciado' ou regride 'Separação completa'; pseudo-pedidos ficam fora).
+function _autoEstoqueSolicitadoPorOrderId(orderId, motivo){
+  try{
+    if(typeof _solEhPseudo==='function' && _solEhPseudo(orderId)) return;
+    var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); });
+    if(o) _autoEstoqueSolicitado(o, motivo);
+  }catch(_e){}
 }
 // v225 — pedido do dono 11/09 (caso 103151): pedido ENVIADO com o setor Compras em aberto ficava
 // PENDENTE PARA SEMPRE — o pedido some da Solicitação de Compra (regra v131: quem já saiu não
@@ -13238,6 +13327,7 @@ function _healSolicOrfas(){
       if(_pseudoH){ novo.numSeq=_saH; if(s.pedidoUso) novo.pedidoUso=s.pedidoUso; }
       solicitacoesCompra.push(novo);
       mudou=true;
+      if(novo.tipo==='embalagem') _autoEstoqueSolicitadoPorOrderId(novo.orderId,'autocura devolveu itens à fila'); // v233
       try{ console.warn('autocura v225: '+presos.length+' item(ns) de '+(s.orderNum||s.id)+' devolvido(s) à fila (não constavam na lista)'); }catch(_e2){}
     });
     return mudou;
@@ -14113,6 +14203,7 @@ function _lcParcialSaldo(listaId, ref){
     if(ex) ex.qtd=(parseFloat(ex.qtd)||0)+og.qtd;
     else alvo.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:og.qtd, unidade:it.unidade||'UN' });
     alvo.atualizadoEm=now;
+    if(l.tipo==='embalagem') _autoEstoqueSolicitadoPorOrderId(og.orderId,'saldo da compra parcial devolvido'); // v233
   });
   // reavalia os pedidos: os cobertos podem fechar o lado; os do saldo seguem pendentes pela solicitação nova
   var vistos={};
@@ -14239,6 +14330,7 @@ function _ncConfirmar(){
       if(ex){ ex.qtd=(parseFloat(ex.qtd)||0)+qtd; ex.semEstoque=true; ex.semEstoqueEm=now; ex.semEstoquePor=(currentUser&&currentUser.name)||''; }
       else alvo.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:qtd, unidade:it.unidade||'UN', semEstoque:true, semEstoqueEm:now, semEstoquePor:(currentUser&&currentUser.name)||'' });
       alvo.atualizadoEm=now; devolvidos++;
+      if(l.tipo==='embalagem') _autoEstoqueSolicitadoPorOrderId(og.orderId,'item sem estoque devolvido à fila'); // v233
     });
     msg='🚫 Item marcado SEM ESTOQUE.\n↩ Quantidades devolvidas ('+devolvidos+' origem(ns)) — ficam na fila "Fora de estoque"; o Gerar lista pergunta se inclui.';
   } else if(op==='trocar' && _ncSub==='solicitar'){
@@ -14261,6 +14353,7 @@ function _ncConfirmar(){
       if(exT){ exT.qtd=(parseFloat(exT.qtd)||0)+qtd; exT.trocaDe={ itemId:it.itemId, codigo:it.codigo||'', nome:it.nome||'' }; }
       else alvo.itens.push({ itemId:_nv.id, codigo:_nv.codigo||'', nome:_nv.nome||'', qtd:qtd, unidade:_nv.unidade||it.unidade||'UN', trocaDe:{ itemId:it.itemId, codigo:it.codigo||'', nome:it.nome||'' } });
       alvo.atualizadoEm=nowT; solicitadas++;
+      if(l.tipo==='embalagem') _autoEstoqueSolicitadoPorOrderId(og.orderId,'troca de embalagem — substituta solicitada'); // v233
     });
     msg='🔁 Embalagem TROCADA por "'+((_nv.codigo?_nv.codigo+' — ':'')+(_nv.nome||''))+'".\n🛒 Substituta SOLICITADA na mesma quantidade ('+solicitadas+' origem(ns)) — entra na próxima lista de compra; a necessidade da original deixou de existir.';
   } else {
@@ -19217,7 +19310,7 @@ function _finToggleConv(tipo){ _finConvFiltro[tipo]=!_finConvFiltro[tipo]; const
 function _finFiltroDefault(){ return {statusArr:['pendente','vencido']}; } // v110 — Recebido/Pago oculto por padrão
 var _finFiltro={receber:_finFiltroDefault(), pagar:_finFiltroDefault()};
 function _finFiltroAtivo(tipo){ const f=_finFiltro[tipo]; if(!f) return false;
-  if(f.cliente||f.pedidoQ||f.nf||f.emisDe||f.emisAte||f.vencDe||f.vencAte||f.baixaDe||f.baixaAte) return true;
+  if(f.cliente||f.pedidoQ||f.nf||f.boletoQ||f.emisDe||f.emisAte||f.vencDe||f.vencAte||f.baixaDe||f.baixaAte) return true; // v233 — boletoQ
   if(Array.isArray(f.statusArr) && f.statusArr.length<3) return true;
   if(Array.isArray(f.formaArr) && f.formaArr.length>0 && f.formaArr.length<FORMAS_PAG.length) return true;
   return false;
@@ -19228,6 +19321,8 @@ function _finPassaFiltro(tipo, r, f){
   if(f.cliente && (r.nome||'')!==f.cliente) return false;
   if(f.pedidoQ){ const pn=((c.origemNum||'')+' '+(r.id||'')).toLowerCase(); if(!pn.includes(f.pedidoQ)) return false; }
   if(f.nf && !((c.notaFiscal||'').toLowerCase().includes(f.nf))) return false;
+  // v233 — pedido do dono 22/09: busca por Boleto / NSU (mesma fonte da coluna: parcela e conta)
+  if(f.boletoQ){ const bn=String(p.boleto||p.nsu||c.nsu||'').toLowerCase(); if(!bn.includes(f.boletoQ)) return false; }
   if(Array.isArray(f.statusArr) && f.statusArr.length && !f.statusArr.includes(r.st)) return false;
   if(Array.isArray(f.formaArr) && f.formaArr.length && f.formaArr.length<FORMAS_PAG.length){
     // v154 : comparação NORMALIZADA (sem acento/maiúscula/espaços) — o filtro tinha 'Cartão de Crédito'
@@ -19273,7 +19368,8 @@ function _finAbrirFiltro(tipo){
       <select id="ff-cliente" style="${inp};margin-bottom:10px">${cliOpts}</select>
       ${ehP
         ? `<label style="${lbl}">Nº NF</label><input type="text" id="ff-nf" value="${escapeHtml(f.nf||'')}" placeholder="contém..." style="${inp};margin-bottom:10px">`
-        : `<label style="${lbl}">Pedido</label><input type="text" id="ff-pedido" value="${escapeHtml(f.pedidoQ||'')}" placeholder="nº do pedido" style="${inp};margin-bottom:10px">`}
+        : `<label style="${lbl}">Pedido</label><input type="text" id="ff-pedido" value="${escapeHtml(f.pedidoQ||'')}" placeholder="nº do pedido" style="${inp};margin-bottom:10px">
+           <label style="${lbl}">Boleto / NSU</label><input type="text" id="ff-boleto" value="${escapeHtml(f.boletoQ||'')}" placeholder="contém..." style="${inp};margin-bottom:10px">`}
       <label style="${lbl}">Status</label>
       <div style="margin-bottom:12px">${statusBox}</div>
       <label style="${lbl}">Forma de pagamento</label>
@@ -19297,7 +19393,7 @@ function _finAplicarFiltro(tipo){
   const statusArr=[...document.querySelectorAll('.ff-st:checked')].map(cb=>cb.value);
   const formaArr=[...document.querySelectorAll('.ff-fp:checked')].map(cb=>cb.value);
   _finFiltro[tipo]={
-    cliente:v('ff-cliente'), pedidoQ:v('ff-pedido').toLowerCase(), nf:v('ff-nf').toLowerCase(),
+    cliente:v('ff-cliente'), pedidoQ:v('ff-pedido').toLowerCase(), nf:v('ff-nf').toLowerCase(), boletoQ:v('ff-boleto').toLowerCase(), // v233 — Boleto/NSU
     statusArr, formaArr,
     emisDe:v('ff-emisde'), emisAte:v('ff-emisate'), vencDe:v('ff-vencde'), vencAte:v('ff-vencate'),
     baixaDe:v('ff-baixade'), baixaAte:v('ff-baixaate'),
@@ -19326,6 +19422,7 @@ function _finFiltroResumoTxt(tipo){
   if(f.cliente) parts.push((ehP?'Fornecedor: ':'Cliente: ')+f.cliente);
   if(f.pedidoQ) parts.push('Pedido: '+f.pedidoQ);
   if(f.nf) parts.push('NF: '+f.nf);
+  if(f.boletoQ) parts.push('Boleto/NSU: '+f.boletoQ); // v233
   if(!stF && Array.isArray(f.statusArr) && f.statusArr.length && f.statusArr.length<3) parts.push('Status: '+f.statusArr.map(s=>stLbl[s]||s).join(', '));
   if(Array.isArray(f.formaArr) && f.formaArr.length && f.formaArr.length<FORMAS_PAG.length) parts.push('Forma: '+f.formaArr.join(', '));
   const per=(lbl,de,ate)=>{ if(de||ate) parts.push(lbl+': '+(de?fmtDate(de):'…')+' a '+(ate?fmtDate(ate):'…')); };
@@ -19344,13 +19441,13 @@ function _finGerarPdf(tipo){
     return '<tr>'+
       '<td style="white-space:nowrap">'+escapeHtml(r.id)+'</td>'+
       '<td>'+escapeHtml(r.nome)+'</td>'+
-      (ehP?'<td style="font-family:monospace">'+escapeHtml(r.c.notaFiscal||'—')+'</td>':'')+
+      (ehP?'<td style="font-family:monospace">'+escapeHtml(r.c.notaFiscal||'—')+'</td>'
+          :'<td style="font-family:monospace">'+escapeHtml(r.p.boleto||r.p.nsu||r.c.nsu||'—')+'</td>')+ // v233 — Boleto/NSU junto do cliente
       '<td style="text-align:right;white-space:nowrap;font-weight:600">'+fmtMoney(r.p.valor)+'</td>'+
       '<td style="text-align:center;white-space:nowrap">'+(r.emissao?fmtDate(r.emissao):'—')+'</td>'+
       '<td style="text-align:center;white-space:nowrap">'+(r.venc?fmtDate(r.venc):'—')+'</td>'+
       '<td style="text-align:center;white-space:nowrap">'+(dtBx?fmtDate(dtBx):'—')+'</td>'+
       '<td>'+escapeHtml(forma)+'</td>'+
-      (ehP?'':'<td style="font-family:monospace">'+escapeHtml(r.p.boleto||r.p.nsu||r.c.nsu||'—')+'</td>')+
       '<td style="text-align:center;white-space:nowrap">'+(r.nparc>1?(r.pi+1)+'/'+r.nparc:'única')+'</td>'+
       '<td style="text-align:center;white-space:nowrap">'+escapeHtml(statusLabels[r.st]||r.st)+((!ehP&&!r.p.pago&&r.p.antecipado)?' (antecipado)':'')+'</td>'+
     '</tr>';
@@ -19359,9 +19456,9 @@ function _finGerarPdf(tipo){
   const filtroTxt=_finFiltroResumoTxt(tipo);
   const ths=(ehP
     ? ['Conta','Fornecedor','Nº NF','Valor','Emissão','Vencimento','Data Pagamento','Forma','Parcela','Status']
-    : ['Conta','Cliente','Valor','Emissão','Vencimento','Data Recebimento','Forma','Boleto / NSU','Parcela','Status']
-  ).map(h=>'<th>'+h+'</th>').join('');
-  const colsAntesValor=ehP?3:2, colsDepoisValor=ehP?6:7;
+    : ['Conta','Cliente','Boleto / NSU','Valor','Emissão','Vencimento','Data Recebimento','Forma','Parcela','Status']
+  ).map(h=>'<th>'+h+'</th>').join(''); // v233 — Boleto/NSU junto do cliente
+  const colsAntesValor=3, colsDepoisValor=6;
   const html='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>'+titulo+' — Lecare</title>'+
     '<style>@page{size:A4 landscape;margin:10mm}body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:24px}h1{font-size:19px;margin:0 0 2px}h2{font-size:12px;font-weight:normal;color:#555;margin:0 0 6px}'+
     '.filtro{font-size:11px;color:#555;background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:5px 9px;margin:0 0 14px;display:inline-block}'+
@@ -19454,8 +19551,8 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
   _finRowsCache[tipo]=rows; // v226 — espelho fiel do que está na tela (pós-filtro e pós-ordenação) p/ o Gerar PDF
   // v117 — somatório da coluna Valor (soma exatamente as parcelas exibidas na tela, após os filtros)
   const _totTela = rows.reduce((s,r)=>s+(parseFloat(r.p.valor)||0),0);
-  const _colsAntes = tipo==='pagar'?4:3; // colunas antes de "Valor" (checkbox+Conta+Nome[+NF])
-  const _colsDepois = tipo==='pagar'?6:7; // colunas depois de "Valor"
+  const _colsAntes = 4; // colunas antes de "Valor": checkbox+Conta+Nome+(NF no pagar | Boleto/NSU no receber — v233, coluna movida p/ junto do cliente)
+  const _colsDepois = 6; // colunas depois de "Valor": Emissão+Venc+Baixa+Forma+Parcela+Status
   const th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
   const td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
   // v207 — cabeçalho clicável: ▲ crescente · ▼ decrescente · 3º clique volta ao padrão
@@ -19466,13 +19563,13 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
       <th style="${th};width:32px;text-align:center"></th>
       ${_thS('conta','Conta','')}
       ${_thS('nome',tipo==='pagar'?'Fornecedor':'Cliente','')}
+      ${tipo==='receber'?_thS('boleto','Boleto / NSU',''):''}
       ${tipo==='pagar'?_thS('nf','Nº NF',''):''}
       ${_thS('valor','Valor','text-align:right;')}
       ${_thS('emissao','Emissão','text-align:center;')}
       ${_thS('venc','Vencimento','text-align:center;')}
       ${_thS('baixa',tipo==='pagar'?'Data Pagamento':'Data Recebimento','text-align:center;')}
       ${_thS('forma','Forma','')}
-      ${tipo==='receber'?_thS('boleto','Boleto / NSU',''):''}
       ${_thS('parcela','Parcela','text-align:center;')}
       ${_thS('status','Status','text-align:center;')}
     </tr></thead><tbody>${rows.map(r=>`
@@ -19484,13 +19581,13 @@ function _renderFinTabela(tipo, containerId, statusFilterId){
             : `<input type="checkbox" class="finsel-${tipo}" data-conta="${r.c.id}" data-parc="${r.pi}" onchange="_finSelTot('${tipo}')" style="width:auto;margin:0">`)}</td>
         <td style="${td};font-weight:600">${escapeHtml(r.id)}${(()=>{ const _o=orders.find(x=>String(x.id)===String(r.c.origemId)); return (_o&&_o.splitGrupo)?` <span style="font-size:9px;padding:0 5px;border-radius:20px;background:#EEF;color:#55a;font-weight:500" title="Pedido dividido — ${escapeHtml(_splitLabel(_o))}">dividido</span>`:''; })()}</td>
         <td style="${td}">${escapeHtml(r.nome)}</td>
+        ${tipo==='receber'?`<td style="${td};font-family:monospace;font-size:11px">${(r.p.boleto||r.p.nsu||r.c.nsu)?escapeHtml(r.p.boleto||r.p.nsu||r.c.nsu):'—'}</td>`:''}
         ${tipo==='pagar'?`<td style="${td};font-family:monospace;font-size:11px">${r.c.notaFiscal?escapeHtml(r.c.notaFiscal):'—'}</td>`:''}
         <td style="${td};text-align:right;font-weight:600;color:${tipo==='pagar'?'var(--st-bad-tx)':'var(--st-ok-tx)'}">${fmtMoney(r.p.valor)}</td>
         <td style="${td};text-align:center;color:var(--text-secondary)">${r.emissao?fmtDate(r.emissao):'—'}</td>
         <td style="${td};text-align:center;color:${r.st==='vencido'?'var(--st-bad-tx)':'var(--text-secondary)'}">${r.venc?fmtDate(r.venc):'—'}</td>
         <td style="${td};text-align:center;color:${r.st==='pago'?'var(--st-ok-tx)':'var(--text-tertiary)'}">${(()=>{ if(r.st!=='pago') return '—'; const d=(r.p.baixa&&r.p.baixa.data)||r.venc; return d?fmtDate(d):'—'; })()}</td>
         <td style="${td}">${escapeHtml(_formaLabel(r.p.forma||r.c.formaPag))}${r.nparc>1?` <span style="font-size:9px;color:var(--text-tertiary)">${r.nparc}×</span>`:''}${(tipo==='receber'&&r.c.recebAjuste)?(()=>{ const lt=(r.c.recebTrocas||[]).filter(t=>!t.descartado).slice(-1)[0]; const era=lt&&lt.antes&&lt.antes[0]?_formaLbl(lt.antes[0].forma):''; return ` <span style="font-size:9px;padding:0 5px;border-radius:20px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:600;cursor:help" title="${escapeHtml('Forma/vencimento AJUSTADOS pelo Financeiro'+(r.c.recebAjuste.por?' por '+r.c.recebAjuste.por:'')+(r.c.recebAjuste.em?' em '+fmtDate(r.c.recebAjuste.em):'')+(era?' — era '+era:'')+'. O valor fechado não mudou; a evolução completa está no detalhe da conta.')}">ajustado</span>`; })():''}</td>
-        ${tipo==='receber'?`<td style="${td};font-family:monospace;font-size:11px">${(r.p.boleto||r.p.nsu||r.c.nsu)?escapeHtml(r.p.boleto||r.p.nsu||r.c.nsu):'—'}</td>`:''}
         <td style="${td};text-align:center">${r.nparc>1?(r.pi+1)+'/'+r.nparc:'única'}</td>
         <td style="${td};text-align:center"><span style="font-size:10px;font-weight:600;padding:1px 8px;border-radius:20px;color:${statusColor[r.st]};background:var(--bg-secondary)">${statusLabels[r.st]}</span>${(tipo==='receber'&&!r.p.pago&&r.p.antecipado)?`<br><span style="font-size:9px;font-weight:700;color:var(--text-info)" title="Recebimento ANTECIPADO pelo banco${r.p.antecipado.data?' em '+fmtDate(r.p.antecipado.data):''}${r.p.antecipado.por?' ('+escapeHtml(r.p.antecipado.por)+')':''} — o boleto segue em aberto com o cliente (a quitação ainda é nossa responsabilidade); o valor está FORA das projeções de recebimento e do fluxo de caixa">⚡ antecipado</span>`:''}</td>
       </tr>`).join('')}</tbody>
@@ -21041,7 +21138,7 @@ function renderGestao(){
       if(_setorConcluido(_gSetor, o.statuses?.[_gSetor])) return false;
     }
     return true;
-  }).sort((a,b)=>{if(!a.previsao)return 1;if(!b.previsao)return -1;return a.previsao.localeCompare(b.previsao);});
+  }).sort((a,b)=>{const _ev=(b.evento?1:0)-(a.evento?1:0);if(_ev)return _ev;/* v233 — 🎪 eventos SEMPRE no topo do mês */if(!a.previsao)return 1;if(!b.previsao)return -1;return a.previsao.localeCompare(b.previsao);});
   // Contador-resumo na barra de filtros
   const _ci=document.getElementById('gestao-count-info');
   if(_ci){
@@ -21061,8 +21158,9 @@ function renderGestao(){
     // v119 — pedido já ENVIADO/ENTREGUE não fica mais vermelho/rosa: urgência e atraso já encerraram (saiu da casa)
     const _jaSaiu=_expSaiu(o);
     const _prog=_ehProgramado(o); // v127 — programado (saída depois do prazo): azul, não é "urgente"
-    const rc=_jaSaiu?'':(_prog?'row-prog':(o.urgente?'row-urgent':(hasCrit?'row-crit':hasWarn?'row-warn':'')));
-    const tag=o.urgente?(_prog?`<span class="badge b-inf" style="font-size:9px;margin-left:4px">PROGRAMADO</span>`:`<span class="badge b-urg" style="font-size:9px;margin-left:4px">URGENTE</span>`):hasCrit?`<span class="badge b-bad" style="font-size:9px;margin-left:4px">CRÍTICO</span>`:hasWarn?`<span class="badge b-bad" style="font-size:9px;margin-left:4px">ATRASO</span>`:'';
+    const rc=_jaSaiu?'':(o.evento?'row-evento':(_prog?'row-prog':(o.urgente?'row-urgent':(hasCrit?'row-crit':hasWarn?'row-warn':'')))); // v233 — 🎪 evento: fundo amarelo vence os demais
+    const evtTag=o.evento?`<span class="badge" style="font-size:9px;margin-left:4px;background:var(--st-mid-bg);color:var(--st-mid-tx);border:.5px solid var(--st-mid-bd)">🎪 EVENTO</span>`:''; // v233
+    const tag=evtTag+(o.urgente?(_prog?`<span class="badge b-inf" style="font-size:9px;margin-left:4px">PROGRAMADO</span>`:`<span class="badge b-urg" style="font-size:9px;margin-left:4px">URGENTE</span>`):hasCrit?`<span class="badge b-bad" style="font-size:9px;margin-left:4px">CRÍTICO</span>`:hasWarn?`<span class="badge b-bad" style="font-size:9px;margin-left:4px">ATRASO</span>`:'');
     const cells=colKeys.map(k=>{
       if((o.tipo||'venda')==='venda_mae' && k!=='financeiro') return `<td class="audit-cell"><span class="badge b-ok" style="opacity:.6" title="Venda mãe — não passa por produção">Não aplicável</span></td>`; // v114 — venda mãe: só o Financeiro fica editável (emite NF/Caixa); o resto é Não aplicável
       const lv=getCellLevel(o,k);const rule=getCellDeadline(o,k);const sd=o.statusDates&&o.statusDates[k];const last=getLastAudit(o.id,k);
@@ -23808,8 +23906,31 @@ function renderDashboardMelhorias(){
   const hoje = today();
   const SETOR_KEYS_ALL = ['financeiro','estoque','compras','designer','producao','rotulos','expedicao'];
 
+  // ── v233 — 🎪 EVENTOS EM ANDAMENTO (acima dos urgentes; pedido do dono 22/09) ──────
+  const evtAtivos = orders.filter(o=>o.evento&&!_expSaiu(o));
+  const evtWrap = document.getElementById('dc-eventos-wrap');
+  const evtList = document.getElementById('dc-eventos-list');
+  if(evtWrap) evtWrap.style.display = evtAtivos.length ? '' : 'none';
+  if(evtList && evtAtivos.length){
+    evtList.innerHTML = evtAtivos.sort((a,b)=>String(a.previsao||'9999').localeCompare(String(b.previsao||'9999'))).map(o=>{
+      const prazo = o.previsao;
+      const diffMs = prazo ? new Date(prazo+'T23:59:59').getTime()-Date.now() : 0;
+      const diffH  = Math.round(diffMs/3600000);
+      const diffD  = Math.floor(diffH/24);
+      const atrasado = prazo && diffMs < 0;
+      const cor = atrasado?'var(--st-bad-tx)':diffH<24?'var(--st-urg-tx)':'var(--text-primary)';
+      const txt = !prazo?'sem previsão':atrasado?`${Math.abs(diffD)+1}d atrasado`:diffH<24?`${diffH}h restantes`:`${diffD+1}d restantes`;
+      return`<div style="display:flex;align-items:center;gap:12px;padding:8px 16px;border-bottom:.5px solid var(--st-mid-bd);cursor:pointer" onclick="openDetailModal(${o.id})">
+        <span style="font-size:13px;font-weight:500;min-width:90px">🎪 ${escapeHtml(o.num)}</span>
+        <span style="font-size:12px;color:var(--text-secondary);flex:1">${escapeHtml(o.cliente)}</span>
+        <span style="font-size:11px;color:var(--text-secondary);white-space:nowrap">saída: ${fmtDate(o.previsao)||'—'}</span>
+        <span style="font-size:12px;font-weight:500;color:${cor};background:${atrasado?'var(--st-bad-bg)':'var(--bg-secondary)'};padding:3px 10px;border-radius:20px">${txt}</span>
+      </div>`;
+    }).join('');
+  }
+
   // ── URGENTES COM CONTAGEM REGRESSIVA ───────────────────────
-  const urgAtivos = orders.filter(o=>_ehUrgenteReal(o)&&!_expSaiu(o)); // v127 — só urgentes de verdade (programados não entram)
+  const urgAtivos = orders.filter(o=>_ehUrgenteReal(o)&&!_expSaiu(o)&&!o.evento); // v127 — só urgentes de verdade (programados não entram); v233 — evento tem quadro próprio acima
   const urgWrap = document.getElementById('dc-urgentes-wrap');
   const urgList = document.getElementById('dc-urgentes-list');
   if(urgWrap) urgWrap.style.display = urgAtivos.length ? '' : 'none';

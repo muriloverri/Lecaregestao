@@ -2806,6 +2806,13 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <button id="orc-divg-btn" onclick="_orcDivgAbrir()" style="font-size:12px;padding:6px 14px" title="Divergências e pendências do último cruzamento Opery × sistema: pedido pago sem entrar no sistema, divergência de valor (apenas apresentação — vale o valor fechado com o cliente) e aprovados aguardando pagamento. Atualiza a cada importação de CSV.">⚠ Divergências</button>
         <input type="text" id="orc-crm-search" placeholder="Buscar empresa, produto..." oninput="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px;width:220px">
         <!-- v191 — o dropdown de status saiu: a etapa muda pelos botões Vendido/Perdido da linha e as sub-abas filtram -->
+        <!-- v235 — filtros por atendente e por tipo do documento (pedido do dono 23/09) -->
+        <select id="orc-crm-filter-atendente" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
+          <option value="">Todos os atendentes</option>
+        </select>
+        <select id="orc-crm-filter-tipodoc" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
+          <option value="">Todos os tipos</option>
+        </select>
         <select id="orc-crm-filter-tipo" onchange="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px">
           <option value="">Todos os produtos</option>
           <option value="linha">Linha Personalizada</option>
@@ -5141,7 +5148,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v234';
+var APP_VERSION = 'v235';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -33686,6 +33693,8 @@ function _orcDivgAbrir(){
     '<div class="modal-footer" style="margin-top:14px"><button onclick="document.getElementById(\'orc-divg-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
   ov.classList.add('open');
 }
+// v235 — rótulo do TIPO do documento em fonte única (mesma derivação da célula v226), usado pela coluna e pelo filtro
+function _orcTipoLbl(o){ return o.tipoOpery||({venda:'Venda',venda_mae:'Venda Mãe',venda_filho:'Venda Filho',bonificacao:'Bonificação',embaixador:'Embaixador',amostra:'Amostra',avaria:'Avaria'}[o.tipo]||'Venda'); }
 function renderOrcamentosCrm(){
   const tbody = document.getElementById('orc-crm-tbody');
   if(!tbody) return;
@@ -33710,9 +33719,32 @@ function renderOrcamentosCrm(){
     });
   }
 
+  // v235 — filtros por atendente e por tipo do documento (pedido do dono 23/09): opções derivadas dos
+  // próprios registros; reconstrói só quando a lista muda e preserva a seleção (some da lista → volta a "Todos")
+  const atSelect = document.getElementById('orc-crm-filter-atendente');
+  if(atSelect){
+    const curA=atSelect.value;
+    const ats=[...new Set(orcamentosCrm.map(o=>(o.responsavel||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    if(atSelect.options.length!==ats.length+1){
+      atSelect.innerHTML='<option value="">Todos os atendentes</option>'+ats.map(a=>'<option value="'+escapeHtml(a)+'">'+escapeHtml(a)+'</option>').join('');
+      atSelect.value=curA; if(atSelect.value!==curA) atSelect.value='';
+    }
+  }
+  const tdSelect = document.getElementById('orc-crm-filter-tipodoc');
+  if(tdSelect){
+    const curT=tdSelect.value;
+    const tds=[...new Set(orcamentosCrm.map(_orcTipoLbl).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+    if(tdSelect.options.length!==tds.length+1){
+      tdSelect.innerHTML='<option value="">Todos os tipos</option>'+tds.map(t=>'<option value="'+escapeHtml(t)+'">'+escapeHtml(t)+'</option>').join('');
+      tdSelect.value=curT; if(tdSelect.value!==curT) tdSelect.value='';
+    }
+  }
+
   const search  = (document.getElementById('orc-crm-search')?.value||'').toLowerCase();
   const fTipo   = document.getElementById('orc-crm-filter-tipo')?.value||'';
   const fMes    = document.getElementById('orc-crm-filter-mes')?.value||'';
+  const fAtend  = atSelect?atSelect.value:'';
+  const fTipoDoc= tdSelect?tdSelect.value:'';
 
   // v191 — SUB-ABAS por etapa (pedido do dono 04/08): 🧾 Orçamentos (aberto) · ✅ Vendidos (ganho) · ✕ Perdidos.
   // A etapa muda pelos BOTÕES da linha (Vendido/Perdido), não mais pelo dropdown de status.
@@ -33728,6 +33760,8 @@ function renderOrcamentosCrm(){
   let filtered = (tab==='ganho'?ganhos:tab==='perdido'?perdidos:abertos).filter(o=>{
     if(fTipo   && o.tipoProduto!==fTipo) return false;
     if(fMes    && !o.data?.startsWith(fMes)) return false;
+    if(fAtend  && (o.responsavel||'').trim()!==fAtend) return false; // v235
+    if(fTipoDoc&& _orcTipoLbl(o)!==fTipoDoc) return false;           // v235
     if(search){
       const hay = ((o.clienteNome||'')+(o.empresa||'')+(o.responsavel||'')+(o.obs||'')+(o.num||'')).toLowerCase();
       if(!hay.includes(search)) return false;
@@ -33776,7 +33810,7 @@ function renderOrcamentosCrm(){
       <td style="padding:8px 10px;font-weight:500">${o.num?'<span style="font-family:monospace;font-size:10.5px;color:var(--text-secondary)">'+escapeHtml(o.num)+'</span> ':''}${ehOpery?'<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;background:var(--st-inf-bg);color:var(--st-inf-tx)" title="Importado da tela de vendas do Opery — acompanhamento de oportunidade; o orçamento completo vive no Opery">OPERY</span> ':''}${escapeHtml(o.clienteNome||o.empresa)}</td>
       <td style="padding:8px 10px"><span style="font-size:10px;padding:1px 7px;border-radius:20px;background:${o.tipoProduto==='linha'?'var(--st-inf-bg)':'var(--st-urg-bg)'};color:${o.tipoProduto==='linha'?'var(--st-inf-tx)':'var(--st-urg-tx)'}">${tp}</span></td>
       <td style="padding:8px 10px;font-size:11px">${(function(){ // v226 — tipo do documento (pedido do dono 12/09)
-        var tl=o.tipoOpery||({venda:'Venda',venda_mae:'Venda Mãe',venda_filho:'Venda Filho',bonificacao:'Bonificação',embaixador:'Embaixador',amostra:'Amostra',avaria:'Avaria'}[o.tipo]||'Venda');
+        var tl=_orcTipoLbl(o); // v235 — fonte única com o filtro
         return tl==='Venda'?('<span style="color:var(--text-secondary)">Venda</span>'):('<span style="font-weight:600;color:var(--st-mid-tx)">'+escapeHtml(tl)+'</span>');
       })()}</td>
       <td style="padding:8px 10px;font-weight:500;color:var(--st-ok-tx)">${fmtMoney(o.valor)}</td>

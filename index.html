@@ -5141,7 +5141,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v233';
+var APP_VERSION = 'v234';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -13209,6 +13209,12 @@ function _autoEstoqueSolicitado(o, motivo){
   if(!o) return; if(!o.statuses) o.statuses={};
   var cur=o.statuses.estoque||'Não iniciado';
   if(cur==='Separação completa'){
+    // v234 — HOTFIX do incidente 22-23/09 (157 pedidos rebaixados em massa; casos 103578/103624):
+    // o _healEstoqueNaoNec (v168, roda a CADA refresh) chama esta função para todo pedido com
+    // "não necessário" marcado — sem esta guarda, qualquer separação legítima era regredida em
+    // segundos. REGRA INVARIANTE: só regride se existe PENDÊNCIA REAL de embalagem (mesmo motor
+    // da trava). Lado definido e atendido = separação fica de pé.
+    try{ var _eg=_ladoComprasEstado(o,'embalagem'); if(_eg && _eg.definido && _eg.recebidoOk) return; }catch(_e){}
     o.statuses.estoque='Solicitado compra';
     if(!o.statusDates) o.statusDates={};
     // regra do dono 22/09: CARIMBO ≠ STATUS — o carimbo é PROVA do fato e nunca é alterado. A

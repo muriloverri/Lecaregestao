@@ -5142,7 +5142,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v236';
+var APP_VERSION = 'v237';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7968,7 +7968,7 @@ function openClientModalFromOrder(){
   openClientModal(null);
   setTimeout(()=>{document.getElementById('c-nome').value=q;},50);
 }
-document.addEventListener('click',e=>{if(!e.target.closest('.autocomplete-wrap')){document.getElementById('ac-list')?.classList.remove('open');document.getElementById('lead-ac-list')?.classList.remove('open');document.getElementById('compra-fornec-ac')?.classList.remove('open');}
+document.addEventListener('click',e=>{if(!e.target.closest('.autocomplete-wrap')){document.getElementById('ac-list')?.classList.remove('open');document.getElementById('lead-ac-list')?.classList.remove('open');document.getElementById('compra-fornec-ac')?.classList.remove('open');document.getElementById('sol-pedido-uso-ac')?.classList.remove('open');}
   // Fechar autocompletes de rateio
   if(!e.target.closest('[id^="perc-ac-"]')&&!e.target.closest('[id^="perc-ped-"]')){
     document.querySelectorAll('[id^="perc-ac-"]').forEach(el=>el.classList.remove('open'));
@@ -13110,8 +13110,12 @@ function openSolicitarModal(orderId, solicId){
       +((String(orderId)==='__geral__'&&_solTab==='embalagem')?(
         '<div style="margin-top:10px;padding:8px 10px;background:var(--bg-secondary);border-radius:8px">'+
         '<label style="font-size:12px;font-weight:600;display:block">Pedido em que a embalagem será utilizada <span style="color:var(--st-bad-tx)">*</span></label>'+
-        '<input type="text" id="sol-pedido-uso" list="sol-pedido-uso-dl" placeholder="número do pedido…" value="'+escapeHtml((_solEditId&&s&&s.pedidoUso&&s.pedidoUso.num)||'')+'" style="width:100%;font-size:13px;padding:6px 8px;margin-top:4px">'+
-        '<datalist id="sol-pedido-uso-dl">'+(orders||[]).slice().sort(function(a,b){ return (b.criadoEm||0)-(a.criadoEm||0); }).slice(0,800).map(function(o2){ return '<option value="'+escapeHtml(String((o2&&o2.num)||''))+'">'+escapeHtml((o2&&o2.cliente)||'')+'</option>'; }).join('')+'</datalist>'+
+        // v237 — SELEÇÃO COM CONFIRMAÇÃO VISUAL (pedido do dono 23/09): o datalist nativo só preenchia o
+        // número e dava a sensação de não ter vinculado. Agora é o autocomplete da casa: o clique FIXA
+        // "número — cliente" no campo, pinta a borda de verde e acende o selo ✓ abaixo; digitar o número
+        // exato também confirma. O salvar continua lendo o número antes do "—" (formato já aceito).
+        '<div class="autocomplete-wrap" style="position:relative"><input type="text" id="sol-pedido-uso" placeholder="número do pedido…" value="'+escapeHtml((_solEditId&&s&&s.pedidoUso&&s.pedidoUso.num)||'')+'" oninput="_solPedidoUsoBusca()" onfocus="_solPedidoUsoBusca()" autocomplete="off" style="width:100%;font-size:13px;padding:6px 8px;margin-top:4px"><div class="autocomplete-list" id="sol-pedido-uso-ac"></div></div>'+
+        '<div id="sol-pedido-uso-ok" style="font-size:11.5px;margin-top:4px"></div>'+
         '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px">Obrigatório: o número precisa ser de um pedido existente.</div></div>'
       ):'')
     : 'Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+(complementar?'<div style="font-size:11px;color:var(--st-mid-tx);margin-top:2px">⚠ A solicitação original já está numa lista de compra (fica como está). Estes itens entram como solicitação NOVA — na próxima lista gerada, ou numa lista aberta via "Complementar lista".</div>':'');
@@ -13119,6 +13123,35 @@ function openSolicitarModal(orderId, solicId){
   document.getElementById('sol-item-ac').classList.remove('open');
   _renderSolItens();
   document.getElementById('solicitar-modal').classList.add('open');
+  try{ _solPedidoUsoChk(); }catch(_e){} // v237 — edição com pedido já vinculado abre com o selo ✓ aceso
+}
+// v237 — autocomplete do PEDIDO DE USO da avulsa de embalagem (pedido do dono 23/09)
+function _solPedidoUsoBusca(){
+  var inp=document.getElementById('sol-pedido-uso'), ac=document.getElementById('sol-pedido-uso-ac');
+  if(!inp||!ac) return;
+  _solPedidoUsoChk();
+  var q=String(inp.value||'').trim().toLowerCase();
+  if(!q || q.indexOf('—')>=0){ ac.classList.remove('open'); return; } // já fixado ("num — cliente") não reabre a lista
+  var m=(orders||[]).filter(function(o2){ return o2 && (String(o2.num||'').toLowerCase().indexOf(q)===0 || String(o2.cliente||'').toLowerCase().indexOf(q)>=0); })
+    .sort(function(a,b){ return (b.criadoEm||0)-(a.criadoEm||0); }).slice(0,8);
+  if(!m.length){ ac.classList.remove('open'); return; }
+  ac.innerHTML=m.map(function(o2){ return '<div class="autocomplete-item" onclick="_solPedidoUsoPick(\''+escapeHtml(_escJs(String(o2.num||'')))+'\')"><div class="ac-name">'+escapeHtml(String(o2.num||''))+'</div><div class="ac-doc">'+escapeHtml(o2.cliente||'')+'</div></div>'; }).join('');
+  ac.classList.add('open');
+}
+function _solPedidoUsoPick(num){
+  var inp=document.getElementById('sol-pedido-uso'), ac=document.getElementById('sol-pedido-uso-ac');
+  var o2=(orders||[]).find(function(x){ return x && String(x.num||'')===String(num); }); if(!inp||!o2) return;
+  inp.value=String(o2.num||'')+' — '+(o2.cliente||'');
+  if(ac) ac.classList.remove('open');
+  _solPedidoUsoChk();
+}
+function _solPedidoUsoChk(){
+  var inp=document.getElementById('sol-pedido-uso'), ok=document.getElementById('sol-pedido-uso-ok');
+  if(!inp||!ok) return;
+  var numTx=String(inp.value||'').split('—')[0].trim();
+  var o2=numTx?(orders||[]).find(function(x){ return x && String(x.num||'')===numTx; }):null;
+  if(o2){ inp.style.borderColor='var(--st-ok-bd)'; ok.innerHTML='<span style="color:var(--st-ok-tx);font-weight:600">✓ Vinculado ao pedido '+escapeHtml(String(o2.num||''))+'</span><span style="color:var(--text-secondary)"> — '+escapeHtml(o2.cliente||'')+'</span>'; }
+  else { inp.style.borderColor=''; ok.innerHTML=numTx?'<span style="color:var(--text-tertiary)">nenhum pedido vinculado ainda — clique numa sugestão ou digite o número exato</span>':''; }
 }
 // v138/v168 — botões sem pedido: SEMPRE abrem um lançamento novo (zerado)
 function openSolicitarAvulsa(){
@@ -13140,7 +13173,20 @@ function _solSearchItem(){
 }
 function _solAddItem(itemId){
   var x=(insumos||[]).find(function(p){ return p.id===itemId; }); if(!x) return;
-  if(!_solRows.some(function(r){ return r.itemId===itemId; })) _solRows.push({itemId:x.id, codigo:x.codigo, nome:x.nome, qtd:1, unidade:x.unidade||'UN'});
+  if(_solRows.some(function(r){ return r.itemId===itemId; })){
+    document.getElementById('sol-item-busca').value=''; document.getElementById('sol-item-ac').classList.remove('open');
+    alert('"'+x.nome+'" já está na lista — ajuste a quantidade na tabela.'); _renderSolItens(); return;
+  }
+  var q=1;
+  if(_solTab==='embalagem'){
+    // v237 — QUANTIDADE NO CLIQUE (pedido do dono 23/09): escolher a embalagem já pergunta a
+    // quantidade — o item entra selecionado com ela (editável depois na tabela). Cancelar = não adiciona.
+    var resp=prompt('Quantidade de "'+x.nome+'" ('+(x.unidade||'UN')+'):','1');
+    if(resp===null) return;
+    q=parseFloat(String(resp).replace(',','.'));
+    if(!(q>0)){ alert('Quantidade inválida — informe um número maior que zero.'); return; }
+  }
+  _solRows.push({itemId:x.id, codigo:x.codigo, nome:x.nome, qtd:q, unidade:x.unidade||'UN'});
   document.getElementById('sol-item-busca').value=''; document.getElementById('sol-item-ac').classList.remove('open');
   _renderSolItens();
 }

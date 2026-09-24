@@ -3837,7 +3837,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <span id="sm-obs-count" style="font-size:11px;color:var(--text-tertiary)"></span>
       </button>
     </div>
-    <div class="modal-footer"><button onclick="closeStatusModal()">Cancelar</button><button class="btn-primary" onclick="confirmStatus()">Confirmar</button></div>
+    <div class="modal-footer"><button onclick="closeStatusModal()">Cancelar</button><button class="btn-primary" id="sm-confirm-btn" onclick="confirmStatus()">Confirmar</button></div>
   </div>
 </div>
 
@@ -3862,7 +3862,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <!-- Comments -->
         <div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Comentários</div>
         <div id="pa-comments-list" style="max-height:180px;overflow-y:auto;border:.5px solid var(--border);border-radius:var(--r-md);padding:0 12px;margin-bottom:10px"></div>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px" id="pa-comment-wrap"><!-- v238 — leitor do estoque só comenta se MARCADO -->
           <div style="position:relative;flex:1">
             <input type="text" id="pa-comment-input" placeholder="Comentário… use @ para marcar alguém" autocomplete="off" style="width:100%;font-size:12px" oninput="_pendCommentMention(this)" onkeydown="if(event.key==='Enter'){ if(document.getElementById('pa-comment-ac')?.classList.contains('open')){event.preventDefault();} else addPendComment(); }">
             <div class="autocomplete-list" id="pa-comment-ac" style="bottom:100%;top:auto;margin-bottom:4px"></div>
@@ -5142,7 +5142,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v237';
+var APP_VERSION = 'v238';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6611,6 +6611,17 @@ function canAccessCompras(){
   return false;
 }
 
+// v238 — QUEM SEPAROU as embalagens (setor Estoque; pedido do dono 23/09): lista FIXA de separadores
+// (pessoa nova = o dono pede e a lista cresce na versão seguinte), resolvida pelo PRIMEIRO NOME no
+// cadastro de usuários (sobrevive a troca de id). UM separador por pedido.
+var _SEP_NOMES=['Luiz','Larissa','Agnis','Everton'];
+function _sepNorm(s){ return String(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function _sepExecutores(){ return _SEP_NOMES.map(function(n){ var u=(users||[]).find(function(x){ return x && _sepNorm(x.name).split(/\s+/)[0]===_sepNorm(n); }); return u?{id:u.id,name:u.name}:{id:'nome:'+n,name:n}; }); }
+// Indicar (1ª vez): Luiz, Agnis ou admin. TROCAR um já indicado: só o admin.
+function _sepPodeIndicar(){ if(!currentUser) return false; if(currentUser.perfil==='admin') return true; var p=_sepNorm(currentUser.name).split(/\s+/)[0]; return p==='luiz'||p==='agnis'; }
+function _sepPodeAlterar(){ return !!(currentUser&&currentUser.perfil==='admin'); }
+// v238 — leitura do COMPRAS pelo setor estoque (Gestão a Vista): quem tem estoque e NÃO tem compras
+function _temSetorEstoque(){ return !!(currentUser && (((currentUser.setores||[]).includes('estoque'))||((currentUser.coordSetores||[]).includes('estoque')))); }
 function canEdit(setor){
   if(!currentUser)return false;
   if(currentUser.perfil==='admin')return true;
@@ -7507,13 +7518,15 @@ function _renderObsModal(){
     const mine=(e.porId&&currentUser&&String(e.porId)===String(currentUser.id))||(currentUser&&currentUser.perfil==='admin');
     return '<div style="padding:8px 10px;border-radius:var(--r-md);background:var(--bg-secondary);margin-bottom:8px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:3px"><span style="font-size:11px;font-weight:600;color:var(--text-secondary)">'+esc(e.porNome||'—')+'</span><span style="font-size:10px;color:var(--text-tertiary)">'+(typeof fmtTs==='function'?fmtTs(e.em):'')+(e.editadoEm?' · editado':'')+'</span></div><div style="font-size:13px;white-space:pre-wrap">'+esc(e.texto||'')+'</div>'+(mine?'<div style="margin-top:5px;display:flex;gap:8px"><button onclick="editObs(\''+e.id+'\')" style="font-size:11px;padding:2px 8px;color:var(--text-info);border:.5px solid var(--border-info);border-radius:var(--r-md);background:transparent;cursor:pointer">Editar</button><button onclick="deleteObs(\''+e.id+'\')" style="font-size:11px;padding:2px 8px;color:var(--st-bad-tx);border:.5px solid var(--st-bad-bd);border-radius:var(--r-md);background:transparent;cursor:pointer">Excluir</button></div>':'')+'</div>';
   }).join('') : '<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Nenhuma observação ainda. Escreva a primeira abaixo.</div>';
-  const html='<div class="overlay open" id="obs-thread-overlay" data-dyn="1"><div class="modal" style="width:520px;max-height:86vh;display:flex;flex-direction:column"><h2 style="flex-shrink:0">💬 Observações — '+esc(cfgL)+'</h2><div style="font-size:11px;color:var(--text-tertiary);margin:-2px 0 8px;flex-shrink:0">Pedido '+esc(o.num||'')+' — '+esc(o.cliente||'')+'. Cada um edita só a sua.</div><div style="flex:1;overflow:auto">'+rows+'</div><div style="flex-shrink:0;margin-top:8px"><textarea id="obs-new" rows="2" placeholder="Escreva uma observação…" style="width:100%;font-size:13px;padding:8px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);font-family:inherit;resize:vertical;box-sizing:border-box"></textarea></div><div class="modal-footer" style="flex-shrink:0"><button onclick="document.getElementById(\'obs-thread-overlay\').remove()">Fechar</button><button class="btn-primary" onclick="addObs()">Salvar observação</button></div></div></div>';
+  const _roObs=!canEdit(setor); // v238 — leitor (estoque no compras): observações SÓ leitura, sem composer
+  const html='<div class="overlay open" id="obs-thread-overlay" data-dyn="1"><div class="modal" style="width:520px;max-height:86vh;display:flex;flex-direction:column"><h2 style="flex-shrink:0">💬 Observações — '+esc(cfgL)+'</h2><div style="font-size:11px;color:var(--text-tertiary);margin:-2px 0 8px;flex-shrink:0">Pedido '+esc(o.num||'')+' — '+esc(o.cliente||'')+(_roObs?'. Somente visualização.':'. Cada um edita só a sua.')+'</div><div style="flex:1;overflow:auto">'+rows+'</div>'+(_roObs?'':'<div style="flex-shrink:0;margin-top:8px"><textarea id="obs-new" rows="2" placeholder="Escreva uma observação…" style="width:100%;font-size:13px;padding:8px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);font-family:inherit;resize:vertical;box-sizing:border-box"></textarea></div>')+'<div class="modal-footer" style="flex-shrink:0"><button onclick="document.getElementById(\'obs-thread-overlay\').remove()">Fechar</button>'+(_roObs?'':'<button class="btn-primary" onclick="addObs()">Salvar observação</button>')+'</div></div></div>';
   document.getElementById('obs-thread-overlay')?.remove();
   document.body.insertAdjacentHTML('beforeend', html);
 }
 function _obsRefreshCount(){ try{ const o=orders.find(x=>x.id===_obsModalOid); const c=document.getElementById('sm-obs-count'); if(c&&o){ const n=_obsCount(o,_obsModalSetor); c.textContent=n?(n+' obs.'):'nenhuma ainda'; } }catch(_e){} }
 function addObs(){
   const o=orders.find(x=>x.id===_obsModalOid); if(!o) return;
+  if(!canEdit(_obsModalSetor)){ alert('Somente visualização — observações deste setor não podem ser escritas por você.'); return; } // v238
   const txt=(document.getElementById('obs-new')?.value||'').trim(); if(!txt){ alert('Escreva a observação.'); return; }
   const thread=_obsThread(o,_obsModalSetor);
   thread.push({id:'obs'+Date.now()+Math.floor(Math.random()*1000), texto:txt, porId:(currentUser&&currentUser.id)||'', porNome:(currentUser&&currentUser.name)||'—', em:Date.now()});
@@ -7537,9 +7550,13 @@ function deleteObs(id){
   thread.splice(idx,1); saveData(); _renderObsModal(); _obsRefreshCount(); try{refreshAll();}catch(_e){}
 }
 function openStatusModal(oid,setor){
-  if(!canEdit(setor))return;
+  // v238 — LEITURA DO COMPRAS PELO ESTOQUE (pedido do dono 23/09, caso Luiz): quem tem o setor
+  // estoque abre o modal de Compras SÓ PARA VER (escada com carimbos, lista de compra, pendência,
+  // observações) — nenhum botão de gravação; o Confirmar some e os degraus ficam travados.
+  const _roView = !canEdit(setor) && setor==='compras' && _temSetorEstoque();
+  if(!canEdit(setor) && !_roView) return;
   const o=orders.find(x=>String(x.id)===String(oid));if(!o)return; // v125 — robusto a id string/number (evita o modal não abrir)
-  statusCtx={oid,setor};selectedStatus=o.statuses[setor];
+  statusCtx={oid,setor,ro:_roView};selectedStatus=o.statuses[setor];
   const{setores}=getLinhaConfig(o);const setorCfg=setores[setor]||SETORES[setor];
   const linha=o.linha||'personalizada';
   // Build deadline map per status
@@ -7716,6 +7733,15 @@ function openStatusModal(oid,setor){
       <span style="display:flex;align-items:center;gap:7px;min-width:0">${s}${selStr}</span>${lockSuffix}
     </button>`;
   }).join('');
+  // v238 — modo leitura (estoque no compras): degraus travados e sem Confirmar
+  try{
+    const _cbtn=document.getElementById('sm-confirm-btn');
+    if(_cbtn) _cbtn.style.display=_roView?'none':'';
+    if(_roView){
+      document.getElementById('sm-sub').textContent+='  ·  👁 somente visualização (estoque)';
+      document.querySelectorAll('#sm-options .status-opt').forEach(b=>{ b.disabled=true; b.style.opacity='.55'; b.style.pointerEvents='none'; });
+    }
+  }catch(_e){}
   document.getElementById('status-overlay').classList.add('open');
   // Pendency button state
   const activePend=getActivePend(oid,setor);
@@ -7760,6 +7786,23 @@ function openStatusModal(oid,setor){
         if(_ehAnesEnv){ var _ce=_its.filter(function(it){ return it.envaseRespNome && String(it.lote||'').trim(); }).length;
           _re.textContent=_its.length?(_ce+' de '+_its.length+' produto(s) com envase e lote indicados'):'Sem produtos informados neste pedido.'; } }
       w.style.display='';
+    } else if(setor==='estoque' && (o.linha||'personalizada')!=='anestesico'){
+      // v238 — QUEM SEPAROU as embalagens (pedido do dono 23/09): UM separador por pedido, lista fixa
+      // (Luiz/Larissa/Agnis/Everton). Indicar: Luiz, Agnis ou admin; TROCAR indicado: só admin; os
+      // demais veem o registro. Obrigatório antes da "Separação completa" (trava no confirmStatus).
+      const execs=_sepExecutores();
+      const atual=o.sepEmbPor||null;
+      if(lbl) lbl.textContent='📦 Quem separou (embalagens)';
+      sel.innerHTML='<option value="">— selecione quem separou —</option>'+execs.map(u=>'<option value="'+escapeHtml(String(u.id))+'"'+(atual&&String(u.id)===String(atual.id)?' selected':'')+'>'+escapeHtml(u.name)+'</option>').join('');
+      const podeMexer = atual ? _sepPodeAlterar() : _sepPodeIndicar();
+      sel.disabled=!podeMexer; sel.style.display='';
+      if(btn)btn.style.display='none';
+      if(res){ res.style.display=''; res.textContent = atual
+        ? ('Indicado: '+(atual.nome||'—')+' — por '+(atual.porNome||'—')+' em '+new Date(atual.em||0).toLocaleDateString('pt-BR')+(podeMexer?'':' · trocar: só o administrador'))
+        : (podeMexer?'Obrigatório antes de marcar "Separação completa".':'Ainda não indicado (indicam: Luiz, Agnis ou o administrador).'); }
+      var _be9=document.getElementById('sm-env-btn'), _re9=document.getElementById('sm-env-resumo');
+      if(_be9)_be9.style.display='none'; if(_re9)_re9.style.display='none';
+      w.style.display='';
     } else { w.style.display='none'; }
   })();
   // v120 — Observações: mostra a contagem no botão (o thread abre no modal próprio)
@@ -7773,6 +7816,7 @@ function pickStatus(s){
 function closeStatusModal(){document.getElementById('status-overlay').classList.remove('open');statusCtx=null;selectedStatus=null;}
 function confirmStatus(){
   if(!statusCtx)return; // v95.1 — NÃO exige status selecionado aqui: a observação tem que salvar mesmo sem mudar status
+  if(statusCtx.ro){ closeStatusModal(); return; } // v238 — modo leitura (estoque no compras) nunca grava
   const o=orders.find(x=>x.id===statusCtx.oid);
   if(!o) return;
 
@@ -7788,6 +7832,26 @@ function confirmStatus(){
       try{ addAudit(o, statusCtx.setor, 'observacao', _atualObs, _novoObs); }catch(_e){}
       saveData(); // v95.1 — persiste a obs JÁ aqui (não se perde se uma trava de status abaixo der return)
     }
+  }
+
+  // v238 — QUEM SEPAROU (estoque): salva a indicação MESMO SEM mudança de status (dá para indicar
+  // e depois só conferir). 1ª indicação: Luiz/Agnis/admin; TROCA de um já indicado: só admin (o
+  // seletor já vem travado para os demais — aqui é a defesa em profundidade). Carimbo + auditoria.
+  if(statusCtx.setor==='estoque'){
+    try{
+      const _sx=document.getElementById('sm-exec');
+      if(_sx && _sx.style.display!=='none'){
+        const _sid=_sx.value||'';
+        const _su=_sid?_sepExecutores().find(u=>String(u.id)===String(_sid)):null;
+        const _old=o.sepEmbPor||null;
+        if(_su && (!_old || String(_old.id)!==String(_su.id))){
+          if(_old ? !_sepPodeAlterar() : !_sepPodeIndicar()){ alert(_old?'Trocar quem separou: somente o administrador.':'Indicar quem separou: somente Luiz, Agnis ou o administrador.'); return; }
+          o.sepEmbPor={id:_su.id, nome:_su.name, em:Date.now(), porId:(currentUser&&currentUser.id)||'', porNome:(currentUser&&currentUser.name)||'—'};
+          try{ addAudit(o,'estoque','quemSeparou',(_old&&_old.nome)||'', _su.name); }catch(_e){}
+          saveData();
+        }
+      }
+    }catch(_e){}
   }
 
   // v95.1 — sem status selecionado (só anotou a observação): persiste a obs e fecha
@@ -7809,6 +7873,16 @@ function confirmStatus(){
     var _vd=parseFloat(o.valor)||0;
     if(Math.round(Math.abs(_pt-_vd)*100)>10){ // v149 — tolerância 10 centavos
       alert('Não é possível marcar "Produtos informados": o total dos produtos ('+fmtMoney(_pt)+') não confere com o valor da venda sem frete ('+fmtMoney(_vd)+').\nDiferença de '+fmtMoney(Math.abs(_pt-_vd))+'. Ajuste os produtos (ou o valor do pedido) antes de informar.');
+      return;
+    }
+  }
+
+  // v238 — regra do dono 23/09: "Separação completa" SÓ com QUEM SEPAROU indicado (a pergunta é o
+  // seletor "📦 Quem separou" deste modal — como o clique passa pelo Confirmar, a indicação feita
+  // agora já foi gravada logo acima; sem indicação, bloqueia com a orientação).
+  if(statusCtx.setor==='estoque' && selectedStatus==='Separação completa' && (o.linha||'personalizada')!=='anestesico'){
+    if(!(o.sepEmbPor&&o.sepEmbPor.nome)){
+      alert('Indique QUEM SEPAROU as embalagens antes de marcar "Separação completa".\n\nUse o seletor "📦 Quem separou (embalagens)" aqui no modal (indicam: Luiz, Agnis ou o administrador).');
       return;
     }
   }
@@ -10560,6 +10634,9 @@ function renderPendAlertModal(orderId,setor){
           <div class="pend-comment-date">${fmtTs(c.ts)}</div>
         </div>
       </div>`).join(''):'<div class="empty" style="padding:12px;font-size:12px">Nenhum comentário ainda.</div>';
+    // v238 — quem só VISUALIZA o setor (leitor do estoque no compras) comenta SÓ pendência em que
+    // foi MARCADO (@); quem edita o setor segue comentando como sempre.
+    try{ const _pw=document.getElementById('pa-comment-wrap'); if(_pw){ const _podeCom = canEdit(setor) || (pend.mencionados||[]).some(m=>String(m.id)===String(currentUser&&currentUser.id)); _pw.style.display=_podeCom?'flex':'none'; } }catch(_e){}
     newSection.style.display='none';
   } else {
     activeDiv.style.display='none';noActive.style.display='block';
@@ -10664,6 +10741,8 @@ function _pendCommentPick(uid){
 function addPendComment(){
   const txt=document.getElementById('pa-comment-input').value.trim();if(!txt)return;
   const pend=getActivePend(pendCtx.orderId,pendCtx.setor);if(!pend)return;
+  // v238 — defesa em profundidade do portão do composer: sem edição do setor, só comenta se marcado
+  if(!canEdit(pendCtx.setor) && !(pend.mencionados||[]).some(m=>String(m.id)===String(currentUser&&currentUser.id))){ alert('Você só pode comentar pendências em que foi marcado (@).'); return; }
   const o=orders.find(x=>x.id===pendCtx.orderId);
   pend.historico.push({ts:Date.now(),userId:currentUser.id,userName:currentUser.name,tipo:'comentario',txt,mencionados:_pendCommentMentions.slice()});
   // v112 — marcados (@) no comentário entram nos Notificados + recebem notificação

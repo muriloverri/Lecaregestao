@@ -1269,6 +1269,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <div class="crm-tabs" style="border-bottom:.5px solid var(--border);margin-bottom:14px">
           <div class="crm-tab active" id="cli-tab-todos" onclick="setClientesTab('todos')">Todos</div>
           <div class="crm-tab" id="cli-tab-incompletos" onclick="setClientesTab('incompletos')">Cadastros incompletos <span id="cli-incompletos-badge" style="display:none;background:var(--st-mid-bg);color:var(--st-mid-tx);font-size:10px;padding:1px 7px;border-radius:20px;margin-left:4px"></span></div>
+          <div class="crm-tab" id="cli-tab-contatos" onclick="setClientesTab('contatos')" title="Contatos desvinculados: excluídos de um cadastro mas com conversa no sistema — a conversa segue viva identificada por nome+número; daqui dá para vincular a qualquer cadastro">Contatos <span id="cli-contatos-badge" style="display:none;background:var(--st-mid-bg);color:var(--st-mid-tx);font-size:10px;padding:1px 7px;border-radius:20px;margin-left:4px"></span></div><!-- v239 -->
         </div>
         <div class="panel" style="margin-bottom:16px"><div style="padding:12px 16px"><input type="text" id="client-search" placeholder="Buscar por nome, CNPJ/CPF..." oninput="renderClients()"></div></div>
         <div class="cards-grid" id="clients-grid"></div>
@@ -5142,7 +5143,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v238';
+var APP_VERSION = 'v239';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6706,12 +6707,17 @@ function _dataInclusao(o){
 
 // ═══════════════ URGENCY ═══════════════
 const BASE_TOTAL=15;
+// v239 — compressão da urgência em DIAS ÚTEIS (caso 103577, reporte do dono 24/09): a escala v127
+// dividia por dias CORRIDOS (janela/15), mas todo o resto do sistema conta em ÚTEIS (calcDay,
+// deadlineDate) — janela com fim de semana ganhava degrau DEPOIS da data de saída (D9 → 02/10 com
+// saída 01/10). Agora: úteis da janela ÷ padrão em úteis (13 personalizada · 3 anestésico), com teto
+// no total da janela — o último degrau cai EXATAMENTE na data de saída, nunca depois.
+function _bdiasJanela(d1, prev){ let n=0; const cur=new Date(d1+'T12:00:00'), fim=new Date(prev+'T12:00:00'); while(cur<=fim){ if(_isBday(_toDateStr(cur))) n++; cur.setDate(cur.getDate()+1); } return Math.max(1,n); }
+function _urgEscala(limitDay, d1, prev, linha){ const baseT=((linha||'personalizada')==='anestesico')?3:13; const tot=_bdiasJanela(d1,prev); return Math.max(1,Math.min(tot,Math.round((limitDay/baseT)*tot))); }
 function calcUrgentDeadlines(d1,prev,linha){
   const isAnes=(linha||'personalizada')==='anestesico'; // v127 — regras/base próprias do anestésico
   const rules=isAnes?DEADLINE_RULES_ANES:DEADLINE_RULES;
-  const baseTotal=isAnes?3:BASE_TOTAL;
-  const total=Math.max(1,Math.floor((new Date(prev+'T12:00:00')-new Date(d1+'T12:00:00'))/86400000)+1);
-  return rules.map(r=>({...r,limitDay:Math.max(1,Math.round((r.limitDay/baseTotal)*total))}));
+  return rules.map(r=>({...r,limitDay:_urgEscala(r.limitDay,d1,prev,linha)}));
 }
 function applyUrgencyUI(){
   const on=document.getElementById('f-urgente').checked;
@@ -7560,7 +7566,14 @@ function openStatusModal(oid,setor){
   const{setores}=getLinhaConfig(o);const setorCfg=setores[setor]||SETORES[setor];
   const linha=o.linha||'personalizada';
   // Build deadline map per status
-  const sdRules=STATUS_DEADLINES.filter(r=>r.linha===linha&&r.setor===setor);
+  let sdRules=STATUS_DEADLINES.filter(r=>r.linha===linha&&r.setor===setor);
+  // v239 — URGENTE/PROGRAMADO (caso 103577, reporte do dono 24/09: "limite D9 — 02/10" com saída
+  // 01/10): a régua POR STATUS do modal usava a tabela padrão crua — a compressão da urgência só
+  // valia para os prazos POR SETOR (alertas/telas). Agora a escada do modal usa a MESMA escala
+  // (_urgEscala, em dias úteis) e nenhum degrau passa da data de saída.
+  if(o.urgente && o.previsao && o.d1 && typeof _urgEscala==='function'){
+    sdRules=sdRules.map(r=>({...r,limitDay:_urgEscala(r.limitDay,o.d1,o.previsao,linha)}));
+  }
   // v193 — o mapa é indexado pelo NOME do status EXIBIDO. Regra cadastrada sob um rótulo que a tela
   // não mostra mais ficava sem "limite Dx" na tela, embora o ALERTA funcionasse (o alerta lê r.ok):
   // Compras (v156, 'Compra finalizada' virou ativo+embalagem) e Financeiro ('Emitido sem NF', que
@@ -9617,7 +9630,14 @@ function _leadCtCommit(){
     renderLeadContatosList();
   }catch(_e){}
 }
-function removeLeadContato(i){leadContatos.splice(i,1);renderLeadContatosList();_leadCtCommit();}
+function removeLeadContato(i){
+  const c=leadContatos[i]; if(!c) return;
+  // v239 — regras do dono 24/09 (caso Clinica Aimee): a validação vale NO CLIQUE — quando o sistema
+  // recusa, NADA foi gravado (fim da mensagem depois do fato). Sempre sobra ao menos UM contato.
+  if(leadContatos.length<=1){ alert('Este é o único contato do cadastro — não pode ser excluído.\n\nO cadastro precisa de ao menos um contato. Se o número mudou, use o Editar do contato.'); return; }
+  if(!confirm('Excluir o contato "'+(c.nome||'—')+'"'+((c.whats||c.telefone)?' — '+_telExib(c.whats||c.telefone):'')+'?')) return;
+  leadContatos.splice(i,1);renderLeadContatosList();_leadCtCommit();
+}
 function renderLeadContatosList(){
   const el=document.getElementById('lead-contatos-list');
   if(!el)return;
@@ -21584,6 +21604,7 @@ function setClientesTab(tab){
   activeClientesTab=tab;
   document.getElementById('cli-tab-todos')?.classList.toggle('active', tab==='todos');
   document.getElementById('cli-tab-incompletos')?.classList.toggle('active', tab==='incompletos');
+  document.getElementById('cli-tab-contatos')?.classList.toggle('active', tab==='contatos'); // v239
   renderClients();
 }
 function renderClients(){
@@ -21592,6 +21613,13 @@ function renderClients(){
   // Badge de incompletos
   const _badge=document.getElementById('cli-incompletos-badge');
   if(_badge){ if(_incompletos.length){ _badge.textContent=_incompletos.length; _badge.style.display=''; } else _badge.style.display='none'; }
+  // v239 — aba Contatos (desvinculados) + badge
+  try{
+    const _ctav=_ctavLista();
+    const _bC=document.getElementById('cli-contatos-badge');
+    if(_bC){ if(_ctav.length){ _bC.textContent=_ctav.length; _bC.style.display=''; } else _bC.style.display='none'; }
+    if(activeClientesTab==='contatos'){ _renderContatosDesvinculados(_ctav, q); return; }
+  }catch(_e){}
   let base = (activeClientesTab==='incompletos') ? _incompletos : clients;
   // v186 — a busca também acha pelas PESSOAS VINCULADAS (nome e CPF/CNPJ): documento antigo/da empresa
   // preservado como vinculada não pode ficar inencontrável (pedido do dono 03/08).
@@ -35934,6 +35962,7 @@ function _contatoPorTelefone(clienteId, telefone){
 function _tituloConversa(conv){
   if(!conv) return 'Cliente';
   if(conv.grupo) return conv.nome||'Grupo'; // v148 : grupo usa o nome do grupo (sem cliente)
+  if(!conv.clienteId && conv.contatoAvulso){ const _ca=conv.contatoAvulso; return String(_ca.nome||'').trim()||('Contato '+_telExib(_ca.telefone||conv.telefone||'')); } // v239 — desvinculada: identifica pelo acervo (nome+número)
   const cli=(clients||[]).find(x=>x.id===conv.clienteId);
   const card=(crmLeads||[]).find(l=>l.clienteId===conv.clienteId);
   const empresa=(cli&&cli.nome&&String(cli.nome).trim())||(card&&card.empresa)||'Cliente';
@@ -39251,9 +39280,110 @@ function _ctTombAtualiza(cli, universoAntigo, listaNova){
   if(!cli) return;
   const tb={...(cli.contatosRemovidos||{})};
   const novos={}; (listaNova||[]).forEach(x=>{ const k=_ctKey(x); if(k) novos[k]=1; });
-  (universoAntigo||[]).forEach(x=>{ const k=_ctKey(x); if(k && !novos[k]) tb[k]=Date.now(); }); // sumiu da lista salva → lápide
+  // v239 — regra do dono 24/09 (caso Clinica Aimee): contato excluído que TEM conversa vinculada não
+  // some do sistema — a(s) conversa(s) são DESVINCULADAS do cadastro (sem carteira, sem card, sem
+  // histórico comercial: essas métricas são do cliente) e o contato passa a viver no acervo da aba
+  // "Contatos" (menu Clientes), identificando a conversa por nome+número. Revinculado, volta ao normal.
+  let _desv=0;
+  (universoAntigo||[]).forEach(x=>{ const k=_ctKey(x); if(k && !novos[k]){ const _nova=!tb[k]; tb[k]=Date.now(); if(_nova){ try{ _desv+=_ctavDesvincular(cli,x); }catch(_e){} } } }); // sumiu da lista salva → lápide
   Object.keys(novos).forEach(k=>{ delete tb[k]; });                                             // (re)adicionado → limpa a lápide
   cli.contatosRemovidos=tb;
+  if(_desv){ try{ alert('O contato excluído tinha '+_desv+' conversa(s) vinculada(s).\n\nA conversa NÃO some: foi desvinculada do cadastro e o contato está na aba CONTATOS (menu Clientes), de onde pode ser vinculado de novo a qualquer cadastro.'); }catch(_e){} }
+}
+// v239 — desvincula as conversas do telefone do contato excluído e registra o acervo na própria conversa
+function _ctavDesvincular(cli, contato){
+  const tel=String(contato.telefone||contato.whats||'').trim();
+  const tk=(typeof _telKey==='function')?_telKey(tel):tel.replace(/\D/g,'').slice(-8);
+  if(!tk) return 0;
+  let n=0;
+  (conversas||[]).forEach(function(cv){
+    if(!cv || cv.grupo) return;
+    if(String(cv.clienteId||'')!==String(cli.id)) return;
+    const cvk=(typeof _telKey==='function')?_telKey(cv.telefone):String(cv.telefone||'').replace(/\D/g,'').slice(-8);
+    if(cvk!==tk) return;
+    cv.contatoAvulso={ nome:String(contato.nome||'').trim()||('Contato '+_telExib(tel)), telefone:tel||String(cv.telefone||''), exClienteId:cli.id, exClienteNome:cli.nome||'', desvinculadoEm:Date.now(), por:(currentUser&&currentUser.name)||'—' };
+    cv.clienteId=null;
+    try{ if(typeof _waUpsertConversa==='function') _waUpsertConversa(cv); }catch(_e){}
+    n++;
+  });
+  return n;
+}
+// v239 — acervo dos contatos desvinculados (deduplicado por telefone; o registro mais novo dá o nome)
+function _ctavLista(){
+  const map={};
+  (conversas||[]).forEach(function(cv){
+    if(!cv || cv.grupo || cv.clienteId || !cv.contatoAvulso) return;
+    const tk=(((typeof _telKey==='function')?_telKey(cv.contatoAvulso.telefone||cv.telefone||''):'')||('c'+cv.id));
+    if(!map[tk]) map[tk]={key:tk, ca:cv.contatoAvulso, convs:[]};
+    if((cv.contatoAvulso.desvinculadoEm||0)>(map[tk].ca.desvinculadoEm||0)) map[tk].ca=cv.contatoAvulso;
+    map[tk].convs.push(cv);
+  });
+  return Object.values(map).sort(function(a,b){ return (b.ca.desvinculadoEm||0)-(a.ca.desvinculadoEm||0); });
+}
+// v239 — render da aba Contatos (menu Clientes): SÓ os desvinculados; ações: abrir a conversa e vincular
+function _renderContatosDesvinculados(lista, q){
+  const grid=document.getElementById('clients-grid'), empty=document.getElementById('clients-empty');
+  if(!grid) return;
+  let f=lista||[];
+  if(q) f=f.filter(function(x){ return ((x.ca.nome||'')+' '+(x.ca.telefone||'')+' '+(x.ca.exClienteNome||'')).toLowerCase().indexOf(q)>=0; });
+  if(empty) empty.style.display='none';
+  if(!f.length){ grid.innerHTML='<div style="grid-column:1/-1" class="empty">Nenhum contato desvinculado. Contatos excluídos de um cadastro que tenham conversa no sistema aparecem aqui.</div>'; return; }
+  grid.innerHTML='<div style="grid-column:1/-1">'+f.map(function(x){
+    const ca=x.ca;
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg-primary);border:.5px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;flex-wrap:wrap">'+
+      '<div style="flex:1;min-width:220px">'+
+        '<div style="font-size:13px;font-weight:600">'+escapeHtml(ca.nome||'—')+'</div>'+
+        '<div style="font-size:11.5px;color:var(--text-secondary)">📱 '+escapeHtml(_telExib(ca.telefone||''))+' · '+x.convs.length+' conversa(s)</div>'+
+        '<div style="font-size:11px;color:var(--text-tertiary)">desvinculado de '+escapeHtml(ca.exClienteNome||'—')+' em '+(ca.desvinculadoEm?new Date(ca.desvinculadoEm).toLocaleDateString('pt-BR'):'—')+(ca.por?' por '+escapeHtml(ca.por):'')+'</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;flex-shrink:0">'+
+        '<button onclick="_ctavAbrirConversa(\''+escapeHtml(_escJs(String(x.convs[0].id)))+'\')" style="font-size:12px;padding:6px 12px;color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd);border-radius:var(--r-md);background:transparent;cursor:pointer">💬 Conversa</button>'+
+        '<button class="btn-primary" onclick="_ctavVincularModal(\''+escapeHtml(_escJs(String(x.key)))+'\')" style="font-size:12px;padding:6px 12px">🔗 Vincular a cadastro</button>'+
+      '</div>'+
+    '</div>';
+  }).join('')+'</div>';
+}
+function _ctavAbrirConversa(convId){ try{ showPage('conversas'); setTimeout(function(){ try{ abrirConversa(convId); }catch(_e){} },250); }catch(_e){} }
+// v239 — vincular contato desvinculado a um cadastro (o mesmo de antes ou qualquer outro): as
+// conversas voltam a pertencer ao cliente (carteira e regras usuais); a lápide daquele número sai
+// (revínculo é ordem explícita) e o contato entra na ficha (espelho no card pela união normal).
+var _ctavKeySel=null;
+function _ctavVincularModal(key){
+  _ctavKeySel=key;
+  const item=_ctavLista().find(function(x){ return x.key===key; }); if(!item) return;
+  document.getElementById('ctav-overlay')?.remove();
+  document.body.insertAdjacentHTML('beforeend',
+    '<div class="overlay open" id="ctav-overlay" data-dyn="1"><div class="modal" style="width:460px">'+
+    '<h2>🔗 Vincular contato a um cadastro</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">'+escapeHtml(item.ca.nome||'—')+' — '+escapeHtml(_telExib(item.ca.telefone||''))+'</div>'+
+    '<div class="autocomplete-wrap" style="position:relative"><input type="text" id="ctav-busca" placeholder="Buscar cadastro por nome ou CPF/CNPJ…" oninput="_ctavBusca()" autocomplete="off" style="width:100%;font-size:13px;padding:7px 10px"><div class="autocomplete-list" id="ctav-ac"></div></div>'+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'ctav-overlay\').remove()">Cancelar</button></div>'+
+    '</div></div>');
+  setTimeout(function(){ document.getElementById('ctav-busca')?.focus(); },50);
+}
+function _ctavBusca(){
+  const q=(document.getElementById('ctav-busca')?.value||'').trim().toLowerCase();
+  const ac=document.getElementById('ctav-ac'); if(!ac) return;
+  if(q.length<2){ ac.classList.remove('open'); return; }
+  const m=(clients||[]).filter(function(c){ return c && (((c.nome||'').toLowerCase().indexOf(q)>=0) || (typeof _docMatch==='function' && _docMatch(c.doc,q))); }).slice(0,8);
+  if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nenhum cadastro encontrado.</div>'; ac.classList.add('open'); return; }
+  ac.innerHTML=m.map(function(c){ return '<div class="autocomplete-item" onclick="_ctavConfirma(\''+escapeHtml(_escJs(String(c.id)))+'\')"><div class="ac-name">'+escapeHtml(c.nome||'')+'</div><div class="ac-doc">'+escapeHtml(c.doc||'sem documento')+'</div></div>'; }).join('');
+  ac.classList.add('open');
+}
+function _ctavConfirma(cliId){
+  const item=_ctavLista().find(function(x){ return x.key===_ctavKeySel; }); if(!item) return;
+  const cli=(clients||[]).find(function(c){ return c.id===cliId; }); if(!cli) return;
+  if(!confirm('Vincular o contato "'+(item.ca.nome||'—')+'" ('+_telExib(item.ca.telefone||'')+') ao cadastro "'+(cli.nome||'')+'"?\n\nA(s) '+item.convs.length+' conversa(s) voltam a pertencer a este cliente (carteira e regras usuais).')) return;
+  if(cli.contatosRemovidos && cli.contatosRemovidos[item.key]) delete cli.contatosRemovidos[item.key];
+  if(!Array.isArray(cli.contatos)) cli.contatos=[];
+  const _tem=cli.contatos.some(function(c){ return (((typeof _telKey==='function')?_telKey(c.telefone||''):'')===item.key); });
+  if(!_tem){ const _semPri=!cli.contatos.some(function(c){ return c.principal; }); cli.contatos.push({nome:item.ca.nome||'Contato', cargo:'', telefone:item.ca.telefone||'', email:'', principal:_semPri, nomeEm:Date.now()}); }
+  item.convs.forEach(function(cv){ cv.clienteId=cli.id; delete cv.contatoAvulso; try{ if(typeof _waUpsertConversa==='function') _waUpsertConversa(cv); }catch(_e){} });
+  try{ _sincronizarContatos(cli.id,'cliente'); }catch(_e){}
+  saveData();
+  document.getElementById('ctav-overlay')?.remove();
+  try{ renderClients(); }catch(_e){}
+  alert('Contato vinculado a "'+(cli.nome||'')+'". A conversa voltou às regras usuais.');
 }
 function _renderCliContatos(){
   const el=document.getElementById('c-contatos-list'); if(!el) return;
@@ -39304,7 +39434,13 @@ function _addCliContato(){
   ['c-ct-nome','c-ct-cargo','c-ct-tel'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
   _renderCliContatos();
 }
-function _delCliContato(i){ _cliContatos.splice(i,1); _renderCliContatos(); }
+function _delCliContato(i){
+  const c=_cliContatos[i]; if(!c) return;
+  // v239 — mesmas guardas do card (regras do dono 24/09): último contato não sai; excluir pergunta antes
+  if(_cliContatos.length<=1){ alert('Este é o único contato do cadastro — não pode ser excluído.\n\nO cadastro precisa de ao menos um contato. Se o número mudou, use o Editar do contato.'); return; }
+  if(!confirm('Excluir o contato "'+(c.nome||'—')+'"'+(c.telefone?' — '+_telExib(c.telefone):'')+'?')) return;
+  _cliContatos.splice(i,1); _renderCliContatos();
+}
 // sincroniza contatos cadastro↔card (união por telefone; o lado 'fonte' tem prioridade nos campos)
 function _sincronizarContatos(clienteId, fonte){
   if(!clienteId) return;

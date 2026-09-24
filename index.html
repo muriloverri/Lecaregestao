@@ -2806,7 +2806,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="btn-primary" onclick="openOrcBuilder()" style="font-size:12px;padding:6px 14px" title="Monta o orçamento pelo CATÁLOGO (fórmulas com QSP/embalagem, cálculo automático de preço, descontos, frete) e gera o PDF para enviar ao cliente">+ Novo orçamento</button><!-- v188 -->
         <!-- v225 — importador do CSV da tela de vendas do Opery (decisões do dono 11/09): cria os EM ABERTO, baixa Aprovado→Vendido e Cancelado→Perdido; chave = nº Opery (nunca duplica); só admin -->
-        <button id="orc-opery-btn" onclick="document.getElementById('orc-opery-file').click()" style="font-size:12px;padding:6px 14px" title="Importa o CSV exportado da tela de vendas do Opery: cria os orçamentos EM ABERTO, baixa como Vendido os que vierem Aprovado e como Perdido os Cancelados. Nunca duplica (chave = nº do pedido no Opery); orçamento ausente do arquivo fica como está. Somente administrador.">📥 Importar CSV do Opery</button>
+        <button id="orc-opery-btn" onclick="document.getElementById('orc-opery-file').click()" style="font-size:12px;padding:6px 14px" title="Importa o CSV exportado da tela de vendas do Opery: cria os orçamentos EM ABERTO, baixa como Vendido os que vierem Aprovado e como Perdido os Cancelados. Nunca duplica (chave = nº do pedido no Opery); orçamento ausente do arquivo fica como está. Somente administrador e diretora comercial.">📥 Importar CSV do Opery</button>
         <input type="file" id="orc-opery-file" accept=".csv,text/csv,text/plain,*/*" style="display:none" onchange="_orcOperyImportar(this)">
         <button id="orc-divg-btn" onclick="_orcDivgAbrir()" style="font-size:12px;padding:6px 14px" title="Divergências e pendências do último cruzamento Opery × sistema: pedido pago sem entrar no sistema, divergência de valor (apenas apresentação — vale o valor fechado com o cliente) e aprovados aguardando pagamento. Atualiza a cada importação de CSV.">⚠ Divergências</button>
         <input type="text" id="orc-crm-search" placeholder="Buscar empresa, produto..." oninput="renderOrcamentosCrm()" style="font-size:12px;padding:5px 10px;width:220px">
@@ -5598,7 +5598,7 @@ function loadData(){
     try{ _carregarPausas(); }catch(_e){} // v169 — ⏸ pausas de atendimento (registro dedicado)
     if(data.feriadosManuais) FERIADOS_MANUAIS = new Set(data.feriadosManuais);
     if(data.feriadosManuaisData) feriadosManuaisData = data.feriadosManuaisData;
-    if(data.orcOperyDivg) orcOperyDivg = data.orcOperyDivg; // v225
+    if(data.orcOperyDivg) orcOperyDivg = _orcDivgMerge(orcOperyDivg, data.orcOperyDivg); // v239 — MERGE anti-clobber (era atribuição seca): aba sem a análise na memória regravava o blob e APAGAVA o campo no servidor — só quem importou via as divergências (reporte do dono 24/09, diretora via vazio)
     creditosCliente  = data.creditosCliente  || {};
     // Migrate gastosGrafica → pagamentos (legacy)
     if(data.gastosGrafica && data.gastosGrafica.length > 0 && pagamentos.length === 0){
@@ -33664,7 +33664,7 @@ function _obPdfDoc(o){
 // Aprovado/Cancelado sem registro correspondente não cria nada; ausente do arquivo fica como está.
 function _orcOperyImportar(inp){
   try{
-    if(!currentUser||currentUser.perfil!=='admin'){ alert('Importação do CSV do Opery: somente o administrador.'); if(inp) inp.value=''; return; }
+    if(!currentUser||!(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial')){ alert('Importação do CSV do Opery: somente o administrador ou a diretora comercial.'); if(inp) inp.value=''; return; } // v239 — diretora importa também (ordem do dono 24/09)
     var f=inp&&inp.files&&inp.files[0]; if(!f) return;
     var rd=new FileReader();
     rd.onload=function(){ try{ _orcOperyProcessar(String(rd.result||'')); }catch(e){ alert('Falha ao processar o CSV: '+((e&&e.message)||e)); } inp.value=''; };
@@ -33772,6 +33772,21 @@ function _orcOperyProcessar(txt){
 // RESOLVIDO com carimbo; 'valor' re-compara (se agora confere, resolve; se mudou, atualiza).
 // O que depende do Opery (pagamento pendente lá) só se resolve por nova importação de CSV.
 var _orcDivgLastChk=0;
+// v239 — merge da análise de divergências (lição do blob v219: coleção compartilhada sem merge =
+// escrita concorrente perdida): análise mais NOVA (em) vence; mesma análise = união dos resolvidos
+// (qualquer aba que viu o item se resolver vale para todas — resolvido nunca "des-resolve").
+function _orcDivgMerge(local, remoto){
+  if(!remoto) return local;
+  if(!local) return remoto;
+  if((remoto.em||0)!==(local.em||0)) return ((remoto.em||0)>(local.em||0))?remoto:local;
+  const rMap={}; (remoto.itens||[]).forEach(function(x){ if(x) rMap[String(x.cat)+'|'+String(x.num)+'|'+String(x.tipo||'')]=x; });
+  (local.itens||[]).forEach(function(x){
+    if(!x) return; const r=rMap[String(x.cat)+'|'+String(x.num)+'|'+String(x.tipo||'')];
+    if(r && r.resolvidoEm && !x.resolvidoEm){ x.resolvidoEm=r.resolvidoEm; x.resolvidoComo=r.resolvidoComo; }
+    if(r && r.vLecare!=null && x.vLecare==null) x.vLecare=r.vLecare;
+  });
+  return local;
+}
 function _orcDivgReconferir(){
   try{
     var d=orcOperyDivg; if(!d||!(d.itens||[]).length) return false;
@@ -33850,13 +33865,13 @@ function _orcTipoLbl(o){ return o.tipoOpery||({venda:'Venda',venda_mae:'Venda M�
 function renderOrcamentosCrm(){
   const tbody = document.getElementById('orc-crm-tbody');
   if(!tbody) return;
-  try{ var _obt=document.getElementById('orc-opery-btn'); if(_obt) _obt.style.display=(currentUser&&currentUser.perfil==='admin')?'':'none'; }catch(_e){} // v225 — importador só admin
+  try{ var _obt=document.getElementById('orc-opery-btn'); if(_obt) _obt.style.display=(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial'))?'':'none'; }catch(_e){} // v239 — importador: admin E diretora comercial (ordem do dono 24/09)
   try{
     // v225 — reconferência ao vivo também no render da tela (no máx. a cada 60s): pendência cujo
     // pedido já entrou pelo Drive se resolve sozinha e o contador não mente (pedido do dono 11/09)
     if(orcOperyDivg && (orcOperyDivg.itens||[]).some(function(x){ return x&&!x.resolvidoEm; }) && Date.now()-_orcDivgLastChk>60000) _orcDivgReconferir();
     var _dbt=document.getElementById('orc-divg-btn');
-    if(_dbt){ var _nD=(orcOperyDivg&&(orcOperyDivg.itens||[]).filter(function(x){ return x&&!x.resolvidoEm; }).length)||0; _dbt.style.display=(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial'))?'':'none'; _dbt.textContent='⚠ Divergências'+(_nD?' ('+_nD+')':''); }
+    if(_dbt){ var _nD=(orcOperyDivg&&(orcOperyDivg.itens||[]).filter(function(x){ return x&&!x.resolvidoEm; }).length)||0; _dbt.style.display=''; _dbt.textContent='⚠ Divergências'+(_nD?' ('+_nD+')':''); } // v239 — visível p/ TODOS que acessam a tela Orçamentos (ordem do dono 24/09; a tela já é restrita a comercial/admin)
   }catch(_e){} // v225 — admin+diretora; contador só das pendências EM ABERTO
 
   // Populate month filter

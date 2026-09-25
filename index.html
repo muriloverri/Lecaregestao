@@ -4399,7 +4399,9 @@ function _collectData(){
     agendaEventos, notificacoes, gastosGrafica, pagamentos, freteRealLanc, fornecedores,
     planoContas, compras, expedicoes, contasPagar, contasReceber, prazoExtensoes, metasMensais,
     paresDescartados, pendencias,
-    orcOperyDivg, // v225 — última análise de divergências do cruzamento Opery×Lecare (botão da tela Orçamentos)
+    // v240 — orcOperyDivg SAIU do blob (incidente 24/09: aba com null na memória regravava o blob e
+    // apagava a análise p/ todos — nem o merge v239 fechou, pois a aba que carregou ANTES da importação
+    // seguia emitindo null). Agora vive na chave própria app_data 'orc_opery_divg' (_orcDivgSalvar/Carregar).
     feriadosManuais:[...FERIADOS_MANUAIS], feriadosManuaisData, creditosCliente,
     alertasFinConfig,
     crmConfig:(typeof CRM_CONFIG!=='undefined'?CRM_CONFIG:undefined),
@@ -5143,7 +5145,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v239';
+var APP_VERSION = 'v240';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5598,7 +5600,7 @@ function loadData(){
     try{ _carregarPausas(); }catch(_e){} // v169 — ⏸ pausas de atendimento (registro dedicado)
     if(data.feriadosManuais) FERIADOS_MANUAIS = new Set(data.feriadosManuais);
     if(data.feriadosManuaisData) feriadosManuaisData = data.feriadosManuaisData;
-    if(data.orcOperyDivg) orcOperyDivg = _orcDivgMerge(orcOperyDivg, data.orcOperyDivg); // v239 — MERGE anti-clobber (era atribuição seca): aba sem a análise na memória regravava o blob e APAGAVA o campo no servidor — só quem importou via as divergências (reporte do dono 24/09, diretora via vazio)
+    if(data.orcOperyDivg) orcOperyDivg = _orcDivgMerge(orcOperyDivg, data.orcOperyDivg); // v240 — SÓ transição: adota resto que ainda estiver no blob (a fonte agora é a chave própria 'orc_opery_divg'; o blob não recebe mais este campo)
     creditosCliente  = data.creditosCliente  || {};
     // Migrate gastosGrafica → pagamentos (legacy)
     if(data.gastosGrafica && data.gastosGrafica.length > 0 && pagamentos.length === 0){
@@ -29498,7 +29500,9 @@ function setDcTab(tab){
 //   (o valor já está na mãe). Embaixador só entra onde a regra manda.
 // • Emilayne — % por faixa sobre as PRÓPRIAS vendas: <100 mil=1% · 100–150=1,5% · 150–250=2,5% · 250–500=3,5%
 //   (acima de 500 mil mantém 3,5% até o dono definir). Alíquota ÚNICA da faixa sobre o total (não progressiva).
-// • Tairine — 6% sobre vendas dela + Karla + Sabrina; embaixador das três a 3%.
+// • Tairine (diretora) — v240, regra REFORMULADA pelo dono 25/09 ("só não recebe sobre as vendas da
+//   Emilayne"): 6% sobre TODAS as vendas da empresa EXCETO as da Emilayne; embaixador (exceto Emilayne)
+//   a 3%. Por EXCEÇÃO, não por lista: vendedor novo (caso Aline, caso Marina) entra sozinho na base.
 // • Eduardo — 2% sobre TODAS as vendas do mês (venda+venda_mae; embaixador fora).
 // • Karla — BONIFICAÇÃO por faixa sobre as próprias vendas: >100 mil=R$100 · >120=R$200 · >140=R$600 ·
 //   >160=R$900 (não cumulativo, vale a maior).
@@ -29526,8 +29530,8 @@ function renderComissao(){
   const lbl=document.getElementById('comis-mes-label'); if(lbl) lbl.textContent=getMesLabel(mes);
 
   const emi=_comisUser('Emilayne'), tai=_comisUser('Tairine'), edu=_comisUser('Eduardo'),
-        kar=_comisUser('Karla'),    sab=_comisUser('Sabrina');
-  const _naoAchou=[['Emilayne',emi],['Tairine',tai],['Eduardo',edu],['Karla',kar],['Sabrina',sab]].filter(p=>!p[1]).map(p=>p[0]);
+        kar=_comisUser('Karla'); // v240 — a base da Tairine virou "todos exceto Emilayne": lista fixa aposentada
+  const _naoAchou=[['Emilayne',emi],['Tairine',tai],['Eduardo',edu],['Karla',kar]].filter(p=>!p[1]).map(p=>p[0]);
 
   const _vid=o=>String(o.atendenteId||o.atendente||'');                       // mesma atribuição do "Por vendedor" das Metas
   const doMes=(orders||[]).filter(o=>o&&(o.d1||'').slice(0,7)===mes);
@@ -29546,9 +29550,11 @@ function renderComissao(){
   else if(vEmi>=100000){ txEmi=0.015; fxEmi='100 a 150 mil'; }
   const comEmi=vEmi*txEmi;
 
-  // Tairine — 6% vendas (ela + Karla + Sabrina) + 3% embaixador (das três)
-  const vTai=vendaDe(tai)+vendaDe(kar)+vendaDe(sab);
-  const eTai=embDe(tai)+embDe(kar)+embDe(sab);
+  // Tairine — v240 (regra do dono 25/09): 6% sobre TODAS as vendas EXCETO as da Emilayne; embaixador
+  // (exceto o da Emilayne) a 3%. Exceção, não lista: vendedor novo entra sozinho.
+  const totalEmb=soma(doMes.filter(ehEmb));
+  const vTai=totalGeral-vendaDe(emi);
+  const eTai=totalEmb-embDe(emi);
   const comTai=vTai*0.06+eTai*0.03;
 
   // Eduardo — 2% sobre todas as vendas do mês
@@ -29583,8 +29589,8 @@ function renderComissao(){
       </tr></thead>
       <tbody>
         ${linha('Emilayne','(vendas próprias)',vEmi,(txEmi*100).toLocaleString('pt-BR')+'% — faixa '+fxEmi,comEmi,true)}
-        ${linha('Tairine','vendas: ela + Karla + Sabrina',vTai,'6%',vTai*0.06,false)}
-        ${eTai>0?linha('Tairine','embaixador: ela + Karla + Sabrina',eTai,'3%',eTai*0.03,false):''}
+        ${linha('Tairine','vendas: todas da empresa, exceto Emilayne',vTai,'6%',vTai*0.06,false)}
+        ${eTai>0?linha('Tairine','embaixador: todos, exceto Emilayne',eTai,'3%',eTai*0.03,false):''}
         ${linha('Tairine — total','',null,'6% vendas'+(eTai>0?' + 3% embaixador':''),comTai,true)}
         ${linha('Eduardo','(todas as vendas da empresa)',totalGeral,'2%',comEdu,true)}
         ${linha('Karla','(bonificação por faixa — vendas próprias)',vKar,bKar>0?'faixa '+fxKar:'abaixo de 100 mil — sem bônus',bKar,true)}
@@ -29596,7 +29602,10 @@ function renderComissao(){
     </table></div>
     <div style="margin-top:10px;font-size:11px;color:var(--text-tertiary);line-height:1.6">
       • "Vendas" = tipos <b>Venda + Venda Mãe</b> pelo valor líquido, mês pela data do pedido (D1). Venda Filho não conta (valor já está na mãe).<br>
+      • Tairine (diretora): 6% sobre TODAS as vendas da empresa exceto as da Emilayne; embaixador (exceto Emilayne) paga 3%, não 6%. Vendedor novo entra na base automaticamente.<br>
       • Embaixador só entra na regra da Tairine (3%); fora das bases da Emilayne, do Eduardo e da Karla.<br>
+      • <b>Conciliação com o faturamento do mês</b>: ${money(totalGeral+soma(doMes.filter(ehEmb)))} (Dashboard) = ${money(totalGeral)} de vendas (base do Eduardo) + ${money(soma(doMes.filter(ehEmb)))} de embaixador — a diferença entre as telas é SEMPRE o embaixador, por regra.<br><!-- v240 — ponte pedida em 25/09: mês com embaixador parecia "conta errada" -->
+
       • Faixas da Emilayne: valor exatamente na divisa (ex.: 100 mil) entra na faixa de cima. Acima de 500 mil mantém 3,5%.<br>
       • Bonificação da Karla: "mais de" = estritamente acima; não cumulativa (vale a maior faixa).
     </div>`;
@@ -33763,6 +33772,7 @@ function _orcOperyProcessar(txt){
     novos++;
   }
   orcOperyDivg={ em:agora, por:(currentUser&&currentUser.name)||'', itens:divg }; // v225 — persiste a última análise
+  _orcDivgSalvar(); // v240 — grava na CHAVE PRÓPRIA (fora do blob): visível p/ todas as abas, imune ao clobber
   saveData(); try{ renderOrcamentosCrm(); }catch(_e){}
   alert('📥 Importação do Opery concluída:\n\n• '+novos+' orçamento(s) novo(s) em aberto\n• '+vend+' baixado(s) como VENDIDO (aprovado no Opery)\n• '+perd+' marcado(s) como PERDIDO (cancelado no Opery)\n• '+att+' atualizado(s) (seguem em aberto)\n• '+mant+' mantido(s) (etapa já fechada aqui)\n• '+ign+' fora do escopo (aprovado/cancelado sem orçamento aberto correspondente)\n\n⚠ Cruzamento com o sistema: '+divg.length+' divergência(s)/pendência(s) — veja no botão "⚠ Divergências".');
 }
@@ -33787,6 +33797,28 @@ function _orcDivgMerge(local, remoto){
   });
   return local;
 }
+// v240 — FONTE PRÓPRIA das divergências (fim do blob p/ este dado): chave app_data 'orc_opery_divg',
+// gravada só pela importação e pelas resoluções, lida por TODAS as abas (tela e modal). Upsert sempre
+// com .then (lição builder-sem-await); a leitura faz merge (análise mais nova vence; resolvido soma).
+function _orcDivgSalvar(){
+  try{
+    if(!(window._sb&&_sbReady)) return;
+    _sb.from('app_data').upsert({ key:'orc_opery_divg', value:orcOperyDivg, updated_at:new Date().toISOString() }, { onConflict:'key' })
+      .then(function(r){ if(r&&r.error) console.warn('[divg] salvar falhou:', r.error.message); });
+  }catch(_e){}
+}
+var _orcDivgLastFetch=0;
+async function _orcDivgCarregar(){
+  try{
+    if(!(window._sb&&_sbReady)) return false;
+    const r=await _sb.from('app_data').select('value').eq('key','orc_opery_divg').maybeSingle();
+    if(!(r&&r.data&&r.data.value)) return false;
+    const antes=orcOperyDivg?((orcOperyDivg.em||0)+':'+(orcOperyDivg.itens||[]).filter(function(x){return x&&!x.resolvidoEm;}).length):'';
+    orcOperyDivg=_orcDivgMerge(orcOperyDivg, r.data.value);
+    const depois=orcOperyDivg?((orcOperyDivg.em||0)+':'+(orcOperyDivg.itens||[]).filter(function(x){return x&&!x.resolvidoEm;}).length):'';
+    return antes!==depois;
+  }catch(_e){ return false; }
+}
 function _orcDivgReconferir(){
   try{
     var d=orcOperyDivg; if(!d||!(d.itens||[]).length) return false;
@@ -33806,7 +33838,7 @@ function _orcDivgReconferir(){
       }
     });
     _orcDivgLastChk=agora;
-    if(mudou) saveData();
+    if(mudou) _orcDivgSalvar(); // v240 — resoluções também vão para a chave própria (não mais no blob)
     return mudou;
   }catch(_e){ return false; }
 }
@@ -33814,7 +33846,8 @@ function _orcDivgReconferir(){
 // cruzamento (pedido pago sem entrar no sistema; divergência de valor Opery×Lecare — só
 // apresentação, regra do dono; aprovados aguardando pagamento). Atualiza a cada importação de CSV
 // e RECONFERE ao vivo contra o sistema a cada abertura.
-function _orcDivgAbrir(){
+async function _orcDivgAbrir(){
+  try{ await _orcDivgCarregar(); }catch(_e){} // v240 — sempre abre com a análise fresca da chave própria
   _orcDivgReconferir();
   var d=orcOperyDivg;
   var ov=document.getElementById('orc-divg-overlay');
@@ -33869,6 +33902,9 @@ function renderOrcamentosCrm(){
   try{
     // v225 — reconferência ao vivo também no render da tela (no máx. a cada 60s): pendência cujo
     // pedido já entrou pelo Drive se resolve sozinha e o contador não mente (pedido do dono 11/09)
+    // v240 — a tela busca a análise da CHAVE PRÓPRIA (no máx. a cada 60s): o badge aparece para
+    // qualquer usuário da tela, não só para quem importou; mudança real re-renderiza uma vez.
+    if(Date.now()-_orcDivgLastFetch>60000){ _orcDivgLastFetch=Date.now(); _orcDivgCarregar().then(function(ch){ if(ch){ try{ renderOrcamentosCrm(); }catch(_e){} } }); }
     if(orcOperyDivg && (orcOperyDivg.itens||[]).some(function(x){ return x&&!x.resolvidoEm; }) && Date.now()-_orcDivgLastChk>60000) _orcDivgReconferir();
     var _dbt=document.getElementById('orc-divg-btn');
     if(_dbt){ var _nD=(orcOperyDivg&&(orcOperyDivg.itens||[]).filter(function(x){ return x&&!x.resolvidoEm; }).length)||0; _dbt.style.display=''; _dbt.textContent='⚠ Divergências'+(_nD?' ('+_nD+')':''); } // v239 — visível p/ TODOS que acessam a tela Orçamentos (ordem do dono 24/09; a tela já é restrita a comercial/admin)

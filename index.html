@@ -4502,6 +4502,40 @@ var _SEP_DEFER={ auditLog:1, notificacoes:1, agendaEventos:1, insumos:1, catalog
 // completa de sempre (fail-open). Recuperação anti-delete-em-massa força carga COMPLETA (forceFull).
 var _SEP_INCR={ auditLog:1, notificacoes:1 };
 var _sepIncrMax={}; // maior updated_at do SERVIDOR visto por entidade (régua do incremento)
+// v241 — DELTA REAL (laudo 28/09, autorizado "vamos seguir"): o caminho incremental v231 — provado
+// em produção no auditLog/notificações — passa a valer para TODAS as entidades quando a chave
+// sep_delta liga ('admin' = só perfil admin [piloto] · 'all' = todos · 'shadow'/'off' = modo atual),
+// com as 3 peças que faltavam (itens do laudo):
+//   (1) VARREDURA DE EXCLUSÕES por ciclo (select id paginado): o updated_at não enxerga DELETE —
+//       semântica v136 preservada (exclusão vence; linha criada localmente e não gravada fica);
+//   (2) DEDUPE DA MARGEM: linha re-baixada pela margem de 15min com updated_at idêntico ao já
+//       processado é descartada sem reprocessar (mata a "cauda de importação" do laudo);
+//   (3) VIGIA DE INTEGRIDADE DIÁRIO: 1×/dia o resync roda como carga COMPLETA e confere a
+//       fotografia — linha canonicamente diferente com carimbo anterior à régua−margem = algo que
+//       o delta teria pulado → alerta no sino + telemetria. Reversão: sep_delta='shadow' via SQL.
+function _deltaAtivo(){ return !!currentUser && (_sepDeltaModo==='all' || (_sepDeltaModo==='admin' && currentUser.perfil==='admin')); }
+var _sepDeltaSeen={};       // por entidade: {id: updated_at} da última fatia aplicada (dedupe da margem)
+var _deltaVigiaAgora=false; // este resync é a conferência diária (carga completa + comparação)
+var _deltaVigiaMiss={};     // resultado do dia: {tabela: n linhas que o delta teria pulado}
+var _deltaVigiaAm=[];       // amostras (tabela+id+carimbo), no máx. 5
+// dedupe puro (testável): devolve as linhas ainda não processadas e o mapa da fatia atual
+function _deltaDedupeSlice(rows, seen){
+  var out=[], next={};
+  for(var i=0;i<rows.length;i++){ var r=rows[i]; if(!r||r.id==null) continue; var k=String(r.id);
+    next[k]=r.updated_at||''; if(seen && seen[k]!==undefined && seen[k]===(r.updated_at||'')) continue; out.push(r); }
+  return { novas:out, seenNext:next };
+}
+// exclusões puras (testável) — v136: sumiu do servidor E tinha fotografia → sai (exclusão vence,
+// mesmo com edição local); sem fotografia (criada localmente, não gravada) → fica.
+function _deltaAplicarExclusoes(arr, snap, srvIds, idFn){
+  var rem=[], out=[];
+  for(var i=0;i<arr.length;i++){ var o=arr[i]; if(o==null){ out.push(o); continue; }
+    var k=String(idFn(o));
+    if(srvIds[k]){ out.push(o); continue; }
+    if(snap && Object.prototype.hasOwnProperty.call(snap,k)){ rem.push(k); continue; }
+    out.push(o); }
+  return { arr:out, removidos:rem };
+}
 var _sepBootFase1=true, _sepDeferRodando=false;
 async function _sepCarregarDiferidas(){
   if(_sepDeferRodando) return; _sepDeferRodando=true;
@@ -4824,9 +4858,11 @@ async function _sepLoadOne(cfg, forceFull){
   // (3) linha nova do servidor entra por push COM snapshot (não é "edição local" a gravar);
   // (4) linha já em memória: edição local pendente (memória≠snapshot) VENCE e não é tocada (v134);
   //     sem edição pendente, adota o servidor e atualiza o snapshot DAQUELA linha (nunca o resto);
-  // (5) exclusão feita em outra aba NÃO remove aqui (log é append-mostly; o F5/boot realinha);
+  // (5) exclusão feita em outra aba NÃO remove aqui (log é append-mostly; o F5/boot realinha) —
+  //     v241: nas entidades do DELTA GERAL a varredura de ids cobre exclusões a cada ciclo;
   // (6) qualquer erro → carga completa de sempre (fail-open).
-  if(!forceFull && _SEP_INCR[cfg.key] && _sepIncrMax[cfg.key] && (cfg.get()||[]).length){
+  var _dltGeral = !_SEP_INCR[cfg.key] && typeof _deltaAtivo==='function' && _deltaAtivo() && !_deltaVigiaAgora && cfg.key!=='conversas' && cfg.key!=='notificacoes'; // v241
+  if(!forceFull && (_SEP_INCR[cfg.key] || _dltGeral) && _sepIncrMax[cfg.key] && (cfg.get()||[]).length){
     try{
       var _incDesde=new Date(Date.parse(_sepIncrMax[cfg.key])-15*60000).toISOString();
       var _incRows=[], _incFrom=0, _incPg=1000;
@@ -4838,6 +4874,9 @@ async function _sepLoadOne(cfg, forceFull){
         if(_ir.length<_incPg) break;
         _incFrom+=_incPg;
       }
+      // v241 — dedupe da margem (laudo item 3): a fatia re-baixada pela margem de 15min não reprocessa
+      // linha idêntica (mesmo id + mesmo updated_at) — a "cauda de importação" morre aqui.
+      if(_dltGeral){ var _dd=_deltaDedupeSlice(_incRows, _sepDeltaSeen[cfg.key]); _sepDeltaSeen[cfg.key]=_dd.seenNext; _incRows=_dd.novas; }
       var _arrI=cfg.get()||[]; var _idxI={};
       for(var _qi=0;_qi<_arrI.length;_qi++){ var _oq=_arrI[_qi]; if(_oq!=null&&typeof _oq==='object') _idxI[String(cfg.id(_oq))]=_qi; }
       var _snapI=_sepSnap[cfg.key]||(_sepSnap[cfg.key]={});
@@ -4850,6 +4889,22 @@ async function _sepLoadOne(cfg, forceFull){
         if(_pos===undefined){ _arrI.push(_rw.data); _snapI[_rid]=JSON.stringify(_rw.data); continue; }
         if(_snapI[_rid]!==undefined && JSON.stringify(_arrI[_pos])!==_snapI[_rid]) continue; // edição local pendente vence
         _arrI[_pos]=_rw.data; _snapI[_rid]=JSON.stringify(_rw.data);
+      }
+      // v241 — VARREDURA DE EXCLUSÕES (só delta geral; logs append-only ficam fora): o updated_at não
+      // enxerga DELETE — sem isto, registro apagado noutra aba viveria aqui para sempre. Ids paginados
+      // (lição do limite de 1000); erro na varredura derruba a rodada inteira p/ carga completa (fail-open).
+      if(_dltGeral){
+        var _sIds={}, _sFrom=0, _sPg=1000;
+        while(true){
+          const { data:_sd, error:_se }=await _sb.from(cfg.table).select('id').order('id').range(_sFrom,_sFrom+_sPg-1);
+          if(_se) throw _se;
+          var _sN=Array.isArray(_sd)?_sd.length:0;
+          for(var _sx=0;_sx<_sN;_sx++){ if(_sd[_sx]&&_sd[_sx].id!=null) _sIds[String(_sd[_sx].id)]=1; }
+          if(_sN<_sPg) break;
+          _sFrom+=_sPg;
+        }
+        var _ex=_deltaAplicarExclusoes(_arrI, _snapI, _sIds, cfg.id);
+        if(_ex.removidos.length){ _arrI=_ex.arr; for(var _rx=0;_rx<_ex.removidos.length;_rx++) delete _snapI[_ex.removidos[_rx]]; }
       }
       cfg.set(_arrI);
       return true;
@@ -4911,7 +4966,7 @@ async function _sepLoadOne(cfg, forceFull){
       if(error){ console.warn(cfg.table+' load:', error.message); return false; }
       if(!data || !data.length) break;
       for(var _ui=0;_ui<data.length;_ui++){ var _ur=data[_ui]; if(!_ur||!_ur.updated_at) continue; _updMap[String(_ur.id)]=_ur.updated_at;
-        if(_SEP_INCR[cfg.key] && (!_sepIncrMax[cfg.key]||_ur.updated_at>_sepIncrMax[cfg.key])) _sepIncrMax[cfg.key]=_ur.updated_at; }
+        if(!_sepIncrMax[cfg.key]||_ur.updated_at>_sepIncrMax[cfg.key]) _sepIncrMax[cfg.key]=_ur.updated_at; } // v241 — régua registrada p/ TODAS as entidades (era só _SEP_INCR): habilita o delta geral após a 1ª carga completa
       // v175 — BLINDAGEM (incidente da migração 28/07, mesmo DNA do PED-001): registro cujo data veio SEM
       // 'id' interno ficava sem identidade no SEP e era RE-CHAVEADO e re-salvo como CLONE a cada sync
       // (~3.000 clones em 3 ciclos). O id da LINHA vira o id do objeto — clone impossível.
@@ -4968,6 +5023,26 @@ async function _sepLoadOne(cfg, forceFull){
         var _cur=cfg.get()||[];
         for(var _pp=0;_pp<_cur.length;_pp++){ var _po=_cur[_pp]; if(_po==null||typeof _po!=='object') continue;
           var _pid=String(cfg.id(_po)); if(_snAnt[_pid]!==JSON.stringify(_po)) _pend[_pid]=_po; }
+      }
+    }catch(_e){}
+    // v241 — VIGIA DE INTEGRIDADE do delta (roda na carga completa da conferência diária): linha do
+    // servidor canonicamente DIFERENTE da fotografia com carimbo ANTERIOR à régua−margem é algo que
+    // o delta TERIA pulado — conta e amostra; o alerta sai no fim do resync (_loadFromSupabase).
+    try{
+      if(_deltaVigiaAgora && _snAnt && cfg.key!=='conversas'){
+        var _vgReg=Date.parse(_sepIncrMax[cfg.key]||'')||0; var _vgThr=_vgReg?(_vgReg-900000):0;
+        if(_vgThr){
+          for(var _vg=0;_vg<all.length;_vg++){ var _vo=all[_vg]; if(_vo==null) continue;
+            var _vid=String(cfg.id(_vo)); var _vsn=_snAnt[_vid]; if(_vsn===undefined) continue;
+            var _vts=Date.parse(_updMap[_vid]||'')||0;
+            if(_vts>=_vgThr) continue; // carimbo dentro da janela — o delta teria visto
+            if(_vsn!==JSON.stringify(_vo)){
+              var _vreal=true; try{ _vreal=(_canonStr(JSON.parse(_vsn))!==_canonStr(_vo)); }catch(_e2){}
+              if(_vreal){ _deltaVigiaMiss[cfg.table]=(_deltaVigiaMiss[cfg.table]||0)+1;
+                if(_deltaVigiaAm.length<5) _deltaVigiaAm.push({ t:cfg.table, id:_vid, up:_updMap[_vid]||null }); }
+            }
+          }
+        }
       }
     }catch(_e){}
     // v231 — SOMBRA DO DELTA (só mede, nunca muda nada; try/catch total; chave sep_delta='shadow'):
@@ -5145,7 +5220,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v240';
+var APP_VERSION = 'v241';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5314,7 +5389,7 @@ async function _sessionHeartbeat(){
     var _hbDiag=null; // v221 — telemetria da correção 2 (contadores do detector canônico), lida por SQL na coluna sessions.diag
     try{ _hbDiag={ canon:{ modo:(_sepCanonModo||'shadow'), iguais:_sepCanonDiag.iguais, reais:_sepCanonDiag.reais, tab:_sepCanonDiag.porTabela, reaisTab:_sepCanonDiag.reaisTab },
                    dirty:{ ciclos:_sepDirtyDiag.ciclos, tab:_sepDirtyDiag.porTabela, campos:_sepDirtyDiag.campos, am:_sepDirtyDiag.amostras },
-                   delta:{ modo:(_sepDeltaModo||'off'), ciclos:_sepDeltaDiag.ciclos, teria:_sepDeltaDiag.teria, reais:_sepDeltaDiag.reais, perdidas:_sepDeltaDiag.perdidas, am:_sepDeltaDiag.am } }; }catch(_e){ _hbDiag=null; } // v222 — fase A; v231 — sombra do delta (perdidas=0 por N dias é o portão da v232)
+                   delta:{ modo:(_sepDeltaModo||'off'), ativo:(typeof _deltaAtivo==='function'&&_deltaAtivo()), ciclos:_sepDeltaDiag.ciclos, teria:_sepDeltaDiag.teria, reais:_sepDeltaDiag.reais, perdidas:_sepDeltaDiag.perdidas, am:_sepDeltaDiag.am, vigia:{ dia:(function(){ try{ return localStorage.getItem('lecare_delta_vigia_dia')||''; }catch(_e){ return ''; } })(), miss:_deltaVigiaMiss, am:_deltaVigiaAm } } }; }catch(_e){ _hbDiag=null; } // v222 — fase A; v231 — sombra; v241 — delta real + vigia diário
     await _sb.from('sessions').upsert({ tab_id:_tabId, user_id:currentUser.id, user_name:currentUser.name, version:APP_VERSION, last_seen:new Date().toISOString(), updated_at:new Date().toISOString(), diag:_hbDiag }, { onConflict:'tab_id' });
     const r = await _sb.from('sessions').select('kicked').eq('tab_id',_tabId).limit(1);
     if(r && r.data && r.data[0] && r.data[0].kicked){ _doKickLogout(); }
@@ -34744,6 +34819,15 @@ async function _loadFromSupabase(skipSep){
     conversas        = _dedupeById(d.conversas || conversas);
     clients          = d.clients          || clients;
     if(!skipSep){
+      // v241 — conferência diária do delta: uma vez por dia (delta ligado, fora do boot), este resync
+      // roda como carga COMPLETA (o gate do delta se auto-desliga via _deltaVigiaAgora) e cada
+      // entidade confere a fotografia contra o servidor; o resultado é reportado ao fim do loop.
+      _deltaVigiaAgora=false;
+      try{
+        if(typeof _deltaAtivo==='function' && _deltaAtivo() && !_sepBootFase1){
+          if(localStorage.getItem('lecare_delta_vigia_dia')!==today()){ _deltaVigiaAgora=true; _deltaVigiaMiss={}; _deltaVigiaAm=[]; }
+        }
+      }catch(_e){}
       // v204 — decide o modo pela CHAVE REMOTA (off = comportamento antigo, byte a byte)
       _bootParalelo=null;
       try{
@@ -34773,6 +34857,20 @@ async function _loadFromSupabase(skipSep){
         const _ok=await _sepLoadOne(_cfg);
         if(!_ok && d[_cfg.key]){ _cfg.set(d[_cfg.key]); _sepBuildSnap(_cfg); }
       }
+      }
+      // v241 — fecha a conferência diária do delta: carimba o dia e, se algo foi pulado, ALERTA no sino
+      // (a própria carga completa desta rodada já realinhou a memória — o alerta é para INVESTIGAR).
+      if(_deltaVigiaAgora){
+        _deltaVigiaAgora=false;
+        try{ localStorage.setItem('lecare_delta_vigia_dia', today()); }catch(_e){}
+        try{
+          var _vgTabs=Object.keys(_deltaVigiaMiss);
+          if(_vgTabs.length){
+            var _vgTot=_vgTabs.reduce(function(s,k){ return s+_deltaVigiaMiss[k]; },0);
+            addNotificacao({ id:'n'+Date.now()+Math.floor(Math.random()*1000), tipo:'sistema',
+              titulo:'🛰 Vigia do delta', sub:'Conferência diária: '+_vgTot+' linha(s) que o delta teria pulado ('+_vgTabs.map(function(k){ return k+': '+_deltaVigiaMiss[k]; }).join(' · ')+'). A carga completa de hoje já realinhou a tela; investigar antes de manter o delta ligado.', ts:Date.now(), lida:false });
+          }
+        }catch(_e){}
       }
     }
     // v101 — limpeza: removidas 15 reatribuições de entidades SEP a partir do BLOCO (catalogo..prazoExtensoes).

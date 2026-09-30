@@ -2259,11 +2259,11 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         </div>
         <!-- ABA: Painel -->
         <div id="fin-pg-painel">
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0">
-            <div class="s-card"><div class="lbl">A receber</div><div class="val" id="fin-p-receitas" style="color:var(--st-ok-tx)">R$ 0</div><div class="sub">pedidos aprovados</div></div>
-            <div class="s-card danger"><div class="lbl">A pagar</div><div class="val" id="fin-p-despesas">R$ 0</div><div class="sub">compras lançadas</div></div>
-            <div class="s-card"><div class="lbl">Fretes (custo)</div><div class="val" id="fin-p-fretes" style="color:var(--st-mid-tx)">R$ 0</div><div class="sub">expedições realizadas</div></div>
-            <div class="s-card"><div class="lbl">Resultado est.</div><div class="val" id="fin-p-resultado">R$ 0</div><div class="sub">receber − pagar − fretes</div></div>
+          <!-- v242 — cartões do topo = SOMENTE o que está EM ABERTO (ordem do dono 30/09); o seletor de mês vale só p/ o plano de contas abaixo -->
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0">
+            <div class="s-card"><div class="lbl">A receber (em aberto)</div><div class="val" id="fin-p-receitas" style="color:var(--st-ok-tx)">R$ 0</div><div class="sub" id="fin-p-receitas-sub">parcelas não recebidas</div></div>
+            <div class="s-card danger"><div class="lbl">A pagar (em aberto)</div><div class="val" id="fin-p-despesas">R$ 0</div><div class="sub" id="fin-p-despesas-sub">parcelas não pagas</div></div>
+            <div class="s-card"><div class="lbl">Resultado est.</div><div class="val" id="fin-p-resultado">R$ 0</div><div class="sub">a receber − a pagar (em aberto)</div></div>
           </div>
           <div class="panel" style="margin-bottom:16px">
             <div class="panel-header"><h2>Despesas por Plano de Contas</h2>
@@ -5220,7 +5220,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v241';
+var APP_VERSION = 'v242';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -12817,7 +12817,7 @@ function renderSolCompra(tab){
   _healSolNumSA(); // v168 — garante SA-N em todos antes de renderizar
   var _pseudo=(solicitacoesCompra||[]).filter(function(s){ return s && _solEhPseudo(s.orderId) && s.tipo===tab && (s.itens||[]).length; })
     .sort(function(a,b){ return (a.criadoEm||0)-(b.criadoEm||0); }); // v210 — data da solicitação CRESCENTE (coerente com o D1 dos pedidos)
-  if(busca) _pseudo=_pseudo.filter(function(s){ var lbl=(_solPseudoInfo(s.orderId).rotulo+' '+_solPseudoInfo(s.orderId).num+' '+_solCodSeq(s)+' '+(s.cliente||'')+' '+((s.pedidoUso&&(s.pedidoUso.num+' '+(s.pedidoUso.cliente||'')))||'')+' anestesico avulsa').toLowerCase(); return lbl.indexOf(busca)>=0; }); // v225 — busca acha pelo pedido de destino
+  if(busca) _pseudo=_pseudo.filter(function(s){ var lbl=(_solPseudoInfo(s.orderId).rotulo+' '+_solPseudoInfo(s.orderId).num+' '+_solCodSeq(s)+' '+(s.cliente||'')+' '+((s.pedidoUso&&(s.pedidoUso.num+' '+(s.pedidoUso.cliente||'')))||'')+(s.destinoEstoque?' estoque uso consumo':'')+' anestesico avulsa').toLowerCase(); return lbl.indexOf(busca)>=0; }); // v225 — busca acha pelo pedido de destino
   if(_solMesFiltro) _pseudo=_pseudo.filter(function(s){ return _solMesPseudo(s)===_solMesFiltro; }); // v210 — avulsa filtra pela data da solicitação
   if(soPend) _pseudo=[];
   var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
@@ -12833,7 +12833,7 @@ function renderSolCompra(tab){
     return '<tr style="background:var(--bg-secondary)">'+
       '<td style="'+td+';font-weight:600;white-space:nowrap">'+pi.rotulo+(s.numSeq?' <span style="font-family:monospace;font-size:11px;color:var(--text-secondary)">'+_solCodSeq(s)+'</span>':'')+'</td>'+
       '<td style="'+td+';color:var(--text-secondary)">'+escapeHtml(s.cliente||pi.cliente)+
-        (s.pedidoUso?'<div style="font-size:10.5px;color:var(--st-inf-tx);margin-top:2px" title="Pedido em que a embalagem será utilizada (obrigatório na avulsa de embalagem, regra 11/09)">📋 p/ pedido '+escapeHtml(s.pedidoUso.num||'')+(s.pedidoUso.cliente?' — '+escapeHtml(s.pedidoUso.cliente):'')+'</div>':'')+'</td>'+
+        (s.destinoEstoque?'<div style="font-size:10.5px;color:var(--st-ok-tx);margin-top:2px" title="Embalagem solicitada para ESTOQUE (uso e consumo) — destino marcado por '+escapeHtml(s.destinoEstoque.por||'')+'">🏬 para ESTOQUE (uso e consumo)</div>':(s.pedidoUso?'<div style="font-size:10.5px;color:var(--st-inf-tx);margin-top:2px" title="Pedido em que a embalagem será utilizada (obrigatório na avulsa de embalagem, regra 11/09)">📋 p/ pedido '+escapeHtml(s.pedidoUso.num||'')+(s.pedidoUso.cliente?' — '+escapeHtml(s.pedidoUso.cliente):'')+'</div>':''))+'</td>'+
       '<td style="'+td+'">'+(s.criadoEm?fmtDate(_gstDataDe(s.criadoEm)):'—')+'</td>'+
       '<td style="'+td+'">'+(s.itens||[]).length+' item(ns)</td>'+
       '<td style="'+td+'">'+stTxt+'</td>'+
@@ -13283,23 +13283,36 @@ function openSolicitarModal(orderId, solicId){
   document.getElementById('solicitar-pedido-info').innerHTML=ehPseudo
     ? '<b>'+_pi.rotulo+'</b>'+(_solEditId&&s&&s.numSeq?' <b>'+_solCodSeq(s)+'</b>':'')+' — '+escapeHtml(_pi.cliente)+' (sem vínculo com pedido)'+(_solEditId?'':'<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">Lançamento novo — ao salvar, entra na tela como uma linha própria (ganha um número '+_pi.sigla+'-N).</div>')
       // v225 — regra do dono 11/09: avulsa de EMBALAGEM só é permitida indicando o PEDIDO que vai usá-la
-      +((String(orderId)==='__geral__'&&_solTab==='embalagem')?(
-        '<div style="margin-top:10px;padding:8px 10px;background:var(--bg-secondary);border-radius:8px">'+
-        '<label style="font-size:12px;font-weight:600;display:block">Pedido em que a embalagem será utilizada <span style="color:var(--st-bad-tx)">*</span></label>'+
-        // v237 — SELEÇÃO COM CONFIRMAÇÃO VISUAL (pedido do dono 23/09): o datalist nativo só preenchia o
-        // número e dava a sensação de não ter vinculado. Agora é o autocomplete da casa: o clique FIXA
-        // "número — cliente" no campo, pinta a borda de verde e acende o selo ✓ abaixo; digitar o número
-        // exato também confirma. O salvar continua lendo o número antes do "—" (formato já aceito).
+      +((String(orderId)==='__geral__'&&_solTab==='embalagem')?(function(){
+        // v242 — DESTINO da avulsa (pedido do dono 30/09): além de vincular a um PEDIDO (regra v225),
+        // agora dá para vincular a ESTOQUE — fica explícito que a embalagem é para uso e consumo.
+        var _deIni = !!(_solEditId&&s&&s.destinoEstoque);
+        return '<div style="margin-top:10px;padding:8px 10px;background:var(--bg-secondary);border-radius:8px">'+
+        '<label style="font-size:12px;font-weight:600;display:block">Destino da embalagem <span style="color:var(--st-bad-tx)">*</span></label>'+
+        '<div style="display:flex;gap:16px;margin:5px 0 6px;font-size:12.5px">'+
+          '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sol-destino" id="sol-dest-pedido"'+(_deIni?'':' checked')+' onchange="_solDestinoChg()" style="width:auto;margin:0">📋 Para um pedido</label>'+
+          '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sol-destino" id="sol-dest-estoque"'+(_deIni?' checked':'')+' onchange="_solDestinoChg()" style="width:auto;margin:0">🏬 Para ESTOQUE (uso e consumo)</label>'+
+        '</div>'+
+        // v237 — SELEÇÃO COM CONFIRMAÇÃO VISUAL: autocomplete da casa; o clique FIXA "número — cliente",
+        // borda verde e selo ✓; digitar o número exato também confirma. Salvar lê o número antes do "—".
+        '<div id="sol-pedido-uso-wrap"'+(_deIni?' style="display:none"':'')+'>'+
         '<div class="autocomplete-wrap" style="position:relative"><input type="text" id="sol-pedido-uso" placeholder="número do pedido…" value="'+escapeHtml((_solEditId&&s&&s.pedidoUso&&s.pedidoUso.num)||'')+'" oninput="_solPedidoUsoBusca()" onfocus="_solPedidoUsoBusca()" autocomplete="off" style="width:100%;font-size:13px;padding:6px 8px;margin-top:4px"><div class="autocomplete-list" id="sol-pedido-uso-ac"></div></div>'+
-        '<div id="sol-pedido-uso-ok" style="font-size:11.5px;margin-top:4px"></div>'+
-        '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px">Obrigatório: o número precisa ser de um pedido existente.</div></div>'
-      ):'')
+        '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px">Obrigatório: o número precisa ser de um pedido existente.</div>'+
+        '</div>'+
+        '<div id="sol-pedido-uso-ok" style="font-size:11.5px;margin-top:4px"></div></div>';
+      })():'')
     : 'Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+(complementar?'<div style="font-size:11px;color:var(--st-mid-tx);margin-top:2px">⚠ A solicitação original já está numa lista de compra (fica como está). Estes itens entram como solicitação NOVA — na próxima lista gerada, ou numa lista aberta via "Complementar lista".</div>':'');
   document.getElementById('sol-item-busca').value='';
   document.getElementById('sol-item-ac').classList.remove('open');
   _renderSolItens();
   document.getElementById('solicitar-modal').classList.add('open');
   try{ _solPedidoUsoChk(); }catch(_e){} // v237 — edição com pedido já vinculado abre com o selo ✓ aceso
+}
+// v242 — alterna o destino da avulsa (pedido × estoque): esconde/mostra o campo do pedido e refaz o selo
+function _solDestinoChg(){
+  var w=document.getElementById('sol-pedido-uso-wrap'), de=document.getElementById('sol-dest-estoque');
+  if(w) w.style.display=(de&&de.checked)?'none':'';
+  try{ _solPedidoUsoChk(); }catch(_e){}
 }
 // v237 — autocomplete do PEDIDO DE USO da avulsa de embalagem (pedido do dono 23/09)
 function _solPedidoUsoBusca(){
@@ -13324,6 +13337,9 @@ function _solPedidoUsoPick(num){
 function _solPedidoUsoChk(){
   var inp=document.getElementById('sol-pedido-uso'), ok=document.getElementById('sol-pedido-uso-ok');
   if(!inp||!ok) return;
+  // v242 — destino ESTOQUE: selo próprio, sem exigir pedido
+  var _de=document.getElementById('sol-dest-estoque');
+  if(_de&&_de.checked){ inp.style.borderColor=''; ok.innerHTML='<span style="color:var(--st-ok-tx);font-weight:600">✓ Vinculado a ESTOQUE</span><span style="color:var(--text-secondary)"> — uso e consumo, sem pedido</span>'; return; }
   var numTx=String(inp.value||'').split('—')[0].trim();
   var o2=numTx?(orders||[]).find(function(x){ return x && String(x.num||'')===numTx; }):null;
   if(o2){ inp.style.borderColor='var(--st-ok-bd)'; ok.innerHTML='<span style="color:var(--st-ok-tx);font-weight:600">✓ Vinculado ao pedido '+escapeHtml(String(o2.num||''))+'</span><span style="color:var(--text-secondary)"> — '+escapeHtml(o2.cliente||'')+'</span>'; }
@@ -13394,15 +13410,19 @@ function saveSolicitacao(){
   var ehPseudo=_solEhPseudo(_solOrderId); // v168 — avulsa/anestésico
   // v218 — trava no SALVAR também (defesa em profundidade da regra do botão): avulsa de embalagem só admin
   if(String(_solOrderId)==='__geral__' && _solTab==='embalagem' && currentUser?.perfil!=='admin'){ alert('Solicitação avulsa de EMBALAGEM: somente o administrador.'); return; }
-  // v225 — regra do dono 11/09: avulsa de EMBALAGEM só com o PEDIDO de destino indicado (existente)
-  var _pedidoUso=null;
+  // v225 — regra do dono 11/09: avulsa de EMBALAGEM só com destino indicado; v242 — o destino agora
+  // pode ser ESTOQUE (uso e consumo) em vez de um pedido (pedido do dono 30/09).
+  var _pedidoUso=null, _destEstoque=false;
   if(String(_solOrderId)==='__geral__' && _solTab==='embalagem'){
-    var _puTxt=String(document.getElementById('sol-pedido-uso')?.value||'').trim();
-    if(!_puTxt){ alert('Informe o PEDIDO em que a embalagem será utilizada.\n\nA solicitação avulsa de embalagem só é permitida indicando o pedido de destino.'); return; }
-    var _puNum=_puTxt.split('—')[0].trim();
-    var _oUso=(orders||[]).find(function(x){ return x && String(x.num||'')===_puNum; });
-    if(!_oUso){ alert('Pedido "'+_puNum+'" não encontrado.\n\nInforme o número exato de um pedido existente.'); return; }
-    _pedidoUso={ orderId:_oUso.id, num:String(_oUso.num||''), cliente:_oUso.cliente||'' };
+    _destEstoque=!!(document.getElementById('sol-dest-estoque')&&document.getElementById('sol-dest-estoque').checked);
+    if(!_destEstoque){
+      var _puTxt=String(document.getElementById('sol-pedido-uso')?.value||'').trim();
+      if(!_puTxt){ alert('Informe o DESTINO da embalagem: o pedido que vai usá-la, ou marque "Para ESTOQUE".'); return; }
+      var _puNum=_puTxt.split('—')[0].trim();
+      var _oUso=(orders||[]).find(function(x){ return x && String(x.num||'')===_puNum; });
+      if(!_oUso){ alert('Pedido "'+_puNum+'" não encontrado.\n\nInforme o número exato de um pedido existente — ou marque "Para ESTOQUE".'); return; }
+      _pedidoUso={ orderId:_oUso.id, num:String(_oUso.num||''), cliente:_oUso.cliente||'' };
+    }
   }
   var o=ehPseudo?null:(orders||[]).find(function(x){ return String(x.id)===String(_solOrderId); });
   var s=null; var now=Date.now();
@@ -13415,14 +13435,16 @@ function saveSolicitacao(){
   }
   if(s){
     s.itens=itens; s.atualizadoEm=now; s.status='solicitado';
-    if(_pedidoUso) s.pedidoUso=_pedidoUso; // v225 — edição atualiza o pedido de destino
+    if(_destEstoque){ s.destinoEstoque={em:now,por:(currentUser&&currentUser.name)||''}; delete s.pedidoUso; } // v242 — destino ESTOQUE
+    else if(_pedidoUso){ s.pedidoUso=_pedidoUso; delete s.destinoEstoque; } // v225 — edição atualiza o pedido de destino
   } else {
     var _pi=ehPseudo?_solPseudoInfo(_solOrderId):null;
     if(ehPseudo) _healSolNumSA(); // v168 — numera os antigos ANTES, para a sequência ficar cronológica
     var _sa=ehPseudo?_solProxSA(_solOrderId):0;
     s={ id:'solc'+now, orderId:_solOrderId, orderNum:ehPseudo?(_pi.num+' '+_pi.sigla+'-'+_sa):((o&&o.num)||''), cliente:ehPseudo?_pi.cliente:((o&&o.cliente)||''), tipo:_solTab, itens:itens, status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
     if(ehPseudo) s.numSeq=_sa; // v168 — SA-N (avulsa) / AN-N (anestésico)
-    if(_pedidoUso) s.pedidoUso=_pedidoUso; // v225 — pedido em que a embalagem avulsa será utilizada
+    if(_destEstoque) s.destinoEstoque={em:now,por:(currentUser&&currentUser.name)||''}; // v242 — destino ESTOQUE
+    else if(_pedidoUso) s.pedidoUso=_pedidoUso; // v225 — pedido em que a embalagem avulsa será utilizada
     solicitacoesCompra.push(s);
   }
   if(o && o.compraNaoNec && o.compraNaoNec[_solTab]) delete o.compraNaoNec[_solTab]; // v155 — solicitar desfaz o "não necessário" do tipo
@@ -18982,21 +19004,32 @@ function renderFinPainel(){
 
   const filtraMes = (lista, getDate) => mesFilter ? lista.filter(c=>monthKey(getDate(c))===mesFilter) : lista;
 
-  const crFilt = filtraMes(contasReceber.filter(_contaAprovada), c=>c.parcelas?.[0]?.vencimento||'');
   // v127 — bonificação é registrada mas NÃO é saída de caixa: fora das despesas/resultado/por-plano
   const cpFilt = filtraMes(contasPagar.filter(_contaAprovada).filter(c=>c.formaPag!=='bonificacao'), c=>c.parcelas?.[0]?.vencimento||'');
-  const expFilt = mesFilter ? expedicoes.filter(e=>monthKey(e.data)===mesFilter) : expedicoes;
 
-  const receitas  = crFilt.reduce((s,c)=>s+c.valor,0);
-  const despesas  = cpFilt.reduce((s,c)=>s+c.valor,0);
-  const fretes    = expFilt.reduce((s,e)=>s+(e.freteReal||0),0);
-  const resultado = receitas - despesas - fretes;
+  // v242 — cartões do topo = SOMENTE o que está EM ABERTO (ordem do dono 30/09): parcela não paga
+  // e não antecipada (v218 — antecipado já entrou no caixa), vencida OU a vencer, SEM filtro de mês
+  // (o seletor vale só p/ o plano de contas). Mesmo predicado do Fluxo de Caixa (v209: formas sem
+  // caixa fora, na conta e na parcela); parcela em aberto SEM vencimento conta como "a vencer"
+  // (dinheiro devido nunca some do total). Fretes saiu do painel (ordem do dono 30/09).
+  const _hjAb = today();
+  const _parcAbertas = (arr)=> arr.filter(_contaAprovada)
+    .filter(c=>!_formaSemCaixa(c.formaPag))
+    .flatMap(c=>(c.parcelas||[]).filter(p=>p && !p.pago && !p.antecipado && !_formaSemCaixa(p.forma)));
+  const _quebraAberto = (arr)=>{
+    const ps=_parcAbertas(arr), soma=l=>l.reduce((s,p)=>s+(parseFloat(p.valor)||0),0);
+    const venc=ps.filter(p=>p.vencimento&&p.vencimento<_hjAb);
+    return { total:soma(ps), vencido:soma(venc), aVencer:soma(ps)-soma(venc) };
+  };
+  const rAb = _quebraAberto(contasReceber), pAb = _quebraAberto(contasPagar);
+  const resultado = rAb.total - pAb.total;
   const rColor    = resultado >= 0 ? 'var(--st-ok-tx)' : 'var(--st-bad-tx)';
 
   const el = id => document.getElementById(id);
-  if(el('fin-p-receitas')) el('fin-p-receitas').textContent = fmtMoney(receitas);
-  if(el('fin-p-despesas')) el('fin-p-despesas').textContent = fmtMoney(despesas);
-  if(el('fin-p-fretes'))   el('fin-p-fretes').textContent   = fmtMoney(fretes);
+  if(el('fin-p-receitas')) el('fin-p-receitas').textContent = fmtMoney(rAb.total);
+  if(el('fin-p-despesas')) el('fin-p-despesas').textContent = fmtMoney(pAb.total);
+  if(el('fin-p-receitas-sub')) el('fin-p-receitas-sub').textContent = 'vencido '+fmtMoney(rAb.vencido)+' · a vencer '+fmtMoney(rAb.aVencer);
+  if(el('fin-p-despesas-sub')) el('fin-p-despesas-sub').textContent = 'vencido '+fmtMoney(pAb.vencido)+' · a vencer '+fmtMoney(pAb.aVencer);
   const resEl = el('fin-p-resultado');
   if(resEl){ resEl.textContent=fmtMoney(resultado); resEl.style.color=rColor; }
 
@@ -28709,17 +28742,24 @@ async function renderAnaliseComercial(){
           ${(currentUser?.perfil==='admin'||currentUser?.perfil==='diretor_comercial')?`<button onclick="arquivarOrientacao(${o.id})" title="Arquivar — deixa de valer nas próximas análises" style="font-size:11px;padding:3px 9px;flex-shrink:0">Arquivar</button>`:''}
         </div>
       </div>`).join('');
+    // v242 — RECOLHIDO POR PADRÃO (pedido do dono 30/09: "só gera poluição visual"): a tela mostra só a
+    // linha-título com a contagem e o botão 👁 Ver; escrever orientação e ler a lista abrem pelo botão.
+    const _oriAberto=!!window._oriVer;
     return `
-    <div style="border:.5px solid var(--border);border-radius:var(--r-md);padding:14px;margin-bottom:16px;background:var(--bg-secondary)">
-      <div style="font-size:13px;font-weight:600;margin-bottom:2px">🧠 Orientações ao agente</div>
-      <div style="font-size:11.5px;color:var(--text-tertiary);margin-bottom:10px">O que você escrever aqui vale como regra permanente para as próximas análises (diárias e semanais) — ex.: "as conversas com Fulano são internas, não são cliente", "essa pendência já foi resolvida por telefone", "prefiro a abordagem X". O agente confirma o entendimento em cada nova orientação. Arquive quando deixar de valer.</div>
+    <div style="border:.5px solid var(--border);border-radius:var(--r-md);padding:${_oriAberto?'14px':'10px 14px'};margin-bottom:16px;background:var(--bg-secondary)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <div style="font-size:13px;font-weight:600">🧠 Orientações ao agente <span style="font-size:11px;font-weight:500;color:var(--text-tertiary)">(${lst.length} ativa${lst.length===1?'':'s'})</span></div>
+        <button onclick="window._oriVer=!window._oriVer;renderAnaliseComercial()" style="font-size:12px;padding:4px 14px;flex-shrink:0">${_oriAberto?'Ocultar':'👁 Ver'}</button>
+      </div>
+      ${_oriAberto?`
+      <div style="font-size:11.5px;color:var(--text-tertiary);margin:8px 0 10px">O que você escrever aqui vale como regra permanente para as próximas análises (diárias e semanais) — ex.: "as conversas com Fulano são internas, não são cliente", "essa pendência já foi resolvida por telefone", "prefiro a abordagem X". O agente confirma o entendimento em cada nova orientação. Arquive quando deixar de valer.</div>
       <div id="ori-ctx-chip" style="display:none;font-size:11.5px;color:var(--text-info);margin-bottom:6px"></div>
       <div style="display:flex;gap:8px;align-items:flex-start">
         <textarea id="ori-texto" rows="2" placeholder="Escreva sua consideração para o agente..." style="flex:1;font-size:12.5px;padding:8px;resize:vertical"></textarea>
         <button class="btn-primary" onclick="enviarOrientacaoAgente()" style="font-size:12px;white-space:nowrap">Enviar</button>
       </div>
       ${itens?`<div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">${itens}</div>`:'<div style="font-size:12px;color:var(--text-tertiary);margin-top:10px">Nenhuma orientação ativa.</div>'}
-      ${errOri?`<div style="font-size:11px;color:var(--st-bad-tx);margin-top:6px">⚠ Não consegui carregar as orientações: ${escapeHtml(errOri.message)}</div>`:''}
+      ${errOri?`<div style="font-size:11px;color:var(--st-bad-tx);margin-top:6px">⚠ Não consegui carregar as orientações: ${escapeHtml(errOri.message)}</div>`:''}`:''}
     </div>`;
   })();
   // v141 : sub-abas por NUMERO (modo dois numeros): "Conversas Emilayne" / "Conversas Tairine".

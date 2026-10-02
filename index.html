@@ -5220,7 +5220,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v242';
+var APP_VERSION = 'v243';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -6700,6 +6700,7 @@ function _sepPodeIndicar(){ if(!currentUser) return false; if(currentUser.perfil
 function _sepPodeAlterar(){ return !!(currentUser&&currentUser.perfil==='admin'); }
 // v238 — leitura do COMPRAS pelo setor estoque (Gestão a Vista): quem tem estoque e NÃO tem compras
 function _temSetorEstoque(){ return !!(currentUser && (((currentUser.setores||[]).includes('estoque'))||((currentUser.coordSetores||[]).includes('estoque')))); }
+function _temSetorExpedicao(){ return !!(currentUser && (((currentUser.setores||[]).includes('expedicao'))||((currentUser.coordSetores||[]).includes('expedicao')))); } // v243 — expedicao tambem ve o modal de Compras em leitura (ordem do dono 01/10: Everton como o Luiz)
 function canEdit(setor){
   if(!currentUser)return false;
   if(currentUser.perfil==='admin')return true;
@@ -7636,7 +7637,7 @@ function openStatusModal(oid,setor){
   // v238 — LEITURA DO COMPRAS PELO ESTOQUE (pedido do dono 23/09, caso Luiz): quem tem o setor
   // estoque abre o modal de Compras SÓ PARA VER (escada com carimbos, lista de compra, pendência,
   // observações) — nenhum botão de gravação; o Confirmar some e os degraus ficam travados.
-  const _roView = !canEdit(setor) && setor==='compras' && _temSetorEstoque();
+  const _roView = !canEdit(setor) && setor==='compras' && (_temSetorEstoque()||_temSetorExpedicao()); // v243 — expedicao incluida
   if(!canEdit(setor) && !_roView) return;
   const o=orders.find(x=>String(x.id)===String(oid));if(!o)return; // v125 — robusto a id string/number (evita o modal não abrir)
   statusCtx={oid,setor,ro:_roView};selectedStatus=o.statuses[setor];
@@ -7828,7 +7829,7 @@ function openStatusModal(oid,setor){
     const _cbtn=document.getElementById('sm-confirm-btn');
     if(_cbtn) _cbtn.style.display=_roView?'none':'';
     if(_roView){
-      document.getElementById('sm-sub').textContent+='  ·  👁 somente visualização (estoque)';
+      document.getElementById('sm-sub').textContent+='  ·  👁 somente visualização ('+(_temSetorEstoque()?'estoque':'expedição')+')';
       document.querySelectorAll('#sm-options .status-opt').forEach(b=>{ b.disabled=true; b.style.opacity='.55'; b.style.pointerEvents='none'; });
     }
   }catch(_e){}
@@ -8689,6 +8690,7 @@ function _unirCardsNaFusao(clienteId, dropCardIds){
     if(c.obs && c.obs.trim() && c.obs.trim()!==(win.obs||'').trim()) win.obs=((win.obs||'')+(win.obs?'\n':'')+c.obs).trim();
     const seen=new Set((win.contatos||[]).map(x=>String(x.whats||x.telefone||x.nome||'').toLowerCase()));
     (c.contatos||[]).forEach(x=>{ const k=String(x.whats||x.telefone||x.nome||'').toLowerCase(); if(k&&!seen.has(k)){ seen.add(k); (win.contatos=win.contatos||[]).push(x); } });
+    (agendaEventos||[]).forEach(ev=>{ if(ev && ev.leadId===c.id) ev.leadId=win.id; }); // v243 — agendamentos do card absorvido migram p/ o vencedor (caso Cintia Rosa 01/10: 2 eventos órfãos)
     const idx=crmLeads.findIndex(l=>l.id===c.id); if(idx>=0) crmLeads.splice(idx,1);
   });
   win.historico=win.historico||[]; win.historico.push({ts:Date.now(),tipo:'🔗',txt:'Cards do cliente unificados na fusão',por:currentUser?.name||'Sistema'});
@@ -13093,6 +13095,18 @@ function _lcvToggle(gid){
   Array.prototype.forEach.call(rows, function(r){ r.style.display=esconder?'none':'table-row'; });
   var a=document.getElementById(gid+'-a'); if(a) a.textContent=esconder?'▸':'▾';
 }
+// v243 — limite da SEPARAÇÃO DE EMBALAGEM do pedido (pedido do dono 01/10): MESMA régua do modal
+// de status — tabela padrão (personalizada 'Separação completa' D7; anestésico 'Separação concluída'
+// D2) + compressão da urgência v239 (_urgEscala, dias úteis). Pedido sem D1 (ex.: avulsa) → null.
+function _solLimiteSepEmb(o){
+  if(!o || !o.d1) return null;
+  var linha=o.linha||'personalizada';
+  var r=(STATUS_DEADLINES||[]).find(function(x){ return x.linha===linha && x.setor==='estoque' && /Separa/.test(x.status||''); });
+  if(!r) return null;
+  var ld=r.limitDay;
+  if(o.urgente && o.previsao && typeof _urgEscala==='function') ld=_urgEscala(ld, o.d1, o.previsao, linha);
+  return { d:ld, data:deadlineDate(o.d1, ld) };
+}
 function verListaCompraPedido(orderId){
   if(orderId==null) return;
   var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); })||{};
@@ -13100,8 +13114,14 @@ function verListaCompraPedido(orderId){
   // Ativos × Embalagens; UMA linha por item com a situação ATUAL — a sequência de ações (sem estoque
   // → re-solicitado → outra lista…) NÃO cria mais linhas soltas: fica em linhas expansíveis (▸)
   // vinculadas à linha principal. (Era: um bloco por solicitação, itens repetidos — confuso.)
-  var tdc='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
+  var tdc='padding:6px 8px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top'; // v243 — padding menor: a tabela cabe sem rolagem lateral
   var sub='font-size:10.5px;color:var(--text-tertiary)';
+  // v243 — coluna "Limite sep. embalagem" (pedido do dono 01/10): valor do PEDIDO (régua padrão +
+  // urgência), exibido nas linhas de EMBALAGENS ("—" nos ativos); vermelho quando a data já passou.
+  var _lim=_solLimiteSepEmb(o);
+  var _limHtml=(function(){ if(!_lim) return '<span style="color:var(--text-tertiary)">—</span>';
+    var venc=_lim.data && _lim.data<today();
+    return '<span style="white-space:nowrap;font-weight:600;'+(venc?'color:var(--st-bad-tx)':'')+'">D'+_lim.d+' — '+fmtDate(_lim.data)+'</span>'; })();
   var tally={}, secoes='', _gseq=0;
   [['ativo','🧪 Ativos'],['embalagem','📦 Embalagens']].forEach(function(p){
     var todas=_solTodasSolic(orderId, p[0]).slice().sort(function(a,b){ return (a.criadoEm||0)-(b.criadoEm||0); });
@@ -13116,7 +13136,7 @@ function verListaCompraPedido(orderId){
       });
     });
     if(!ordem.length) return;
-    secoes+='<tr><td colspan="8" style="padding:18px 10px 4px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700">'+p[1]+'</td></tr>';
+    secoes+='<tr><td colspan="9" style="padding:18px 10px 4px;border-bottom:1px solid var(--border);font-size:13px;font-weight:700">'+p[1]+'</td></tr>';
     ordem.forEach(function(key){
       var occ=mapa[key], atual=occ[occ.length-1], it=atual.it, nfo=atual.info;
       tally[nfo.k]=(tally[nfo.k]||0)+1; // resumo conta 1 por ITEM (situação atual)
@@ -13132,7 +13152,8 @@ function verListaCompraPedido(orderId){
         '<td style="'+tdc+'">'+nfo.colPed+'</td>'+
         '<td style="'+tdc+'">'+nfo.colNf+'</td>'+
         '<td style="'+tdc+'">'+nfo.colCompra+'</td>'+
-        '<td style="'+tdc+'">'+nfo.colReceb+'</td></tr>';
+        '<td style="'+tdc+'">'+nfo.colReceb+'</td>'+
+        '<td style="'+tdc+'">'+(p[0]==='embalagem'?_limHtml:'<span style="color:var(--text-tertiary)">—</span>')+'</td></tr>'; // v243 — limite sep. embalagem
       if(temHist){
         occ.slice(0,-1).forEach(function(h2,ix){
           // v217 — DESFECHO da etapa (pedido do dono 25/08): cada etapa anterior diz O QUE ACONTECEU
@@ -13170,7 +13191,8 @@ function verListaCompraPedido(orderId){
             '<td style="'+tdc+'">'+h2.info.colPed+'</td>'+
             '<td style="'+tdc+'">'+h2.info.colNf+'</td>'+
             '<td style="'+tdc+'">'+h2.info.colCompra+'</td>'+
-            '<td style="'+tdc+'">'+h2.info.colReceb+'</td></tr>';
+            '<td style="'+tdc+'">'+h2.info.colReceb+'</td>'+
+            '<td style="'+tdc+'"></td></tr>'; // v243 — coluna do limite vazia nas linhas de sequência
         });
       }
     });
@@ -13190,15 +13212,16 @@ function verListaCompraPedido(orderId){
   }).join(' ');
   var ov=document.getElementById('sol-ver-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='sol-ver-overlay'; ov.className='overlay'; ov.style.zIndex='465'; document.body.appendChild(ov); }
-  ov.innerHTML='<div class="modal" style="width:1220px;max-width:97vw;max-height:92vh;overflow:auto">'+
+  ov.innerHTML='<div class="modal" style="width:1420px;max-width:98vw;max-height:92vh;overflow:auto">'+ // v243 — mais largo e a tabela se ajusta: sem arrastar p/ o lado
     '<h2 style="font-size:16px">📋 Lista de compra — itens solicitados</h2>'+
     '<div style="font-size:12px;color:var(--text-secondary)">Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+' <span style="color:var(--text-tertiary)">· somente leitura · item com ▸ passou por mais de uma etapa — clique na linha para ver a sequência</span></div>'+
     (_chips?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+_chips+'</div>':'')+
     // v210 — tabela própria: SEM a coluna R$/un e com "Qtd solicitada" (terminologia oficial)
     (function(){
-      var th='padding:7px 10px;background:var(--bg-secondary);font-size:10.5px;font-weight:600;color:var(--text-secondary);text-align:left;white-space:nowrap;border-bottom:.5px solid var(--border)';
-      return '<div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;min-width:900px"><thead><tr>'+
-        '<th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solicitada</th><th style="'+th+'">Situação</th><th style="'+th+'">Fornecedor</th><th style="'+th+'">Pedido de compra</th><th style="'+th+'">NF</th><th style="'+th+'">Compra</th><th style="'+th+'">Recebimento</th>'+
+      var th='padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;font-weight:600;color:var(--text-secondary);text-align:left;white-space:nowrap;border-bottom:.5px solid var(--border)';
+      // v243 — sem min-width fixo: a tabela se acomoda à largura do modal (nada de arrastar p/ o lado)
+      return '<div style="margin-top:10px"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
+        '<th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solicitada</th><th style="'+th+'">Situação</th><th style="'+th+'">Fornecedor</th><th style="'+th+'">Pedido de compra</th><th style="'+th+'">NF</th><th style="'+th+'">Compra</th><th style="'+th+'">Recebimento</th><th style="'+th+'">Limite sep. embalagem</th>'+
         '</tr></thead><tbody>'+secoes+'</tbody></table></div>';
     })()+
     '<div class="modal-footer"><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
@@ -36072,6 +36095,13 @@ function abrirInboundModal(){
     <div class="modal" style="width:420px">
       <h2>Nova conversa / inbound</h2>
       <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Informe o telefone e o nome do contato. Se já houver cadastro com esse telefone, a conversa é vinculada a ele. Senão, é criado um <strong>cadastro incompleto</strong> (a completar depois).</p>
+      <div style="margin-bottom:10px">
+        <button type="button" onclick="_inbCtToggle()" style="font-size:12px;padding:6px 12px">👤 Contato — buscar cliente pelo nome</button>
+      </div>
+      <div id="inb-ct-wrap" style="display:none;margin-bottom:10px">
+        <input type="text" id="inb-ct-busca" placeholder="Digite o nome do cliente…" oninput="_inbCtBusca()" autocomplete="off" style="width:100%;font-size:13px;padding:8px">
+        <div id="inb-ct-res" style="max-height:180px;overflow:auto;border:.5px solid var(--border);border-radius:var(--r-md);margin-top:4px;display:none"></div>
+      </div>
       <div class="form-group"><label>Telefone (WhatsApp) *</label>
         <input type="text" id="inb-tel" placeholder="(00) 00000-0000" style="width:100%;font-size:13px;padding:8px">
       </div>
@@ -36087,6 +36117,44 @@ function abrirInboundModal(){
   </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
   setTimeout(()=>document.getElementById('inb-tel')?.focus(),50);
+}
+// v243 — botão 👤 Contato no inbound (pedido do dono 01/10): busca o CLIENTE pelo nome (sem acento,
+// mínimo 2 letras) e lista um telefone por linha (contatos da ficha; tel1 como reserva). Selecionar
+// preenche telefone+nome como se digitados — o fluxo usual do confirmarInbound vincula pelo telefone.
+var _inbCtRows=[];
+function _inbCtToggle(){
+  const w=document.getElementById('inb-ct-wrap'); if(!w) return;
+  const aberto=w.style.display!=='none';
+  w.style.display=aberto?'none':'';
+  if(!aberto) setTimeout(()=>document.getElementById('inb-ct-busca')?.focus(),30);
+}
+function _inbCtBusca(){
+  const res=document.getElementById('inb-ct-res'); if(!res) return;
+  const q=_sepNorm(document.getElementById('inb-ct-busca')?.value||'');
+  _inbCtRows=[];
+  if(q.length<2){ res.style.display='none'; res.innerHTML=''; return; }
+  for(const c of clients){
+    if(_inbCtRows.length>=12) break;
+    if(!_sepNorm(c.nome||'').includes(q)) continue;
+    const tels=[];
+    (c.contatos||[]).forEach(ct=>{ if(ct&&ct.telefone) tels.push({tel:ct.telefone, rot:ct.nome||''}); });
+    if(!tels.length && c.tel1) tels.push({tel:c.tel1, rot:''});
+    tels.forEach(t=>{ if(_inbCtRows.length<12) _inbCtRows.push({cid:c.id, nome:c.nome||'', tel:t.tel, rot:t.rot}); });
+  }
+  res.style.display='';
+  if(!_inbCtRows.length){ res.innerHTML='<div style="padding:8px;font-size:12px;color:var(--text-tertiary)">Nenhum cliente com esse nome.</div>'; return; }
+  res.innerHTML=_inbCtRows.map((r,i)=>`<div onclick="_inbCtPick(${i})" style="padding:7px 10px;cursor:pointer;border-bottom:.5px solid var(--border);font-size:12px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''"><b>${escapeHtml(r.nome)}</b>${r.rot&&_sepNorm(r.rot)!==_sepNorm(r.nome)?' · '+escapeHtml(r.rot):''} <span style="color:var(--text-tertiary)">· ${escapeHtml(r.tel)}</span></div>`).join('');
+}
+function _inbCtPick(i){
+  const r=_inbCtRows[i]; if(!r) return;
+  const telEl=document.getElementById('inb-tel'), nomeEl=document.getElementById('inb-nome');
+  if(telEl) telEl.value=r.tel||'';
+  if(nomeEl) nomeEl.value=r.rot||r.nome||'';
+  const av=document.getElementById('inb-aviso');
+  if(av){ av.style.color='var(--st-ok-tx)'; av.textContent='✓ Cliente selecionado: '+(r.nome||'')+' — ao abrir, a conversa é vinculada ao cadastro pelo telefone.'; }
+  const w=document.getElementById('inb-ct-wrap'); if(w) w.style.display='none';
+  const res=document.getElementById('inb-ct-res'); if(res){ res.innerHTML=''; res.style.display='none'; }
+  const b=document.getElementById('inb-ct-busca'); if(b) b.value='';
 }
 function confirmarInbound(){
   const tel=(document.getElementById('inb-tel')?.value||'').trim();
@@ -37662,18 +37730,26 @@ function _convFwdRender(){
   const qd=q.replace(/\D/g,''); // v149 — busca por telefone aceita número digitado com máscara/espaços
   const list=document.getElementById('conv-fwd-list'); if(!list) return;
   let cli=(clients||[]).filter(c=>_waFoneCliente(c));
-  if(q) cli=cli.filter(c=>(c.nome||'').toLowerCase().includes(q)
+  // v243 — incidente TRS×Karllayne 01/10: busca SEM acento ("tres" acha "Três") e lista em ordem
+  // alfabética ESTÁVEL (antes era a ordem crua do array — as linhas trocavam de lugar a cada tecla)
+  const qn=_sepNorm(q);
+  if(q) cli=cli.filter(c=>_sepNorm(c.nome||'').includes(qn)
     || (qd && ((c.tel1||'').replace(/\D/g,'').includes(qd) || (c.tel2||'').replace(/\D/g,'').includes(qd)
         || (Array.isArray(c.contatos)&&c.contatos.some(ct=>String((ct&&(ct.telefone||ct.whats))||'').replace(/\D/g,'').includes(qd))))));
+  cli.sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||''),'pt-BR'));
   cli=cli.slice(0,40);
   if(!cli.length){ list.innerHTML='<div style="padding:14px;color:var(--text-tertiary);font-size:12px">Nenhum contato com telefone encontrado.</div>'; return; }
   list.innerHTML=cli.map(c=>`<div onclick="_convForwardEnviar('${c.id}')" style="padding:9px 11px;border-bottom:.5px solid var(--border);cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''"><strong>${escapeHtml(c.nome||'(sem nome)')}</strong> <span style="color:var(--text-tertiary);font-size:11px">${escapeHtml(c.tel1||c.tel2||'')}</span></div>`).join('');
 }
 async function _convForwardEnviar(destClienteId){
   if(window._authExpirada){ alert('⚠ Sua sessão expirou — nada foi encaminhado.\n\nRecarregue a página (F5) e entre novamente.'); return; } // v151 : vigia de autenticação
-  document.getElementById('conv-fwd-overlay')?.classList.remove('open');
   const cli=(clients||[]).find(c=>c.id===destClienteId); if(!cli) return;
   const phone=_waFoneCliente(cli); if(!phone){ alert('Esse contato não tem um telefone válido (DDD + número).'); return; }
+  // v243 — TRAVA DO DESTINATÁRIO (incidente TRS×Karllayne 01/10: 3 áudios foram ao cliente errado
+  // com um clique): o clique NUNCA dispara direto — confirma NOME + TELEFONE antes do envio;
+  // cancelou → a lista continua aberta para escolher o contato certo.
+  if(!confirm('Encaminhar '+(_convFwdAnexo?'a mídia':'a mensagem')+' para:\n\n'+(cli.nome||'(sem nome)')+'\n'+phone+'\n\nConfirmar o envio?')) return;
+  document.getElementById('conv-fwd-overlay')?.classList.remove('open');
   const texto=_convFwdTexto||'';
   const anexo=_convFwdAnexo?JSON.parse(JSON.stringify(_convFwdAnexo)):null; // v175 — mídia: reusa o MESMO path do Storage
   if(!texto && !anexo) return;

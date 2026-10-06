@@ -2254,6 +2254,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="des-tab" id="fin-tab-fluxo" onclick="setFinTab('fluxo')">📈 Fluxo de Caixa</div>
             <div class="des-tab" id="fin-tab-controles" onclick="setFinTab('controles')">📋 Controles</div>
             <div class="des-tab" id="fin-tab-resultado" onclick="setFinTab('resultado')">📊 DRE / DFC</div>
+            <div class="des-tab" id="fin-tab-acomp" onclick="setFinTab('acomp')">Acompanhamento</div>
             <div class="des-tab" id="fin-tab-alertas" onclick="setFinTab('alertas')" style="display:none">🚨 Alertas</div>
           </div>
         </div>
@@ -2376,6 +2377,28 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </div>
         </div>
         <!-- ABA: Alertas financeiros (admin) -->
+        <!-- ABA: Acompanhamento (v244 — pedido do dono 06/10: compilação SOMENTE visualização, sub-abas Entrada/Saída) -->
+        <div id="fin-pg-acomp" style="display:none">
+          <div class="panel" style="margin-bottom:16px">
+            <div class="panel-header"><h2>Acompanhamento — compilação de lançamentos (somente visualização)</h2></div>
+            <div style="padding:12px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+              <div style="display:flex;gap:4px;background:var(--bg-secondary);border-radius:var(--r-md);padding:3px">
+                <button id="fa-sub-entrada" onclick="_faSetSub('entrada')" class="btn-primary" style="font-size:12px;padding:5px 14px">Entrada</button>
+                <button id="fa-sub-saida" onclick="_faSetSub('saida')" style="font-size:12px;padding:5px 14px">Saída</button>
+              </div>
+              <div class="form-group" style="margin:0"><label style="font-size:11px">Período</label>
+                <select id="fa-mes" onchange="renderFinAcomp()" style="font-size:12px;padding:5px 8px"></select></div>
+              <div class="form-group" style="margin:0"><label style="font-size:11px">pela data de</label>
+                <select id="fa-ref" onchange="renderFinAcomp()" style="font-size:12px;padding:5px 8px">
+                  <option value="lanc">Lançamento</option>
+                  <option value="emissao">Emissão</option>
+                  <option value="venc">Vencimento (1ª parcela)</option>
+                  <option value="baixa">Pagamento (última baixa)</option>
+                </select></div>
+            </div>
+            <div id="fa-list" style="padding:0 16px 16px"></div>
+          </div>
+        </div>
         <div id="fin-pg-alertas" style="display:none">
           <div class="panel" style="border-radius:0 0 var(--r-lg) var(--r-lg)">
             <div class="panel-header">
@@ -5220,7 +5243,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v243';
+var APP_VERSION = 'v244';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -18291,12 +18314,18 @@ function renderComprasPainel(){
   if(!sel||!list) return;
   const ref=c=>String(c.dataEmissao||c.data||'').slice(0,7);
   const base=(compras||[]).filter(c=>c&&c.forma!=='bonificacao');
-  const meses=[...new Set(base.map(ref).filter(Boolean))].sort().reverse();
+  // v244 — linha separada dos BONIFICADOS (pedido do dono 06/10): as compras 100% bonificadas
+  // seguem FORA do total e das barras (não movimentam caixa, regra v127/v164), mas o período
+  // ganha uma linha própria no rodapé contabilizando esses lançamentos ("Bonificação · não paga").
+  const bonifTodas=(compras||[]).filter(c=>c&&c.forma==='bonificacao');
+  const meses=[...new Set([...base,...bonifTodas].map(ref).filter(Boolean))].sort().reverse();
   const prev=sel.value;
   sel.innerHTML='<option value="">Todos os períodos</option>'+meses.map(m=>`<option value="${m}" ${m===prev?'selected':''}>${monthLabel(m)}</option>`).join('');
   if(prev && meses.indexOf(prev)>=0) sel.value=prev;
   const mes=sel.value||'';
   const filt=mes?base.filter(c=>ref(c)===mes):base;
+  const bonifFilt=mes?bonifTodas.filter(c=>ref(c)===mes):bonifTodas;
+  const bonifTotal=bonifFilt.reduce((s,c)=>s+(parseFloat(c.valor)||0),0);
   const porPlano={};
   filt.forEach(c=>{
     const k=c.planoId||'__sem';
@@ -18304,7 +18333,13 @@ function renderComprasPainel(){
     porPlano[k].total+=parseFloat(c.valor)||0; porPlano[k].n++;
   });
   const entries=Object.values(porPlano).sort((a,b)=>b.total-a.total);
-  if(!entries.length){ list.innerHTML='<div class="empty">Nenhum lançamento no período.</div>'; return; }
+  // v244 — linha dos bonificados (fora do total e dos %, visual próprio); some quando o período não tem nenhum
+  const bonifLinha=bonifFilt.length?`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border);margin-top:6px">
+      <span style="flex-shrink:0">🎁</span>
+      <span style="flex:1;font-size:12px">Bonificados — não movimentam caixa, fora do total acima <span style="font-size:10px;color:var(--text-tertiary)">(${bonifFilt.length} lançamento${bonifFilt.length===1?'':'s'})</span></span>
+      <span style="font-size:12px;font-weight:600;width:90px;text-align:right;color:var(--st-ok-tx)">${fmtMoney(bonifTotal)}</span>
+    </div>`:'';
+  if(!entries.length){ list.innerHTML=bonifFilt.length?('<div class="empty" style="padding-bottom:4px">Nenhum gasto real no período.</div>'+bonifLinha):'<div class="empty">Nenhum lançamento no período.</div>'; return; }
   const totalD=entries.reduce((s,e)=>s+e.total,0);
   list.innerHTML=
     '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:12px">Total do período: <b style="color:var(--text-primary);font-size:13px">'+fmtMoney(totalD)+'</b> · '+filt.length+' lançamento(s) · referência: <b>data de emissão</b> da nota (sem emissão = data do lançamento) · compras 100% bonificadas não entram</div>'+
@@ -18319,7 +18354,7 @@ function renderComprasPainel(){
         <span style="font-size:11px;color:var(--text-tertiary);width:34px;text-align:right">${pct}%</span>
         <span style="font-size:12px;font-weight:600;width:90px;text-align:right;color:var(--st-bad-tx)">${fmtMoney(p.total)}</span>
       </div>`;
-    }).join('');
+    }).join('')+bonifLinha; // v244 — rodapé com o total dos bonificados do período
 }
 
 function openCompraModal(id){
@@ -18995,10 +19030,11 @@ function setFinTab(tab){
   const tAl=document.getElementById('fin-tab-alertas'); if(tAl) tAl.style.display = ehAdmin?'':'none';
   if(tab==='alertas' && !ehAdmin) tab='painel';
   activeFinTab = tab;
-  ['painel','apagar','areceber','fluxo','controles','resultado','alertas'].forEach(t=>{
+  ['painel','apagar','areceber','fluxo','controles','resultado','acomp','alertas'].forEach(t=>{
     document.getElementById('fin-tab-'+t)?.classList.toggle('active', t===tab);
     const pg=document.getElementById('fin-pg-'+t); if(pg) pg.style.display = t===tab ? '' : 'none';
   });
+  if(tab==='acomp')     renderFinAcomp(); // v244 — compilação somente visualização
   if(tab==='painel')    renderFinPainel();
   if(tab==='apagar')    renderFinAPagar();
   if(tab==='areceber')  renderFinAReceber();
@@ -19009,6 +19045,138 @@ function setFinTab(tab){
   saveData();
 }
 
+// ═══ v244 — ACOMPANHAMENTO (pedido do dono 06/10): compilação SOMENTE VISUALIZAÇÃO, sub-abas ═══
+// Entrada = TODAS as contas a receber (inclusive formas sem caixa: bonificação/amostra/avaria/
+// venda filho/P&D — rotuladas e FORA do total real). Saída = TODAS as contas a pagar + os
+// lançamentos 100% bonificados de Compras (sem caixa, pela emissão). Nenhum botão de ação:
+// baixa/estorno/aprovação ficam nas abas operacionais. Régua de data EXPLÍCITA no rodapé.
+var _faSub='entrada';
+function _faSetSub(s){ _faSub=(s==='saida')?'saida':'entrada';
+  const e=document.getElementById('fa-sub-entrada'), a=document.getElementById('fa-sub-saida');
+  if(e) e.className=_faSub==='entrada'?'btn-primary':''; if(a) a.className=_faSub==='saida'?'btn-primary':'';
+  renderFinAcomp();
+}
+function _faDataRef(c, ref, oEmissao){
+  if(ref==='venc') return (c.parcelas&&c.parcelas[0]&&c.parcelas[0].vencimento)||'';
+  if(ref==='baixa'){ let d=''; (c.parcelas||[]).forEach(p=>{ const b=p&&p.pago&&p.baixa&&p.baixa.data; if(b&&b>d) d=b; }); return d; }
+  if(ref==='emissao') return oEmissao||c.dataEmissao||'';
+  return c.criadoEm?new Date(c.criadoEm).toISOString().slice(0,10):'';
+}
+function _faPagoVenc(c){ // coluna Pagamento/Vencimento: tudo pago → "pago em X"; senão → próximo venc. em aberto
+  const ps=c.parcelas||[]; if(!ps.length) return '—';
+  const abertas=ps.filter(p=>p&&!p.pago&&p.vencimento).sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
+  if(!abertas.length){ let d=''; ps.forEach(p=>{ const b=p&&p.baixa&&p.baixa.data; if(b&&b>d) d=b; }); return d?('pago em '+fmtDate(d)):'pago'; }
+  const venc=abertas[0].vencimento<today();
+  return (venc?'<span style="color:var(--st-bad-tx)">vence(u) ':'vence ')+fmtDate(abertas[0].vencimento)+(venc?'</span>':'');
+}
+function _faStatus(c){
+  const s=c.statusCaixa||'aprovada';
+  if(['reprovada','rejeitada','recusada'].includes(s)) return {k:'rej', html:'<span class="badge b-bad" style="font-size:10px">rejeitada</span>'};
+  if(s==='pendente') return {k:'pendcx', html:'<span class="badge b-mid" style="font-size:10px">pendente Caixa</span>'};
+  const ps=c.parcelas||[]; const todas=ps.length&&ps.every(p=>p&&p.pago); const alguma=ps.some(p=>p&&p.pago);
+  const vencida=ps.some(p=>p&&!p.pago&&p.vencimento&&p.vencimento<today());
+  if(todas) return {k:'ok', html:'<span class="badge b-ok" style="font-size:10px">✓ pago/recebido</span>'};
+  if(vencida) return {k:'venc', html:'<span class="badge b-bad" style="font-size:10px">vencido</span>'};
+  return {k:alguma?'parc':'pend', html:'<span class="badge b-inf" style="font-size:10px">'+(alguma?'parcial':'pendente')+'</span>'};
+}
+function renderFinAcomp(){
+  sincronizarContasPagar();
+  const list=document.getElementById('fa-list'); if(!list) return;
+  const ref=document.getElementById('fa-ref')?.value||'lanc';
+  const entrada=(_faSub!=='saida');
+  const planoNome=id=>((planoContas||[]).find(p=>p.id===id)?.nome)||'—';
+  const pagoDe=c=>(c.parcelas||[]).reduce((s,p)=>s+((p&&p.pago)?(parseFloat(p.valor)||0):0),0);
+  const emissaoCR=c=>{ const o=(orders||[]).find(x=>String(x.id)===String(c.origemId)); return (o&&o.dataEmissaoNF)||''; };
+  let rows;
+  if(entrada){
+    rows=(contasReceber||[]).map(c=>({c, d:_faDataRef(c,ref,emissaoCR(c)), semCaixa:_formaSemCaixa(c.formaPag), emissao:emissaoCR(c)}));
+  } else {
+    rows=(contasPagar||[]).map(c=>({c, d:_faDataRef(c,ref,c.dataEmissao||''), semCaixa:false, emissao:c.dataEmissao||''}));
+  }
+  rows=rows.filter(r=>r.d);
+  // bonificados de Compras só na SAÍDA (não geram conta a pagar; referência sempre a emissão)
+  const bonifSaida=entrada?[]:(compras||[]).filter(c=>c&&c.forma==='bonificacao')
+    .map(c=>({c, d:String(c.dataEmissao||c.data||'').slice(0,10)})).filter(r=>r.d);
+  const mesSel=document.getElementById('fa-mes');
+  const meses=[...new Set([...rows.map(r=>r.d.slice(0,7)), ...bonifSaida.map(r=>r.d.slice(0,7))])].sort().reverse();
+  const prevMes=mesSel.value;
+  mesSel.innerHTML='<option value="">Todos os períodos</option>'+meses.map(m=>`<option value="${m}" ${m===prevMes?'selected':''}>${monthLabel(m)}</option>`).join('');
+  if(prevMes && meses.indexOf(prevMes)>=0) mesSel.value=prevMes;
+  const mes=mesSel.value||'';
+  if(mes){ rows=rows.filter(r=>r.d.slice(0,7)===mes); }
+  const bonifF=mes?bonifSaida.filter(r=>r.d.slice(0,7)===mes):bonifSaida;
+  rows.sort((a,b)=>b.d.localeCompare(a.d));
+  // totais: reais (aprovadas com caixa) ≠ sem caixa ≠ pendentes de Caixa ≠ rejeitadas (fora)
+  let tot=0, totPago=0, totSem=0, nSem=0, totPendCx=0, nPendCx=0, nRej=0;
+  rows.forEach(r=>{ const st=_faStatus(r.c); const v=parseFloat(r.c.valor)||0;
+    if(st.k==='rej'){ nRej++; return; }
+    if(r.semCaixa){ totSem+=v; nSem++; return; }
+    if(st.k==='pendcx'){ totPendCx+=v; nPendCx++; return; }
+    tot+=v; totPago+=pagoDe(r.c);
+  });
+  const totBon=bonifF.reduce((s,r)=>s+(parseFloat(r.c.valor)||0),0);
+  const REF_LBL={lanc:'data do lançamento', emissao:'data de emissão da NF', venc:'vencimento da 1ª parcela', baixa:'data da ÚLTIMA baixa (sem baixa fica fora desta régua)'};
+  const th='padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;font-weight:600;color:var(--text-secondary);text-align:left;white-space:nowrap;border-bottom:.5px solid var(--border)';
+  const td='padding:6px 8px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
+  const semBadge='<span class="badge" style="font-size:10px;background:var(--st-ok-bg);color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd)">sem caixa</span>';
+  let html;
+  if(entrada){
+    html=rows.map(r=>{ const st=_faStatus(r.c); return `<tr>
+      <td style="${td}">${escapeHtml(r.c.clienteNome||'—')}</td>
+      <td style="${td};white-space:nowrap">${escapeHtml(r.c.origemNum||'—')}</td>
+      <td style="${td};white-space:nowrap">${r.emissao?fmtDate(r.emissao):'—'}</td>
+      <td style="${td};white-space:nowrap">${r.c.criadoEm?fmtDate(new Date(r.c.criadoEm).toISOString().slice(0,10)):'—'}</td>
+      <td style="${td};white-space:nowrap">${_faPagoVenc(r.c)}</td>
+      <td style="${td}">${escapeHtml(planoNome(r.c.contaPlanoId||r.c.planoId))}</td>
+      <td style="${td}">${escapeHtml(_formaCurta(r.c.formaPag||''))}</td>
+      <td style="${td}">${st.html}${r.semCaixa?' '+semBadge:''}</td>
+      <td style="${td};text-align:right;font-weight:600${r.semCaixa?';color:var(--st-ok-tx)':''}">${fmtMoney(parseFloat(r.c.valor)||0)}</td></tr>`; }).join('');
+    html=`<div><table style="width:100%;border-collapse:collapse"><thead><tr>
+      <th style="${th}">Cliente</th><th style="${th}">Pedido</th><th style="${th}">Emissão NF</th><th style="${th}">Lançamento</th><th style="${th}">Pagamento/Venc.</th><th style="${th}">Plano de contas</th><th style="${th}">Forma</th><th style="${th}">Status</th><th style="${th};text-align:right">Valor</th>
+      </tr></thead><tbody>${html}</tbody></table></div>`;
+  } else {
+    const origemDe=c=>_fgOrigemAcomp(c);
+    html=rows.map(r=>{ const st=_faStatus(r.c); return `<tr>
+      <td style="${td}">${escapeHtml(r.c.fornecedorNome||'—')}</td>
+      <td style="${td}">${escapeHtml(r.c.descricao||'')}${r.c.notaFiscal?` <span style="font-size:10px;color:var(--text-tertiary)">NF ${escapeHtml(r.c.notaFiscal)}</span>`:''}</td>
+      <td style="${td}">${origemDe(r.c)}</td>
+      <td style="${td};white-space:nowrap">${r.emissao?fmtDate(r.emissao):'—'}</td>
+      <td style="${td};white-space:nowrap">${r.c.criadoEm?fmtDate(new Date(r.c.criadoEm).toISOString().slice(0,10)):'—'}</td>
+      <td style="${td};white-space:nowrap">${_faPagoVenc(r.c)}</td>
+      <td style="${td}">${escapeHtml(planoNome(r.c.planoId||r.c.contaPlanoId))}</td>
+      <td style="${td}">${escapeHtml(_formaCurta(r.c.formaPag||''))}</td>
+      <td style="${td}">${st.html}</td>
+      <td style="${td};text-align:right;font-weight:600">${fmtMoney(parseFloat(r.c.valor)||0)}</td></tr>`; }).join('');
+    const bonifHtml=bonifF.map(r=>`<tr style="background:var(--bg-secondary)">
+      <td style="${td}">${escapeHtml(((fornecedores||[]).find(f=>String(f.id)===String(r.c.fornecedorId))?.nome)||r.c.fornecedorNome||'—')}</td>
+      <td style="${td}" colspan="2">🎁 ${escapeHtml(r.c.descricao||r.c.obs||'Lançamento bonificado')}</td>
+      <td style="${td};white-space:nowrap">${fmtDate(r.d)}</td>
+      <td style="${td}"></td><td style="${td}"></td>
+      <td style="${td}">${escapeHtml(planoNome(r.c.planoId))}</td>
+      <td style="${td}">Bonificação</td>
+      <td style="${td}">${semBadge}</td>
+      <td style="${td};text-align:right;font-weight:600;color:var(--st-ok-tx)">${fmtMoney(parseFloat(r.c.valor)||0)}</td></tr>`).join('');
+    html=`<div><table style="width:100%;border-collapse:collapse"><thead><tr>
+      <th style="${th}">Fornecedor</th><th style="${th}">Descrição</th><th style="${th}">Origem</th><th style="${th}">Emissão NF</th><th style="${th}">Lançamento</th><th style="${th}">Pagamento/Venc.</th><th style="${th}">Plano de contas</th><th style="${th}">Forma</th><th style="${th}">Status</th><th style="${th};text-align:right">Valor</th>
+      </tr></thead><tbody>${html}${bonifF.length?`<tr><td colspan="10" style="padding:14px 8px 4px;font-size:12px;font-weight:700;border-bottom:1px solid var(--border)">🎁 Bonificados de Compras — sem movimentação de caixa (pela emissão)</td></tr>${bonifHtml}`:''}</tbody></table></div>`;
+  }
+  const rotReal=entrada?'recebido':'pago';
+  const rodape=`<div style="font-size:11px;color:var(--text-secondary);margin:4px 0 10px">
+    <b style="color:var(--text-primary);font-size:13px">${fmtMoney(tot)}</b> em contas aprovadas · ${rotReal} ${fmtMoney(totPago)} · em aberto ${fmtMoney(tot-totPago)}
+    ${(nSem||bonifF.length)?` · <span style="color:var(--st-ok-tx)">sem caixa ${fmtMoney(totSem+totBon)} (${nSem+bonifF.length}, fora do total)</span>`:''}
+    ${nPendCx?` · pendentes de Caixa ${fmtMoney(totPendCx)} (${nPendCx}, fora do total)`:''}
+    ${nRej?` · rejeitadas: ${nRej} (fora de tudo)`:''}
+    <br>régua do período: <b>${REF_LBL[ref]}</b> · somente visualização — baixas e aprovações continuam nas abas próprias</div>`;
+  list.innerHTML=(rows.length||bonifF.length)?(rodape+html):'<div class="empty">Nenhum lançamento no período.</div>';
+}
+// origem da conta a pagar (Frete/Gráfica/Compra/Despesa/Conta fixa/Manual) — exclusiva da aba Acompanhamento
+function _fgOrigemAcomp(c){
+  if((c.freteLancIds&&c.freteLancIds.length)||(c.freteInternoPagIds&&c.freteInternoPagIds.length)) return 'Frete';
+  if(c.graficaPagIds&&c.graficaPagIds.length) return 'Gráfica';
+  if(c.origem==='compra'){ const cp=(compras||[]).find(x=>String(x.id)===String(c.origemId));
+    const t=cp&&(cp.tipoLanc||'compra'); return t==='despesa'?'Despesa':(t==='contafixa'?'Conta fixa':'Compra'); }
+  return 'Manual';
+}
 function renderFinPainel(){
   sincronizarContasPagar();
   const mesFilter = document.getElementById('fin-p-mes')?.value || '';
@@ -21458,6 +21626,11 @@ function renderGestao(){
       const dlStr=rule?`Prazo: D${rule.limitDay} — ${fmtDate(deadlineDate(o.d1,rule.limitDay))}`:' ';
       const tip=`<div class="audit-tip"><div style="font-weight:600;margin-bottom:4px">${dlStr}</div>${sd?`<div>Atualizado: ${fmtTs(sd.ts)}</div><div>Por: <strong>${sd.by}</strong></div><div>${sd.from} → ${sd.to}</div>`:last?`<div>Atualizado: ${fmtTs(last.ts)}</div><div>Por: ${last.userName}</div>`:'<div>Sem atualização registrada</div>'}${activePend?`<div style="margin-top:6px;padding-top:6px;border-top:.5px solid var(--border);color:var(--st-bad-tx)"><strong>⚠ Pendência ativa:</strong> ${activePend.desc}</div>`:''}</div>`;
       const edit=canEdit(k);const bc=lv?'b-bad':badgeClass(o.statuses[k],null);const st=o.statuses[k]||'Não iniciado';
+      // v244 — caso Luiz (3ª cobrança do dono, 05/10): a PORTA DE ENTRADA era o buraco — o portão de
+      // leitura v238/v243 vive DENTRO do openStatusModal, mas a célula só ganhava onclick com canEdit.
+      // Quem tem estoque/expedição SEM compras agora clica a célula de Compras e cai no modo leitura.
+      const roCell = !edit && k==='compras' && typeof _temSetorEstoque==='function' && (_temSetorEstoque()||_temSetorExpedicao());
+      const clicavel = edit || roCell;
       const dateStr=sd?`<span class="badge-date">${new Date(sd.ts).toLocaleDateString('pt-BR')}</span>`:'';
       const pendBadge=activePend?`<span class="pend-alert-badge" onclick="event.stopPropagation();openPendAlertModal(${o.id},'${k}')" title="Pendência ativa — clique para ver">⚠ Pendência</span>`:'';
       const obsIcon=(typeof _obsCount==='function'&&_obsCount(o,k)>0)?`<span onclick="event.stopPropagation();openObsModal(${o.id},'${k}')" title="Tem observação — clique para ver" style="cursor:pointer;font-size:12px;line-height:1">💬</span>`:''; // v120 — sinal discreto de observação
@@ -21466,7 +21639,7 @@ function renderGestao(){
       if(k==='compras' && typeof _pedidoNovoCompras==='function' && _pedidoNovoCompras(o) && o.comprasLados && (o.comprasLados.ativo||o.comprasLados.embalagem)){
         ladosSelo=`<span style="font-size:9px;white-space:nowrap;color:var(--st-ok-tx)" title="Lados finalizados (comprado ou não necessário)">${o.comprasLados.ativo?'A✓':''}${o.comprasLados.ativo&&o.comprasLados.embalagem?' ':''}${o.comprasLados.embalagem?'E✓':''}</span>`;
       }
-      return`<td class="audit-cell"><div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap"><span class="badge ${bc} ${edit?'clickable':''}" style="flex-direction:column;align-items:flex-start;gap:0" ${edit?`onclick="openStatusModal(${o.id},'${k}')"` :''}>${st}${dateStr}</span>${ladosSelo}${obsIcon}${pendBadge}</div>${tip}</td>`;
+      return`<td class="audit-cell"><div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap"><span class="badge ${bc} ${clicavel?'clickable':''}" style="flex-direction:column;align-items:flex-start;gap:0" ${roCell?'title="Somente visualização (estoque/expedição)"':''} ${clicavel?`onclick="openStatusModal(${o.id},'${k}')"` :''}>${st}${dateStr}</span>${ladosSelo}${obsIcon}${pendBadge}</div>${tip}</td>`;
     }).join('');
     return`<tr class="${rc}"><td style="font-weight:500">${escapeHtml(o.num)}${tag}</td><td>${tipoBadgeHtml(o.tipo||'venda')}</td><td>${escapeHtml(o.cliente)}</td><td style="color:var(--text-secondary);font-size:12px;white-space:nowrap">${fmtDate(_dataInclusao(o))}</td><td>${fmtDate(o.previsao)}</td><td>${fmtMoney(o.valor)}</td>${cells}<td style="color:var(--text-secondary);font-size:12px">${(()=>{const hist=o.enviosHistorico||[];if(hist.length<=1)return fmtDate(o.envioReal)||'—';const datas=[...new Set(hist.map(e=>e.data).filter(Boolean))];return datas.length===1?fmtDate(datas[0]):datas.map(d=>fmtDate(d)).join('<br>');})()}</td><td style="font-size:12px">${transpCellHtml(o)}</td><td style="font-size:12px">${rastreiosCellHtml(o)}</td><td style="white-space:nowrap"><button onclick="openDetailModal(${o.id})" class="btn-primary" style="padding:3px 12px;font-size:11px">Abrir</button> <button onclick="openEnvioModal(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px;background:var(--bg-info);color:var(--text-info);border-color:var(--text-info)">📮 Envio</button> ${canEditOrder()?`<button onclick="openOrderModal(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px">Editar</button>`:''} ${currentUser?.perfil==='admin'?`<button onclick="deleteOrderDirect(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">Excluir</button>`:''}</td></tr>`;
   }).join('');

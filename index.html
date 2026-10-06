@@ -4654,7 +4654,7 @@ async function _sepCanonLoad(){
     if(m==='admin'){ m=(currentUser && currentUser.perfil==='admin')?'all':'shadow'; } // v221 — piloto: skip só na sessão do admin, demais seguem medindo
     _sepCanonModo=(m==='off'||m==='all'||m==='shadow')?m:'shadow';
     _sepDiagModo=(d==='off')?'off':'on'; // v222 — instrumentação desligável por SQL
-    _sepDeltaModo=(dl==='shadow')?'shadow':'off'; // v231 — sombra do delta; QUALQUER outro valor = off (conservador; 'admin'/'all' só existirão na v232)
+    _sepDeltaModo=(['shadow','admin','all'].indexOf(dl)>=0)?dl:'off'; // v244 — FIX do piloto morto: o carregador v231 coagia 'admin'/'all' p/ off e o portão v241 nunca recebia o modo (piloto ligado 05/10 ficou inerte); valor desconhecido segue off (conservador)
   }catch(_e){ if(_sepCanonModo===null) _sepCanonModo='shadow'; if(_sepDiagModo===null) _sepDiagModo='on'; if(_sepDeltaModo===null) _sepDeltaModo='off'; }
   _sepCanonLendo=false;
 }

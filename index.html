@@ -2395,6 +2395,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
                   <option value="venc">Vencimento (1ª parcela)</option>
                   <option value="baixa">Pagamento (última baixa)</option>
                 </select></div>
+              <button id="fa-filtrar-btn" onclick="_faFiltroAbrir()" style="display:none;font-size:12px;padding:6px 14px">🔎 Filtrar</button>
             </div>
             <div id="fa-list" style="padding:0 16px 16px"></div>
           </div>
@@ -4608,7 +4609,7 @@ var _sepCanonModo=null, _sepCanonLendo=false;
 // app_config 'sep_delta': off (padrão) | shadow. Telemetria em sessions.diag.delta.
 var _sepDeltaModo=null;
 var _sepDeltaMax={};   // régua por entidade: maior updated_at (ms) visto na carga anterior
-var _sepDeltaDiag={ ciclos:0, teria:{}, reais:{}, perdidas:{}, am:[] };
+var _sepDeltaDiag={ ciclos:0, teria:{}, reais:{}, perdidas:{}, am:[], ciclosReal:0, seguradas:{} }; // v245 — ciclosReal = rodadas do delta REAL (o 'ciclos' era só da sombra — lacuna vista em 07/10); seguradas = mesclas adiadas pela regra "edição local pendente vence" (a hipótese dos misses do vigia de 07/10)
 var _sepCanonDiag={iguais:0, reais:0, porTabela:{}, reaisTab:{}};
 // v222 — ETAPA 3 FASE A (autorizada 28/08): INSTRUMENTAÇÃO do detector de mudanças. Quando uma linha
 // é marcada "alterada", registra QUAIS campos de topo diferem entre a fotografia e a memória (só NOMES
@@ -4899,7 +4900,7 @@ async function _sepLoadOne(cfg, forceFull){
       }
       // v241 — dedupe da margem (laudo item 3): a fatia re-baixada pela margem de 15min não reprocessa
       // linha idêntica (mesmo id + mesmo updated_at) — a "cauda de importação" morre aqui.
-      if(_dltGeral){ var _dd=_deltaDedupeSlice(_incRows, _sepDeltaSeen[cfg.key]); _sepDeltaSeen[cfg.key]=_dd.seenNext; _incRows=_dd.novas; }
+      if(_dltGeral){ var _dd=_deltaDedupeSlice(_incRows, _sepDeltaSeen[cfg.key]); _sepDeltaSeen[cfg.key]=_dd.seenNext; _incRows=_dd.novas; try{ _sepDeltaDiag.ciclosReal++; }catch(_e){} }
       var _arrI=cfg.get()||[]; var _idxI={};
       for(var _qi=0;_qi<_arrI.length;_qi++){ var _oq=_arrI[_qi]; if(_oq!=null&&typeof _oq==='object') _idxI[String(cfg.id(_oq))]=_qi; }
       var _snapI=_sepSnap[cfg.key]||(_sepSnap[cfg.key]={});
@@ -4910,7 +4911,7 @@ async function _sepLoadOne(cfg, forceFull){
         if(_rw.updated_at && _rw.updated_at>_sepIncrMax[cfg.key]) _sepIncrMax[cfg.key]=_rw.updated_at;
         var _pos=_idxI[_rid];
         if(_pos===undefined){ _arrI.push(_rw.data); _snapI[_rid]=JSON.stringify(_rw.data); continue; }
-        if(_snapI[_rid]!==undefined && JSON.stringify(_arrI[_pos])!==_snapI[_rid]) continue; // edição local pendente vence
+        if(_snapI[_rid]!==undefined && JSON.stringify(_arrI[_pos])!==_snapI[_rid]){ if(_dltGeral){ try{ _sepDeltaDiag.seguradas[cfg.table]=(_sepDeltaDiag.seguradas[cfg.table]||0)+1; }catch(_e){} } continue; } // edição local pendente vence (v245: contada — hipótese dos misses do vigia 07/10)
         _arrI[_pos]=_rw.data; _snapI[_rid]=JSON.stringify(_rw.data);
       }
       // v241 — VARREDURA DE EXCLUSÕES (só delta geral; logs append-only ficam fora): o updated_at não
@@ -5243,7 +5244,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v244';
+var APP_VERSION = 'v245';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5412,7 +5413,7 @@ async function _sessionHeartbeat(){
     var _hbDiag=null; // v221 — telemetria da correção 2 (contadores do detector canônico), lida por SQL na coluna sessions.diag
     try{ _hbDiag={ canon:{ modo:(_sepCanonModo||'shadow'), iguais:_sepCanonDiag.iguais, reais:_sepCanonDiag.reais, tab:_sepCanonDiag.porTabela, reaisTab:_sepCanonDiag.reaisTab },
                    dirty:{ ciclos:_sepDirtyDiag.ciclos, tab:_sepDirtyDiag.porTabela, campos:_sepDirtyDiag.campos, am:_sepDirtyDiag.amostras },
-                   delta:{ modo:(_sepDeltaModo||'off'), ativo:(typeof _deltaAtivo==='function'&&_deltaAtivo()), ciclos:_sepDeltaDiag.ciclos, teria:_sepDeltaDiag.teria, reais:_sepDeltaDiag.reais, perdidas:_sepDeltaDiag.perdidas, am:_sepDeltaDiag.am, vigia:{ dia:(function(){ try{ return localStorage.getItem('lecare_delta_vigia_dia')||''; }catch(_e){ return ''; } })(), miss:_deltaVigiaMiss, am:_deltaVigiaAm } } }; }catch(_e){ _hbDiag=null; } // v222 — fase A; v231 — sombra; v241 — delta real + vigia diário
+                   delta:{ modo:(_sepDeltaModo||'off'), ativo:(typeof _deltaAtivo==='function'&&_deltaAtivo()), ciclos:_sepDeltaDiag.ciclos, ciclosReal:_sepDeltaDiag.ciclosReal, seguradas:_sepDeltaDiag.seguradas, teria:_sepDeltaDiag.teria, reais:_sepDeltaDiag.reais, perdidas:_sepDeltaDiag.perdidas, am:_sepDeltaDiag.am, vigia:{ dia:(function(){ try{ return localStorage.getItem('lecare_delta_vigia_dia')||''; }catch(_e){ return ''; } })(), miss:_deltaVigiaMiss, am:_deltaVigiaAm } } }; }catch(_e){ _hbDiag=null; } // v222 — fase A; v231 — sombra; v241 — delta real + vigia diário
     await _sb.from('sessions').upsert({ tab_id:_tabId, user_id:currentUser.id, user_name:currentUser.name, version:APP_VERSION, last_seen:new Date().toISOString(), updated_at:new Date().toISOString(), diag:_hbDiag }, { onConflict:'tab_id' });
     const r = await _sb.from('sessions').select('kicked').eq('tab_id',_tabId).limit(1);
     if(r && r.data && r.data[0] && r.data[0].kicked){ _doKickLogout(); }
@@ -13671,7 +13672,12 @@ function _aplicarNaoNecStatus(o){
   var jump={};
   var ORD_E=['Não iniciado','Solicitado compra','Separação completa'];
   var curE=o.statuses.estoque||'Não iniciado';
-  if(ORD_E.indexOf('Separação completa')>ORD_E.indexOf(curE)){
+  // v245 — ordem do dono 07/10 ("separação completa SÓ com quem separou"): o avanço AUTOMÁTICO do
+  // não-necessário (caso 103821) também exige o separador — sem ele, fica em 'Solicitado compra'
+  // (v168) e a conclusão passa pelo modal, onde a trava v238 cobra. AVARIA segue pulando (classe
+  // só-rótulos: não há separação física por desenho — precedentes 103718/103821).
+  var _podeJumpE = (o.tipo==='avaria') || (o.sepEmbPor&&o.sepEmbPor.nome);
+  if(_podeJumpE && ORD_E.indexOf('Separação completa')>ORD_E.indexOf(curE)){
     jump.estoqueFrom=curE; o.statuses.estoque='Separação completa';
     o.statusDates.estoque={ts:Date.now(),by:(currentUser&&currentUser.name)||'Sistema',from:curE,to:'Separação completa'};
     try{ addAudit(o,'estoque','status',curE,'Separação completa (automático — compra não necessária)'); }catch(_e){}
@@ -14784,6 +14790,10 @@ function _pedidoNovoCompras(o){
 function _ladoComprasEstado(o, tipo, cutTs){
   // v159 — cutTs (opcional): considera SÓ solicitações criadas até esse instante. Usado para decidir se um
   // selo apaga: solicitação COMPLEMENTAR criada DEPOIS do lado fechado não conta (regra do dono 15/07).
+  // v245 — ordem do dono 07/10: no lado EMBALAGEM, item comprado só conta p/ FECHAR o selo quando o
+  // PEDIDO DE COMPRA em que ele está também saiu de "aberto" (fechado/faturado/recebido). pcOk sai
+  // em campo separado: o motor exige pcOk SÓ para dar o selo — selo já dado nunca cai por PC aberto
+  // (sem reabertura retroativa em massa, lição v233). Item sem PC vinculado (avulsa/legado) não trava.
   var nn=o.compraNaoNec && o.compraNaoNec[tipo];
   var solics=_solTodasSolic(o.id, tipo).filter(function(s){ return (s.itens||[]).length && (!cutTs || (s.criadoEm||0)<=cutTs); });
   if(!solics.length){
@@ -14795,12 +14805,12 @@ function _ladoComprasEstado(o, tipo, cutTs){
     if(typeof _expSaiu==='function' && _expSaiu(o)) return {definido:true, compradoOk:true, recebidoOk:true};
     return {definido:false, compradoOk:false, recebidoOk:false};
   }
-  var compradoOk=true, recebidoOk=true;
+  var compradoOk=true, recebidoOk=true, pcOk=true;
   for(var i=0;i<solics.length;i++){
     var s=solics[i];
-    if(!s.listaId || s.status==='solicitado') return {definido:true, compradoOk:false, recebidoOk:false};
+    if(!s.listaId || s.status==='solicitado') return {definido:true, compradoOk:false, recebidoOk:false, pcOk:false};
     var l=(listasCompra||[]).find(function(x){ return x.id===s.listaId; });
-    if(!l) return {definido:true, compradoOk:false, recebidoOk:false};
+    if(!l) return {definido:true, compradoOk:false, recebidoOk:false, pcOk:false};
     for(var j=0;j<s.itens.length;j++){
       var lis=_lcPartesDoItem(l, s.itens[j].itemId); // v186 — compra dividida: o pedido só avança quando TODAS as partes estão compradas/recebidas
       if(!lis.length){ compradoOk=false; recebidoOk=false; continue; }
@@ -14808,6 +14818,10 @@ function _ladoComprasEstado(o, tipo, cutTs){
         if(li.naoComprado) continue;
         // v169 — COMPRA PARCIAL (solicitado subiu acima do comprado após complemento): conta como NÃO comprado
         if(!li.compra || !li.compra.comprado || li.compraParcial) compradoOk=false;
+        else if(tipo==='embalagem' && li.compra.pedidoCompraId){ // v245 — comprado MAS o PC ainda ABERTO → selo espera o fechamento do PC
+          var _pcE=(pedidosCompra||[]).find(function(p){ return p && p.id===li.compra.pedidoCompraId; });
+          if(_pcE && _pcE.status==='aberto') pcOk=false;
+        }
         // v213 — recebimento FÍSICO conta como recebido (regra do dono 19/08, caso 102915/PC-039:
         // itens recebidos na Gestão de Pedidos e o "Produto entregue" preso esperando a conciliação)
         // v218 — refinamento (revisão 26/08, casos GAROPABA/CERA DE CANDELILA 0 recebidos): conferência
@@ -14816,7 +14830,7 @@ function _ladoComprasEstado(o, tipo, cutTs){
       }
     }
   }
-  return {definido:true, compradoOk:compradoOk, recebidoOk:recebidoOk};
+  return {definido:true, compradoOk:compradoOk, recebidoOk:recebidoOk, pcOk:pcOk};
 }
 // v218 — FÍSICO CONTA COMO RECEBIDO SÓ SE ALGO CHEGOU (revisão 26/08): conferência com qtd ZERO
 // é item que não veio; qtd não registrada (legado) mantém o comportamento v213 (conta).
@@ -14913,6 +14927,7 @@ function _healComercialPI(){
       if(!o || !o.statuses || o.statuses.comercial!=='Produtos informados') return;
       if((o.itens||[]).length) return; // produtos informados de verdade — carimbo legítimo
       if(o.tipo==='venda_mae') return; // venda mãe: itens vazio é a regra dela (e o carimbo nem deveria existir)
+      if(o.tipo==='avaria') return; // v245 — caso 103718 (30/09): avaria SOMENTE RÓTULOS não tem itens POR DESENHO (itens acionariam estoque/produção); o heal regrediu 7x o lançamento manual — classe inteira fica fora
       if(String(o.envioReal||'').trim() || (typeof _expSaiu==='function' && _expSaiu(o))) return; // já saiu — registro histórico
       var prev=o.statuses.comercial;
       o.statuses.comercial='Não iniciado';
@@ -15012,7 +15027,7 @@ function _reavaliarComprasPedido(orderId){
     var est={ ativo:_ladoComprasEstado(o,'ativo'), embalagem:_ladoComprasEstado(o,'embalagem') };
     ['ativo','embalagem'].forEach(function(t){
       var lbl = t==='ativo' ? 'Compra ativo finalizado' : 'Compra embalagem finalizado';
-      if(est[t].compradoOk && !lados[t]){
+      if(est[t].compradoOk && est[t].pcOk!==false && !lados[t]){ // v245 — embalagem: comprado E com o PC fechado (pcOk só barra o FECHAR; selo dado não cai por PC aberto)
         lados[t]={ts:Date.now(), by:(currentUser&&currentUser.name)||'Sistema'};
         _setComprasStatusNovo(o,lbl,'lado '+t+' fechado (comprado ou não necessário)');
       } else if(!est[t].compradoOk && lados[t]){
@@ -15744,6 +15759,13 @@ async function fecharPedidoCompra(pcId){
   var t=_pcTotais(pc);
   if(!confirm('Fechar o pedido '+(pc.numero||'')+' de '+(pc.fornecedorNome||'')+' com '+t.n+' item(ns) ('+fmtMoney(t.total)+')?\n\nA composição trava — as próximas compras deste fornecedor abrem o pedido seguinte.')) return;
   pc.status='fechado'; pc.fechadoEm=Date.now(); pc.fechadoPor=(currentUser&&currentUser.name)||'';
+  // v245 — ordem do dono 07/10: o selo "Compra embalagem finalizado" agora espera o PC fechado —
+  // fechar o PC reavalia NA HORA os pedidos com itens dele (senão o selo só viria no próximo evento).
+  try{
+    var _pcLids={}; (listasCompra||[]).forEach(function(l){ (l&&l.itens||[]).forEach(function(it){ if(it&&it.compra&&it.compra.pedidoCompraId===pc.id) _pcLids[l.id]=1; }); });
+    var _pcOids={}; (solicitacoesCompra||[]).forEach(function(s){ if(s&&s.listaId&&_pcLids[s.listaId]&&s.orderId!=null) _pcOids[String(s.orderId)]=1; });
+    Object.keys(_pcOids).forEach(function(oid){ try{ _reavaliarComprasPedido(oid); }catch(_e){} });
+  }catch(_e){}
   _renderPedidoCompraModal(); renderRecebimento(); saveData();
 }
 // v161 — estorna o FECHAMENTO do pedido de compra (admin): volta a 'aberto'. Bloqueado se já houve
@@ -19062,12 +19084,89 @@ function _faDataRef(c, ref, oEmissao){
   if(ref==='emissao') return oEmissao||c.dataEmissao||'';
   return c.criadoEm?new Date(c.criadoEm).toISOString().slice(0,10):'';
 }
-function _faPagoVenc(c){ // coluna Pagamento/Vencimento: tudo pago → "pago em X"; senão → próximo venc. em aberto
-  const ps=c.parcelas||[]; if(!ps.length) return '—';
+function _faPagoVencData(c){ // dado da coluna Pagamento/Venc.: {k:'pago'|'vence'|'', d:'AAAA-MM-DD'}
+  const ps=(c&&c.parcelas)||[]; if(!ps.length) return {k:'',d:''};
   const abertas=ps.filter(p=>p&&!p.pago&&p.vencimento).sort((a,b)=>a.vencimento.localeCompare(b.vencimento));
-  if(!abertas.length){ let d=''; ps.forEach(p=>{ const b=p&&p.baixa&&p.baixa.data; if(b&&b>d) d=b; }); return d?('pago em '+fmtDate(d)):'pago'; }
-  const venc=abertas[0].vencimento<today();
-  return (venc?'<span style="color:var(--st-bad-tx)">vence(u) ':'vence ')+fmtDate(abertas[0].vencimento)+(venc?'</span>':'');
+  if(!abertas.length){ let d=''; ps.forEach(p=>{ const b=p&&p.baixa&&p.baixa.data; if(b&&b>d) d=b; }); return {k:'pago', d:d}; }
+  return {k:'vence', d:abertas[0].vencimento};
+}
+function _faPagoVenc(c){ // coluna Pagamento/Vencimento: tudo pago → "pago em X"; senão → próximo venc. em aberto
+  const pv=_faPagoVencData(c);
+  if(!pv.k) return '—';
+  if(pv.k==='pago') return pv.d?('pago em '+fmtDate(pv.d)):'pago';
+  const venc=pv.d<today();
+  return (venc?'<span style="color:var(--st-bad-tx)">vence(u) ':'vence ')+fmtDate(pv.d)+(venc?'</span>':'');
+}
+// v245 — 🔎 FILTRAR do Acompanhamento (ordem do dono 07/10, reforço: ENTRADA E SAÍDA): modal com
+// um campo por coluna — texto com autocomplete (datalist nativa: começa a digitar e seleciona),
+// datas por PERÍODO (de/até) e valor por faixa. Estado SEPARADO por sub-aba; só visualização.
+var _faFiltros={entrada:null, saida:null};
+function _faFiltroAtivoN(){ const f=_faFiltros[_faSub]||{}; return Object.keys(f).filter(k=>String(f[k]||'').trim()!=='').length; }
+function _faFiltroAbrir(){
+  const ehEnt=(_faSub!=='saida');
+  const f=_faFiltros[_faSub]||{};
+  const dlist=(id,vals)=>'<datalist id="'+id+'">'+[...new Set(vals.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')).map(v=>'<option value="'+escapeHtml(String(v))+'"></option>').join('')+'</datalist>';
+  const fornecs=ehEnt?(contasReceber||[]).map(c=>c&&c.clienteNome):(contasPagar||[]).map(c=>c&&c.fornecedorNome);
+  const planos=(planoContas||[]).map(p=>p&&p.nome);
+  const formas=(ehEnt?(contasReceber||[]):(contasPagar||[])).map(c=>c&&_formaCurta(c.formaPag||'')).concat(ehEnt?[]:['Bonificação']);
+  const txt=(id,label,ph,dl)=>'<div class="form-group" style="margin:0"><label style="font-size:11px">'+label+'</label><input type="text" id="'+id+'" value="'+escapeHtml(f[id.replace('faf-','')]||'')+'" placeholder="'+ph+'"'+(dl?(' list="'+dl+'"'):'')+' autocomplete="off" style="width:100%;font-size:12px;padding:5px 8px"></div>';
+  const per=(base,label)=>'<div class="form-group" style="margin:0"><label style="font-size:11px">'+label+'</label><div style="display:flex;gap:4px"><input type="date" id="faf-'+base+'De" value="'+(f[base+'De']||'')+'" style="font-size:12px;padding:5px 6px;flex:1"><input type="date" id="faf-'+base+'Ate" value="'+(f[base+'Ate']||'')+'" style="font-size:12px;padding:5px 6px;flex:1"></div></div>';
+  let ov=document.getElementById('fa-filtro-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='fa-filtro-overlay'; ov.className='overlay'; ov.style.zIndex='4300'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:620px;max-height:85vh;overflow:auto">'+
+    '<h2 style="margin-bottom:10px">🔎 Filtrar — '+(ehEnt?'Entrada':'Saída')+'</h2>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      txt('faf-nome',(ehEnt?'Cliente':'Fornecedor'),'digite e selecione…','faf-dl-forn')+
+      (ehEnt?txt('faf-pedido','Pedido','número contém…',''):'')+
+      txt('faf-descricao','Descrição / NF','contém…','')+
+      (ehEnt?'':('<div class="form-group" style="margin:0"><label style="font-size:11px">Origem</label><select id="faf-origem" style="width:100%;font-size:12px;padding:5px 8px">'+['','Compra','Despesa','Conta fixa','Frete','Gráfica','Manual'].map(o=>'<option value="'+o+'"'+((f.origem||'')===o?' selected':'')+'>'+(o||'Todas')+'</option>').join('')+'</select></div>'))+
+      '<div class="form-group" style="margin:0"><label style="font-size:11px">Status</label><select id="faf-status" style="width:100%;font-size:12px;padding:5px 8px">'+[['',''],['pendcx','pendente Caixa'],['pend','pendente'],['parc','parcial'],['venc','vencido'],['ok','pago/recebido'],['rej','rejeitada'],['semcaixa','sem caixa (bonificado)']].map(o=>'<option value="'+o[0]+'"'+((f.status||'')===o[0]?' selected':'')+'>'+(o[1]||'Todos')+'</option>').join('')+'</select></div>'+
+      txt('faf-plano','Plano de contas','digite e selecione…','faf-dl-plano')+
+      txt('faf-forma','Forma','digite e selecione…','faf-dl-forma')+
+      per('emis','Emissão NF (período)')+
+      per('lanc','Lançamento (período)')+
+      per('pagv','Pagamento/Venc. (período)')+
+      '<div class="form-group" style="margin:0"><label style="font-size:11px">Valor (faixa R$)</label><div style="display:flex;gap:4px"><input type="number" step="0.01" id="faf-valorDe" value="'+(f.valorDe||'')+'" placeholder="de" style="font-size:12px;padding:5px 6px;flex:1"><input type="number" step="0.01" id="faf-valorAte" value="'+(f.valorAte||'')+'" placeholder="até" style="font-size:12px;padding:5px 6px;flex:1"></div></div>'+
+    '</div>'+
+    dlist('faf-dl-forn',fornecs)+dlist('faf-dl-plano',planos)+dlist('faf-dl-forma',formas)+
+    '<div class="modal-footer" style="margin-top:14px">'+
+      '<button onclick="_faFiltroLimpar()">Limpar</button>'+
+      '<button onclick="document.getElementById(\'fa-filtro-overlay\').classList.remove(\'open\')">Cancelar</button>'+
+      '<button class="btn-primary" onclick="_faFiltroAplicar()">Aplicar</button>'+
+    '</div></div>';
+  ov.classList.add('open');
+}
+function _faFiltroAplicar(){
+  const g=id=>{ const e=document.getElementById(id); return e?String(e.value||'').trim():''; };
+  _faFiltros[_faSub]={ nome:g('faf-nome'), pedido:g('faf-pedido'), descricao:g('faf-descricao'), origem:g('faf-origem'), status:g('faf-status'),
+    plano:g('faf-plano'), forma:g('faf-forma'),
+    emisDe:g('faf-emisDe'), emisAte:g('faf-emisAte'), lancDe:g('faf-lancDe'), lancAte:g('faf-lancAte'),
+    pagvDe:g('faf-pagvDe'), pagvAte:g('faf-pagvAte'), valorDe:g('faf-valorDe'), valorAte:g('faf-valorAte') };
+  if(!_faFiltroAtivoN()) _faFiltros[_faSub]=null;
+  document.getElementById('fa-filtro-overlay')?.classList.remove('open');
+  renderFinAcomp();
+}
+function _faFiltroLimpar(){ _faFiltros[_faSub]=null; document.getElementById('fa-filtro-overlay')?.classList.remove('open'); renderFinAcomp(); }
+// aplica o filtro a uma linha NORMALIZADA (Entrada: nome=cliente; Saída: nome=fornecedor; contas e
+// bonificados usam os MESMOS campos)
+function _faFiltroPassa(ln){
+  const f=_faFiltros[_faSub]; if(!f) return true;
+  const temD=(d,de,ate)=>{ if(de&&(!d||d<de)) return false; if(ate&&(!d||d>ate)) return false; return true; };
+  const low=s=>String(s||'').toLowerCase();
+  if(f.nome && !low(ln.nome).includes(low(f.nome))) return false;
+  if(f.pedido && !low(ln.pedido||'').includes(low(f.pedido))) return false;
+  if(f.descricao && !low(ln.descricao+' '+(ln.nf||'')).includes(low(f.descricao))) return false;
+  if(f.origem && ln.origem!==f.origem) return false;
+  if(f.status && ln.statusK!==f.status) return false;
+  if(f.plano && !low(ln.plano).includes(low(f.plano))) return false;
+  if(f.forma && !low(ln.forma).includes(low(f.forma))) return false;
+  if((f.emisDe||f.emisAte) && !temD(ln.emissao,f.emisDe,f.emisAte)) return false;
+  if((f.lancDe||f.lancAte) && !temD(ln.lanc,f.lancDe,f.lancAte)) return false;
+  if((f.pagvDe||f.pagvAte) && !temD(ln.pagv,f.pagvDe,f.pagvAte)) return false;
+  const v=parseFloat(ln.valor)||0;
+  if(f.valorDe && v<parseFloat(f.valorDe)) return false;
+  if(f.valorAte && v>parseFloat(f.valorAte)) return false;
+  return true;
 }
 function _faStatus(c){
   const s=c.statusCaixa||'aprovada';
@@ -19084,6 +19183,8 @@ function renderFinAcomp(){
   const list=document.getElementById('fa-list'); if(!list) return;
   const ref=document.getElementById('fa-ref')?.value||'lanc';
   const entrada=(_faSub!=='saida');
+  { const fb=document.getElementById('fa-filtrar-btn'); // v245 — 🔎 Filtrar nas DUAS sub-abas (reforço do dono 07/10); contagem do filtro da sub-aba ativa
+    if(fb){ fb.style.display=''; const nf=_faFiltroAtivoN(); fb.textContent=nf?('🔎 Filtrar ('+nf+')'):'🔎 Filtrar'; fb.className=nf?'btn-primary':''; } }
   const planoNome=id=>((planoContas||[]).find(p=>p.id===id)?.nome)||'—';
   const pagoDe=c=>(c.parcelas||[]).reduce((s,p)=>s+((p&&p.pago)?(parseFloat(p.valor)||0):0),0);
   const emissaoCR=c=>{ const o=(orders||[]).find(x=>String(x.id)===String(c.origemId)); return (o&&o.dataEmissaoNF)||''; };
@@ -19104,8 +19205,26 @@ function renderFinAcomp(){
   if(prevMes && meses.indexOf(prevMes)>=0) mesSel.value=prevMes;
   const mes=mesSel.value||'';
   if(mes){ rows=rows.filter(r=>r.d.slice(0,7)===mes); }
-  const bonifF=mes?bonifSaida.filter(r=>r.d.slice(0,7)===mes):bonifSaida;
+  let bonifF=mes?bonifSaida.filter(r=>r.d.slice(0,7)===mes):bonifSaida;
   rows.sort((a,b)=>b.d.localeCompare(a.d));
+  // v245 — 🔎 filtro por coluna (ENTRADA e SAÍDA, reforço do dono 07/10): contas e bonificados
+  // passam pelo MESMO crivo normalizado; Entrada usa nome=cliente e pedido=origemNum
+  if(_faFiltros[_faSub]){
+    rows=rows.filter(r=>{ const st=_faStatus(r.c); return _faFiltroPassa({
+      nome:(entrada?(r.c.clienteNome||''):(r.c.fornecedorNome||'')),
+      pedido:(entrada?(r.c.origemNum||''):''),
+      descricao:r.c.descricao||'', nf:r.c.notaFiscal||'',
+      origem:(entrada?'':_fgOrigemAcomp(r.c)), statusK:(r.semCaixa?'semcaixa':st.k),
+      plano:planoNome(entrada?(r.c.contaPlanoId||r.c.planoId):(r.c.planoId||r.c.contaPlanoId)), forma:_formaCurta(r.c.formaPag||''),
+      emissao:r.emissao||'', lanc:(r.c.criadoEm?new Date(r.c.criadoEm).toISOString().slice(0,10):''),
+      pagv:_faPagoVencData(r.c).d, valor:r.c.valor }); });
+    bonifF=bonifF.filter(r=>{ const t=(r.c.tipoLanc||'compra'); return _faFiltroPassa({
+      nome:(((fornecedores||[]).find(f=>String(f.id)===String(r.c.fornecedorId))||{}).nome)||r.c.fornecedorNome||'',
+      pedido:'', descricao:r.c.descricao||r.c.obs||'', nf:r.c.notaFiscal||'',
+      origem:(t==='despesa'?'Despesa':(t==='contafixa'?'Conta fixa':'Compra')), statusK:'semcaixa',
+      plano:planoNome(r.c.planoId), forma:'Bonificação',
+      emissao:r.d, lanc:(r.c.criadoEm?new Date(r.c.criadoEm).toISOString().slice(0,10):r.d), pagv:'', valor:r.c.valor }); });
+  }
   // totais: reais (aprovadas com caixa) ≠ sem caixa ≠ pendentes de Caixa ≠ rejeitadas (fora)
   let tot=0, totPago=0, totSem=0, nSem=0, totPendCx=0, nPendCx=0, nRej=0;
   rows.forEach(r=>{ const st=_faStatus(r.c); const v=parseFloat(r.c.valor)||0;
@@ -29608,26 +29727,99 @@ function _rcRender(){
 function _rcAbrir(){ _rcEnsureOverlay(); _rcAberto=true; _rcRender(); document.getElementById('rc-overlay').classList.add('open'); }
 function _rcFechar(){ _rcAberto=false; var d=document.getElementById('rc-overlay'); if(d) d.classList.remove('open'); }
 var _dcConvEq='', _dcConvDe='', _dcConvAte='';
-// v214 — FICHA DE CADASTRO ONLINE (pedido do dono 25/08): gera link de USO ÚNICO da página pública
-// (edge ficha-cadastro) vinculado à conversa + cliente. O cliente preenche nome/CPF-CNPJ/conselho/
-// contato/endereço; a função valida (CNPJ alfanumérico incluso), aplica ao cadastro SÓ o que está
-// vazio (nunca sobrescreve dado válido) e registra o resumo como mensagem de sistema na conversa.
-async function _fichaGerarLink(convId){
+// v214 — FICHA DE CADASTRO ONLINE; v245 — REFORMA (ordem do dono 07/10): o botão abre um MODAL com
+// (1) a lista do que será solicitado ao cliente, (2) o botão Enviar — gera o link de uso único e
+// ENVIA a mensagem direto na conversa pelo caminho canônico (guard de dono/auto-assumir inclusos) —
+// e (3) quando o cliente preenche, os DADOS ficam NO MODAL (a edge v7 NÃO aplica mais nada no
+// cadastro): quem atende atualiza a ficha do cliente MANUALMENTE, só nos campos que julgar
+// necessários (motivo do dono: cliente preenche dias depois e o dado já existente virava caça às
+// Observações, cadastro por cadastro). Selo "preenchido" no botão quando houver ficha preenchida.
+var _fichaConvId=null;
+var _FICHA_CAMPOS=[['nome','Nome completo / razão social'],['doc','CPF ou CNPJ'],['conselho','Conselho (CRM, CRO…) e número'],['telefone','WhatsApp com DDD'],['email','E-mail'],['endereco','Endereço'],['cidade','Cidade'],['cep','CEP']];
+async function _fichaAbrirModal(convId){
+  _fichaConvId=convId;
+  var conv=(conversas||[]).find(function(c){ return String(c.id)===String(convId); });
+  if(!conv){ alert('Conversa não encontrada.'); return; }
+  var ov=document.getElementById('ficha-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='ficha-overlay'; ov.className='overlay'; ov.style.zIndex='4300'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:560px;max-height:85vh;overflow:auto">'+
+    '<h2 style="margin-bottom:6px">📝 Ficha de cadastro online</h2>'+
+    '<div id="ficha-corpo" style="font-size:12px;color:var(--text-secondary)">Carregando…</div>'+
+    '<div class="modal-footer" style="margin-top:12px">'+
+      '<button onclick="document.getElementById(\'ficha-overlay\').classList.remove(\'open\')">Fechar</button>'+
+      '<button class="btn-primary" id="ficha-enviar-btn" onclick="_fichaEnviar()">📨 Enviar ficha para o cliente</button>'+
+    '</div></div>';
+  ov.classList.add('open');
+  var ult=null;
   try{
+    if(_sb){
+      var fr=await _sb.from('fichas_cadastro').select('id,status,criado_em,criado_por,preenchida_em,dados')
+        .or('conversa_id.eq.'+convId+(conv.clienteId?(',cliente_id.eq.'+conv.clienteId):''))
+        .order('preenchida_em',{ascending:false,nullsFirst:false}).order('criado_em',{ascending:false}).limit(1);
+      if(!fr.error && fr.data && fr.data.length) ult=fr.data[0];
+    }
+  }catch(_e){}
+  var corpo=document.getElementById('ficha-corpo'); if(!corpo) return;
+  var lista='<div style="font-weight:600;color:var(--text-primary);margin-bottom:4px">O cliente será solicitado a preencher:</div>'+
+    '<ul style="margin:0 0 10px 18px;padding:0">'+_FICHA_CAMPOS.map(function(c){ return '<li>'+c[1]+'</li>'; }).join('')+'</ul>'+
+    '<div style="font-size:11px;color:var(--text-tertiary)">Link de uso único. O preenchimento NÃO altera o cadastro: os dados aparecem aqui neste modal (e no resumo da conversa) e a atualização do cadastro é feita manualmente por quem atende.</div>';
+  var bloco='';
+  if(ult && ult.status==='preenchida'){
+    try{ _fichaSeloCache[convId]={ v:true, ts:Date.now() }; var _se=document.getElementById('conv-ficha-selo'); if(_se) _se.style.display=''; }catch(_e){}
+    var d=ult.dados||{};
+    var rot=[['nome','Nome'],['doc',(d.tipoPessoa==='PJ'?'CNPJ':'CPF')],['conselho','Conselho'],['conselhoNum','Nº conselho'],['telefone','WhatsApp'],['email','E-mail'],['endereco','Endereço'],['cidade','Cidade'],['cep','CEP']];
+    bloco='<div style="margin-top:12px;border:1px solid var(--st-ok-bd);background:var(--st-ok-bg);border-radius:var(--r-md);padding:10px">'+
+      '<div style="font-weight:700;color:var(--st-ok-tx);margin-bottom:6px">✓ Preenchida pelo cliente em '+(ult.preenchida_em?new Date(ult.preenchida_em).toLocaleString('pt-BR'):'—')+'</div>'+
+      rot.filter(function(p){ return String(d[p[0]]||'').trim(); }).map(function(p){ return '<div style="font-size:12px;padding:2px 0"><b>'+p[1]+':</b> '+escapeHtml(String(d[p[0]]))+'</div>'; }).join('')+
+      '<div style="font-size:11px;color:var(--text-tertiary);margin-top:8px">Atualize o cadastro manualmente nos campos que julgar necessários — nada foi aplicado automaticamente.</div>'+
+      (conv.clienteId?'<button onclick="openClientModal(\''+conv.clienteId+'\')" style="margin-top:8px;font-size:11px;padding:4px 10px">✏ Abrir cadastro do cliente</button>':'')+
+      '</div>';
+  } else if(ult && ult.status==='pendente'){
+    bloco='<div style="margin-top:12px;font-size:12px;color:var(--st-mid-tx)">⏳ Ficha enviada em '+(ult.criado_em?new Date(ult.criado_em).toLocaleString('pt-BR'):'—')+(ult.criado_por?' por '+escapeHtml(ult.criado_por):'')+' — aguardando o cliente preencher. Enviar de novo gera um link novo (o anterior continua válido até ser usado).</div>';
+  }
+  corpo.innerHTML=lista+bloco;
+}
+async function _fichaEnviar(){
+  try{
+    var convId=_fichaConvId;
     var conv=(conversas||[]).find(function(c){ return String(c.id)===String(convId); });
     if(!conv){ alert('Conversa não encontrada.'); return; }
     if(!_sb){ alert('Sem conexão com o banco — tente novamente.'); return; }
+    if(typeof _podeResponderConv==='function' && !_podeResponderConv(conv)){ alert('A conversa está em atendimento por outra pessoa — peça a transferência para enviar a ficha.'); return; }
+    var btn=document.getElementById('ficha-enviar-btn'); if(btn){ btn.disabled=true; btn.textContent='Enviando…'; }
     var abc='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789', tok='';
     var rnd=new Uint32Array(32); crypto.getRandomValues(rnd);
     for(var i=0;i<32;i++) tok+=abc[rnd[i]%abc.length];
     var r=await _sb.from('fichas_cadastro').insert({ id:'fic'+Date.now(), token:tok, cliente_id:conv.clienteId||null, conversa_id:conv.id, criado_por:(currentUser&&currentUser.name)||'' });
-    if(r.error){ alert('Não consegui gerar o link: '+r.error.message); return; }
-    var link='https://app.lecaremanipulados.com.br/ficha.html?t='+tok; // v216 — domínio próprio (CNAME→Pages); v215 usava muriloverri.github.io, que agora redireciona para cá
+    if(r.error){ alert('Não consegui gerar o link: '+r.error.message); if(btn){ btn.disabled=false; btn.textContent='📨 Enviar ficha para o cliente'; } return; }
+    var link='https://app.lecaremanipulados.com.br/ficha.html?t='+tok; // v216 — domínio próprio (CNAME→Pages)
     var txt='Para agilizar seu cadastro, preencha esta ficha rápida (leva 2 minutos): '+link;
-    try{ var ta=document.querySelector('#conv-tela .conv-input-field')||document.querySelector('.conv-input-field'); if(ta){ ta.value=txt; ta.focus(); } }catch(_e){}
-    try{ await navigator.clipboard.writeText(link); }catch(_e){}
-    alert('📝 Link da ficha gerado (uso único) e copiado.\n\nA mensagem pronta foi colocada no campo de texto — é só enviar.\n\nQuando o cliente preencher: os dados entram no cadastro (só campos vazios) e o resumo aparece nesta conversa.');
-  }catch(e){ alert('Erro ao gerar a ficha: '+((e&&e.message)||e)); }
+    // envio pelo caminho CANÔNICO da conversa aberta: guard de dono no servidor, auto-assumir, Z-API e saveData
+    var cont=document.getElementById('conv-tela'); var inp=cont?cont.querySelector('.conv-input-field'):null;
+    if(!inp){ alert('Abra a conversa deste cliente para enviar a ficha.'); if(btn){ btn.disabled=false; btn.textContent='📨 Enviar ficha para o cliente'; } return; }
+    var rascunho=inp.value; inp.value=txt;
+    window._convEnviandoTrava=false; // o clique veio do modal, não do botão de enviar da conversa
+    await enviarMensagemConversa('conv-tela');
+    var c2=document.getElementById('conv-tela'); var inp2=c2?c2.querySelector('.conv-input-field'):null;
+    if(inp2 && rascunho && !inp2.value.trim()){ inp2.value=rascunho; try{ _convDrafts[conv.id]=rascunho; }catch(_e){} } // devolve o rascunho que estava digitado
+    document.getElementById('ficha-overlay')?.classList.remove('open');
+  }catch(e){ alert('Erro ao enviar a ficha: '+((e&&e.message)||e)); }
+}
+// v245 — selo "preenchido" sob o botão Ficha (cache de 60s por conversa; consulta leve de 1 linha)
+var _fichaSeloCache={};
+async function _fichaSeloRefresh(convId){
+  try{
+    var conv=(conversas||[]).find(function(c){ return String(c.id)===String(convId); });
+    if(!conv || conv.grupo || !_sb) return;
+    var cc=_fichaSeloCache[convId];
+    if(!cc || (Date.now()-cc.ts)>60000){
+      var r=await _sb.from('fichas_cadastro').select('id').eq('status','preenchida')
+        .or('conversa_id.eq.'+convId+(conv.clienteId?(',cliente_id.eq.'+conv.clienteId):'')).limit(1);
+      _fichaSeloCache[convId]={ v:!!(r && !r.error && r.data && r.data.length), ts:Date.now() };
+    }
+    var el=document.getElementById('conv-ficha-selo');
+    if(el && conversaAtivaId===convId) el.style.display=_fichaSeloCache[convId].v?'':'none';
+  }catch(_e){}
 }
 // v214 — o "há X min" dos quadros CONGELAVA no instante da renderização (reporte do dono 25/08:
 // conversa 30+ min sem resposta mostrando "há 1 min" — o cálculo estava certo, mas só rodava quando
@@ -36721,6 +36913,10 @@ function getConversasVisiveis(){
     const numAtivo=(_convNumAtivo&&meus.includes(_convNumAtivo))?_convNumAtivo:(meus[0]||_waNumPadrao());
     const gestor=(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial');
     return conversas.filter(c=>{
+      // v245 — FIO ÚNICO POR GRUPO (ordem do dono 07/10: "todas as mensagens do grupo têm que
+      // aparecer para todos que têm acesso"): grupo é da EMPRESA (os dois números são membros) —
+      // aparece no menu de QUALQUER número que o usuário acessa, independente do numeroLecare do fio.
+      if(c && c.grupo) return gestor || meus.length>0;
       if(_waNumDaConv(c)!==numAtivo) return false;
       if(gestor) return true;
       if(meus.includes(numAtivo)) return true;      // pool compartilhado: autorizado no numero ve todas dele
@@ -38211,7 +38407,7 @@ function renderConversaTela(convId, containerId){
       </div>
       ${conv.grupo?`<span style="font-size:11px;color:#54656f;padding:5px 10px">👥 Grupo — sem vínculo com cliente</span>`:`<button onclick="${_cardLead?`openLeadModal('${_cardLead.id}')`:`alert('Este cliente ainda não tem card no CRM.')`}" title="Abrir card no CRM" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📋 Card</button>`}
       ${conv.grupo?'':`<button onclick="openClienteFichaPorId('${conv.clienteId}')" title="Ver dados do cliente" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">👤 Cliente</button>`}
-      ${conv.grupo?'':`<button onclick="_fichaGerarLink('${conv.id}')" title="Gera um link de FICHA DE CADASTRO online para enviar ao cliente — ele preenche (nome, CPF/CNPJ, conselho, contato, endereço) e os dados entram no cadastro sozinhos, com o resumo aparecendo nesta conversa. Link de uso único." style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📝 Ficha</button>`}
+      ${conv.grupo?'':`<button onclick="_fichaAbrirModal('${conv.id}')" title="Ficha de cadastro online — abre o modal com o que será solicitado ao cliente, o envio do link e, após o preenchimento, os dados para atualização MANUAL do cadastro." style="font-size:11px;padding:4px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;flex-direction:column;align-items:center;gap:0;white-space:nowrap;line-height:1.2">📝 Ficha<span id="conv-ficha-selo" style="display:none;font-size:8.5px;font-weight:700;color:var(--st-ok-tx)">preenchido</span></button>`}
       <button onclick="_convMarcarNaoLida('${conv.id}')" title="Marcar como não lida" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">✉️ Não lida</button>
       <button onclick="_convToggleAtencao('${conv.id}')" title="${conv.atencao?('Atenção marcada'+(conv.atencaoPor?(' por '+escapeHtml(conv.atencaoPor)):'')+(conv.atencaoEm?(' em '+fmtTs(conv.atencaoEm)):'')+' — clique para desmarcar'):'Marcar esta conversa com um sinal de ATENÇÃO (ex.: ficamos de dar um retorno) — fica visível na lista até alguém desmarcar'}" style="font-size:11px;padding:5px 10px;background:${conv.atencao?'#FFF4D6':'#fff'};color:${conv.atencao?'#946200':'#54656f'};border:.5px solid ${conv.atencao?'#EAD9A8':'#d1d7db'};border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;${conv.atencao?'font-weight:600':''}">🔶 Atenção</button>
       ${(currentUser?.perfil==='admin' && !conv.grupo)?`<button onclick="_convImportarHistorico('${conv.id}')" title="Importar histórico exportado do WhatsApp do celular (.txt) — apenas admin" style="font-size:11px;padding:5px 10px;background:#fff;color:#54656f;border:.5px solid #d1d7db;border-radius:var(--r-md);cursor:pointer;display:inline-flex;align-items:center;gap:4px;white-space:nowrap">📥 Importar</button>`:''}
@@ -38264,6 +38460,7 @@ function renderConversaTela(convId, containerId){
   if(_lastConvDe !== convId){ _msgDeAtual = 'atendente'; _lastConvDe = convId; }
   const _tgBtn = el.querySelector('.msgde-btn[data-de="'+_msgDeAtual+'"]');
   if(_tgBtn){ try{ _setMsgDe(_msgDeAtual, _tgBtn); }catch(_e){} }
+  try{ _fichaSeloRefresh(convId); }catch(_e){} // v245 — selo "preenchido" no botão Ficha
 }
 
 let _msgDeAtual = 'atendente';
@@ -38723,7 +38920,7 @@ function _equipeDoUsuario(userId){
 // v98 — só responde quem é ADMIN ou o DONO (atendente) da conversa
 function _podeResponderConv(conv){
   if(!currentUser) return false;
-  if(conv && conv.grupo){ return _waModoDois() ? _waAtendAutorizadoNum(currentUser.id, conv) : true; } // v148
+  if(conv && conv.grupo){ return _waModoDois() ? (_waNumsDoUsuario().length>0) : true; } // v148; v245 — fio único por grupo: responde quem tem acesso a QUALQUER número (o envio sai pelo número do fio, com o prefixo *Nome:* v149 identificando o autor)
   // v169 — ⏸ PAUSA: o pausado NÃO responde as próprias conversas; quem cobre responde SEM transferir
   // (a conversa continua do dono, autoria da msg registra quem escreveu — padrão v142)
   if(conv && conv.atendenteId){

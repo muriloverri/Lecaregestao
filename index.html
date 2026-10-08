@@ -862,7 +862,12 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
                   <button onclick="abrirInboundModal()" style="font-size:11px;padding:5px 10px;border-radius:var(--r-md);border:.5px solid var(--st-ok-bd);background:var(--st-ok-bg);color:var(--st-ok-tx);cursor:pointer;white-space:nowrap">+ Inbound</button>
                 </div>
               </div>
-              <input type="text" id="conv-search" placeholder="Buscar cliente ou número..." oninput="renderConversasLista()" style="width:100%;margin-top:8px;font-size:12px;padding:6px 10px;border-radius:var(--r-md);border:.5px solid var(--border)">
+              <!-- v247 — busca SÓ no clique da lupa ou Enter (ordem do dono 08/10; o relato da Tairine
+                   de tela fechando era a varredura pesada A CADA TECLA). Limpar o campo restaura a lista. -->
+              <div style="display:flex;gap:6px;margin-top:8px">
+                <input type="text" id="conv-search" placeholder="Buscar cliente ou número..." onkeydown="if(event.key==='Enter')renderConversasLista()" oninput="if(!this.value)renderConversasLista()" style="flex:1;font-size:12px;padding:6px 10px;border-radius:var(--r-md);border:.5px solid var(--border)">
+                <button onclick="renderConversasLista()" title="Buscar (ou Enter no campo)" style="font-size:13px;padding:6px 10px;border-radius:var(--r-md);border:.5px solid var(--border);background:var(--bg-primary);cursor:pointer;flex-shrink:0">🔍</button>
+              </div>
             </div>
             <div id="conv-lista" style="flex:1;overflow-y:auto"></div>
           </div>
@@ -5244,7 +5249,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v246';
+var APP_VERSION = 'v247';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -10244,6 +10249,8 @@ function getAgendaTargetUsers(){
 }
 
 function openAgendaModal(id, tipoDefault){
+  const _evG=id?agendaEventos.find(x=>x.id===id):null;
+  if(_evG && typeof _agPodeEditar==='function' && !_agPodeEditar(_evG)){ alert('Este agendamento é de outro responsável — visível a todos, mas a edição é só do responsável (ou da administração).'); return; } // v247
   editingEventoId=id||null;agEventoResps=[];agEventoLeadId=null;
   const ev=id?agendaEventos.find(x=>x.id===id):null;
   const tipo=ev?ev.tipo:(tipoDefault||'lembrete');
@@ -10333,7 +10340,11 @@ function saveAgendaEvento(){
     status:'pendente',
     notifEnviadas:[],
   };
-  if(editingEventoId){Object.assign(agendaEventos.find(x=>x.id===editingEventoId),ev);}
+  if(editingEventoId){
+    const _exEv=agendaEventos.find(x=>x.id===editingEventoId);
+    if(typeof _agPodeEditar==='function' && !_agPodeEditar(_exEv)){ alert('Este agendamento é de outro responsável — a edição é só do responsável (ou da administração).'); return; } // v247 — defesa em profundidade
+    Object.assign(_exEv,ev);
+  }
   else{agendaEventos.push({id:'ev'+Date.now(),...ev});}
   closeAgendaModal();renderAgenda();checkNotificacoes();saveData();
 }
@@ -10342,6 +10353,7 @@ function saveAgendaEvento(){
 // o registro fica no cartão, na aba Concluídos/Encerrados, para conferência da conclusão do agendamento.
 function _agEncerrar(ev){
   if(!ev) return false;
+  if(typeof _agPodeEditar==='function' && !_agPodeEditar(ev)){ alert('Este agendamento é de outro responsável — encerra só o responsável (ou a administração).'); return false; } // v247 — chokepoint único do encerrar (modal e botão direto)
   const j=prompt('Encerrar "'+(ev.titulo||'')+'"\n\nComo foi o evento? (obrigatório — fica registrado na aba Concluídos/Encerrados)\nEx.: "Cliente atendido, pedido confirmado", "Não atendeu — reagendado", "Reunião realizada, aguardando retorno".');
   if(j===null) return false; // cancelou
   if(!String(j).trim()){ alert('A justificativa é obrigatória para encerrar o evento.'); return false; }
@@ -10379,6 +10391,17 @@ function _agRespNome(r){
   var u=(users||[]).find(function(x){ return x && x.id===_id; });
   return (u&&u.name)||'';
 }
+// v247 — EDIÇÃO SÓ DO RESPONSÁVEL (ordem do dono 08/10: "cada um pode editar apenas aquele em que
+// ele mesmo é o responsável"): admin/diretora editam tudo (gestão); evento novo (sem id) qualquer
+// um cria. Criador que NÃO é responsável não edita (regra literal). Usado nos botões do cartão e
+// nos CHOKEPOINTS (openAgendaModal, saveAgendaEvento, concluir) — clique vindo de outra tela
+// (ex.: agenda do card no CRM) cai na mesma guarda.
+function _agPodeEditar(ev){
+  if(!ev) return true;
+  if(!currentUser) return false;
+  if(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial') return true;
+  return (ev.responsaveis||[]).some(r=>String(_agRespId(r))===String(currentUser.id));
+}
 function renderAgenda(){
   const tipoF=document.getElementById('ag-filter-tipo')?.value||'';
   const statusF=document.getElementById('ag-filter-status')?.value||'';
@@ -10391,19 +10414,12 @@ function renderAgenda(){
     respSel.innerHTML='<option value="">Todos</option>'+allResps.map(r=>`<option value="${r}" ${r===prev?'selected':''}>${r}</option>`).join('');
     respSel.value=prev;
   }
-  // Filter by current user visibility
-  let eventos=agendaEventos.filter(ev=>{
-    if(!currentUser)return false;
-    if(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial')return true;
-    if((ev.responsaveis||[]).some(r=>_agRespId(r)===currentUser.id)||ev.criadoPor===currentUser.id) return true; // v207 — cobre resp-string
-    // v192 — AGENDA ÚNICA DO SDR (pedido do dono 05/08): quem é do SDR vê os eventos de TODOS os
-    // colegas do SDR (Marina e Sabrina trabalham uma agenda só)
-    if(currentUser.perfil==='sdr'){
-      const _sdrIds=(users||[]).filter(u=>u.perfil==='sdr').map(u=>u.id);
-      if((ev.responsaveis||[]).some(r=>_sdrIds.includes(_agRespId(r))) || _sdrIds.includes(ev.criadoPor)) return true;
-    }
-    return false;
-  });
+  // v247 — AGENDA VISÍVEL A TODOS (ordem do dono 08/10: "agendamentos ficam disponíveis para todos
+  // os comerciais visualizarem, e não somente cada um o seu"): o filtro de visibilidade por
+  // responsável/criador (v207) e a agenda única do SDR (v192) viram CASOS PARTICULARES do novo
+  // desenho — todo mundo vê tudo. A restrição passou para a EDIÇÃO: _agPodeEditar (só o
+  // responsável, além de admin/diretora) nos botões E nos chokepoints (modal/salvar/encerrar).
+  let eventos=agendaEventos.filter(ev=>!!currentUser && !!ev);
   if(tipoF)eventos=eventos.filter(e=>e.tipo===tipoF);
   if(respF)eventos=eventos.filter(e=>(e.responsaveis||[]).some(r=>_agRespNome(r)===respF)); // v207
   const withStatus=eventos.map(e=>({...e,_status:agEventoStatus(e)}));
@@ -10447,7 +10463,7 @@ function renderAgenda(){
           <span>📅 ${fmtDate(e.data)} ${e.hora}</span>
           ${antLabel}${prazoLabel}${localLabel}
           ${eqNome?`<span style="color:var(--text-secondary)">🏷 Equipe: ${escapeHtml(eqNome)}</span>`:''}
-          ${resps?`<span style="background:var(--st-inf-bg);color:var(--st-inf-tx);border:.5px solid var(--st-inf-bd);border-radius:20px;padding:1px 9px;font-weight:600" title="Quem deve EXECUTAR este ${e.tipo==='reuniao'?'compromisso':e.tipo==='tarefa'?'tarefa':'lembrete'}">👤 Executa: ${escapeHtml(resps)}</span>`:`<span style="background:var(--st-mid-bg);color:var(--st-mid-tx);border:.5px solid var(--st-mid-bd);border-radius:20px;padding:1px 9px;font-weight:600">⚠ sem responsável</span>`}
+          ${resps?`<span style="background:var(--st-inf-bg);color:var(--st-inf-tx);border:.5px solid var(--st-inf-bd);border-radius:20px;padding:1px 9px;font-weight:600" title="Responsável por este ${e.tipo==='reuniao'?'compromisso':e.tipo==='tarefa'?'tarefa':'lembrete'}">👤 Responsável: ${escapeHtml(resps)}</span>`:`<span style="background:var(--st-mid-bg);color:var(--st-mid-tx);border:.5px solid var(--st-mid-bd);border-radius:20px;padding:1px 9px;font-weight:600">⚠ sem responsável</span>`}
           ${(()=>{ const _cp=e.criadoPor?((users.find(u=>u.id===e.criadoPor)||{}).name||''):''; const _lbl=_cp||(e.autoCadencia?'Sistema (cadência da etapa)':''); return _lbl?`<span style="color:var(--text-secondary)" title="Quem registrou este agendamento">✍ Agendado por: ${escapeHtml(_lbl)}</span>`:''; })()}
           ${lead?`<span style="color:var(--text-info)" title="Cliente vinculado — abre o card">🔗 Cliente: ${escapeHtml(lead.empresa)}</span>`:''}
         </div>
@@ -10456,8 +10472,8 @@ function renderAgenda(){
       </div>
       <div class="ag-actions">
         ${(lead&&lead.clienteId)?`<button onclick="abrirConversaCliente('${lead.clienteId}')" title="Abrir a conversa de WhatsApp deste cliente" style="padding:3px 10px;font-size:11px;background:var(--st-ok-bg);color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd)">💬 Conversa</button>`:''}
-        <button onclick="openAgendaModal('${e.id}')" style="padding:3px 10px;font-size:11px">Editar</button>
-        ${st!=='concluido'?`<button onclick="concluirEventoDireto('${e.id}')" class="btn-success" style="padding:3px 10px;font-size:11px">Encerrar</button>`:''}
+        ${_agPodeEditar(e)?`<button onclick="openAgendaModal('${e.id}')" style="padding:3px 10px;font-size:11px">Editar</button>`:`<span style="font-size:10px;color:var(--text-tertiary);align-self:center" title="Visível a todos; edita só o responsável (ou a administração)">👁 só visualização</span>`}
+        ${(st!=='concluido'&&_agPodeEditar(e))?`<button onclick="concluirEventoDireto('${e.id}')" class="btn-success" style="padding:3px 10px;font-size:11px">Encerrar</button>`:''}
       </div>
     </div>`;
   };
@@ -24292,6 +24308,48 @@ function renderForecast(myLeads){
   const leadsMed  = leadsF1.filter(l=>{const p=PROB_ETAPA[l.etapa]||0;return p>=40&&p<70;});
   const leadsLow  = leadsF1.filter(l=>(PROB_ETAPA[l.etapa]||0)<40);
 
+  // v247 — CAIXA OPERY + ORÇAMENTOS ABERTOS OPERY (ordem do dono 08/10; decisão expressa: NÃO
+  // somam no total projetado — campos informativos). Só tipos que geram valor financeiro
+  // (Venda/Venda Mãe/Embaixador — regra de receita da casa).
+  // CAIXA OPERY = foto da última importação do CSV, já descontada ao vivo do que ENTROU no sistema
+  // (_orcDivgReconferir, v225): cat 'aguardando' = aprovado no Opery, ainda no caixa de lá;
+  // cat 'ausente' = passou pelo caixa (pago) e aguarda subir pela inserção diária. Quando o pedido
+  // sobe, o item se resolve sozinho e sai daqui (e o valor passa a contar no confirmado).
+  const _RECEITA_LBL={'Venda':1,'Venda Mãe':1,'Embaixador':1};
+  try{ if(typeof _orcDivgReconferir==='function') _orcDivgReconferir(); }catch(_e){}
+  let cxOpAg=0, cxOpAgN=0, cxOpPg=0, cxOpPgN=0, cxOpEm=0;
+  try{
+    const _d=(typeof orcOperyDivg!=='undefined')?orcOperyDivg:null;
+    cxOpEm=(_d&&_d.em)||0;
+    ((_d&&_d.itens)||[]).forEach(x=>{
+      if(!x||x.resolvidoEm) return;
+      if(!_RECEITA_LBL[String(x.tipo||'Venda')]) return;
+      if(x.cat==='aguardando'){ cxOpAg+=parseFloat(x.vOpery)||0; cxOpAgN++; }
+      else if(x.cat==='ausente'){ cxOpPg+=parseFloat(x.vOpery)||0; cxOpPgN++; }
+    });
+  }catch(_e){}
+  const caixaOpery=cxOpAg+cxOpPg;
+  // atualização silenciosa da análise (chave própria v240) — re-renderiza o quadro só se mudou algo
+  try{
+    if(typeof _orcDivgCarregar==='function' && !window._fcDivgBusy){
+      window._fcDivgBusy=true;
+      _orcDivgCarregar().then(ch=>{ window._fcDivgBusy=false; if(ch){ try{ renderForecast(myLeads); }catch(_e){} } }).catch(()=>{ window._fcDivgBusy=false; });
+    }
+  }catch(_e){}
+  // ORÇAMENTOS ABERTOS OPERY = em aberto, do PERÍODO selecionado no dashboard (mês ou intervalo);
+  // orçamento legado sem tipoOpery conta como Venda (mesmo fail-open da importação).
+  const _ehIntFc=(typeof _dcModo!=='undefined' && _dcModo==='intervalo' && _dcIni && _dcFim);
+  const _mesFc=(typeof _dcMes!=='undefined' && _dcMes)?_dcMes:mes;
+  const _orcNoPeriodo=d=>{ const s=String(d||''); return _ehIntFc?(s>=_dcIni&&s<=_dcFim):(s.slice(0,7)===_mesFc); };
+  let orcAb=0, orcAbN=0;
+  ((typeof orcamentosCrm!=='undefined'&&orcamentosCrm)||[]).forEach(o=>{
+    if(!o||o.origem!=='opery'||o.status!=='aberto') return;
+    if(!_RECEITA_LBL[String(o.tipoOpery||'Venda')]) return;
+    if(!_orcNoPeriodo(o.data)) return;
+    orcAb+=parseFloat(o.valor)||0; orcAbN++;
+  });
+  const _perLblFc=_ehIntFc?(fmtDate(_dcIni)+' a '+fmtDate(_dcFim)):new Date(_mesFc+'-01T12:00:00').toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div style="background:var(--st-ok-bg);border-radius:var(--r-md);padding:10px 14px">
@@ -24309,6 +24367,20 @@ function renderForecast(myLeads){
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:12px;color:var(--text-secondary)">Total projetado para o mês</span>
         <span style="font-size:18px;font-weight:500;color:var(--text-primary)">${fmtMoney(totalProjetado)}</span>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div style="background:var(--st-inf-bg,var(--bg-secondary));border:.5px solid var(--border);border-radius:var(--r-md);padding:10px 14px" title="Vendas já feitas no Opery que ainda não chegaram ao sistema: no caixa do Opery aguardando aprovação, ou pagas lá aguardando subir pela inserção diária. Não soma no total projetado; quando o pedido entra no sistema, sai daqui e passa a contar no Confirmado. Atualiza a cada importação do CSV do Opery.">
+        <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;font-weight:500;letter-spacing:.04em">Caixa Opery</div>
+        <div style="font-size:20px;font-weight:500;color:var(--text-primary)">${fmtMoney(caixaOpery)}</div>
+        <div style="font-size:10px;color:var(--text-tertiary)">${cxOpAgN} no caixa (${fmtMoney(cxOpAg)}) · ${cxOpPgN} pago(s) aguardando subir (${fmtMoney(cxOpPg)})</div>
+        <div style="font-size:9.5px;color:var(--text-tertiary)">${cxOpEm?('última importação do CSV: '+fmtTs(cxOpEm)):'importe o CSV do Opery na tela Orçamentos para alimentar'} · fora do total</div>
+      </div>
+      <div style="background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md);padding:10px 14px" title="Orçamentos do Opery em aberto (apenas tipos que geram receita: Venda, Venda Mãe e Embaixador) do período selecionado no dashboard. Não soma no total projetado.">
+        <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;font-weight:500;letter-spacing:.04em">Orçamentos abertos Opery</div>
+        <div style="font-size:20px;font-weight:500;color:var(--text-primary)">${fmtMoney(orcAb)}</div>
+        <div style="font-size:10px;color:var(--text-tertiary)">${orcAbN} orçamento(s) · ${escapeHtml(_perLblFc)}</div>
+        <div style="font-size:9.5px;color:var(--text-tertiary)">fora do total</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
@@ -30390,14 +30462,23 @@ function renderMetasEquipe(mes, receitaMes){
   const totalMeta=rows.reduce((s,r)=>s+r.meta,0);
   const totalReal=rows.reduce((s,r)=>s+r.real,0)+semEquipe;
 
-  // Sub-tabela informativa por vendedor (atendente) — sem meta; futuro: meta por vendedor
+  // v247 — POR VENDEDOR com META (pedido do dono 08/10: "trazer fixo as vendas por vendedor e o
+  // campo para suas metas"): bloco fixo (era <details> informativo) com meta editável pelo admin —
+  // chave vendedor_<userId>_<mes> em metasMensais (prefixo novo; o legado 'user_...' descontinuado
+  // não é tocado), mesma mecânica mkEditableVal/saveMetaInline/registro dedicado anti-clobber v169.
+  // Lista = quem vendeu no mês ∪ quem tem meta definida no mês (vendedor com meta e sem venda aparece zerado).
   const vendMap={};
   orders.forEach(o=>{ if(!o.d1||o.d1.slice(0,7)!==mes||!_ehReceita(o)) return;
     const aid=o.atendenteId||o.atendente||''; vendMap[aid]=(vendMap[aid]||0)+(parseFloat(o.valor)||0); });
+  (users||[]).forEach(u=>{ if(u&&u.id!=null&&(parseFloat(metasMensais['vendedor_'+u.id+'_'+mes])||0)>0&&!(u.id in vendMap)) vendMap[u.id]=0; });
   const vendRows=Object.entries(vendMap).map(([aid,val])=>{
-    const u=users.find(x=>x.id===aid);
-    return{nome:u?u.name:(aid?'(id '+aid+')':'(sem vendedor)'), val};
+    const u=users.find(x=>String(x.id)===String(aid));
+    const vkey=aid?('vendedor_'+aid+'_'+mes):null;
+    const vmeta=vkey?(parseFloat(metasMensais[vkey])||0):0;
+    return{aid, vkey, nome:u?u.name:(aid?'(id '+aid+')':'(sem vendedor)'), val, meta:vmeta, pct:vmeta>0?val/vmeta*100:0};
   }).sort((a,b)=>b.val-a.val);
+  const vendTotMeta=vendRows.reduce((s,v)=>s+v.meta,0);
+  const vendTotReal=vendRows.reduce((s,v)=>s+v.val,0);
 
   el.innerHTML=`
     <div style="overflow-x:auto">
@@ -30447,22 +30528,40 @@ function renderMetasEquipe(mes, receitaMes){
     </table></div>
     <div style="margin-top:6px;font-size:11px;color:var(--text-tertiary)">✓ A soma das equipes ${semEquipe>0?'(+ sem equipe) ':''}fecha com o realizado do mês: <strong>${fmtMoney(totalReal)}</strong></div>
 
-    <details style="margin-top:14px">
-      <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-secondary)">👤 Por vendedor (informativo — sem meta por enquanto)</summary>
-      <div style="overflow-x:auto;margin-top:8px">
-      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:360px">
-        <thead><tr>
-          <th style="padding:6px 12px;background:var(--bg-secondary);text-align:left;font-size:11px;font-weight:500;color:var(--text-secondary)">Vendedor</th>
-          <th style="padding:6px 12px;background:var(--bg-secondary);text-align:right;font-size:11px;font-weight:500;color:var(--text-secondary)">Realizado</th>
-        </tr></thead>
-        <tbody>
-          ${vendRows.map(v=>`<tr>
-            <td style="padding:6px 12px;border-bottom:.5px solid var(--border)">${escapeHtml(v.nome)}</td>
-            <td style="padding:6px 12px;border-bottom:.5px solid var(--border);text-align:right;font-weight:500">${fmtMoney(v.val)}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>
-    </details>`;
+    <div style="margin-top:16px;font-size:12px;font-weight:600;color:var(--text-secondary)">👤 Por vendedor</div>
+    <div style="overflow-x:auto;margin-top:8px">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">
+      <thead><tr>
+        <th style="padding:6px 12px;background:var(--bg-secondary);text-align:left;font-size:11px;font-weight:500;color:var(--text-secondary)">Vendedor</th>
+        <th style="padding:6px 12px;background:var(--bg-secondary);text-align:right;font-size:11px;font-weight:500;color:var(--text-secondary)">Meta ${isAdm?'(clique para editar)':''}</th>
+        <th style="padding:6px 12px;background:var(--bg-secondary);text-align:right;font-size:11px;font-weight:500;color:var(--text-secondary)">Realizado</th>
+        <th style="padding:6px 12px;background:var(--bg-secondary);text-align:left;font-size:11px;font-weight:500;color:var(--text-secondary);min-width:160px">Progresso</th>
+        <th style="padding:6px 12px;background:var(--bg-secondary);text-align:right;font-size:11px;font-weight:500;color:var(--text-secondary)">%</th>
+        <th style="padding:6px 12px;background:var(--bg-secondary);text-align:right;font-size:11px;font-weight:500;color:var(--text-secondary)">Falta</th>
+      </tr></thead>
+      <tbody>
+        ${vendRows.map(v=>{
+          const corV=v.pct>=100?'var(--st-ok-tx)':v.pct>=70?'var(--st-mid-tx)':'var(--st-bad-tx)';
+          return`<tr>
+            <td style="padding:6px 12px;border-bottom:.5px solid var(--border);font-weight:500">${escapeHtml(v.nome)}</td>
+            <td style="padding:6px 12px;border-bottom:.5px solid var(--border);text-align:right">${v.vkey?mkEditableVal(v.vkey,v.meta,isAdm):'—'}</td>
+            <td style="padding:6px 12px;border-bottom:.5px solid var(--border);text-align:right;font-weight:500;color:var(--st-ok-tx)">${fmtMoney(v.val)}</td>
+            <td style="padding:6px 12px;border-bottom:.5px solid var(--border);min-width:160px">${v.meta>0?mkProgress(v.pct,corV):'<span style="font-size:10px;color:var(--text-tertiary)">sem meta</span>'}</td>
+            <td style="padding:6px 12px;border-bottom:.5px solid var(--border);text-align:right;font-weight:600;color:${corV}">${v.meta>0?Math.round(v.pct)+'%':'—'}</td>
+            <td style="padding:6px 12px;border-bottom:.5px solid var(--border);text-align:right;color:var(--text-secondary)">${v.meta>0?fmtMoney(Math.max(0,v.meta-v.val)):'—'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot><tr style="background:var(--bg-secondary)">
+        <td style="padding:6px 12px;font-weight:600;font-size:12px">Total</td>
+        <td style="padding:6px 12px;text-align:right;font-weight:600">${vendTotMeta>0?fmtMoney(vendTotMeta):'—'}</td>
+        <td style="padding:6px 12px;text-align:right;font-weight:600;color:var(--st-ok-tx)">${fmtMoney(vendTotReal)}</td>
+        <td style="padding:6px 12px">${vendTotMeta>0?mkProgress(vendTotReal/vendTotMeta*100):''}</td>
+        <td style="padding:6px 12px;text-align:right;font-weight:700">${vendTotMeta>0?Math.round(vendTotReal/vendTotMeta*100)+'%':'—'}</td>
+        <td style="padding:6px 12px;text-align:right;font-weight:600">${vendTotMeta>0?fmtMoney(Math.max(0,vendTotMeta-vendTotReal)):'—'}</td>
+      </tr></tfoot>
+    </table></div>
+    <div style="margin-top:4px;font-size:10.5px;color:var(--text-tertiary)">Vendedor = quem está no pedido (atendente). A meta por vendedor é independente da meta por equipe — as duas tabelas fatiam o mesmo realizado do mês.</div>`;
 }
 
 // ── Bloco 3: Tipo de Pedido ──────────────────────────────
@@ -31599,6 +31698,7 @@ function renderCaixaAbertos(){
           <td style="${td}text-align:right;font-weight:600;color:var(--st-ok-tx)">${fmtMoney(c.valor)}</td>
           <td style="${td}"><select onchange="setContaPlano('receber','${c.id}',this.value)" style="font-size:11px;padding:2px 4px;max-width:200px">${planoOpts}</select></td>
           <td style="${td}text-align:center;white-space:nowrap">
+            <button onclick="openContaReceberModal('${c.id}')" style="font-size:11px;padding:3px 10px;margin-right:4px;color:var(--text-info);border-color:var(--text-info)" title="Editar o recebimento (formas, parcelas, vencimentos) antes de aprovar — mesmo editor dos lançamentos manuais">✏ Pgto</button><!-- v247 — pedido do dono 08/10: mesmo botão dos lançamentos com origem de pedido -->
             <button onclick="aprovarContaCaixa('receber','${c.id}')" style="font-size:11px;padding:3px 10px;background:#1D9E75;color:#fff;border-color:#1D9E75;font-weight:500">✓ Aprovar</button>
             ${ehAdmin?`<button onclick="rejeitarContaCaixa('receber','${c.id}')" style="font-size:11px;padding:3px 8px;margin-left:3px;color:var(--st-bad-tx)">✗</button>`:''}
           </td>
@@ -37308,7 +37408,13 @@ function _convHidratar(conv){
       // (prova: fase A/v222, amostras "mensagens(30>N)"). Diferença real (ex.: naoLidas zerado ao
       // abrir, mensagem só local) → fotografia fica como está e o sync grava como sempre.
       try{
+        // v247 — pré-checagem BARATA antes da dupla canonização (conversas importadas têm até 17 mil
+        // mensagens: canonizar dois blobs de vários MB travava a aba — relato da Tairine 08/10).
+        // Contagem de mensagens ou naoLidas diferentes = conteúdos diferentes por definição → pula
+        // a comparação cara (a fotografia fica como está e o sync grava como sempre — semântica v223 intacta).
         if(typeof _canonStr==='function' && _sepSnap && _sepSnap.conversas &&
+           ((conv.mensagens||[]).length===((r.data.data.mensagens)||[]).length) &&
+           ((conv.naoLidas||0)===((r.data.data.naoLidas)||0)) &&
            _canonStr(conv)===_canonStr(r.data.data)){
           _sepSnap.conversas[String(conv.id)]=JSON.stringify(conv);
         }
@@ -37789,9 +37895,15 @@ function renderConversasLista(){
     if(/^\d{10}$/.test(_dig)) _vars.push(_dig.slice(0,2)+'9'+_dig.slice(2));  // DDD XXXXXXXX → com o 9
     if(/^55\d{2}9\d{8}$/.test(_dig)) _vars.push(_dig.slice(0,4)+_dig.slice(5)); // 55 DDD 9XXXXXXXX → sem o 9
     if(/^55\d{10}$/.test(_dig)) _vars.push(_dig.slice(0,4)+'9'+_dig.slice(4));  // 55 DDD XXXXXXXX → com o 9
+    // v247 — ÍNDICES montados UMA vez por busca (eram clients.find + crmLeads.find POR CONVERSA:
+    // milhões de comparações por execução — a causa do travamento no relato da Tairine, junto com
+    // a busca por tecla). A busca agora roda só no clique da lupa / Enter, e cada execução é O(n+m).
+    const _cliIdx={}; (clients||[]).forEach(x=>{ if(x&&x.id!=null) _cliIdx[x.id]=x; });
+    const _cardIdx={}; (crmLeads||[]).forEach(l=>{ if(l&&l.clienteId!=null&&!_cardIdx[l.clienteId]) _cardIdx[l.clienteId]=l; });
     visiveis = visiveis.filter(c=>{
-      const cli=clients.find(x=>x.id===c.clienteId);
-      const nm=_nomeConversaCli(c.clienteId)||'';
+      const cli=_cliIdx[c.clienteId]||null;
+      const _card=_cardIdx[c.clienteId]||null;
+      const nm=_nomeConversaCli(c.clienteId, cli, _card)||'';
       if(nm.toLowerCase().includes(termo) || (cli && (cli.nome||'').toLowerCase().includes(termo))) return true;
       // v191 — busca ampliada (pedido do dono 05/08): TODOS os contatos do cadastro/card e as
       // PESSOAS VINCULADAS do cadastro (PF/PJ do mesmo cliente) também encontram a conversa.
@@ -37799,7 +37911,6 @@ function renderConversasLista(){
         if((cli.contatos||[]).some(ct=>ct&&(ct.nome||'').toLowerCase().includes(termo))) return true;
         if((cli.pessoasVinculadas||[]).some(pv=>pv&&(pv.nome||'').toLowerCase().includes(termo))) return true;
       }
-      const _card=(crmLeads||[]).find(l=>l&&l.clienteId===c.clienteId);
       if(_card && (((_card.contato||'').toLowerCase().includes(termo)) || ((_card.empresa||'').toLowerCase().includes(termo)) || ((_card.contatos||[]).some(ct=>ct&&(ct.nome||'').toLowerCase().includes(termo))))) return true;
       if(_dig.length>=3){
         const fones=[c.telefone, cli&&cli.tel, cli&&cli.telefone, cli&&cli.fone, cli&&cli.contatoTel].filter(Boolean).map(t=>String(t).replace(/\D/g,''));
@@ -37932,9 +38043,10 @@ function _convItemHtml(conv, semDono){
 // v220 — prioridade invertida (caso "dra. Taiana · d", 26/08): o nome do contato segue o CADASTRO
 // (★ principal → 1º contato); o campo legado card.contato (texto congelado) virou último recurso —
 // antes ele vencia e exibia nome velho mesmo com o contato já corrigido.
-function _nomeConversaCli(clienteId){
-  const card=(crmLeads||[]).find(l=>l.clienteId===clienteId);
-  const cli=(clients||[]).find(x=>x.id===clienteId);
+function _nomeConversaCli(clienteId, _cliPre, _cardPre){
+  // v247 — params opcionais (busca passa cliente/card já indexados; chamadas de 1 argumento intactas)
+  const card=(_cardPre!==undefined)?_cardPre:(crmLeads||[]).find(l=>l.clienteId===clienteId);
+  const cli=(_cliPre!==undefined)?_cliPre:(clients||[]).find(x=>x.id===clienteId);
   const empresa=(cli&&cli.nome&&String(cli.nome).trim()) || (card&&card.empresa) || 'Cliente';
   const _cts=(cli&&Array.isArray(cli.contatos)&&cli.contatos.length)?cli.contatos:((card&&Array.isArray(card.contatos))?card.contatos:[]);
   const _pri=_cts.find(x=>x&&x.principal)||_cts[0];
@@ -38277,6 +38389,17 @@ function _waScrollToMsg(mid){
 var _convJanelaMsgs={};
 function _convVerMais(convId){
   _convJanelaMsgs[convId]=(_convJanelaMsgs[convId]||150)+300;
+  // v247 — reporte do dono 08/10 ("não está aparecendo o botão de ver anteriores"): se o servidor
+  // tem mais mensagens do que as baixadas (boot leve traz 30; a hidratação pode ter falhado),
+  // o clique DESTRAVA e re-tenta a hidratação — o botão agora conta o total do servidor, então
+  // ele existe mesmo antes da thread completa descer; o re-render vem no .then da hidratação.
+  try{
+    const _cv=(conversas||[]).find(c=>String(c.id)===String(convId));
+    if(_cv && (Number(_convMsgsTotais[String(convId)])||0) > (_cv.mensagens||[]).length){
+      _convHidratadas[convId]=false;
+      _convHidratar(_cv);
+    }
+  }catch(_e){}
   try{ renderConversaMsgs(convId); }catch(_e){ try{ renderConversaTela(convId); }catch(_e2){} }
 }
 // v163 — rótulo do dia p/ o separador de datas do chat (Hoje / Ontem / dia da semana + data)
@@ -38299,8 +38422,13 @@ function _convMsgsHtml(conv){
   const _msgsAll=[...(conv.mensagens||[])].sort((a,b)=>((a&&a.em)||0)-((b&&b.em)||0));
   const _jan=_convJanelaMsgs[conv.id]||150;
   const _msgs=_msgsAll.length>_jan?_msgsAll.slice(-_jan):_msgsAll;
-  const _ocultas=_msgsAll.length-_msgs.length;
-  const _verMaisHtml=_ocultas>0?`<div style="text-align:center;margin:4px 0 10px"><button onclick="_convVerMais('${conv.id}')" style="font-size:11.5px;padding:5px 14px;border-radius:20px;border:.5px solid #d1d7db;background:#fff;color:#54656f;cursor:pointer;box-shadow:0 1px .5px rgba(11,20,26,.1)">⬆ Ver mensagens anteriores (${_ocultas})</button></div>`:'';
+  // v247 — o botão conta também o que AINDA NÃO DESCEU do servidor (boot leve = 30 msgs; se a
+  // hidratação falhou/não rodou, antes o botão simplesmente não existia — reporte do dono 08/10).
+  // O clique re-tenta a hidratação (_convVerMais) e o texto diz quando está buscando no servidor.
+  const _totSrv=Math.max(_msgsAll.length, (typeof _convMsgsTotais!=='undefined'?(Number(_convMsgsTotais[String(conv.id)])||0):0));
+  const _naoBaixadas=_totSrv-_msgsAll.length;
+  const _ocultas=(_msgsAll.length-_msgs.length)+_naoBaixadas;
+  const _verMaisHtml=_ocultas>0?`<div style="text-align:center;margin:4px 0 10px"><button onclick="_convVerMais('${conv.id}')" style="font-size:11.5px;padding:5px 14px;border-radius:20px;border:.5px solid #d1d7db;background:#fff;color:#54656f;cursor:pointer;box-shadow:0 1px .5px rgba(11,20,26,.1)">⬆ Ver mensagens anteriores (${_ocultas})${_naoBaixadas>0?' · buscar no servidor':''}</button></div>`:'';
   // v111 — dedup de EXIBIÇÃO da duplicata: esconde a OTIMISTA (de=atendente, status 'fila', SEM id de provedor) quando já existe a CONFIRMAÇÃO (mesmo texto, ~30s). NÃO altera o dado; mensagem distinta/recebida/falha nunca é tocada (sem risco de sumiço).
   const _pidD=m=>m&&(m.provedorMsgId||m.zapiMessageId||m.providerMsgId);
   const _confmD=_msgs.filter(m=>m&&m.de==='atendente'&&_pidD(m));

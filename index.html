@@ -5244,7 +5244,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v245';
+var APP_VERSION = 'v246';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -14210,20 +14210,28 @@ function gerarPdfListaCompra(listaId){
 // (D5); pedido urgente/programado usa os prazos manuais (customDeadlines) — convertido em DATA pela
 // mesma régua da Gestão à Vista (dias úteis a partir do D1, deadlineDate). O limite do item é o MAIS
 // APERTADO entre os pedidos de origem; pseudo-pedidos (avulsa/uso interno) ficam fora.
+// v246 — núcleo da régua extraído (pedido do dono 08/10: a mesma coluna na aba Acompanhamento):
+// UM pedido + UM tipo → data limite; pseudo (avulsa/uso interno) e pedido sem D1 → null (não
+// existe prazo a calcular). Usado pela coluna da LISTA (abaixo) e pelo renderSolAcomp.
+function _limiteCompraPedido(orderId, tipo){
+  if(typeof _solEhPseudo==='function' && _solEhPseudo(orderId)) return null;
+  var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); });
+  if(!o || !o.d1) return null;
+  var alvo=(tipo==='ativo')?'Compra ativo finalizado':'Compra finalizada';
+  var rules=getOrderRules(o)||[];
+  var r=rules.find(function(rr){ return rr.setor==='compras' && rr.status===alvo; });
+  if(!r) r=rules.filter(function(rr){ return rr.setor==='compras'; }).sort(function(a,b){ return (a.limitDay||99)-(b.limitDay||99); })[0];
+  if(!r) return null;
+  return { date: deadlineDate(o.d1, r.limitDay), num: o.num||'' };
+}
 function _lcLimiteCompraItem(l, it){
-  var alvo=(l && l.tipo==='ativo')?'Compra ativo finalizado':'Compra finalizada';
+  var tipo=(l && l.tipo==='ativo')?'ativo':'embalagem';
   var best=null, det=[];
   ((it&&it.origem)||[]).forEach(function(og){
-    if(typeof _solEhPseudo==='function' && _solEhPseudo(og.orderId)) return;
-    var o=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
-    if(!o || !o.d1) return;
-    var rules=getOrderRules(o)||[];
-    var r=rules.find(function(rr){ return rr.setor==='compras' && rr.status===alvo; });
-    if(!r) r=rules.filter(function(rr){ return rr.setor==='compras'; }).sort(function(a,b){ return (a.limitDay||99)-(b.limitDay||99); })[0];
+    var r=_limiteCompraPedido(og.orderId, tipo);
     if(!r) return;
-    var dt=deadlineDate(o.d1, r.limitDay);
-    det.push((og.orderNum||o.num||'')+': '+fmtDate(dt));
-    if(!best || dt<best) best=dt;
+    det.push((og.orderNum||r.num||'')+': '+fmtDate(r.date));
+    if(!best || r.date<best) best=r.date;
   });
   return best?{date:best, det:det.join(' · ')}:null;
 }
@@ -14233,7 +14241,12 @@ function _lcItensTableHtml(l){
   var th='padding:6px 6px;background:var(--bg-secondary);font-size:10px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
   var td='padding:5px 6px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
   var rows=(l.itens||[]).map(function(it,ix){
-      var origTxt=(it.origem||[]).map(function(o){ return o.orderNum; }).join(', ');
+      // v246 — pedido do dono 08/10: o tooltip da Origem mostra também o CLIENTE de cada pedido
+      // (número — nome); pseudo-pedidos (avulsa/uso interno) seguem só com o rótulo que já tinham.
+      var origTxt=(it.origem||[]).map(function(og){
+        var _po=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+        return (og.orderNum||'')+(_po&&_po.cliente?(' — '+_po.cliente):'');
+      }).join(', ');
       // v138 — item NÃO COMPRADO: riscado/cinza, com motivo; as quantidades já voltaram como solicitação pendente
       if(it.naoComprado){
         var _tdNc=td+';opacity:.55';
@@ -14733,6 +14746,8 @@ function renderSolAcomp(){
       var linha={
         tipo:s.tipo, codigo:it.codigo||'', nome:it.nome||'', qtd:parseFloat(it.qtd)||0, unidade:it.unidade||'UN',
         pedido:s.orderNum||'—', status:r.st, lista:_codL,
+        limite:(function(){ var _lr=_limiteCompraPedido(s.orderId, s.tipo); return _lr?_lr.date:null; })(), // v246 — mesma régua da coluna da lista
+
         falt:r.falt||null, // v210 — quinhão descoberto deste pedido no rateio
         fornecedor:(r.st==='Comprado'||r.st==='Recebido'||r.st==='Recebido a menos')?(cmp.fornecedorNome||''):'',
         dtSolic:s.criadoEm||null, dtCompra:(cmp.comprado&&cmp.compradoEm)||null,
@@ -14754,13 +14769,22 @@ function renderSolAcomp(){
   var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
   var td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
   el.innerHTML='<div class="panel" style="padding:0"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:1000px">'+
-    '<thead><tr><th style="'+th+'">Item</th><th style="'+th+'">Cód</th><th style="'+th+';text-align:right">Qtd</th><th style="'+th+'">Pedido</th><th style="'+th+'">Status</th><th style="'+th+'">Fornecedor</th><th style="'+th+'">Solicitado em</th><th style="'+th+'">Comprado em</th><th style="'+th+'">NF</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th></tr></thead><tbody>'+
+    '<thead><tr><th style="'+th+'">Item</th><th style="'+th+'">Cód</th><th style="'+th+';text-align:right">Qtd</th><th style="'+th+'">Pedido</th><th style="'+th+'" title="Prazo do setor Compras do pedido de origem (dias úteis a partir do D1; urgentes/programados seguem a data manual). Avulsa/uso interno não tem pedido — sem limite.">Limite compra</th><th style="'+th+'">Status</th><th style="'+th+'">Fornecedor</th><th style="'+th+'">Solicitado em</th><th style="'+th+'">Comprado em</th><th style="'+th+'">NF</th><th style="'+th+';text-align:right">Preço unit.</th><th style="'+th+';text-align:right">Total</th></tr></thead><tbody>'+
     linhas.map(function(x){
       return '<tr>'+
         '<td style="'+td+'">'+escapeHtml(x.nome)+' <span style="font-size:10px;color:var(--text-tertiary)">('+(x.tipo==='ativo'?'ativo':'emb.')+')</span></td>'+
         '<td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.codigo||'—')+'</td>'+
         '<td style="'+td+';text-align:right">'+x.qtd.toLocaleString('pt-BR')+' '+escapeHtml(x.unidade)+'</td>'+
         '<td style="'+td+(x.pedido==='Produtos gerais'?';color:var(--text-info);font-weight:600':';font-weight:600')+'">'+escapeHtml(x.pedido)+'</td>'+
+        // v246 — Limite compra (mesma régua e cores da coluna da lista: vencido e ainda pendente =
+        // vermelho ⚠; vence hoje = laranja; etapa de compra já resolvida = cinza; sem pedido = —)
+        '<td style="'+td+';white-space:nowrap;font-size:11px">'+(function(){
+          if(!x.limite) return '<span style="color:var(--text-tertiary)">—</span>';
+          var _hj=_toDateStr(new Date());
+          var _pend=['Solicitado','Em lista','Orçado','Sem estoque','Trocada — solicitada'].indexOf(x.status)>=0;
+          var _sty=!_pend?'color:var(--text-tertiary)':(x.limite<_hj?'color:var(--st-bad-tx);font-weight:600':(x.limite===_hj?'color:#B7791F;font-weight:600':''));
+          return '<span style="'+_sty+'">'+fmtDate(x.limite)+(_pend&&x.limite<_hj?' ⚠':'')+'</span>';
+        })()+'</td>'+
         '<td style="'+td+'"><span style="font-size:11px;font-weight:600;color:'+(_cor[x.status]||'')+'">'+x.status+'</span>'+(x.motivo?' <span style="font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(x.motivo)+'">ⓘ</span>':'')+
           (x.falt?'<div style="font-size:9.5px;color:var(--st-bad-tx);font-weight:600" title="O rateio por D1 do recebimento a menos deixou este pedido descoberto">faltam '+x.falt.qtd.toLocaleString('pt-BR')+' '+escapeHtml(x.unidade||'')+' deste pedido · '+(x.falt.res?(x.falt.res.acao==='recompra'?'↪ re-solicitado':'✕ sem recompra'):'decidir em Recebidos a menos')+'</div>':'')+
           ((x.lista&&(x.status==='Em lista'||x.status==='Orçado'))?'<div style="font-size:9.5px;font-family:monospace;color:var(--text-tertiary)" title="Lista de compra em que o item está">'+escapeHtml(x.lista)+'</div>':'')+'</td>'+
@@ -25444,6 +25468,24 @@ function _pedidoRastreios(o){
   return out;
 }
 function _rastEntregue(o, key){ return !!(o.entregasRastreio && o.entregasRastreio[key] && o.entregasRastreio[key].entregue); }
+// v246 — RASTREIO REPETIDO EM NOVO ENVIO GANHA MARCADOR INTERNO AUTOMÁTICO (ordem do dono 08/10,
+// caso 103541: 2 envios internos "MURILO" colapsavam em UM volume — a entrega confirmada do 1º
+// valia pelos dois e o pedido ficava preso em Em Trânsito). A separação nasce no REGISTRO: o 2º
+// envio com o mesmo rótulo vira "#2 MURILO" (e #3, #4…), cada envio com chave, botão de entrega e
+// data PRÓPRIOS — lista de volumes, confirmação e recálculo já funcionam sem mais nenhuma mudança.
+// Rastreio real (Correios/transportadora) nunca repete e passa intacto; vazio segue vazio; envios
+// legados não são tocados. (A EDIÇÃO de envio salvo tem crivo próprio no saveEnvioSalvo, que
+// compara só contra os OUTROS envios.)
+function _rastDedupeEnvio(o, raw){
+  var s=String(raw||'').trim(); if(!s) return s;
+  var K=function(x){ return String(x||'').replace(/\s/g,'').toUpperCase(); };
+  var usados={};
+  _pedidoRastreios(o).forEach(function(r){ usados[r.key]=1; });
+  if(!usados[K(s)]) return s;
+  var n=2, cand=s;
+  do{ cand='#'+n+' '+s; n++; }while(usados[K(cand)]);
+  return cand;
+}
 // v132 — botão "ver produtos enviados" do rastreio (só leitura)
 function _btnVerProd(oid, key){
   var k=String(key).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -28112,6 +28154,25 @@ function saveEnvioSalvo(i){
   // Collect rastreios from inputs
   const rastInputs=[...document.querySelectorAll(`[id^="es-rast-${i}-"]`)];
   const rtsRaw=rastInputs.map(inp=>inp.value.trim());
+  // v246 — mesma regra do registro (caso 103541): código que colide com os de OUTRO envio deste
+  // pedido (ou repetido dentro deste próprio envio) ganha marcador interno automático. A base de
+  // comparação são SÓ os outros envios — os códigos deste envio ficam fora por construção
+  // (re-salvar sem mudar nada é no-op, mesmo com a captura ao vivo _esCaptura já aplicada).
+  {
+    const _K6=x=>String(x||'').replace(/\s/g,'').toUpperCase();
+    const _used6={};
+    (o.enviosHistorico||[]).forEach((ev,j)=>{ if(j===i||!ev) return;
+      (ev.rastreios&&ev.rastreios.length?ev.rastreios:[ev.rastreio||'']).forEach(r=>{ const k=_K6(r); if(k)_used6[k]=1; }); });
+    const _ren6=[];
+    for(let _i6=0;_i6<rtsRaw.length;_i6++){
+      const _v6=rtsRaw[_i6]; if(!_v6) continue;
+      let _c6=_v6, _n6=2;
+      while(_used6[_K6(_c6)]){ _c6='#'+_n6+' '+_v6; _n6++; }
+      if(_c6!==_v6) _ren6.push(_v6+' → '+_c6);
+      rtsRaw[_i6]=_c6; _used6[_K6(_c6)]=1;
+    }
+    if(_ren6.length) alert('Código(s) de rastreio já usado(s) em outro envio deste pedido — registrado(s) com marcador interno para separar os volumes:\n'+_ren6.join('\n'));
+  }
   const rts=rtsRaw.filter(Boolean);
   // v213 — PROPAGAÇÃO DO RASTREIO (autorização do dono 19/08): código EDITADO aqui renomeia os
   // lançamentos de FRETE REAL deste pedido que apontavam para o código antigo — o Frete Real e o
@@ -28642,7 +28703,10 @@ function saveEnviadoConfirm(){
   o.envioReal = today();
   if(!o.enviosHistorico) o.enviosHistorico=[];
   const _ecTr=(document.getElementById('ec-transp')?.value||'').trim();
-  const _ecRs=(document.getElementById('ec-rastreio')?.value||'').trim();
+  let _ecRs=(document.getElementById('ec-rastreio')?.value||'').trim();
+  // v246 — rastreio repetido no pedido ganha marcador interno automático (caso 103541)
+  const _ecRs0=_ecRs; _ecRs=_rastDedupeEnvio(o,_ecRs);
+  if(_ecRs!==_ecRs0) alert('Este código de rastreio já existe em outro envio deste pedido.\nPara separar os volumes, este envio foi registrado como "'+_ecRs+'" (marcador interno automático).');
   if(itensFinal.length){
     o.enviosHistorico.push({ ts:Date.now(), data:today(), tipo:'total', transp:_ecTr, rastreio:_ecRs, rastreios:_ecRs?[_ecRs]:[], obs:obs, por:currentUser?.name||'—', items:[], lista:{ nome:nomeLista, itens:itensFinal, obs:obs, criadoEm:Date.now(), por:currentUser?.name||'—' } });
     _syncEnvioTopo(o);
@@ -28674,7 +28738,10 @@ function saveEnvioParcialItens(){
   o.statusDates.expedicao={ts:Date.now(),by:currentUser?.name||'—',from:prev,to:'Envio Parcial'};
   if(!o.enviosHistorico) o.enviosHistorico=[];
   const _epTr=(document.getElementById('epi-transp')?.value||'').trim();
-  const _epRs=(document.getElementById('epi-rastreio')?.value||'').trim();
+  let _epRs=(document.getElementById('epi-rastreio')?.value||'').trim();
+  // v246 — rastreio repetido no pedido ganha marcador interno automático (caso 103541)
+  const _epRs0=_epRs; _epRs=_rastDedupeEnvio(o,_epRs);
+  if(_epRs!==_epRs0) alert('Este código de rastreio já existe em outro envio deste pedido.\nPara separar os volumes, este envio foi registrado como "'+_epRs+'" (marcador interno automático).');
   o.enviosHistorico.push({ ts:Date.now(), data:today(), tipo:'parcial', transp:_epTr, rastreio:_epRs, rastreios:_epRs?[_epRs]:[], obs:'', por:currentUser?.name||'—', items:[], lista:{ nome:'Lista Parcial', itens:selecionados.map(s=>({nome:s.nome,produtoId:s.produtoId,codigo:s.codigo,volumetria:s.volumetria||'',qtdTotal:s.qtdTotal,qtdEnviada:s.qtdEnviada})), criadoEm:Date.now(), por:currentUser?.name||'—' } });
   _syncEnvioTopo(o);
   document.getElementById('envio-parcial-itens-overlay').classList.remove('open');
@@ -38275,8 +38342,18 @@ function _convMsgsHtml(conv){
   }).join('') || '<div class="wa-empty">Nenhuma mensagem registrada ainda.</div>';
 }
 // v111 — refresh do realtime/poll: atualiza SÓ a lista de mensagens, sem reconstruir cabeçalho nem o campo de digitar (não apaga o texto sendo digitado)
+// v246 — CHOKEPOINT DO CONTAINER (pedido do dono 08/10: "Assumir" na conversa aberta POR MODAL —
+// agenda/cards/busca — exigia fechar e reabrir): chamada SEM containerId resolve para o MODAL
+// quando ele está aberto (conv-modal-tela), senão a tela do Atendimento. Um só ponto corrige a
+// classe inteira (atribuir, realtime de troca de atendente, pausas, reply, mídia etc.) — o modal
+// sobrepõe a tela, então a conversa ativa é sempre a dele enquanto estiver aberto.
+function _convContainerAtivo(containerId){
+  if(containerId) return containerId;
+  return document.getElementById('conv-modal-tela') ? 'conv-modal-tela' : 'conv-tela';
+}
 function renderConversaMsgs(convId, containerId){
-  const el=document.getElementById(containerId||'conv-tela'); if(!el) return;
+  containerId=_convContainerAtivo(containerId);
+  const el=document.getElementById(containerId); if(!el) return;
   const field=el.querySelector('.conv-msgs-field');
   if(!field || _convTelaUltimoId!==convId){ renderConversaTela(convId, containerId); return; } // tela ainda não montou esta conversa → render completo
   const conv=conversas.find(c=>c.id===convId); if(!conv) return;
@@ -38286,7 +38363,8 @@ function renderConversaMsgs(convId, containerId){
   try{ _waLoadMedia(el); }catch(_e){}
 }
 function renderConversaTela(convId, containerId){
-  const el = document.getElementById(containerId||'conv-tela');
+  containerId=_convContainerAtivo(containerId); // v246 — modal aberto vence (ver _convContainerAtivo)
+  const el = document.getElementById(containerId);
   if(!el) return;
   // v107 — captura o que está sendo digitado (texto + cursor + foco) ANTES de reconstruir, p/ realtime não apagar
   const _mesmaConv = (_convTelaUltimoId===convId);

@@ -979,6 +979,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="des-tab active" id="dc-tab-dashboard" onclick="setDcTab('dashboard')">Dashboard</div>
             <div class="des-tab"        id="dc-tab-metas"     onclick="setDcTab('metas')">Metas</div>
             <div class="des-tab"        id="dc-tab-comissao"  onclick="setDcTab('comissao')" style="display:none">Comissionamento</div>
+            <div class="des-tab"        id="dc-tab-time"      onclick="setDcTab('time')" style="display:none">Time Comercial</div><!-- v249 : admin/diretora -->
+
           </div>
         </div>
 
@@ -1205,6 +1207,21 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div class="panel" style="border-radius:0 0 var(--r-lg) var(--r-lg);border-top:none;margin-bottom:0">
             <div class="panel-header"><h2>💰 Comissionamento</h2></div>
             <div id="comis-content" style="padding:0 16px 16px"></div>
+          </div>
+</div>
+
+        <!-- ABA: TIME COMERCIAL (v249 — classificação de conversas por atendente; fonte = rotina IA diária via tc_conv_class) -->
+<div id="dc-pg-time" style="display:none">
+          <div class="panel" style="border-radius:0;border-top:none;border-bottom:none;padding:10px 16px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <button onclick="tcNavMes(-1)" style="font-size:16px;padding:2px 10px;background:none;border:.5px solid var(--border-md);border-radius:var(--r-md);cursor:pointer">‹</button>
+              <span id="tc-mes-label" style="font-size:14px;font-weight:600;min-width:130px;text-align:center">—</span>
+              <button onclick="tcNavMes(1)" style="font-size:16px;padding:2px 10px;background:none;border:.5px solid var(--border-md);border-radius:var(--r-md);cursor:pointer">›</button>
+            </div>
+          </div>
+          <div class="panel" style="border-radius:0 0 var(--r-lg) var(--r-lg);border-top:none;margin-bottom:0">
+            <div class="panel-header"><h2>👥 Time Comercial</h2></div>
+            <div id="tc-content" style="padding:0 16px 16px"></div>
           </div>
 </div>
 
@@ -1564,21 +1581,12 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <option value="ativo">Só ativos</option>
               <option value="embalagem">Só embalagens</option>
             </select>
-            <select id="acomp-status" onchange="renderSolAcomp()" style="font-size:12px;padding:5px 10px">
-              <option value="">Todos os status</option>
-              <option value="Solicitado">Solicitado</option>
-              <option value="Em lista">Em lista</option>
-              <option value="Orçado">Orçado</option>
-              <option value="Comprado">Comprado</option>
-              <option value="Recebido">Recebido</option>
-              <option value="Recebido a menos">Recebido a menos</option>
-              <option value="Não comprado">Não comprado (legado)</option>
-              <option value="Sem estoque">Sem estoque</option>
-              <option value="Ajustado">Ajustado</option>
-              <option value="Tinha estoque">Tinha estoque</option>
-              <option value="Trocada — tinha estoque">Trocada — tinha estoque</option><!-- v232 -->
-              <option value="Trocada — solicitada">Trocada — solicitada</option><!-- v232 -->
-            </select>
+            <!-- v248 — filtro de STATUS por CHECKBOX (ordem do dono 13/10): seleciona 1, 2 ou mais
+                 de uma vez; nenhum marcado = todos. Dropdown próprio (select nativo não combina). -->
+            <div style="position:relative;display:inline-block">
+              <button id="acomp-status-btn" onclick="_acompStFiltroToggle(event)" style="font-size:12px;padding:5px 10px;min-width:170px;text-align:left;background:var(--bg-primary);border:.5px solid var(--border);border-radius:var(--r-md);cursor:pointer">Todos os status ▾</button>
+              <div id="acomp-status-pop" style="display:none;position:absolute;z-index:60;top:calc(100% + 4px);left:0;background:var(--bg-primary);border:.5px solid var(--border);border-radius:var(--r-md);box-shadow:0 6px 18px rgba(0,0,0,.12);padding:8px 10px;min-width:230px;max-height:320px;overflow:auto"></div>
+            </div>
             <input type="text" id="acomp-busca" placeholder="Buscar item, pedido ou fornecedor..." oninput="renderSolAcomp()" style="min-width:220px;font-size:12px;padding:5px 10px">
             <span id="acomp-info" style="margin-left:auto;font-size:12px;color:var(--text-secondary)"></span>
           </div></div>
@@ -4023,6 +4031,10 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <input type="checkbox" id="c-interno" style="accent-color:#54656f;width:15px;height:15px">
         <span>🏢 Contato interno / fornecedor <span style="font-size:11px;color:var(--text-tertiary)">(não é cliente: sai do CRM, das metas e das carteiras; conversas seguem visíveis no número)</span></span>
       </label></div>
+      <div style="margin-bottom:8px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="c-trafego" style="accent-color:#1d7a46;width:15px;height:15px">
+        <span>📣 Tráfego (lead de anúncio) <span id="c-trafego-det" style="font-size:11px;color:var(--text-tertiary)">(preenchido automaticamente quando o contato chega por anúncio; também pode ser marcado manualmente)</span></span>
+      </label></div>
       <div class="form-group"><label>Tag do Cliente <span style="font-size:10px;color:var(--text-tertiary)">(ex: VIP, Farmácia, Clínica, Distribuidora)</span></label><input type="text" id="c-tag" placeholder="Classificação livre..." maxlength="60"></div>
       <div class="form-group" style="margin-top:4px">
         <label>Produtos que compra * <span style="font-size:10px;color:var(--text-tertiary)">(define o roteamento no CRM)</span></label>
@@ -5249,7 +5261,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v247';
+var APP_VERSION = 'v249';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7094,7 +7106,7 @@ async function doLogin(){
 }
 async function doLogout(){
   await _stopSession();
-  try{ if(window._sb&&_sb.auth&&_sb.auth.signOut) await _sb.auth.signOut(); }catch(e){ console.warn('signOut:',e); }
+  try{ if(_sb&&_sb.auth&&_sb.auth.signOut) await _sb.auth.signOut(); }catch(e){ console.warn('signOut:',e); } // v248 — window._sb nunca existiu (let); o signOut do logout também era código morto
   // v236 — LGPD (avaliação externa 23/09, item S5): o cache local da base (clientes, pedidos,
   // conversas) não pode ficar legível na máquina depois do logout. O cache continua existindo
   // DURANTE a sessão (é ele que segura o boot rápido e o egress); só é apagado na saída.
@@ -7753,6 +7765,15 @@ function openStatusModal(oid,setor){
       if(_ae.field!=='status'||String(_ae.orderId)!==String(o.id)||_ae.setor!==setor) continue;
       if(/retorno automático/i.test(String(_ae.to||''))) continue; // v233 — regra do dono 22/09: regressão automática NÃO é carimbo (carimbo = prova do fato; só a auditoria guarda o retorno)
       const _to=String(_ae.to||'').replace(/\s*\(.*$/,'').trim();
+      // v248 — caso 103718 (pergunta do dono 13/10, ✓ no "Não iniciado"): o heal v208 regrediu com
+      // sufixo "(automático — carimbo ... sem nenhum produto)" — redação diferente de "retorno
+      // automático" escapava do filtro v233 e a regressão ganhava ✓. Regra GERAL, imune à redação:
+      // mudança AUTOMÁTICA para um degrau ANTERIOR da régua nunca é carimbo.
+      if(/\(autom/i.test(String(_ae.to||''))){
+        const _fr=String(_ae.from||'').replace(/\s*\(.*$/,'').trim();
+        const _iT=statuses.indexOf(_to), _iF=statuses.indexOf(_fr);
+        if(_iT>=0 && _iF>=0 && _iT<_iF) continue;
+      }
       if(_to && (!_selDates[_to]||_ae.ts>_selDates[_to])) _selDates[_to]=_ae.ts;
     }
   }catch(_e){}
@@ -8192,6 +8213,14 @@ function openClientModal(id){
   })();
   [['c-nome','nome'],['c-doc','doc'],['c-conselho-tipo','conselhoTipo'],['c-conselho-num','conselhoNum'],['c-rt-nome','rtNome'],['c-tag','tag'],['c-carteira-linha','carteiraLinha'],['c-carteira-anest','carteiraAnest'],['c-email','email'],['c-fin-email','finEmail'],['c-site','site'],['c-instagram','instagram'],['c-cep','cep'],['c-uf','uf'],['c-cidade','cidade'],['c-bairro','bairro'],['c-rua','rua'],['c-numero','numero'],['c-comp','comp'],['c-obs','obs']].forEach(([id,k])=>{const el=document.getElementById(id);if(el)el.value=c?c[k]||'':'';});/* v208 — tel1/tel2/finContato/finTel saíram do formulário (fonte única = contatos da empresa) */  const favEl=document.getElementById('c-favorito');if(favEl)favEl.checked=c?c.favorito||false:false;
   const intEl=document.getElementById('c-interno');if(intEl)intEl.checked=c?c.interno||false:false; // v144
+  // v248 — tráfego: checkbox editável por todos; legenda mostra o rastro quando a marcação foi automática (wa-inbound v54)
+  const trfEl=document.getElementById('c-trafego');if(trfEl)trfEl.checked=c?!!c.trafego:false;
+  const trfDet=document.getElementById('c-trafego-det');
+  if(trfDet){ const _fd=v=>{ const d=new Date(v); return isNaN(d.getTime())?'':d.toLocaleDateString('pt-BR'); };
+    trfDet.textContent=(c&&c.trafego&&c.trafegoDet&&c.trafegoDet!=='manual')
+      ?('(automático: '+c.trafegoDet+(c.trafegoEm?' · '+_fd(c.trafegoEm):'')+')')
+      :((c&&c.trafego&&c.trafegoDet==='manual')?('(marcado manualmente'+(c.trafegoEm?' · '+_fd(c.trafegoEm):'')+')')
+      :'(preenchido automaticamente quando o contato chega por anúncio; também pode ser marcado manualmente)'); }
   const intWrap=document.getElementById('c-interno-wrap');if(intWrap)intWrap.style.display=(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial'))?'':'none'; // v144 : so admin/diretora
   const plEl=document.getElementById('c-prod-linha');if(plEl)plEl.checked=c?c.prodLinha||false:false;
   // Tipo de pessoa
@@ -8495,6 +8524,13 @@ function saveClient(){
   if(currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial')){ data.interno=!!document.getElementById('c-interno')?.checked; }
   else if(_editCli){ data.interno=!!_editCli.interno; }
   if(data.interno){ data.carteiraLinha=''; data.carteiraAnest=''; } // interno nao pertence a carteira
+  // v248 — tráfego (lead de anúncio): checkbox editável por todos. Marcou pela primeira vez →
+  // rastro 'manual'; rastro automático existente (wa-inbound v54) é PRESERVADO; desmarcou → limpa.
+  (function(){ const el=document.getElementById('c-trafego'); if(!el){ if(_editCli){ data.trafego=!!_editCli.trafego; } return; }
+    data.trafego=!!el.checked;
+    if(data.trafego){ data.trafegoEm=(_editCli&&_editCli.trafegoEm)||Date.now(); data.trafegoDet=(_editCli&&_editCli.trafegoDet)||'manual'; }
+    else { data.trafegoEm=null; data.trafegoDet=null; }
+  })();
   // Regra: carteira de Anestésico só pode ser SDR ou a MESMA equipe da Linha. Senão → SDR.
   if(data.carteiraAnest && !isSDREquipe(data.carteiraAnest)){
     if(!data.carteiraLinha || data.carteiraAnest !== data.carteiraLinha){
@@ -12459,6 +12495,21 @@ function _solTipoInsumo(tab){ return tab==='ativo'?'insumo':'embalagem'; }
 function _solTodasSolic(orderId, tab){
   return (solicitacoesCompra||[]).filter(function(s){ return s && String(s.orderId)===String(orderId) && s.tipo===tab; });
 }
+// v248 — ordem do dono 13/10 (caso Treonato × 103096/103498/103500, pedidos entregues desde ago/set):
+// pedido PRODUZIDO completo E ENVIADO completo NÃO aceita NOVA solicitação de ATIVO. O furo era o
+// ciclo de re-fila (sem estoque / recompra do faltante / saldo parcial / autocura), que devolvia a
+// quantidade PRESA ao pedido de origem já entregue — a pendência renascia para sempre. Régua:
+// expedição saiu por completo (_expSaiu v131: Enviado/Entregue/Entregue Parcial; Envio Parcial NÃO
+// bloqueia) E produção em degrau final. Só tipo ATIVO (ordem literal); pseudo (avulsa/uso interno)
+// nunca bloqueia — recompra p/ ESTOQUE é o caminho certo p/ a necessidade que sobrar.
+var _SOL_PROD_FINAL=['Finalizado e conferido','Finalizado e conf.','Enviado para expedição','Concluído','Finalizado'];
+function _solAtivoBloqueado(orderId){
+  if(typeof _solEhPseudo==='function' && _solEhPseudo(orderId)) return false;
+  var o=(orders||[]).find(function(x){ return String(x.id)===String(orderId); });
+  if(!o) return false;
+  if(!(typeof _expSaiu==='function' && _expSaiu(o))) return false;
+  return _SOL_PROD_FINAL.indexOf((o.statuses&&o.statuses.producao)||'')>=0;
+}
 function _solGetSolic(orderId, tab){
   if(_solEhPseudo(orderId)) return (solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(orderId) && s.tipo===tab && s.status==='solicitado'; }); // v168 — vale p/ avulsa e anestésico
   // v155 — um pedido pode ter MAIS de uma solicitação por tipo (complementar / devolução do "✕ Não comprar"):
@@ -12577,8 +12628,10 @@ function _rmIncluirProxima(listaId, itemId){
     aloc.map(function(a){ return '  • Pedido '+(a.orderNum||'—')+': '+(parseFloat(a.qtd)||0).toLocaleString('pt-BR')+' '+un; }).join('\n')+
     ((f.estoqueQtd>0)?'\n  (parte de estoque — '+f.estoqueQtd.toLocaleString('pt-BR')+' '+un+' — NÃO entra: recompra de estoque é decisão à parte, via compra avulsa)':'')+
     '\n\nO faltante vira solicitação PENDENTE desses pedidos e entra na próxima lista de compra. Confirmar?')) return;
-  var now=Date.now(), solicIds=[];
+  var now=Date.now(), solicIds=[], _blqRm=[];
   aloc.forEach(function(og,oi){
+    // v248 — ativo de pedido produzido+enviado completo não é re-solicitado preso ao pedido (ordem do dono 13/10)
+    if(l.tipo==='ativo' && _solAtivoBloqueado(og.orderId)){ _blqRm.push(og.orderNum||String(og.orderId)); return; }
     var alvo=(solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(og.orderId) && s.tipo===l.tipo && s.status==='solicitado'; });
     if(!alvo){
       var ehPseudoOg=_solEhPseudo(og.orderId);
@@ -12600,7 +12653,8 @@ function _rmIncluirProxima(listaId, itemId){
   c.recebFaltanteRes={ acao:'recompra', solicIds:solicIds, em:now, por:(currentUser&&currentUser.name)||'' };
   _rmFaltCache.map=null;
   renderSolMenos(); saveData();
-  alert('✓ Faltante re-solicitado para '+aloc.length+' pedido(s) — entra na próxima lista de compra de '+(l.tipo==='ativo'?'ativos':'embalagens')+'.');
+  alert('✓ Faltante re-solicitado para '+(aloc.length-_blqRm.length)+' pedido(s) — entra na próxima lista de compra de '+(l.tipo==='ativo'?'ativos':'embalagens')+'.'
+    +(_blqRm.length?'\n\n⛔ NÃO re-solicitado p/ '+_blqRm.length+' pedido(s) já produzido(s) e enviado(s) ('+_blqRm.join(', ')+') — se precisar do insumo, use compra AVULSA p/ estoque.':''));
 }
 function _rmSemRecompra(listaId, itemId){
   var b=_rmItemBusca(listaId, itemId); if(!b){ alert('Item não encontrado (a lista mudou em outra tela).'); return; }
@@ -13346,12 +13400,12 @@ function openSolicitarModal(orderId, solicId){
   document.getElementById('solicitar-pedido-info').innerHTML=ehPseudo
     ? '<b>'+_pi.rotulo+'</b>'+(_solEditId&&s&&s.numSeq?' <b>'+_solCodSeq(s)+'</b>':'')+' — '+escapeHtml(_pi.cliente)+' (sem vínculo com pedido)'+(_solEditId?'':'<div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">Lançamento novo — ao salvar, entra na tela como uma linha própria (ganha um número '+_pi.sigla+'-N).</div>')
       // v225 — regra do dono 11/09: avulsa de EMBALAGEM só é permitida indicando o PEDIDO que vai usá-la
-      +((String(orderId)==='__geral__'&&_solTab==='embalagem')?(function(){
-        // v242 — DESTINO da avulsa (pedido do dono 30/09): além de vincular a um PEDIDO (regra v225),
-        // agora dá para vincular a ESTOQUE — fica explícito que a embalagem é para uso e consumo.
+      // v248 — ordem do dono 13/10: a avulsa de ATIVOS entra na MESMA regra (pedido de uso OU estoque);
+      // destino ESTOQUE exige DATA LIMITE DE COMPRA (ativo) — alimenta as colunas Limite compra.
+      +((String(orderId)==='__geral__'&&(_solTab==='embalagem'||_solTab==='ativo'))?(function(){
         var _deIni = !!(_solEditId&&s&&s.destinoEstoque);
         return '<div style="margin-top:10px;padding:8px 10px;background:var(--bg-secondary);border-radius:8px">'+
-        '<label style="font-size:12px;font-weight:600;display:block">Destino da embalagem <span style="color:var(--st-bad-tx)">*</span></label>'+
+        '<label style="font-size:12px;font-weight:600;display:block">Destino '+(ehAtivo?'do insumo (ativo)':'da embalagem')+' <span style="color:var(--st-bad-tx)">*</span></label>'+
         '<div style="display:flex;gap:16px;margin:5px 0 6px;font-size:12.5px">'+
           '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sol-destino" id="sol-dest-pedido"'+(_deIni?'':' checked')+' onchange="_solDestinoChg()" style="width:auto;margin:0">📋 Para um pedido</label>'+
           '<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="sol-destino" id="sol-dest-estoque"'+(_deIni?' checked':'')+' onchange="_solDestinoChg()" style="width:auto;margin:0">🏬 Para ESTOQUE (uso e consumo)</label>'+
@@ -13362,7 +13416,13 @@ function openSolicitarModal(orderId, solicId){
         '<div class="autocomplete-wrap" style="position:relative"><input type="text" id="sol-pedido-uso" placeholder="número do pedido…" value="'+escapeHtml((_solEditId&&s&&s.pedidoUso&&s.pedidoUso.num)||'')+'" oninput="_solPedidoUsoBusca()" onfocus="_solPedidoUsoBusca()" autocomplete="off" style="width:100%;font-size:13px;padding:6px 8px;margin-top:4px"><div class="autocomplete-list" id="sol-pedido-uso-ac"></div></div>'+
         '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px">Obrigatório: o número precisa ser de um pedido existente.</div>'+
         '</div>'+
-        '<div id="sol-pedido-uso-ok" style="font-size:11.5px;margin-top:4px"></div></div>';
+        '<div id="sol-pedido-uso-ok" style="font-size:11.5px;margin-top:4px"></div>'+
+        // v248 — ativo p/ ESTOQUE (sem vínculo com pedido): data limite de compra OBRIGATÓRIA
+        (ehAtivo?('<div id="sol-limite-wrap"'+(_deIni?'':' style="display:none"')+'>'+
+          '<label style="font-size:12px;font-weight:600;display:block;margin-top:8px">Data limite de compra <span style="color:var(--st-bad-tx)">*</span></label>'+
+          '<input type="date" id="sol-limite-compra" value="'+escapeHtml((_solEditId&&s&&s.limiteCompra)||'')+'" style="font-size:13px;padding:6px 8px;margin-top:4px">'+
+          '<div style="font-size:11px;color:var(--text-tertiary);margin-top:3px">Sem pedido vinculado não há régua automática — esta data vira o "Limite compra" do item nas listas e no Acompanhamento.</div></div>'):'')+
+        '</div>';
       })():'')
     : 'Pedido <b>'+escapeHtml(o.num||'')+'</b> — '+escapeHtml(o.cliente||'')+(complementar?'<div style="font-size:11px;color:var(--st-mid-tx);margin-top:2px">⚠ A solicitação original já está numa lista de compra (fica como está). Estes itens entram como solicitação NOVA — na próxima lista gerada, ou numa lista aberta via "Complementar lista".</div>':'');
   document.getElementById('sol-item-busca').value='';
@@ -13375,6 +13435,8 @@ function openSolicitarModal(orderId, solicId){
 function _solDestinoChg(){
   var w=document.getElementById('sol-pedido-uso-wrap'), de=document.getElementById('sol-dest-estoque');
   if(w) w.style.display=(de&&de.checked)?'none':'';
+  var lw=document.getElementById('sol-limite-wrap'); // v248 — limite só quando o destino é ESTOQUE (ativo)
+  if(lw) lw.style.display=(de&&de.checked)?'':'none';
   try{ _solPedidoUsoChk(); }catch(_e){}
 }
 // v237 — autocomplete do PEDIDO DE USO da avulsa de embalagem (pedido do dono 23/09)
@@ -13385,6 +13447,7 @@ function _solPedidoUsoBusca(){
   var q=String(inp.value||'').trim().toLowerCase();
   if(!q || q.indexOf('—')>=0){ ac.classList.remove('open'); return; } // já fixado ("num — cliente") não reabre a lista
   var m=(orders||[]).filter(function(o2){ return o2 && (String(o2.num||'').toLowerCase().indexOf(q)===0 || String(o2.cliente||'').toLowerCase().indexOf(q)>=0); })
+    .filter(function(o2){ return !(_solTab==='ativo' && _solAtivoBloqueado(o2.id)); }) // v248 — pedido produzido+enviado não aparece p/ vincular ativo
     .sort(function(a,b){ return (b.criadoEm||0)-(a.criadoEm||0); }).slice(0,8);
   if(!m.length){ ac.classList.remove('open'); return; }
   ac.innerHTML=m.map(function(o2){ return '<div class="autocomplete-item" onclick="_solPedidoUsoPick(\''+escapeHtml(_escJs(String(o2.num||'')))+'\')"><div class="ac-name">'+escapeHtml(String(o2.num||''))+'</div><div class="ac-doc">'+escapeHtml(o2.cliente||'')+'</div></div>'; }).join('');
@@ -13405,6 +13468,8 @@ function _solPedidoUsoChk(){
   if(_de&&_de.checked){ inp.style.borderColor=''; ok.innerHTML='<span style="color:var(--st-ok-tx);font-weight:600">✓ Vinculado a ESTOQUE</span><span style="color:var(--text-secondary)"> — uso e consumo, sem pedido</span>'; return; }
   var numTx=String(inp.value||'').split('—')[0].trim();
   var o2=numTx?(orders||[]).find(function(x){ return x && String(x.num||'')===numTx; }):null;
+  // v248 — ativo: pedido produzido+enviado completo não pode ser o destino (selo vermelho + orientação)
+  if(o2 && _solTab==='ativo' && _solAtivoBloqueado(o2.id)){ inp.style.borderColor='var(--st-bad-bd)'; ok.innerHTML='<span style="color:var(--st-bad-tx);font-weight:600">⛔ Pedido '+escapeHtml(String(o2.num||''))+' já foi produzido e enviado</span><span style="color:var(--text-secondary)"> — escolha outro pedido ou marque "Para ESTOQUE"</span>'; return; }
   if(o2){ inp.style.borderColor='var(--st-ok-bd)'; ok.innerHTML='<span style="color:var(--st-ok-tx);font-weight:600">✓ Vinculado ao pedido '+escapeHtml(String(o2.num||''))+'</span><span style="color:var(--text-secondary)"> — '+escapeHtml(o2.cliente||'')+'</span>'; }
   else { inp.style.borderColor=''; ok.innerHTML=numTx?'<span style="color:var(--text-tertiary)">nenhum pedido vinculado ainda — clique numa sugestão ou digite o número exato</span>':''; }
 }
@@ -13475,19 +13540,31 @@ function saveSolicitacao(){
   if(String(_solOrderId)==='__geral__' && _solTab==='embalagem' && currentUser?.perfil!=='admin'){ alert('Solicitação avulsa de EMBALAGEM: somente o administrador.'); return; }
   // v225 — regra do dono 11/09: avulsa de EMBALAGEM só com destino indicado; v242 — o destino agora
   // pode ser ESTOQUE (uso e consumo) em vez de um pedido (pedido do dono 30/09).
-  var _pedidoUso=null, _destEstoque=false;
-  if(String(_solOrderId)==='__geral__' && _solTab==='embalagem'){
+  var _pedidoUso=null, _destEstoque=false, _limCompra='';
+  // v248 — a avulsa de ATIVOS entra na mesma regra de destino da embalagem (ordem do dono 13/10)
+  if(String(_solOrderId)==='__geral__' && (_solTab==='embalagem'||_solTab==='ativo')){
     _destEstoque=!!(document.getElementById('sol-dest-estoque')&&document.getElementById('sol-dest-estoque').checked);
     if(!_destEstoque){
       var _puTxt=String(document.getElementById('sol-pedido-uso')?.value||'').trim();
-      if(!_puTxt){ alert('Informe o DESTINO da embalagem: o pedido que vai usá-la, ou marque "Para ESTOQUE".'); return; }
+      if(!_puTxt){ alert('Informe o DESTINO '+(_solTab==='ativo'?'do insumo':'da embalagem')+': o pedido que vai usá-lo, ou marque "Para ESTOQUE".'); return; }
       var _puNum=_puTxt.split('—')[0].trim();
       var _oUso=(orders||[]).find(function(x){ return x && String(x.num||'')===_puNum; });
       if(!_oUso){ alert('Pedido "'+_puNum+'" não encontrado.\n\nInforme o número exato de um pedido existente — ou marque "Para ESTOQUE".'); return; }
+      // v248 — pedido produzido+enviado completo não recebe vínculo de ativo (mesma trava dos 5 portões)
+      if(_solTab==='ativo' && _solAtivoBloqueado(_oUso.id)){ alert('⛔ O pedido '+_puNum+' já foi PRODUZIDO e ENVIADO por completo — não pode ser o destino do ativo.\n\nEscolha outro pedido ou marque "Para ESTOQUE" (com a data limite de compra).'); return; }
       _pedidoUso={ orderId:_oUso.id, num:String(_oUso.num||''), cliente:_oUso.cliente||'' };
+    } else if(_solTab==='ativo'){
+      // v248 — estoque (sem vínculo) exige a DATA LIMITE DE COMPRA (vira o "Limite compra" das telas)
+      _limCompra=String(document.getElementById('sol-limite-compra')?.value||'').trim();
+      if(!_limCompra){ alert('Informe a DATA LIMITE DE COMPRA — sem pedido vinculado não há régua automática; esta data vira o "Limite compra" do item nas listas e no Acompanhamento.'); return; }
     }
   }
   var o=ehPseudo?null:(orders||[]).find(function(x){ return String(x.id)===String(_solOrderId); });
+  // v248 — pedido produzido+enviado completo não recebe nova solicitação de ATIVO (ordem do dono 13/10)
+  if(_solTab==='ativo' && !ehPseudo && _solAtivoBloqueado(_solOrderId)){
+    alert('⛔ O pedido '+((o&&o.num)||'')+' já foi PRODUZIDO e ENVIADO por completo — não aceita nova solicitação de ativo.\n\nSe o insumo é necessário para reposição, solicite como compra AVULSA (Produtos gerais / uso e consumo).');
+    return;
+  }
   var s=null; var now=Date.now();
   if(ehPseudo){
     // v168 — regra do dono 21/07: sem edição explícita, CADA salvar é um lançamento NOVO
@@ -13500,6 +13577,7 @@ function saveSolicitacao(){
     s.itens=itens; s.atualizadoEm=now; s.status='solicitado';
     if(_destEstoque){ s.destinoEstoque={em:now,por:(currentUser&&currentUser.name)||''}; delete s.pedidoUso; } // v242 — destino ESTOQUE
     else if(_pedidoUso){ s.pedidoUso=_pedidoUso; delete s.destinoEstoque; } // v225 — edição atualiza o pedido de destino
+    if(_limCompra) s.limiteCompra=_limCompra; else if(_pedidoUso) delete s.limiteCompra; // v248 — data limite manual do estoque
   } else {
     var _pi=ehPseudo?_solPseudoInfo(_solOrderId):null;
     if(ehPseudo) _healSolNumSA(); // v168 — numera os antigos ANTES, para a sequência ficar cronológica
@@ -13508,6 +13586,7 @@ function saveSolicitacao(){
     if(ehPseudo) s.numSeq=_sa; // v168 — SA-N (avulsa) / AN-N (anestésico)
     if(_destEstoque) s.destinoEstoque={em:now,por:(currentUser&&currentUser.name)||''}; // v242 — destino ESTOQUE
     else if(_pedidoUso) s.pedidoUso=_pedidoUso; // v225 — pedido em que a embalagem avulsa será utilizada
+    if(_limCompra) s.limiteCompra=_limCompra; // v248 — data limite manual do ativo p/ estoque
     solicitacoesCompra.push(s);
   }
   if(o && o.compraNaoNec && o.compraNaoNec[_solTab]) delete o.compraNaoNec[_solTab]; // v155 — solicitar desfaz o "não necessário" do tipo
@@ -13638,6 +13717,8 @@ function _healSolicOrfas(){
       if(_pseudoH) _healSolNumSA();
       var _saH=_pseudoH?_solProxSA(s.orderId):0;
       var _piH=_pseudoH?_solPseudoInfo(s.orderId):null;
+      // v248 — autocura não ressuscita ativo de pedido produzido+enviado completo (ordem do dono 13/10)
+      if(s.tipo==='ativo' && typeof _solAtivoBloqueado==='function' && _solAtivoBloqueado(s.orderId)){ s.atualizadoEm=now; mudou=true; try{ console.warn('autocura v225: itens presos de '+(s.orderNum||s.id)+' NÃO devolvidos — pedido já produzido e enviado (regra v248)'); }catch(_e3){} return; }
       var novo={ id:'solc'+now+'hl'+Math.floor(Math.random()*1000), orderId:s.orderId,
         orderNum:_pseudoH?(_piH.num+' '+_piH.sigla+'-'+_saH):(s.orderNum||''), cliente:s.cliente||'',
         tipo:s.tipo, itens:presos, status:'solicitado', listaId:null,
@@ -14249,6 +14330,19 @@ function _lcLimiteCompraItem(l, it){
     det.push((og.orderNum||r.num||'')+': '+fmtDate(r.date));
     if(!best || r.date<best) best=r.date;
   });
+  // v248 — avulsa (pseudo) agora carrega limite: data manual do destino ESTOQUE ou a régua do
+  // pedido de uso vinculado; a solicitação é localizada pelas solicIds da lista + itemId do item.
+  try{
+    ((l&&l.solicIds)||[]).forEach(function(sid){
+      var s=((typeof solicitacoesCompra!=='undefined'&&solicitacoesCompra)||[]).find(function(x){ return x && x.id===sid; });
+      if(!s || s.tipo!==tipo) return;
+      if(!(s.itens||[]).some(function(x){ return x && String(x.itemId)===String(it.itemId); })) return;
+      var dt=null, lbl='';
+      if(s.pedidoUso&&s.pedidoUso.orderId){ var ru=_limiteCompraPedido(s.pedidoUso.orderId, tipo); if(ru){ dt=ru.date; lbl='uso no '+(s.pedidoUso.num||ru.num||'')+': '; } }
+      if(!dt && s.limiteCompra){ dt=s.limiteCompra; lbl='estoque (manual): '; }
+      if(dt){ det.push(lbl+fmtDate(dt)); if(!best || dt<best) best=dt; }
+    });
+  }catch(_e){}
   return best?{date:best, det:det.join(' · ')}:null;
 }
 // v155 — tabela de ITENS de uma lista (o miolo que antes ficava solto na tela; agora vive no modal)
@@ -14528,6 +14622,8 @@ function _lcParcialSaldo(listaId, ref){
   it.parcialSaldo={em:now, por:(currentUser&&currentUser.name)||'', devolvido:saldo.slice()}; // rastro da resolução
   // devolve o saldo como solicitação pendente (agrupa na aberta do pedido, ou cria — mesmo padrão do sem_estoque)
   saldo.forEach(function(og,oi){
+    // v248 — ativo de pedido produzido+enviado completo não volta como solicitação presa ao pedido (ordem do dono 13/10)
+    if(l.tipo==='ativo' && _solAtivoBloqueado(og.orderId)) return;
     var alvo=(solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(og.orderId) && s.tipo===l.tipo && s.status==='solicitado'; });
     if(!alvo){
       var ehPseudoOg=_solEhPseudo(og.orderId);
@@ -14651,9 +14747,11 @@ function _ncConfirmar(){
   var msg;
   if(op==='sem_estoque'){
     // devolve as quantidades às origens (agrupa na solicitação ABERTA de cada origem, ou cria uma nova)
-    var now=Date.now(), devolvidos=0;
+    var now=Date.now(), devolvidos=0, _blq248=[];
     (it.origem||[]).forEach(function(og,oi){
       var qtd=parseFloat(og.qtd)||0; if(qtd<=0) return;
+      // v248 — ativo de pedido produzido+enviado completo NÃO volta à fila preso ao pedido (ordem do dono 13/10)
+      if(l.tipo==='ativo' && _solAtivoBloqueado(og.orderId)){ _blq248.push(og.orderNum||String(og.orderId)); return; }
       var alvo=(solicitacoesCompra||[]).find(function(s){ return s && String(s.orderId)===String(og.orderId) && s.tipo===l.tipo && s.status==='solicitado'; });
       if(!alvo){
         var ehPseudoOg=_solEhPseudo(og.orderId); // v168 — vale p/ avulsa e anestésico
@@ -14669,7 +14767,8 @@ function _ncConfirmar(){
       alvo.atualizadoEm=now; devolvidos++;
       if(l.tipo==='embalagem') _autoEstoqueSolicitadoPorOrderId(og.orderId,'item sem estoque devolvido à fila'); // v233
     });
-    msg='🚫 Item marcado SEM ESTOQUE.\n↩ Quantidades devolvidas ('+devolvidos+' origem(ns)) — ficam na fila "Fora de estoque"; o Gerar lista pergunta se inclui.';
+    msg='🚫 Item marcado SEM ESTOQUE.\n↩ Quantidades devolvidas ('+devolvidos+' origem(ns)) — ficam na fila "Fora de estoque"; o Gerar lista pergunta se inclui.'
+      +(_blq248.length?'\n\n⛔ NÃO devolvido p/ '+_blq248.length+' pedido(s) já produzido(s) e enviado(s) ('+_blq248.join(', ')+') — se precisar do insumo, solicite compra AVULSA p/ estoque.':'');
   } else if(op==='trocar' && _ncSub==='solicitar'){
     // v232 — TROCA COM COMPRA: a necessidade da embalagem original morre (item resolvido) e a
     // SUBSTITUTA entra na fila de solicitações NA MESMA QUANTIDADE, por origem — mesmo agrupamento
@@ -14734,6 +14833,45 @@ function _acompStatusItem(s, it){
   if(parts.some(function(p){ return (p.cotacoes||[]).length; })) return {st:'Orçado', li:li};
   return {st:'Em lista', li:li};
 }
+// v248 — FILTRO DE STATUS POR CHECKBOX no Acompanhamento (ordem do dono 13/10: "pode filtrar
+// selecionando um, dois ou mais status de uma vez"). Estado em window._acompStatusSel (vazio =
+// todos); o botão resume a seleção; clique fora fecha o painel.
+var _ACOMP_STATUS_OPTS=['Solicitado','Em lista','Orçado','Comprado','Recebido','Recebido a menos','Não comprado','Sem estoque','Ajustado','Tinha estoque','Trocada — tinha estoque','Trocada — solicitada'];
+function _acompStFiltroToggle(ev){
+  if(ev){ try{ ev.stopPropagation(); }catch(_e){} }
+  var pop=document.getElementById('acomp-status-pop'); if(!pop) return;
+  if(pop.style.display!=='none'){ pop.style.display='none'; return; }
+  var sel=window._acompStatusSel||[];
+  pop.innerHTML=_ACOMP_STATUS_OPTS.map(function(st,i){
+    var lbl=st==='Não comprado'?'Não comprado (legado)':st;
+    return '<label style="display:flex;align-items:center;gap:7px;font-size:12.5px;padding:3px 2px;cursor:pointer;white-space:nowrap"><input type="checkbox" id="acomp-st-cb-'+i+'" '+(sel.indexOf(st)>=0?'checked':'')+' onchange="_acompStFiltroChg()" style="width:auto;margin:0">'+escapeHtml(lbl)+'</label>';
+  }).join('')+'<div style="display:flex;justify-content:space-between;gap:8px;margin-top:7px;border-top:.5px solid var(--border);padding-top:7px">'+
+    '<button onclick="_acompStFiltroLimpar()" style="font-size:11px;padding:3px 10px">Limpar (todos)</button>'+
+    '<button class="btn-primary" onclick="document.getElementById(\'acomp-status-pop\').style.display=\'none\'" style="font-size:11px;padding:3px 10px">Fechar</button></div>';
+  pop.style.display='';
+}
+function _acompStFiltroChg(){
+  var sel=[];
+  _ACOMP_STATUS_OPTS.forEach(function(st,i){ var cb=document.getElementById('acomp-st-cb-'+i); if(cb&&cb.checked) sel.push(st); });
+  window._acompStatusSel=sel;
+  _acompStFiltroBtn();
+  renderSolAcomp();
+}
+function _acompStFiltroLimpar(){
+  window._acompStatusSel=[];
+  _ACOMP_STATUS_OPTS.forEach(function(st,i){ var cb=document.getElementById('acomp-st-cb-'+i); if(cb) cb.checked=false; });
+  _acompStFiltroBtn();
+  renderSolAcomp();
+}
+function _acompStFiltroBtn(){
+  var b=document.getElementById('acomp-status-btn'); if(!b) return;
+  var sel=window._acompStatusSel||[];
+  b.textContent=(sel.length===0?'Todos os status':(sel.length<=2?sel.join(' + '):sel.length+' status selecionados'))+' ▾';
+}
+document.addEventListener('click',function(e){
+  var pop=document.getElementById('acomp-status-pop');
+  if(pop && pop.style.display!=='none' && !e.target.closest('#acomp-status-pop') && !e.target.closest('#acomp-status-btn')) pop.style.display='none';
+});
 function renderSolAcomp(){
   var el=document.getElementById('acomp-list'); if(!el) return;
   // meses disponíveis (pela data da SOLICITAÇÃO) — default mês atual
@@ -14747,7 +14885,7 @@ function renderSolAcomp(){
   }
   var fMes=selMes?selMes.value:'';
   var fTipo=document.getElementById('acomp-tipo')?.value||'';
-  var fStatus=document.getElementById('acomp-status')?.value||'';
+  var fStatusSel=(window._acompStatusSel||[]); // v248 — multi-seleção por checkbox (vazio = todos)
   var busca=(document.getElementById('acomp-busca')?.value||'').toLowerCase().trim();
   var linhas=[];
   (solicitacoesCompra||[]).forEach(function(s){
@@ -14762,7 +14900,9 @@ function renderSolAcomp(){
       var linha={
         tipo:s.tipo, codigo:it.codigo||'', nome:it.nome||'', qtd:parseFloat(it.qtd)||0, unidade:it.unidade||'UN',
         pedido:s.orderNum||'—', status:r.st, lista:_codL,
-        limite:(function(){ var _lr=_limiteCompraPedido(s.orderId, s.tipo); return _lr?_lr.date:null; })(), // v246 — mesma régua da coluna da lista
+        limite:(function(){ var _lr=_limiteCompraPedido(s.orderId, s.tipo); if(_lr) return _lr.date;
+          if(s.pedidoUso&&s.pedidoUso.orderId){ var _lu=_limiteCompraPedido(s.pedidoUso.orderId, s.tipo); if(_lu) return _lu.date; } // v248 — avulsa vinculada a pedido de uso herda a régua dele
+          return s.limiteCompra||null; })(), // v246 — régua da lista; v248 — data manual do estoque
 
         falt:r.falt||null, // v210 — quinhão descoberto deste pedido no rateio
         fornecedor:(r.st==='Comprado'||r.st==='Recebido'||r.st==='Recebido a menos')?(cmp.fornecedorNome||''):'',
@@ -14771,7 +14911,7 @@ function renderSolAcomp(){
         motivo:(r.li&&r.li.naoCompradoMotivo)||''
       };
       linha.total=linha.preco*linha.qtd;
-      if(fStatus && linha.status!==fStatus) return;
+      if(fStatusSel.length && fStatusSel.indexOf(linha.status)<0) return; // v248 — casa qualquer status marcado
       if(busca && ((linha.nome+' '+linha.codigo+' '+linha.pedido+' '+linha.fornecedor).toLowerCase().indexOf(busca)<0)) return;
       linhas.push(linha);
     });
@@ -14973,7 +15113,7 @@ function _healComercialPI(){
       o.statuses.comercial='Não iniciado';
       o.statusDates=o.statusDates||{};
       o.statusDates.comercial={ts:Date.now(), by:'Sistema (derivação lógica)', from:prev, to:'Não iniciado'};
-      try{ addAudit(o,'comercial','status',prev,'Não iniciado (automático — carimbo "Produtos informados" sem nenhum produto no pedido)'); }catch(_e){}
+      try{ addAudit(o,'comercial','status',prev,'Não iniciado (retorno automático — carimbo "Produtos informados" sem nenhum produto no pedido)'); }catch(_e){} // v248 — redação na convenção v233 ("retorno automático"): regressão nunca ganha ✓
       mudou++;
     });
     if(mudou){ try{ saveData(); }catch(_e){} console.log('[v208] heal comercial-PI: '+mudou+' reversão(ões)'); }
@@ -29808,6 +29948,35 @@ function _convUltimaCliEm(cv){
   for(var i=ms.length-1;i>=0;i--){ var m=ms[i]; if(!m||_msgFantasma(m)||m.de!=='cliente') continue; return m.em||0; }
   return 0;
 }
+// v248 — SINAIS DO ROBÔ (wa_sinais: 'compra' sem fechamento / 'insatisfacao' sem desfecho) —
+// mesmo molde do wa_retornos: a rotina IA insere; o front lê pendentes e resolve.
+var _waSinais=[], _waSinBusy=false, _waSinAt=0;
+function _waSinLoad(){
+  if(!_sb || _waSinBusy || (Date.now()-_waSinAt)<60000) return; // no máx. 1 busca/min
+  _waSinBusy=true;
+  try{
+    _sb.from('wa_sinais').select('*').eq('status','pendente').order('msg_ts').range(0,999)
+      .then(function(res){
+        _waSinBusy=false;
+        if(res && Array.isArray(res.data)){
+          _waSinAt=Date.now();
+          var mudou = JSON.stringify(res.data)!==JSON.stringify(_waSinais);
+          _waSinais=res.data;
+          if(mudou && typeof renderDashConversas==='function') renderDashConversas();
+        }
+      }, function(){ _waSinBusy=false; });
+  }catch(_e){ _waSinBusy=false; }
+}
+function resolverSinal(sid){
+  if(currentUser?.perfil!=='admin'){ alert('Apenas o admin pode marcar como resolvido.'); return; }
+  var s=(_waSinais||[]).find(function(x){ return String(x.id)===String(sid); }); if(!s) return;
+  s.status='resolvido';
+  _waSinais=_waSinais.filter(function(x){ return String(x.id)!==String(sid); });
+  try{ // .then() OBRIGATÓRIO (builder do supabase-js só envia quando aguardado — lição v179)
+    if(_sb) _sb.from('wa_sinais').update({ status:'resolvido', resolvido_por:(currentUser&&currentUser.name)||'admin', resolvido_em:new Date().toISOString() }).eq('id', s.id).then(function(_r){});
+  }catch(_e){}
+  renderDashConversas();
+}
 function resolverRetorno(rid){
   if(currentUser?.perfil!=='admin'){ alert('Apenas o admin pode marcar como resolvido.'); return; }
   var r=(_waRetornos||[]).find(function(x){ return String(x.id)===String(rid); }); if(!r) return;
@@ -29979,6 +30148,18 @@ function renderDashConversas(){
   const _inPer = em => { em=em||0; if(_deMs!=null && em<_deMs) return false; if(_ateMs!=null && em>_ateMs) return false; return true; };
   let ativas=0, encerradas=0, comCliente=0, comAtend=0;
   const semResposta=[], aguardando=[], frGaps=[], respGaps=[];
+  // v248 — 2 QUADROS NOVOS (ordem do dono 13/10, pós-análise dos 20 dias; reforço expresso: a fonte
+  // é O ROBÔ que analisa as conversas, COMO NO "Aguardando retorno"): 🛒 SINAL DE COMPRA sem
+  // fechamento e ⚠ INSATISFAÇÃO sem desfecho confirmado — tabela própria wa_sinais (migration
+  // wa_sinais_v248) alimentada pela rotina IA; o front só exibe pendentes e resolve (mesmo molde do
+  // wa_retornos). Auto-limpeza do SINAL DE COMPRA: some quando houver resposta NOSSA real depois do
+  // sinal — DISPARO EM MASSA não conta (texto nosso idêntico em 5+ conversas de 30d = broadcast;
+  // caso real: a campanha de Natal 13/10 "respondeu" o Aprovado da TMT sem responder nada).
+  // INSATISFAÇÃO não some sozinha: só o ✓ (ou a baixa do robô ao ver o desfecho) — desfecho é decisão humana.
+  const _detCorte=now-30*86400000;
+  const _bcCount={};
+  convs.forEach(cv=>{ if(cv.grupo) return; (cv.mensagens||[]).forEach(m=>{ if(m&&m.de==='atendente'&&(m.em||0)>_detCorte&&(m.texto||'').length>40){ const k=(m.texto||'').slice(0,80); _bcCount[k]=(_bcCount[k]||0)+1; } }); });
+  const _respNossaApos=(cv,ts)=>((cv.mensagens||[]).some(m=>m&&m.de==='atendente'&&(m.em||0)>ts+2000&&!_msgFantasma(m)&&((_bcCount[(m.texto||'').slice(0,80)]||0)<5)));
   const porAtend={}; const ensure=id=>{ if(!porAtend[id]) porAtend[id]={atendidas:0,ativas:0,msgs:0,fr:[],resp:[]}; return porAtend[id]; };
   convs.forEach(cv=>{
     if(cv.grupo) return; // v148 : grupo fora dos KPIs/quadros comerciais
@@ -30017,6 +30198,15 @@ function renderDashConversas(){
     && _convUltimaEm(x.cv) <= (x.desde+2000)).sort((a,b)=>a.desde-b.desde);
   _rcLista=_retBase.filter(x=>x.r.direcao==='cliente'
     && _convUltimaCliEm(x.cv) <= (x.desde+2000)).sort((a,b)=>a.desde-b.desde);
+  // v248 — sinais do robô (wa_sinais): compra sem fechamento / insatisfação sem desfecho
+  _waSinLoad();
+  const _sinBase=(_waSinais||[]).map(s=>{
+    const cv=convs.find(c=>String(c.id)===String(s.conv_id));
+    return cv?{cv, s, desde:Number(s.msg_ts)||0}:null;
+  }).filter(x=>x && !x.cv.grupo && x.cv.status!=='encerrada'
+    && (!_dcConvEq || x.cv.equipeId===_dcConvEq));
+  const sinaisCompra=_sinBase.filter(x=>x.s.tipo==='compra' && !_respNossaApos(x.cv, x.desde)).sort((a,b)=>a.desde-b.desde);
+  const insatisfacoes=_sinBase.filter(x=>x.s.tipo==='insatisfacao').sort((a,b)=>a.desde-b.desde);
   semResposta.sort((a,b)=>a.desde-b.desde); aguardando.sort((a,b)=>a.desde-b.desde);
   const taxaResp = comCliente? Math.round(comAtend/comCliente*100) : null;
   const card=(label,val,sub,cor)=>`<div style="background:var(--bg-primary);border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 16px">
@@ -30028,6 +30218,8 @@ function renderDashConversas(){
     ${card('🔴 Sem resposta', semResposta.length, semResposta.length?'precisam de 1º contato':'tudo respondido', semResposta.length?'var(--st-bad-tx)':'var(--st-ok-tx)')}
     ${card('⏳ Aguardando resposta', aguardando.length, aguardando.length?'cliente falou por último':'ninguém aguardando', aguardando.length?'var(--st-mid-tx)':'var(--st-ok-tx)')}
     ${card('🔁 Retorno prometido', retornos.length, retornos.length?'prometemos e não retornamos':'nenhum retorno pendente', retornos.length?'var(--st-bad-tx)':'var(--st-ok-tx)')}
+    ${card('🛒 Sinal de compra', sinaisCompra.length, sinaisCompra.length?'cliente quer fechar e aguarda':'nenhum sinal pendente', sinaisCompra.length?'var(--st-bad-tx)':'var(--st-ok-tx)')}
+    ${card('⚠ Insatisfação', insatisfacoes.length, insatisfacoes.length?'sem desfecho confirmado':'nenhuma pendente', insatisfacoes.length?'var(--st-bad-tx)':'var(--st-ok-tx)')}
     ${card('⏱️ Tempo médio 1ª resposta', _fmtDurConv(avg(frGaps)), 'mediana '+_fmtDurConv(med(frGaps)))}
     ${card('⚡ Tempo médio de resposta', _fmtDurConv(avg(respGaps)), respGaps.length+' resposta(s)')}
     ${card('✓ Taxa de resposta', taxaResp==null?'—':taxaResp+'%', comAtend+' de '+comCliente+' c/ cliente')}</div>`;
@@ -30053,9 +30245,19 @@ function renderDashConversas(){
           <span style="color:var(--st-mid-tx)">há ${_fmtDurConv(now-x.desde)}</span>
           ${_isAdmConv?`<button onclick="resolverRetorno('${x.r.id}')" title="Marcar como resolvido — o retorno foi dado por outro canal ou não é mais necessário. Sai da lista." style="font-size:10px;padding:2px 8px;border:.5px solid var(--st-ok-bd);background:var(--st-ok-bg);color:var(--st-ok-tx);border-radius:6px;cursor:pointer">✓ Resolver</button>`:''}
         </span></div>`;
-  const _parPaineis=(sr,ag,rt,sufixo)=>`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px">
+  // v248 — item dos SINAIS do robô (compra/insatisfação): trecho da mensagem do cliente + abrir conversa + ✓
+  const _snItem=x=>`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:.5px solid var(--border);font-size:12px">
+        <span style="flex:1;min-width:0"><span style="cursor:pointer;color:var(--text-info)" onclick="abrirConversaDireta('${x.cv.id}')">${escapeHtml(_nomeCliConv(x.cv))}</span>${x.cv.telefone?` <span style="color:var(--text-tertiary);font-size:10px">· ${escapeHtml(x.cv.telefone)}</span>`:''} <span style="color:var(--text-tertiary);font-size:10px">· ${escapeHtml(_nomeAtendConv(x.cv.atendenteId))}</span>
+          ${x.s.trecho?`<div style="color:var(--text-tertiary);font-size:10px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">“${escapeHtml(x.s.trecho)}”</div>`:''}</span>
+        <span style="display:flex;align-items:center;gap:8px;white-space:nowrap">
+          <span style="color:${x.s.tipo==='compra'?'var(--st-bad-tx)':'var(--st-mid-tx)'}">há ${_fmtDurConv(now-x.desde)}</span>
+          ${_isAdmConv?`<button onclick="resolverSinal('${x.s.id}')" title="${x.s.tipo==='compra'?'Marcar como resolvido — a venda foi fechada/registrada (ou tratada por outro canal). Sai da lista.':'Marcar DESFECHO CONFIRMADO — a insatisfação foi resolvida e o cliente foi avisado. Sai da lista.'}" style="font-size:10px;padding:2px 8px;border:.5px solid var(--st-ok-bd);background:var(--st-ok-bg);color:var(--st-ok-tx);border-radius:6px;cursor:pointer">✓ Resolver</button>`:''}
+        </span></div>`;
+  const _parPaineis=(sr,ag,rt,sc,ins,sufixo)=>`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px">
     <div class="panel"><div class="panel-header"><span style="font-weight:600;font-size:13px;color:var(--st-bad-tx)">🔴 Sem nenhuma resposta${sufixo}</span></div><div style="padding:0 4px">${sr.length?sr.map(_srItem).join(''):'<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Nenhuma conversa sem resposta. 👍</div>'}</div></div>
     <div class="panel"><div class="panel-header"><span style="font-weight:600;font-size:13px;color:var(--st-mid-tx)">⏳ Aguardando resposta${sufixo}</span></div><div style="padding:0 4px">${ag.length?ag.map(_agItem).join(''):'<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Ninguém aguardando resposta. 👍</div>'}</div></div>
+    <div class="panel"><div class="panel-header"><span style="font-weight:600;font-size:13px;color:var(--st-bad-tx)">🛒 Sinal de compra sem fechamento${sufixo}</span> <span style="font-size:10px;color:var(--text-tertiary)">· detectado pela rotina IA</span></div><div style="padding:0 4px">${sc.length?sc.map(_snItem).join(''):'<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Nenhum sinal de compra pendente. 👍</div>'}</div></div>
+    <div class="panel"><div class="panel-header"><span style="font-weight:600;font-size:13px;color:var(--st-bad-tx)">⚠ Insatisfação sem desfecho confirmado${sufixo}</span> <span style="font-size:10px;color:var(--text-tertiary)">· detectado pela rotina IA</span></div><div style="padding:0 4px">${ins.length?ins.map(_snItem).join(''):'<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Nenhuma insatisfação pendente. 👍</div>'}</div></div>
     <div class="panel" style="grid-column:1/-1"><div class="panel-header"><span style="font-weight:600;font-size:13px;color:var(--st-bad-tx)">🔁 Aguardando retorno — prometemos e ainda não retornamos${sufixo}</span> <span style="font-size:10px;color:var(--text-tertiary)">· detectado pela rotina IA (2x/dia)</span></div><div style="padding:0 4px">${rt.length?rt.map(_rtItem).join(''):'<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Nenhum retorno prometido pendente. 👍</div>'}</div></div></div>`;
   // v142 : modo DOIS NUMEROS: um PAR de quadros por numero (Emilayne / Tairine), cada um só com as conversas do seu numero
   let panels='';
@@ -30064,10 +30266,12 @@ function renderDashConversas(){
       const sr=semResposta.filter(x=>_waNumDaConv(x.cv)===n.id);
       const ag=aguardando.filter(x=>_waNumDaConv(x.cv)===n.id);
       const rt=retornos.filter(x=>_waNumDaConv(x.cv)===n.id); // v203
-      return _parPaineis(sr, ag, rt, ' — 📱 '+escapeHtml(n.rotulo||n.id));
+      const sc=sinaisCompra.filter(x=>_waNumDaConv(x.cv)===n.id); // v248
+      const ins=insatisfacoes.filter(x=>_waNumDaConv(x.cv)===n.id); // v248
+      return _parPaineis(sr, ag, rt, sc, ins, ' — 📱 '+escapeHtml(n.rotulo||n.id));
     })).join('');
   } else {
-    panels=_parPaineis(semResposta, aguardando, retornos, '');
+    panels=_parPaineis(semResposta, aguardando, retornos, sinaisCompra, insatisfacoes, '');
   }
   const ranking=Object.keys(porAtend).map(id=>Object.assign({id}, porAtend[id])).sort((a,b)=>b.atendidas-a.atendidas);
   const rankRows = ranking.length
@@ -30125,15 +30329,135 @@ function setDcTab(tab){
   const _tc=document.getElementById('dc-tab-comissao');
   if(_tc) _tc.style.display=_podeVerComissao()?'':'none';
   if(tab==='comissao' && !_podeVerComissao()) tab='dashboard';
+  // v249 — aba Time Comercial é RESTRITA (admin e diretora comercial; decisão do dono 13/10)
+  const _tt=document.getElementById('dc-tab-time');
+  if(_tt) _tt.style.display=_podeVerTimeComercial()?'':'none';
+  if(tab==='time' && !_podeVerTimeComercial()) tab='dashboard';
   activeDcTab = tab;
-  ['dashboard','metas','comissao'].forEach(t=>{
+  ['dashboard','metas','comissao','time'].forEach(t=>{
     document.getElementById('dc-tab-'+t)?.classList.toggle('active', t===tab);
     const pg=document.getElementById('dc-pg-'+t);
     if(pg) pg.style.display = t===tab?'':'none';
   });
   if(tab==='metas') renderMetas();
   if(tab==='comissao') renderComissao();
+  if(tab==='time') renderTimeComercial();
   if(tab==='dashboard'){ renderDashComercial(); renderDcPositivacao(); if(typeof renderCrossSell==='function') renderCrossSell(); }
+}
+
+// ── v249: TIME COMERCIAL ───────────────────────────────────
+// Classificação de conversas por atendente (ordem do dono 13/10): outbound/inbound × carteira/externo
+// + continuação, com respostas e aprovações (estimadas: pedido do cliente no mês). A FONTE é a tabela
+// tc_conv_class, alimentada pela rotina IA diária (Passo 7 do ROTINA_RESUMO_CONVERSAS.md) — a tela
+// NUNCA classifica nada localmente (mesmo princípio dos quadros de sinais/retornos).
+function _podeVerTimeComercial(){
+  const u=currentUser; if(!u) return false;
+  return u.perfil==='admin' || u.perfil==='diretor_comercial';
+}
+var _tcMes=new Date().toISOString().slice(0,7);
+var _tcRows=[], _tcMesCarregado='', _tcAt=0, _tcBusy=false;
+function tcNavMes(delta){
+  const [y,m]=_tcMes.split('-').map(Number);
+  _tcMes=new Date(y,m-1+delta,1).toISOString().slice(0,7);
+  renderTimeComercial();
+}
+function _tcLoad(){
+  if(!_sb || _tcBusy) return;
+  if(_tcMesCarregado===_tcMes && (Date.now()-_tcAt)<60000) return; // throttle 60s por mês
+  _tcBusy=true;
+  const mesReq=_tcMes, acc=[];
+  // PAGINADO em janelas de 1000 (lição 28/07: PostgREST corta em 1000 mesmo pedindo range maior;
+  // setembro já tem ~2.900 linhas) — segue até a página vir incompleta.
+  const passo=(de)=>{
+    _sb.from('tc_conv_class').select('*').eq('mes',mesReq).order('id').range(de,de+999).then(r=>{
+      if(r.error){ _tcBusy=false; console.warn('tc_conv_class:',r.error.message); return; }
+      const lote=r.data||[];
+      acc.push(...lote);
+      if(lote.length===1000 && acc.length<20000){ passo(de+1000); return; }
+      _tcBusy=false;
+      const novo=JSON.stringify(acc);
+      const mudou=(mesReq!==_tcMesCarregado)||(novo!==JSON.stringify(_tcRows));
+      _tcRows=acc; _tcMesCarregado=mesReq; _tcAt=Date.now();
+      if(mudou && activeDcTab==='time') renderTimeComercial();
+    });
+  };
+  passo(0);
+}
+var _TC_TIPOS=[
+  ['outbound_carteira','Outbound carteira'],
+  ['outbound_externo','Outbound externo'],
+  ['inbound_carteira','Inbound carteira'],
+  ['inbound_externo','Inbound externo'],
+  ['continuacao','Continuação de conversa'],
+];
+function renderTimeComercial(){
+  const el=document.getElementById('tc-content'); if(!el) return;
+  if(!_podeVerTimeComercial()){ el.innerHTML='<div class="empty" style="padding:24px">Sem permissão para ver o Time Comercial.</div>'; return; }
+  const lbl=document.getElementById('tc-mes-label'); if(lbl) lbl.textContent=getMesLabel(_tcMes);
+  if(_tcMesCarregado!==_tcMes){ el.innerHTML='<div class="empty" style="padding:24px">Carregando…</div>'; _tcLoad(); return; }
+  _tcLoad();
+  const rows=_tcRows||[];
+  if(!rows.length){ el.innerHTML='<div class="empty" style="padding:24px">Sem dados para '+escapeHtml(getMesLabel(_tcMes))+' — a rotina IA diária (20h) alimenta este quadro.</div>'; return; }
+  const porAt={};
+  rows.forEach(r=>{ (porAt[r.atendente_id]=porAt[r.atendente_id]||[]).push(r); });
+  const nomeDe=id=>{ const u=(users||[]).find(x=>x&&x.id===id); return (u&&u.name)||id; };
+  const pct=(a,b)=>b>0?(Math.round(a*1000/b)/10).toLocaleString('pt-BR')+'%':'—';
+  const ats=Object.keys(porAt).sort((a,b)=>porAt[b].length-porAt[a].length);
+  let h='';
+  ats.forEach(aid=>{
+    const rs=porAt[aid];
+    let linhas='', tConv=0, tResp=0, tAprov=0;
+    _TC_TIPOS.forEach(([tipo,rotulo])=>{
+      const x=rs.filter(r=>r.tipo===tipo);
+      const conv=x.length, resp=x.filter(r=>r.respondeu).length, aprov=x.reduce((s,r)=>s+(r.aprovacoes||0),0);
+      tConv+=conv; tResp+=resp; tAprov+=aprov;
+      linhas+='<tr style="cursor:'+(conv?'pointer':'default')+'" '+(conv?('onclick="tcDetalhe(\''+aid+'\',\''+tipo+'\')"'):'')+'>'
+        +'<td style="padding:6px 10px">'+rotulo+'</td>'
+        +'<td style="padding:6px 10px;text-align:right">'+conv+'</td>'
+        +'<td style="padding:6px 10px;text-align:right">'+resp+'</td>'
+        +'<td style="padding:6px 10px;text-align:right;color:var(--text-tertiary)">'+pct(resp,conv)+'</td>'
+        +'<td style="padding:6px 10px;text-align:right">'+aprov+'</td>'
+        +'<td style="padding:6px 10px;text-align:right;color:var(--text-tertiary)">'+pct(aprov,conv)+'</td></tr>';
+    });
+    h+='<div style="margin-top:18px"><div style="font-size:14px;font-weight:700;margin-bottom:6px">'+escapeHtml(nomeDe(aid))
+      +' <span style="font-size:11px;font-weight:400;color:var(--text-tertiary)">· '+tConv+' conversas no mês</span></div>'
+      +'<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="border-bottom:.5px solid var(--border);color:var(--text-secondary)">'
+      +'<th style="text-align:left;padding:6px 10px">Tipo de conversa</th><th style="text-align:right;padding:6px 10px">Conversas</th>'
+      +'<th style="text-align:right;padding:6px 10px">Respostas</th><th style="text-align:right;padding:6px 10px">% Resposta</th>'
+      +'<th style="text-align:right;padding:6px 10px">Aprovações</th><th style="text-align:right;padding:6px 10px">% Conversão</th></tr></thead>'
+      +'<tbody>'+linhas+'<tr style="border-top:.5px solid var(--border);font-weight:700">'
+      +'<td style="padding:6px 10px">Total</td><td style="padding:6px 10px;text-align:right">'+tConv+'</td>'
+      +'<td style="padding:6px 10px;text-align:right">'+tResp+'</td><td style="padding:6px 10px;text-align:right">'+pct(tResp,tConv)+'</td>'
+      +'<td style="padding:6px 10px;text-align:right">'+tAprov+'</td><td style="padding:6px 10px;text-align:right">'+pct(tAprov,tConv)+'</td></tr></tbody></table></div>';
+  });
+  h+='<div style="margin-top:14px;font-size:11px;color:var(--text-tertiary)">Fonte: classificação diária pela rotina IA (tc_conv_class). Aprovações = estimativa (cliente com pedido de venda no mês — decisão de 13/10). Mensagens enviadas pelo celular são atribuídas ao atendente da conversa. Clique numa linha para ver as conversas.</div>';
+  el.innerHTML=h;
+}
+function tcDetalhe(aid,tipo){
+  const rs=(_tcRows||[]).filter(r=>r.atendente_id===aid && r.tipo===tipo);
+  if(!rs.length) return;
+  const nomeCli=id=>{ const c=(clients||[]).find(x=>x&&x.id===id); return (c&&c.nome)||'(sem cadastro)'; };
+  const rot=(_TC_TIPOS.find(t=>t[0]===tipo)||['',tipo])[1];
+  const nomeAt=((users||[]).find(u=>u&&u.id===aid)||{name:aid}).name;
+  let h='';
+  rs.sort((a,b)=>(b.ep_fim||0)-(a.ep_fim||0)).forEach(r=>{
+    h+='<tr style="border-bottom:.5px solid var(--border)"><td style="padding:4px 8px">'+escapeHtml(nomeCli(r.cliente_id))+'</td>'
+      +'<td style="padding:4px 8px;text-align:center">'+escapeHtml(r.numero||'')+'</td>'
+      +'<td style="padding:4px 8px;text-align:center">'+(r.respondeu?'✓':'—')+'</td>'
+      +'<td style="padding:4px 8px;text-align:center">'+(r.aprovacoes||0)+'</td>'
+      +'<td style="padding:4px 8px;text-align:right"><button onclick="document.getElementById(\'tc-det-overlay\')?.remove();abrirConversaDireta(\''+r.conv_id+'\')" style="font-size:11px;padding:2px 8px;cursor:pointer">Abrir conversa</button></td></tr>';
+  });
+  document.getElementById('tc-det-overlay')?.remove();
+  document.body.insertAdjacentHTML('beforeend', '<div class="overlay open" id="tc-det-overlay" data-dyn="1">'
+    +'<div class="modal" style="width:680px;max-width:94vw;max-height:86vh;display:flex;flex-direction:column">'
+    +'<h2 style="margin:0 0 8px;flex-shrink:0">'+escapeHtml(rot)+' — '+escapeHtml(nomeAt)+' <span style="font-size:12px;color:var(--text-tertiary);font-weight:400">· '+escapeHtml(getMesLabel(_tcMes))+' · '+rs.length+' conversas</span></h2>'
+    +'<div style="flex:1;overflow:auto;border:.5px solid var(--border);border-radius:var(--r-md)">'
+    +'<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:.5px solid var(--border);color:var(--text-secondary)">'
+    +'<th style="text-align:left;padding:4px 8px">Cliente</th><th style="text-align:center;padding:4px 8px">Nº</th>'
+    +'<th style="text-align:center;padding:4px 8px">Respondeu</th><th style="text-align:center;padding:4px 8px">Aprovações</th><th></th></tr></thead>'
+    +'<tbody>'+h+'</tbody></table></div>'
+    +'<div class="modal-footer" style="flex-shrink:0;margin-top:10px"><button onclick="document.getElementById(\'tc-det-overlay\').remove()">Fechar</button></div>'
+    +'</div></div>');
 }
 
 // ── v136: COMISSIONAMENTO ──────────────────────────────────
@@ -30209,6 +30533,13 @@ function renderComissao(){
 
   const totalCom=comEmi+comTai+comEdu+bKar;
 
+  // v248 — AVARIAS DO MÊS ANTERIOR (ordem do dono 13/10): vendo Outubro, mostra o total de AVARIA
+  // de Setembro — pelo D1 do pedido de avaria, calculado AO VIVO dos pedidos. Por enquanto é só o
+  // VALOR informativo no rodapé (nenhum desconto aplicado nas comissões).
+  const mesAnt=(()=>{ const [y,m]=mes.split('-').map(Number); const d=new Date(y, m-2, 1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); })();
+  const avariasAnt=(orders||[]).filter(o=>o&&(o.tipo||'venda')==='avaria'&&(o.d1||'').slice(0,7)===mesAnt);
+  const avariasAntVal=soma(avariasAnt);
+
   const th='padding:9px 12px;background:var(--bg-secondary);font-size:11px;font-weight:500;color:var(--text-secondary);border-bottom:.5px solid var(--border)';
   const td='padding:8px 12px;border-bottom:.5px solid var(--border);font-size:12px';
   const money=v=>fmtMoney(v||0);
@@ -30240,6 +30571,10 @@ function renderComissao(){
       <tfoot><tr style="background:var(--bg-secondary)">
         <td colspan="3" style="padding:9px 12px;font-weight:600;font-size:12px">Total de comissões — ${getMesLabel(mes)}</td>
         <td style="padding:9px 12px;text-align:right;font-weight:700;font-size:13px">${money(totalCom)}</td>
+      </tr>
+      <tr><!-- v248 — avarias do MÊS ANTERIOR, por D1, ao vivo; só informativo (sem desconto por enquanto) -->
+        <td colspan="3" style="padding:9px 12px;font-size:12px;color:var(--st-bad-tx)">🏷 Avarias de ${getMesLabel(mesAnt)} <span style="font-size:10px;color:var(--text-tertiary)">(${avariasAnt.length} pedido(s) de avaria, pelo D1 — valor informativo, não descontado)</span></td>
+        <td style="padding:9px 12px;text-align:right;font-weight:700;font-size:13px;color:var(--st-bad-tx)">${money(avariasAntVal)}</td>
       </tr></tfoot>
     </table></div>
     <div style="margin-top:10px;font-size:11px;color:var(--text-tertiary);line-height:1.6">
@@ -34472,7 +34807,12 @@ function _orcDivgMerge(local, remoto){
 // com .then (lição builder-sem-await); a leitura faz merge (análise mais nova vence; resolvido soma).
 function _orcDivgSalvar(){
   try{
-    if(!(window._sb&&_sbReady)) return;
+    // v248 — INCIDENTE "divergências só para mim" (cobrança do dono 13/10, reportado várias vezes):
+    // `_sb` é declarado com LET, e let NÃO vira propriedade de window — `window._sb` era SEMPRE
+    // undefined e esta guarda retornava em silêncio: a v240 inteira (salvar E carregar) era código
+    // morto; a chave orc_opery_divg NUNCA existiu no servidor (provado por SELECT). O dono via as
+    // divergências da memória da própria aba; os demais, nada. Guarda corrigida p/ a variável real.
+    if(!(_sb&&_sbReady)) return;
     _sb.from('app_data').upsert({ key:'orc_opery_divg', value:orcOperyDivg, updated_at:new Date().toISOString() }, { onConflict:'key' })
       .then(function(r){ if(r&&r.error) console.warn('[divg] salvar falhou:', r.error.message); });
   }catch(_e){}
@@ -34480,7 +34820,7 @@ function _orcDivgSalvar(){
 var _orcDivgLastFetch=0;
 async function _orcDivgCarregar(){
   try{
-    if(!(window._sb&&_sbReady)) return false;
+    if(!(_sb&&_sbReady)) return false; // v248 — mesmo fix do _orcDivgSalvar (window._sb nunca existiu; let não vira window.*)
     const r=await _sb.from('app_data').select('value').eq('key','orc_opery_divg').maybeSingle();
     if(!(r&&r.data&&r.data.value)) return false;
     const antes=orcOperyDivg?((orcOperyDivg.em||0)+':'+(orcOperyDivg.itens||[]).filter(function(x){return x&&!x.resolvidoEm;}).length):'';

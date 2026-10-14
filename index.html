@@ -2399,15 +2399,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
                 <button id="fa-sub-entrada" onclick="_faSetSub('entrada')" class="btn-primary" style="font-size:12px;padding:5px 14px">Entrada</button>
                 <button id="fa-sub-saida" onclick="_faSetSub('saida')" style="font-size:12px;padding:5px 14px">Saída</button>
               </div>
-              <div class="form-group" style="margin:0"><label style="font-size:11px">Período</label>
-                <select id="fa-mes" onchange="renderFinAcomp()" style="font-size:12px;padding:5px 8px"></select></div>
-              <div class="form-group" style="margin:0"><label style="font-size:11px">pela data de</label>
-                <select id="fa-ref" onchange="renderFinAcomp()" style="font-size:12px;padding:5px 8px">
-                  <option value="lanc">Lançamento</option>
-                  <option value="emissao">Emissão</option>
-                  <option value="venc">Vencimento (1ª parcela)</option>
-                  <option value="baixa">Pagamento (última baixa)</option>
-                </select></div>
+              <!-- v251 — seletores Período e "pela data de" removidos (ordem do dono 14/10: redundantes com os períodos do 🔎 Filtrar) -->
               <button id="fa-filtrar-btn" onclick="_faFiltroAbrir()" style="display:none;font-size:12px;padding:6px 14px">🔎 Filtrar</button>
             </div>
             <div id="fa-list" style="padding:0 16px 16px"></div>
@@ -5261,7 +5253,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v250';
+var APP_VERSION = 'v251';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -13034,9 +13026,9 @@ function _solItemCompraInfo(li){
   var lanc=c.compraLancId?(compras||[]).find(function(x){ return x&&x.id===c.compraLancId; }):null;
   return {c:c, pc:pc||null, lanc:lanc||null, nf:(pc&&pc.nf)||c.nf||(lanc&&lanc.nf)||''};
 }
-var _SOL_COLS=9; // v193 — nº de colunas da tabela do modal (usado nos <td colspan>)
-// v193 — cabeçalho da tabela do modal (pedido do dono 05/08: colunas com pedido de compra, NF e
-// as datas de compra e de recebimento).
+var _SOL_COLS=8; // v193 — nº de colunas da tabela do modal (usado nos <td colspan>); v251 — NF saiu (vive no Status do pedido)
+// v193 — cabeçalho da tabela do modal; v251 (ordem do dono 14/10) — coluna "Status do pedido"
+// (segue o PC: Aberto/Fechado/NF informada/Recebido, com a NF embaixo) no lugar de NF+Recebimento.
 function _solTabelaHead(){
   var th='padding:7px 10px;background:var(--bg-secondary);font-size:10.5px;font-weight:600;color:var(--text-secondary);text-align:left;white-space:nowrap;border-bottom:.5px solid var(--border)';
   return '<thead><tr>'+
@@ -13046,9 +13038,8 @@ function _solTabelaHead(){
     '<th style="'+th+'">Fornecedor</th>'+
     '<th style="'+th+';text-align:right">R$/un</th>'+
     '<th style="'+th+'">Pedido de compra</th>'+
-    '<th style="'+th+'">NF</th>'+
     '<th style="'+th+'">Compra</th>'+
-    '<th style="'+th+'">Recebimento</th></tr></thead>';
+    '<th style="'+th+'">Status do pedido</th></tr></thead>';
 }
 function _solTabelaWrap(corpo){
   return '<div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;min-width:940px">'+
@@ -13141,7 +13132,49 @@ function _solItemLinhaInfo(s, it, lst){
   var colNf = c ? (inf.nf ? '<span style="font-family:monospace;font-size:11px">'+escapeHtml(inf.nf)+'</span>'
                           : '<span style="color:var(--st-mid-tx);font-size:11px">aguardando NF</span>')
                 : '<span style="color:var(--text-tertiary)">—</span>';
-  return { li:li, inf:inf, c:c, k:k, st:st, qtdS:_qtdS, colCompra:colCompra, colReceb:colReceb, colPed:colPed, colNf:colNf };
+  // v251 — coluna ÚNICA "Status do pedido" (ordem do dono 14/10, caso PC-131/103748): segue o
+  // PEDIDO DE COMPRA (Aberto → Fechado → NF informada → Recebido), com o nº da NF embaixo em
+  // pequeno (absorve a coluna NF) e MANTENDO os avisos item-a-item do recebimento que já existiam
+  // (a menos / não veio / divergente / conciliação pendente / rateio) — nada de informação se perde.
+  var colStPed;
+  if(!c){ colStPed='<span style="color:var(--text-tertiary)">—</span>'; }
+  else {
+    var _nfSub = inf.nf ? '<br><span style="'+sub+'">NF '+escapeHtml(inf.nf)+'</span>' : '';
+    var _avisos='';
+    if(c.recebido){
+      var _rfB=c.recebFaltante, _rfrB=c.recebFaltanteRes;
+      if(_rfB){
+        _avisos+='<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="A entrega veio menor que a compra">📉 a menos ('+(parseFloat(_rfB.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+')</span>'+
+          (_rfrB?'<br><span style="'+sub+'">'+(_rfrB.acao==='recompra'?'↪ re-solicitado':'✕ sem recompra')+'</span>':'<br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>');
+        var _mineB=s&&(_rfB.aloc||[]).find(function(x){ return String(x.orderId)===String(s.orderId); });
+        if(_mineB) _avisos+='<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:700">⚠ faltaram '+(parseFloat(_mineB.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+' DESTE pedido</span>';
+      }
+      if(c.recebidoDivergente&&!_rfB) _avisos+='<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="Quantidade ou preço recebidos diferentes do que foi comprado">⚠ divergente</span>';
+    } else if(c.recebFisicoEm!=null){
+      var _qFb=parseFloat(c.recebFisicoQtd)||0, _qCb=parseFloat(c.qtdComprada)||0;
+      if(c.recebFisicoQtd!=null && _qFb<=0){
+        _avisos+='<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="Conferência física registrou ZERO recebido deste item">✕ não veio</span><br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>';
+      } else {
+        if(_qCb && Math.abs(_qFb-_qCb)>0.001) _avisos+='<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600">📦 chegou '+_qFb.toLocaleString('pt-BR')+' de '+_qCb.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</span>';
+        _avisos+='<br><span style="color:var(--st-mid-tx);font-size:10px" title="Valores/XML e lançamento para o Caixa pendentes no menu Compras › Recebimento de Pedido">conciliação pendente</span>';
+      }
+    }
+    if(inf.pc){
+      var _pst=inf.pc.status||'aberto';
+      // v251 — reforço do dono: a coluna SEGUE os status da Gestão de Pedidos (mesmo pc.status dos
+      // badges de lá); rótulos dele p/ os marcos (Aberto/Fechado/NF informada/Recebido) e os da aba
+      // p/ os intermediários.
+      var _pmap={aberto:['Aberto','var(--st-mid-tx)'], fechado:['Fechado','var(--text-secondary)'], faturado:['NF informada','var(--st-inf-tx)'], em_recebimento:['Enviado p/ recebimento','var(--st-inf-tx)'], conciliado:['Conciliado','var(--st-inf-tx)'], recebido:['Recebido','var(--st-ok-tx)']};
+      var _pmm=_pmap[_pst]||[(typeof _PC_ST_LBL!=='undefined'&&_PC_ST_LBL[_pst])||_pst,'var(--text-secondary)'];
+      var _pdt=(typeof _pcStatusEmData==='function')?_pcStatusEmData(inf.pc):null;
+      colStPed='<span style="color:'+_pmm[1]+';font-weight:600">'+_pmm[0]+'</span>'+
+        (_pdt?'<br><span style="'+sub+'">'+fmtDate(_gstDataDe(_pdt))+'</span>':'')+_nfSub+_avisos;
+    } else {
+      colStPed='<span style="'+sub+'">compra sem pedido de compra</span>'+
+        (c.recebido||(typeof _recebFisicoConta==='function'&&_recebFisicoConta(c))?'<br><span style="color:var(--st-ok-tx);font-weight:600;font-size:11px">✔ recebido</span>':'<br><span style="color:var(--text-tertiary);font-size:10.5px">aguardando recebimento</span>')+_nfSub+_avisos;
+    }
+  }
+  return { li:li, inf:inf, c:c, k:k, st:st, qtdS:_qtdS, colCompra:colCompra, colReceb:colReceb, colPed:colPed, colNf:colNf, colStPed:colStPed };
 }
 function _solVerBlocoSolic(s, tally){
   var _lbl={solicitado:'Solicitado', em_lista:'Em lista', comprado:'Comprado', recebido:'Recebido', resolvido:'Resolvida — sem compra'}; // v200; v225 — recebido
@@ -13166,17 +13199,16 @@ function _solVerBlocoSolic(s, tally){
     var _inf2=_solItemLinhaInfo(s, it, lst);
     var c=_inf2.c, st=_inf2.st, k=_inf2.k;
     if(tally) tally[k]=(tally[k]||0)+1;
-    var _qtdS=_inf2.qtdS, colCompra=_inf2.colCompra, colReceb=_inf2.colReceb, colPed=_inf2.colPed, colNf=_inf2.colNf;
+    var _qtdS=_inf2.qtdS, colCompra=_inf2.colCompra, colPed=_inf2.colPed; // v251 — colNf/colReceb viraram colStPed
     h+='<tr>'+
       '<td style="'+tdc+';min-width:230px">'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</td>'+
       '<td style="'+tdc+';text-align:right;white-space:nowrap">'+_qtdS.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
       '<td style="'+tdc+'">'+st+'</td>'+
-      '<td style="'+tdc+'">'+(c&&c.fornecedorNome?escapeHtml(c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+      '<td style="'+tdc+';max-width:180px">'+(c&&c.fornecedorNome?escapeHtml(c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+/* v251 — fornecedor estreito (quebra em 2 linhas) */
       '<td style="'+tdc+';text-align:right;white-space:nowrap">'+(c&&(parseFloat(c.precoPago)||0)>0?fmtMoney(c.precoPago):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
       '<td style="'+tdc+'">'+colPed+'</td>'+
-      '<td style="'+tdc+'">'+colNf+'</td>'+
       '<td style="'+tdc+'">'+colCompra+'</td>'+
-      '<td style="'+tdc+'">'+colReceb+'</td></tr>';
+      '<td style="'+tdc+'">'+_inf2.colStPed+'</td></tr>';
   });
   return h;
 }
@@ -13242,11 +13274,10 @@ function verListaCompraPedido(orderId){
           '<br><span style="'+sub+'">'+subLinha+'</span></td>'+
         '<td style="'+tdc+';text-align:right;white-space:nowrap">'+nfo.qtdS.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
         '<td style="'+tdc+'">'+nfo.st+'</td>'+
-        '<td style="'+tdc+'">'+(nfo.c&&nfo.c.fornecedorNome?escapeHtml(nfo.c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+        '<td style="'+tdc+';max-width:180px">'+(nfo.c&&nfo.c.fornecedorNome?escapeHtml(nfo.c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+/* v251 — fornecedor estreito (quebra em 2 linhas) */
         '<td style="'+tdc+'">'+nfo.colPed+'</td>'+
-        '<td style="'+tdc+'">'+nfo.colNf+'</td>'+
         '<td style="'+tdc+'">'+nfo.colCompra+'</td>'+
-        '<td style="'+tdc+'">'+nfo.colReceb+'</td>'+
+        '<td style="'+tdc+'">'+nfo.colStPed+'</td>'+/* v251 — Status do pedido (PC + NF embaixo) no lugar de NF+Recebimento */
         '<td style="'+tdc+'">'+(p[0]==='embalagem'?_limHtml:'<span style="color:var(--text-tertiary)">—</span>')+'</td></tr>'; // v243 — limite sep. embalagem
       if(temHist){
         occ.slice(0,-1).forEach(function(h2,ix){
@@ -13281,11 +13312,10 @@ function verListaCompraPedido(orderId){
             '<br><span style="font-size:10.5px;font-weight:600;color:var(--text-info)" title="O que aconteceu com esta etapa e por que existe a solicitação seguinte">'+desf+'</span></td>'+
             '<td style="'+tdc+';text-align:right;white-space:nowrap"><span style="'+sub+'">'+(parseFloat(h2.it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(h2.it.unidade||'')+'</span></td>'+
             '<td style="'+tdc+'">'+h2.info.st+'</td>'+
-            '<td style="'+tdc+'">'+(h2.info.c&&h2.info.c.fornecedorNome?'<span style="'+sub+'">'+escapeHtml(h2.info.c.fornecedorNome)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+            '<td style="'+tdc+';max-width:180px">'+(h2.info.c&&h2.info.c.fornecedorNome?'<span style="'+sub+'">'+escapeHtml(h2.info.c.fornecedorNome)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
             '<td style="'+tdc+'">'+h2.info.colPed+'</td>'+
-            '<td style="'+tdc+'">'+h2.info.colNf+'</td>'+
             '<td style="'+tdc+'">'+h2.info.colCompra+'</td>'+
-            '<td style="'+tdc+'">'+h2.info.colReceb+'</td>'+
+            '<td style="'+tdc+'">'+h2.info.colStPed+'</td>'+/* v251 */
             '<td style="'+tdc+'"></td></tr>'; // v243 — coluna do limite vazia nas linhas de sequência
         });
       }
@@ -13315,7 +13345,7 @@ function verListaCompraPedido(orderId){
       var th='padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;font-weight:600;color:var(--text-secondary);text-align:left;white-space:nowrap;border-bottom:.5px solid var(--border)';
       // v243 — sem min-width fixo: a tabela se acomoda à largura do modal (nada de arrastar p/ o lado)
       return '<div style="margin-top:10px"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
-        '<th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solicitada</th><th style="'+th+'">Situação</th><th style="'+th+'">Fornecedor</th><th style="'+th+'">Pedido de compra</th><th style="'+th+'">NF</th><th style="'+th+'">Compra</th><th style="'+th+'">Recebimento</th><th style="'+th+'">Limite sep. embalagem</th>'+
+        '<th style="'+th+'">Item</th><th style="'+th+';text-align:right">Qtd solicitada</th><th style="'+th+'">Situação</th><th style="'+th+'">Fornecedor</th><th style="'+th+'">Pedido de compra</th><th style="'+th+'">Compra</th><th style="'+th+'">Status do pedido</th><th style="'+th+'">Limite sep. embalagem</th>'+
         '</tr></thead><tbody>'+secoes+'</tbody></table></div>';
     })()+
     '<div class="modal-footer"><button onclick="document.getElementById(\'sol-ver-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
@@ -19299,7 +19329,9 @@ function _faFiltroAbrir(){
       txt('faf-nome',(ehEnt?'Cliente':'Fornecedor'),'digite e selecione…','faf-dl-forn')+
       (ehEnt?txt('faf-pedido','Pedido','número contém…',''):'')+
       txt('faf-descricao','Descrição / NF','contém…','')+
-      (ehEnt?'':('<div class="form-group" style="margin:0"><label style="font-size:11px">Origem</label><select id="faf-origem" style="width:100%;font-size:12px;padding:5px 8px">'+['','Compra','Despesa','Conta fixa','Frete','Gráfica','Manual'].map(o=>'<option value="'+o+'"'+((f.origem||'')===o?' selected':'')+'>'+(o||'Todas')+'</option>').join('')+'</select></div>'))+
+      (ehEnt
+        ?('<div class="form-group" style="margin:0"><label style="font-size:11px">Tipo (do pedido)</label><select id="faf-origem" style="width:100%;font-size:12px;padding:5px 8px">'+['','Venda','Venda mãe','Venda filho','Embaixador','Amostra','Bonificação','Avaria','Convênio','Manual'].map(o=>'<option value="'+o+'"'+((f.origem||'')===o?' selected':'')+'>'+(o||'Todos')+'</option>').join('')+'</select></div>')
+        :('<div class="form-group" style="margin:0"><label style="font-size:11px">Origem</label><select id="faf-origem" style="width:100%;font-size:12px;padding:5px 8px">'+['','Compra','Despesa','Conta fixa','Frete','Gráfica','Manual'].map(o=>'<option value="'+o+'"'+((f.origem||'')===o?' selected':'')+'>'+(o||'Todas')+'</option>').join('')+'</select></div>'))+
       '<div class="form-group" style="margin:0"><label style="font-size:11px">Status</label><select id="faf-status" style="width:100%;font-size:12px;padding:5px 8px">'+[['',''],['pendcx','pendente Caixa'],['pend','pendente'],['parc','parcial'],['venc','vencido'],['ok','pago/recebido'],['rej','rejeitada'],['semcaixa','sem caixa (bonificado)']].map(o=>'<option value="'+o[0]+'"'+((f.status||'')===o[0]?' selected':'')+'>'+(o[1]||'Todos')+'</option>').join('')+'</select></div>'+
       txt('faf-plano','Plano de contas','digite e selecione…','faf-dl-plano')+
       txt('faf-forma','Forma','digite e selecione…','faf-dl-forma')+
@@ -19361,7 +19393,10 @@ function _faStatus(c){
 function renderFinAcomp(){
   sincronizarContasPagar();
   const list=document.getElementById('fa-list'); if(!list) return;
-  const ref=document.getElementById('fa-ref')?.value||'lanc';
+  // v251 — seletores Período/"pela data de" removidos do topo (ordem do dono 14/10: redundantes
+  // com os períodos do 🔎 Filtrar). A régua interna fica fixa no LANÇAMENTO (só para ORDENAR);
+  // conta sem data de lançamento cai no venc/baixa ou emissão — NADA some da lista.
+  const ref='lanc';
   const entrada=(_faSub!=='saida');
   { const fb=document.getElementById('fa-filtrar-btn'); // v245 — 🔎 Filtrar nas DUAS sub-abas (reforço do dono 07/10); contagem do filtro da sub-aba ativa
     if(fb){ fb.style.display=''; const nf=_faFiltroAtivoN(); fb.textContent=nf?('🔎 Filtrar ('+nf+')'):'🔎 Filtrar'; fb.className=nf?'btn-primary':''; } }
@@ -19374,27 +19409,21 @@ function renderFinAcomp(){
   } else {
     rows=(contasPagar||[]).map(c=>({c, d:_faDataRef(c,ref,c.dataEmissao||''), semCaixa:false, emissao:c.dataEmissao||''}));
   }
-  rows=rows.filter(r=>r.d);
+  rows.forEach(r=>{ if(!r.d) r.d=_faPagoVencData(r.c).d||r.emissao||''; }); // v251 — sem corte: a data é só ordenação
   // bonificados de Compras só na SAÍDA (não geram conta a pagar; referência sempre a emissão)
   const bonifSaida=entrada?[]:(compras||[]).filter(c=>c&&c.forma==='bonificacao')
-    .map(c=>({c, d:String(c.dataEmissao||c.data||'').slice(0,10)})).filter(r=>r.d);
-  const mesSel=document.getElementById('fa-mes');
-  const meses=[...new Set([...rows.map(r=>r.d.slice(0,7)), ...bonifSaida.map(r=>r.d.slice(0,7))])].sort().reverse();
-  const prevMes=mesSel.value;
-  mesSel.innerHTML='<option value="">Todos os períodos</option>'+meses.map(m=>`<option value="${m}" ${m===prevMes?'selected':''}>${monthLabel(m)}</option>`).join('');
-  if(prevMes && meses.indexOf(prevMes)>=0) mesSel.value=prevMes;
-  const mes=mesSel.value||'';
-  if(mes){ rows=rows.filter(r=>r.d.slice(0,7)===mes); }
-  let bonifF=mes?bonifSaida.filter(r=>r.d.slice(0,7)===mes):bonifSaida;
-  rows.sort((a,b)=>b.d.localeCompare(a.d));
+    .map(c=>({c, d:String(c.dataEmissao||c.data||'').slice(0,10)}));
+  let bonifF=bonifSaida;
+  rows.sort((a,b)=>String(b.d).localeCompare(String(a.d)));
   // v245 — 🔎 filtro por coluna (ENTRADA e SAÍDA, reforço do dono 07/10): contas e bonificados
   // passam pelo MESMO crivo normalizado; Entrada usa nome=cliente e pedido=origemNum
+  const _mapaPed=entrada?_faMapaPedidos():null; // v251 — tipo da entrada herdado do pedido
   if(_faFiltros[_faSub]){
     rows=rows.filter(r=>{ const st=_faStatus(r.c); return _faFiltroPassa({
       nome:(entrada?(r.c.clienteNome||''):(r.c.fornecedorNome||'')),
       pedido:(entrada?(r.c.origemNum||''):''),
       descricao:r.c.descricao||'', nf:r.c.notaFiscal||'',
-      origem:(entrada?'':_fgOrigemAcomp(r.c)), statusK:(r.semCaixa?'semcaixa':st.k),
+      origem:(entrada?_faTipoEntrada(r.c,_mapaPed):_fgOrigemAcomp(r.c)), statusK:(r.semCaixa?'semcaixa':st.k),
       plano:planoNome(entrada?(r.c.contaPlanoId||r.c.planoId):(r.c.planoId||r.c.contaPlanoId)), forma:_formaCurta(r.c.formaPag||''),
       emissao:r.emissao||'', lanc:(r.c.criadoEm?new Date(r.c.criadoEm).toISOString().slice(0,10):''),
       pagv:_faPagoVencData(r.c).d, valor:r.c.valor }); });
@@ -19414,15 +19443,15 @@ function renderFinAcomp(){
     tot+=v; totPago+=pagoDe(r.c);
   });
   const totBon=bonifF.reduce((s,r)=>s+(parseFloat(r.c.valor)||0),0);
-  const REF_LBL={lanc:'data do lançamento', emissao:'data de emissão da NF', venc:'vencimento da 1ª parcela', baixa:'data da ÚLTIMA baixa (sem baixa fica fora desta régua)'};
   const th='padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;font-weight:600;color:var(--text-secondary);text-align:left;white-space:nowrap;border-bottom:.5px solid var(--border)';
   const td='padding:6px 8px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:top';
   const semBadge='<span class="badge" style="font-size:10px;background:var(--st-ok-bg);color:var(--st-ok-tx);border:.5px solid var(--st-ok-bd)">sem caixa</span>';
   let html;
   if(entrada){
-    html=rows.map(r=>{ const st=_faStatus(r.c); return `<tr>
+    html=rows.map(r=>{ const st=_faStatus(r.c); const _tp=_faTipoEntrada(r.c,_mapaPed); return `<tr>
       <td style="${td}">${escapeHtml(r.c.clienteNome||'—')}</td>
       <td style="${td};white-space:nowrap">${escapeHtml(r.c.origemNum||'—')}</td>
+      <td style="${td};white-space:nowrap${_tp!=='Venda'?';font-weight:600':''}">${escapeHtml(_tp)}</td>
       <td style="${td};white-space:nowrap">${r.emissao?fmtDate(r.emissao):'—'}</td>
       <td style="${td};white-space:nowrap">${r.c.criadoEm?fmtDate(new Date(r.c.criadoEm).toISOString().slice(0,10)):'—'}</td>
       <td style="${td};white-space:nowrap">${_faPagoVenc(r.c)}</td>
@@ -19431,15 +19460,16 @@ function renderFinAcomp(){
       <td style="${td}">${st.html}${r.semCaixa?' '+semBadge:''}</td>
       <td style="${td};text-align:right;font-weight:600${r.semCaixa?';color:var(--st-ok-tx)':''}">${fmtMoney(parseFloat(r.c.valor)||0)}</td></tr>`; }).join('');
     html=`<div><table style="width:100%;border-collapse:collapse"><thead><tr>
-      <th style="${th}">Cliente</th><th style="${th}">Pedido</th><th style="${th}">Emissão NF</th><th style="${th}">Lançamento</th><th style="${th}">Pagamento/Venc.</th><th style="${th}">Plano de contas</th><th style="${th}">Forma</th><th style="${th}">Status</th><th style="${th};text-align:right">Valor</th>
+      <th style="${th}">Cliente</th><th style="${th}">Pedido</th><th style="${th}">Tipo</th><th style="${th}">Emissão NF</th><th style="${th}">Lançamento</th><th style="${th}">Pagamento/Venc.</th><th style="${th}">Plano de contas</th><th style="${th}">Forma</th><th style="${th}">Status</th><th style="${th};text-align:right">Valor</th>
       </tr></thead><tbody>${html}</tbody></table></div>`;
   } else {
-    const origemDe=c=>_fgOrigemAcomp(c);
+    // v251 — ordem do dono 14/10: colunas Descrição e Origem SAÍRAM da tabela da Saída (a descrição
+    // repetia o fornecedor na maioria das linhas). A NF segue visível ao lado do fornecedor, e
+    // descrição/origem continuam funcionando no 🔎 Filtrar (o crivo não mudou).
+    // v251 — ordem do dono 14/10 (2ª rodada): coluna Emissão NF também SAI da Saída; a régua
+    // "pela data de → Emissão" continua funcionando (a coluna saiu da tela, não do cálculo).
     html=rows.map(r=>{ const st=_faStatus(r.c); return `<tr>
-      <td style="${td}">${escapeHtml(r.c.fornecedorNome||'—')}</td>
-      <td style="${td}">${escapeHtml(r.c.descricao||'')}${r.c.notaFiscal?` <span style="font-size:10px;color:var(--text-tertiary)">NF ${escapeHtml(r.c.notaFiscal)}</span>`:''}</td>
-      <td style="${td}">${origemDe(r.c)}</td>
-      <td style="${td};white-space:nowrap">${r.emissao?fmtDate(r.emissao):'—'}</td>
+      <td style="${td}">${escapeHtml(r.c.fornecedorNome||'—')}${r.c.notaFiscal?` <span style="font-size:10px;color:var(--text-tertiary)">NF ${escapeHtml(r.c.notaFiscal)}</span>`:''}</td>
       <td style="${td};white-space:nowrap">${r.c.criadoEm?fmtDate(new Date(r.c.criadoEm).toISOString().slice(0,10)):'—'}</td>
       <td style="${td};white-space:nowrap">${_faPagoVenc(r.c)}</td>
       <td style="${td}">${escapeHtml(planoNome(r.c.planoId||r.c.contaPlanoId))}</td>
@@ -19447,17 +19477,16 @@ function renderFinAcomp(){
       <td style="${td}">${st.html}</td>
       <td style="${td};text-align:right;font-weight:600">${fmtMoney(parseFloat(r.c.valor)||0)}</td></tr>`; }).join('');
     const bonifHtml=bonifF.map(r=>`<tr style="background:var(--bg-secondary)">
-      <td style="${td}">${escapeHtml(((fornecedores||[]).find(f=>String(f.id)===String(r.c.fornecedorId))?.nome)||r.c.fornecedorNome||'—')}</td>
-      <td style="${td}" colspan="2">🎁 ${escapeHtml(r.c.descricao||r.c.obs||'Lançamento bonificado')}</td>
+      <td style="${td}">${escapeHtml(((fornecedores||[]).find(f=>String(f.id)===String(r.c.fornecedorId))?.nome)||r.c.fornecedorNome||'—')} <span style="font-size:10px;color:var(--text-tertiary)">🎁 ${escapeHtml(r.c.descricao||r.c.obs||'Lançamento bonificado')}</span></td>
       <td style="${td};white-space:nowrap">${fmtDate(r.d)}</td>
-      <td style="${td}"></td><td style="${td}"></td>
+      <td style="${td}"></td>
       <td style="${td}">${escapeHtml(planoNome(r.c.planoId))}</td>
       <td style="${td}">Bonificação</td>
       <td style="${td}">${semBadge}</td>
       <td style="${td};text-align:right;font-weight:600;color:var(--st-ok-tx)">${fmtMoney(parseFloat(r.c.valor)||0)}</td></tr>`).join('');
     html=`<div><table style="width:100%;border-collapse:collapse"><thead><tr>
-      <th style="${th}">Fornecedor</th><th style="${th}">Descrição</th><th style="${th}">Origem</th><th style="${th}">Emissão NF</th><th style="${th}">Lançamento</th><th style="${th}">Pagamento/Venc.</th><th style="${th}">Plano de contas</th><th style="${th}">Forma</th><th style="${th}">Status</th><th style="${th};text-align:right">Valor</th>
-      </tr></thead><tbody>${html}${bonifF.length?`<tr><td colspan="10" style="padding:14px 8px 4px;font-size:12px;font-weight:700;border-bottom:1px solid var(--border)">🎁 Bonificados de Compras — sem movimentação de caixa (pela emissão)</td></tr>${bonifHtml}`:''}</tbody></table></div>`;
+      <th style="${th}">Fornecedor</th><th style="${th}">Lançamento</th><th style="${th}">Pagamento/Venc.</th><th style="${th}">Plano de contas</th><th style="${th}">Forma</th><th style="${th}">Status</th><th style="${th};text-align:right">Valor</th>
+      </tr></thead><tbody>${html}${bonifF.length?`<tr><td colspan="7" style="padding:14px 8px 4px;font-size:12px;font-weight:700;border-bottom:1px solid var(--border)">🎁 Bonificados de Compras — sem movimentação de caixa (lançados pela data de EMISSÃO, exibida na coluna Lançamento)</td></tr>${bonifHtml}`:''}</tbody></table></div>`;
   }
   const rotReal=entrada?'recebido':'pago';
   const rodape=`<div style="font-size:11px;color:var(--text-secondary);margin:4px 0 10px">
@@ -19465,8 +19494,26 @@ function renderFinAcomp(){
     ${(nSem||bonifF.length)?` · <span style="color:var(--st-ok-tx)">sem caixa ${fmtMoney(totSem+totBon)} (${nSem+bonifF.length}, fora do total)</span>`:''}
     ${nPendCx?` · pendentes de Caixa ${fmtMoney(totPendCx)} (${nPendCx}, fora do total)`:''}
     ${nRej?` · rejeitadas: ${nRej} (fora de tudo)`:''}
-    <br>régua do período: <b>${REF_LBL[ref]}</b> · somente visualização — baixas e aprovações continuam nas abas próprias</div>`;
-  list.innerHTML=(rows.length||bonifF.length)?(rodape+html):'<div class="empty">Nenhum lançamento no período.</div>';
+    <br>somente visualização — baixas e aprovações continuam nas abas próprias · períodos e demais cortes no 🔎 Filtrar</div>`;
+  list.innerHTML=(rows.length||bonifF.length)?(rodape+html):'<div class="empty">Nenhum lançamento.</div>';
+}
+// v251 — TIPO da ENTRADA no Acompanhamento (reclamação do financeiro 14/10: bonificação marketing/
+// amostra apareciam todas "como venda"): conta com origem de pedido herda o TIPO do pedido; manual/
+// convênio ganham o próprio rótulo. O mapa de pedidos é montado UMA vez por render (performance).
+var _FA_TIPO_LBL={venda:'Venda', venda_mae:'Venda mãe', venda_filho:'Venda filho', embaixador:'Embaixador', amostra:'Amostra', bonificacao:'Bonificação', avaria:'Avaria', pnd:'PND'};
+function _faTipoEntrada(c, mapa){
+  if(c && (c.origem==='pedido' || c.origemNum)){
+    const o=(mapa&&(mapa.get(String(c.origemId))||mapa.get(String(c.origemNum))))||null;
+    const t=(o&&o.tipo)||'venda';
+    return _FA_TIPO_LBL[t]||(String(t).charAt(0).toUpperCase()+String(t).slice(1));
+  }
+  if(c && c.origem==='convenio') return 'Convênio';
+  return 'Manual';
+}
+function _faMapaPedidos(){
+  const m=new Map();
+  (orders||[]).forEach(o=>{ if(!o) return; if(o.id!=null) m.set(String(o.id),o); if(o.num!=null && !m.has(String(o.num))) m.set(String(o.num),o); });
+  return m;
 }
 // origem da conta a pagar (Frete/Gráfica/Compra/Despesa/Conta fixa/Manual) — exclusiva da aba Acompanhamento
 function _fgOrigemAcomp(c){
@@ -30186,10 +30233,16 @@ function renderDashConversas(){
   // dos quadros "Sem resposta"/"Aguardando resposta"; msg nova do cliente muda o carimbo e volta.
   _waTriLoad();
   const _triSet=new Set((_waTriagem||[]).map(t=>String(t.conv_id)+'|'+String(t.msg_ts)));
+  // v251 — CONTATOS INTERNOS fora da avaliação de atendimento (ordem do dono 14/10, caso Le Care
+  // Rotulos): conversa de cliente interno=true (checkbox 🏢 v144) não é atendimento comercial —
+  // sai de TODOS os quadros, KPIs e tempos desta aba. O fio continua normal na tela de Conversas.
+  const _intIdsDash=new Set((clients||[]).filter(c=>c&&c.interno).map(c=>String(c.id)));
+  const _ehInterna=cv=>!!(cv&&cv.clienteId&&_intIdsDash.has(String(cv.clienteId)));
   const _respNossaApos=(cv,ts)=>((cv.mensagens||[]).some(m=>m&&m.de==='atendente'&&(m.em||0)>ts+2000&&!_msgFantasma(m)&&((_bcCount[(m.texto||'').slice(0,80)]||0)<5)));
   const porAtend={}; const ensure=id=>{ if(!porAtend[id]) porAtend[id]={atendidas:0,ativas:0,msgs:0,fr:[],resp:[]}; return porAtend[id]; };
   convs.forEach(cv=>{
     if(cv.grupo) return; // v148 : grupo fora dos KPIs/quadros comerciais
+    if(_ehInterna(cv)) return; // v251 : contato interno fora da avaliação de atendimento
     if(_dcConvEq && cv.equipeId!==_dcConvEq) return; // filtro equipe
     const msgs=(cv.mensagens||[]).filter(m=>(m.de==='cliente'||m.de==='atendente') && !_msgFantasma(m) && _inPer(m.em)).slice().sort((a,b)=>(a.em||0)-(b.em||0)); // v207 — casca fora dos quadros e dos tempos
     if(_temPer && !msgs.length) return; // com período: só conversas com atividade no período
@@ -30219,7 +30272,7 @@ function renderDashConversas(){
   const _retBase=(_waRetornos||[]).map(r=>{
     const cv=convs.find(c=>String(c.id)===String(r.conv_id));
     return cv?{cv, r, desde:Number(r.msg_ts)||0}:null;
-  }).filter(x=>x && !x.cv.grupo && x.cv.status!=='encerrada'
+  }).filter(x=>x && !x.cv.grupo && !_ehInterna(x.cv) && x.cv.status!=='encerrada'
     && (!_dcConvEq || x.cv.equipeId===_dcConvEq));
   // v250 — promessa NOSSA só sai do quadro com mensagem NOSSA real depois dela (broadcast não
   // conta — mesmo detector dos sinais). A regra v216 ("qualquer msg nova limpa") escondia a
@@ -30234,7 +30287,7 @@ function renderDashConversas(){
   const _sinBase=(_waSinais||[]).map(s=>{
     const cv=convs.find(c=>String(c.id)===String(s.conv_id));
     return cv?{cv, s, desde:Number(s.msg_ts)||0}:null;
-  }).filter(x=>x && !x.cv.grupo && x.cv.status!=='encerrada'
+  }).filter(x=>x && !x.cv.grupo && !_ehInterna(x.cv) && x.cv.status!=='encerrada'
     && (!_dcConvEq || x.cv.equipeId===_dcConvEq));
   const sinaisCompra=_sinBase.filter(x=>x.s.tipo==='compra' && !_respNossaApos(x.cv, x.desde)).sort((a,b)=>a.desde-b.desde);
   const insatisfacoes=_sinBase.filter(x=>x.s.tipo==='insatisfacao').sort((a,b)=>a.desde-b.desde);
@@ -37984,9 +38037,10 @@ async function _waEnviarAnexo(conv, msg, file, path){
     // status (enviada/falha) é atualizado no banco pela função e chega via realtime
   }catch(e){ console.warn('wa-send-media falhou:', e); }
 }
-// ── v154 : ÁUDIO DIRETO DO CAMPO (pedido do dono 14/07) — 🎤 clica = grava, clica de novo = ENVIA
-// (padrão WhatsApp); Esc cancela. Sai pela MESMA esteira do anexo (storage → wa-send-media, que roteia
-// audio/* para o send-audio do Z-API = chega como MENSAGEM DE VOZ no cliente). ──
+// ── v154 : ÁUDIO DIRETO DO CAMPO (pedido do dono 14/07) — 🎤 clica = grava; v251 (ordem do dono
+// 14/10): clicar em PARAR abre a PRÉVIA (player + ➤ Enviar / 🗑 Excluir) — nada é enviado sem
+// confirmação. Esc cancela a gravação. Sai pela MESMA esteira do anexo (storage → wa-send-media,
+// que roteia audio/* para o send-audio do Z-API = chega como MENSAGEM DE VOZ no cliente). ──
 var _micRec=null, _micChunks=null, _micTimer=null, _micT0=0, _micCancelado=false, _micStarting=false, _micConvId=null;
 async function _convMicToggle(cid){
   if(_micStarting) return; // v159 — duplo clique durante a permissão do microfone abria 2 streams (mic ficava preso)
@@ -38007,12 +38061,15 @@ async function _convMicToggle(cid){
   if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de enviar áudio.\nUse "📥 Atribuir para mim".'); return; }
   if(!_sb || !_sbReady){ alert('Conexão com o servidor indisponível. Tente novamente em instantes.'); return; }
   if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia) || typeof MediaRecorder==='undefined'){ alert('Este navegador não suporta gravação de áudio.'); return; }
+  _micPreviewFechar(); // v251 — gravação nova descarta prévia pendente (o áudio antigo não enviado some)
   _micStarting=true; // v159 — trava até a gravação começar (ou falhar)
   let stream;
-  try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  try{ stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1}}); } // v251 — voz em mono (o navegador ignora se não suportar)
   catch(_e){ _micStarting=false; alert('Não consegui acessar o microfone — verifique a permissão do navegador (cadeado na barra de endereço).'); return; }
   const _mt=['audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/mp4'].find(function(m){ try{ return MediaRecorder.isTypeSupported(m); }catch(_e){ return false; } })||'';
-  try{ _micRec=new MediaRecorder(stream, _mt?{mimeType:_mt}:undefined); }
+  // v251 — taxa de VOZ (32 kbps opus): o padrão do navegador gastava ~155 kbps (medição real 14/10:
+  // 95 KB em ~5 s) — mesma qualidade de voz com ~1/5 do tamanho; dica, o navegador ajusta se precisar.
+  try{ _micRec=new MediaRecorder(stream, _mt?{mimeType:_mt, audioBitsPerSecond:32000}:{audioBitsPerSecond:32000}); }
   catch(_e){ _micStarting=false; try{ stream.getTracks().forEach(function(t){t.stop();}); }catch(_e2){} alert('Não consegui iniciar a gravação neste navegador.'); return; }
   _micChunks=[]; _micCancelado=false; _micT0=Date.now(); _micConvId=conv.id;
   const _convRef=conv, _cidRef=cid;
@@ -38030,7 +38087,7 @@ async function _convMicToggle(cid){
     const ext=/ogg/.test(tipoBlob)?'ogg':(/mp4/.test(tipoBlob)?'m4a':'webm');
     const d=new Date(); const hh=String(d.getHours()).padStart(2,'0')+String(d.getMinutes()).padStart(2,'0')+String(d.getSeconds()).padStart(2,'0');
     const file=new File([blob],'audio_'+hh+'.'+ext,{type:tipoBlob});
-    _convEnviarAudio(_convRef, file, _cidRef);
+    _micPreviewMostrar(_convRef, file, _cidRef); // v251 — prévia antes do envio (Enviar/Excluir)
   };
   _micRec.start();
   _micUiGravar(cid);
@@ -38042,14 +38099,40 @@ function _micUiGravar(cid){
     const btn=document.getElementById('conv-mic-'+cid); if(!btn) return;
     const s=Math.floor((Date.now()-_micT0)/1000);
     btn.textContent='⏹'; btn.style.background='#B00020'; btn.style.color='#fff'; btn.style.borderColor='#B00020';
-    btn.title='Gravando '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0')+' — clique para ENVIAR · Esc cancela';
+    btn.title='Gravando '+Math.floor(s/60)+':'+String(s%60).padStart(2,'0')+' — clique para PARAR (você confere antes de enviar) · Esc cancela';
   };
   _tick(); _micTimer=setInterval(_tick,1000);
 }
 function _micUiParar(cid){
   if(_micTimer){ clearInterval(_micTimer); _micTimer=null; }
   const btn=document.getElementById('conv-mic-'+cid);
-  if(btn){ btn.textContent='🎤'; btn.style.background=''; btn.style.color=''; btn.style.borderColor=''; btn.title='Gravar áudio (clique para gravar, clique de novo para enviar; Esc cancela)'; }
+  if(btn){ btn.textContent='🎤'; btn.style.background=''; btn.style.color=''; btn.style.borderColor=''; btn.title='Gravar áudio (clique para gravar; ao parar, confira a prévia e escolha Enviar ou Excluir; Esc cancela)'; }
+}
+// v251 — PRÉVIA DO ÁUDIO antes do envio (ordem do dono 14/10): parar a gravação NÃO envia mais —
+// abre a barra com o player e ➤ Enviar / 🗑 Excluir. O envio usa a CONVERSA em que foi gravado
+// (ref fixa — trocar de conversa com a prévia aberta não muda o destino); gravação nova descarta
+// prévia pendente; Excluir não envia nada e libera o blob.
+var _micPreview=null;
+function _micPreviewFechar(){
+  if(_micPreview){ try{ URL.revokeObjectURL(_micPreview.url); }catch(_e){} try{ _micPreview.el.remove(); }catch(_e){} _micPreview=null; }
+}
+function _micPreviewMostrar(conv, file, containerId){
+  _micPreviewFechar();
+  var url=URL.createObjectURL(file);
+  var el=document.createElement('div');
+  el.id='mic-preview-bar';
+  el.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:86px;z-index:4600;background:var(--bg-primary);border:1px solid var(--border-md);border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:10px 14px;display:flex;align-items:center;gap:10px;max-width:94vw;flex-wrap:wrap';
+  var lbl=document.createElement('div');
+  lbl.style.cssText='font-size:11px;color:var(--text-secondary);max-width:170px;line-height:1.3';
+  lbl.textContent='Áudio gravado — confira antes de enviar'+(conv&&conv.clienteId?(function(){ var c=(clients||[]).find(function(x){ return x.id===conv.clienteId; }); return c&&c.nome?(' · para: '+c.nome):''; })():'');
+  var au=document.createElement('audio'); au.controls=true; au.src=url; au.style.cssText='height:36px;max-width:260px';
+  var bEnv=document.createElement('button'); bEnv.className='btn-primary'; bEnv.id='mic-preview-enviar'; bEnv.textContent='➤ Enviar'; bEnv.style.cssText='font-size:12px;padding:7px 16px;white-space:nowrap';
+  var bDel=document.createElement('button'); bDel.id='mic-preview-excluir'; bDel.textContent='🗑 Excluir'; bDel.style.cssText='font-size:12px;padding:7px 12px;white-space:nowrap';
+  bEnv.onclick=function(){ var p=_micPreview; _micPreviewFechar(); if(p&&p.file&&p.conv) _convEnviarAudio(p.conv, p.file, p.cid); };
+  bDel.onclick=function(){ _micPreviewFechar(); };
+  el.appendChild(lbl); el.appendChild(au); el.appendChild(bEnv); el.appendChild(bDel);
+  document.body.appendChild(el);
+  _micPreview={el:el, url:url, file:file, conv:conv, cid:containerId};
 }
 document.addEventListener('keydown', function(e){
   if(e.key==='Escape' && _micRec && _micRec.state==='recording'){ _micCancelado=true; try{ _micRec.stop(); }catch(_e){} }

@@ -5261,7 +5261,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v249';
+var APP_VERSION = 'v250';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -29967,6 +29967,28 @@ function _waSinLoad(){
       }, function(){ _waSinBusy=false; });
   }catch(_e){ _waSinBusy=false; }
 }
+// v250 — TRIAGEM IA dos quadros (wa_triagem, rotina do vigia): exceções interpretativas da régua
+// "última msg = cliente" — 'cortesia' ("ok obrigado"/"combinado" sem pergunta aberta) e
+// 'promessa_nossa' (o fim da conversa é promessa NOSSA não cumprida; a cobrança vive no Aguardando
+// retorno). A exceção é AMARRADA ao carimbo da última msg do cliente: msg nova → carimbo muda →
+// a conversa volta ao quadro sozinha. Espelho exato do loader dos sinais.
+var _waTriagem=[], _waTriBusy=false, _waTriAt=0;
+function _waTriLoad(){
+  if(!_sb || _waTriBusy || (Date.now()-_waTriAt)<60000) return; // no máx. 1 busca/min
+  _waTriBusy=true;
+  try{
+    _sb.from('wa_triagem').select('*').eq('status','pendente').order('msg_ts').range(0,999)
+      .then(function(res){
+        _waTriBusy=false;
+        if(res && Array.isArray(res.data)){
+          _waTriAt=Date.now();
+          var mudou = JSON.stringify(res.data)!==JSON.stringify(_waTriagem);
+          _waTriagem=res.data;
+          if(mudou && typeof renderDashConversas==='function') renderDashConversas();
+        }
+      }, function(){ _waTriBusy=false; });
+  }catch(_e){ _waTriBusy=false; }
+}
 function resolverSinal(sid){
   if(currentUser?.perfil!=='admin'){ alert('Apenas o admin pode marcar como resolvido.'); return; }
   var s=(_waSinais||[]).find(function(x){ return String(x.id)===String(sid); }); if(!s) return;
@@ -30159,6 +30181,11 @@ function renderDashConversas(){
   const _detCorte=now-30*86400000;
   const _bcCount={};
   convs.forEach(cv=>{ if(cv.grupo) return; (cv.mensagens||[]).forEach(m=>{ if(m&&m.de==='atendente'&&(m.em||0)>_detCorte&&(m.texto||'').length>40){ const k=(m.texto||'').slice(0,80); _bcCount[k]=(_bcCount[k]||0)+1; } }); });
+  // v250 — triagem IA (wa_triagem, rotina do vigia): exceção casa pelo carimbo EXATO da última msg
+  // do cliente — cortesia ("ok obrigado") e promessa NOSSA (que vive no Aguardando retorno) saem
+  // dos quadros "Sem resposta"/"Aguardando resposta"; msg nova do cliente muda o carimbo e volta.
+  _waTriLoad();
+  const _triSet=new Set((_waTriagem||[]).map(t=>String(t.conv_id)+'|'+String(t.msg_ts)));
   const _respNossaApos=(cv,ts)=>((cv.mensagens||[]).some(m=>m&&m.de==='atendente'&&(m.em||0)>ts+2000&&!_msgFantasma(m)&&((_bcCount[(m.texto||'').slice(0,80)]||0)<5)));
   const porAtend={}; const ensure=id=>{ if(!porAtend[id]) porAtend[id]={atendidas:0,ativas:0,msgs:0,fr:[],resp:[]}; return porAtend[id]; };
   convs.forEach(cv=>{
@@ -30170,8 +30197,8 @@ function renderDashConversas(){
     if(ativa) ativas++; else encerradas++;
     const temCli=msgs.some(m=>m.de==='cliente'); const temAt=msgs.some(m=>m.de==='atendente');
     if(temCli) comCliente++; if(temAt) comAtend++;
-    if(temCli && !temAt){ const pc=msgs.find(m=>m.de==='cliente'); const lc=[...msgs].reverse().find(m=>m.de==='cliente'); const lcEm=(lc&&lc.em)||0; if(!cv.aguardAckEm || lcEm>cv.aguardAckEm){ semResposta.push({cv, desde:(pc&&pc.em)||cv.criadaEm||now}); } }
-    if(ativa && temAt && msgs.length){ const ult=msgs[msgs.length-1]; if(ult.de==='cliente' && (ult.em||0) > (cv.aguardAckEm||0)) aguardando.push({cv, desde:ult.em||now}); }
+    if(temCli && !temAt){ const pc=msgs.find(m=>m.de==='cliente'); const lc=[...msgs].reverse().find(m=>m.de==='cliente'); const lcEm=(lc&&lc.em)||0; if((!cv.aguardAckEm || lcEm>cv.aguardAckEm) && !_triSet.has(String(cv.id)+'|'+String(lcEm))){ semResposta.push({cv, desde:(pc&&pc.em)||cv.criadaEm||now}); } }
+    if(ativa && temAt && msgs.length){ const ult=msgs[msgs.length-1]; if(ult.de==='cliente' && (ult.em||0) > (cv.aguardAckEm||0) && !_triSet.has(String(cv.id)+'|'+String(ult.em||0))) aguardando.push({cv, desde:ult.em||now}); }
     if(cv.atendenteId){ const a=ensure(cv.atendenteId); a.atendidas++; if(ativa) a.ativas++; }
     let pend=null, firstDone=false;
     msgs.forEach(m=>{
@@ -30194,8 +30221,12 @@ function renderDashConversas(){
     return cv?{cv, r, desde:Number(r.msg_ts)||0}:null;
   }).filter(x=>x && !x.cv.grupo && x.cv.status!=='encerrada'
     && (!_dcConvEq || x.cv.equipeId===_dcConvEq));
+  // v250 — promessa NOSSA só sai do quadro com mensagem NOSSA real depois dela (broadcast não
+  // conta — mesmo detector dos sinais). A regra v216 ("qualquer msg nova limpa") escondia a
+  // cobrança quando o CLIENTE aceitava a promessa (caso Livia 14/09: "vou compartilhar o rastreio"
+  // → cliente "combinado" → a promessa sumia do quadro sem nunca ter sido cumprida).
   const retornos=_retBase.filter(x=>(x.r.direcao||'nosso')!=='cliente'
-    && _convUltimaEm(x.cv) <= (x.desde+2000)).sort((a,b)=>a.desde-b.desde);
+    && !_respNossaApos(x.cv, x.desde)).sort((a,b)=>a.desde-b.desde);
   _rcLista=_retBase.filter(x=>x.r.direcao==='cliente'
     && _convUltimaCliEm(x.cv) <= (x.desde+2000)).sort((a,b)=>a.desde-b.desde);
   // v248 — sinais do robô (wa_sinais): compra sem fechamento / insatisfação sem desfecho

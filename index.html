@@ -5253,7 +5253,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v251';
+var APP_VERSION = 'v252';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -13204,7 +13204,7 @@ function _solVerBlocoSolic(s, tally){
       '<td style="'+tdc+';min-width:230px">'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</td>'+
       '<td style="'+tdc+';text-align:right;white-space:nowrap">'+_qtdS.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
       '<td style="'+tdc+'">'+st+'</td>'+
-      '<td style="'+tdc+';max-width:180px">'+(c&&c.fornecedorNome?escapeHtml(c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+/* v251 — fornecedor estreito (quebra em 2 linhas) */
+      '<td style="'+tdc+'"><div style="max-width:180px;overflow-wrap:break-word">'+(c&&c.fornecedorNome?escapeHtml(c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+/* v252 — div interno: max-width em td não vale (sobreposição 16/10) */
       '<td style="'+tdc+';text-align:right;white-space:nowrap">'+(c&&(parseFloat(c.precoPago)||0)>0?fmtMoney(c.precoPago):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
       '<td style="'+tdc+'">'+colPed+'</td>'+
       '<td style="'+tdc+'">'+colCompra+'</td>'+
@@ -13274,7 +13274,7 @@ function verListaCompraPedido(orderId){
           '<br><span style="'+sub+'">'+subLinha+'</span></td>'+
         '<td style="'+tdc+';text-align:right;white-space:nowrap">'+nfo.qtdS.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
         '<td style="'+tdc+'">'+nfo.st+'</td>'+
-        '<td style="'+tdc+';max-width:180px">'+(nfo.c&&nfo.c.fornecedorNome?escapeHtml(nfo.c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+/* v251 — fornecedor estreito (quebra em 2 linhas) */
+        '<td style="'+tdc+'"><div style="max-width:180px;overflow-wrap:break-word">'+(nfo.c&&nfo.c.fornecedorNome?escapeHtml(nfo.c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+/* v252 — max-width em td não vale nos navegadores: div interno quebra de verdade (reporte 16/10, sobreposição) */
         '<td style="'+tdc+'">'+nfo.colPed+'</td>'+
         '<td style="'+tdc+'">'+nfo.colCompra+'</td>'+
         '<td style="'+tdc+'">'+nfo.colStPed+'</td>'+/* v251 — Status do pedido (PC + NF embaixo) no lugar de NF+Recebimento */
@@ -13312,7 +13312,7 @@ function verListaCompraPedido(orderId){
             '<br><span style="font-size:10.5px;font-weight:600;color:var(--text-info)" title="O que aconteceu com esta etapa e por que existe a solicitação seguinte">'+desf+'</span></td>'+
             '<td style="'+tdc+';text-align:right;white-space:nowrap"><span style="'+sub+'">'+(parseFloat(h2.it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(h2.it.unidade||'')+'</span></td>'+
             '<td style="'+tdc+'">'+h2.info.st+'</td>'+
-            '<td style="'+tdc+';max-width:180px">'+(h2.info.c&&h2.info.c.fornecedorNome?'<span style="'+sub+'">'+escapeHtml(h2.info.c.fornecedorNome)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
+            '<td style="'+tdc+'"><div style="max-width:180px;overflow-wrap:break-word">'+(h2.info.c&&h2.info.c.fornecedorNome?'<span style="'+sub+'">'+escapeHtml(h2.info.c.fornecedorNome)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+/* v252 */
             '<td style="'+tdc+'">'+h2.info.colPed+'</td>'+
             '<td style="'+tdc+'">'+h2.info.colCompra+'</td>'+
             '<td style="'+tdc+'">'+h2.info.colStPed+'</td>'+/* v251 */
@@ -20936,14 +20936,28 @@ function _recebAjusteChip(orderId){
 }
 function _finTrocaAbrirDaBaixa(){
   const st=_baixaState; if(!st) return;
+  // v252 — TROCA POR SELEÇÃO (reporte do dono 16/10, caso 101796/Rhb: 2 de 3 boletos marcados e a
+  // troca puxava os 3): captura as parcelas MARCADAS desta conta ANTES de fechar o modal.
+  const selIdx=[...document.querySelectorAll('.baixa-parc:checked')].filter(cb=>cb.dataset.conta===st.contaId).map(cb=>+cb.dataset.parc);
   closeBaixaModal();
-  _finTrocaAbrir(st.contaId);
+  _finTrocaAbrir(st.contaId, selIdx);
 }
-function _finTrocaAbrir(contaId){
+function _finTrocaAbrir(contaId, selIdx){
   const c=contasReceber.find(x=>x.id===contaId); if(!c) return;
   if(!_temSetor('financeiro')){ alert('Apenas o setor financeiro pode trocar a forma de recebimento.'); return; }
-  const abertas=(c.parcelas||[]).filter(p=>!p.pago);
-  if(!abertas.length){ alert('Todas as parcelas desta conta já foram recebidas — não há o que trocar.'); return; }
+  // v252 — escopo da troca = parcelas SELECIONADAS (quando vier seleção parcial do modal Receber);
+  // as demais em aberto ficam EXATAMENTE como estão. Sem seleção (ou tudo marcado) = conta toda em
+  // aberto, comportamento anterior. trocaIdx guarda os índices reais p/ o salvar.
+  const todasAbertas=(c.parcelas||[]).filter(p=>!p.pago);
+  if(!todasAbertas.length){ alert('Todas as parcelas desta conta já foram recebidas — não há o que trocar.'); return; }
+  let trocaIdx=null;
+  if(Array.isArray(selIdx)&&selIdx.length){
+    const _s=new Set(selIdx);
+    const idxAbertasSel=(c.parcelas||[]).map((p,i)=>(!p.pago&&_s.has(i))?i:-1).filter(i=>i>=0);
+    if(idxAbertasSel.length && idxAbertasSel.length<todasAbertas.length) trocaIdx=idxAbertasSel;
+  }
+  const abertas=trocaIdx?trocaIdx.map(i=>c.parcelas[i]):todasAbertas;
+  const nForaTroca=todasAbertas.length-abertas.length;
   const totalAberto=+abertas.reduce((s,p)=>s+(parseFloat(p.valor)||0),0).toFixed(2);
   // blocos iniciais = parcelas em aberto agrupadas pela forma atual (o financeiro parte do que existe)
   const gmap={};
@@ -20956,15 +20970,18 @@ function _finTrocaAbrir(contaId){
     gmap[f].valor=+(gmap[f].valor+v).toFixed(2);
     gmap[f].parcelas.push({num:gmap[f].parcelas.length+1,valor:v,vencimento:p.vencimento||today(),pago:false,boleto:(p.boleto||'')});
   });
-  _finTrocaCtx={contaId:contaId, totalAberto:totalAberto, blocos:Object.values(gmap)};
-  const nPagas=(c.parcelas||[]).length-abertas.length;
+  // trocaSnap = retrato (valor+vencimento) das parcelas selecionadas no momento da abertura: o salvar
+  // confere índice a índice — se um sync reordenou/alterou a conta com o modal aberto, aborta.
+  const trocaSnap=trocaIdx?trocaIdx.map(i=>({valor:parseFloat(c.parcelas[i].valor)||0,vencimento:c.parcelas[i].vencimento||''})):null;
+  _finTrocaCtx={contaId:contaId, totalAberto:totalAberto, blocos:Object.values(gmap), trocaIdx:trocaIdx, trocaSnap:trocaSnap};
+  const nPagas=(c.parcelas||[]).filter(p=>p.pago).length;
   let ov=document.getElementById('fintroca-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='fintroca-overlay'; ov.className='overlay'; ov.style.zIndex='480'; document.body.appendChild(ov); }
   ov.innerHTML=`<div class="modal" style="width:580px;max-height:90vh;overflow-y:auto">
     <h2>⇄ Trocar forma de recebimento</h2>
     <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">${escapeHtml(c.descricao||'—')} · ${escapeHtml(c.clienteNome||'—')}</div>
-    <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Nada é baixado aqui: a conta segue em aberto com a nova forma e os novos vencimentos. O valor em aberto é travado — a soma das parcelas tem que bater ao centavo.${nPagas?' Parcela(s) já recebida(s): '+nPagas+' — não entram na troca.':''}</div>
-    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px"><span>Valor em aberto (travado)</span><b>${fmtMoney(totalAberto)}</b></div>
+    <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">Nada é baixado aqui: a conta segue em aberto com a nova forma e os novos vencimentos. O valor ${trocaIdx?'selecionado':'em aberto'} é travado — a soma das parcelas tem que bater ao centavo.${nPagas?' Parcela(s) já recebida(s): '+nPagas+' — não entram na troca.':''}${nForaTroca?' <b>'+nForaTroca+' parcela(s) em aberto NÃO selecionada(s) ficam FORA da troca e permanecem como estão.</b>':''}</div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px"><span>Valor ${trocaIdx?'selecionado':'em aberto'} (travado)</span><b>${fmtMoney(totalAberto)}</b></div>
     <div id="fintroca-distrib" style="font-size:11px;margin-bottom:10px"></div>
     <div id="fintroca-blocos"></div>
     <button onclick="_peAddBloco()" style="font-size:12px;padding:5px 12px;margin-top:6px">+ Adicionar forma de pagamento</button>
@@ -20995,9 +21012,19 @@ function _finTrocaSalvar(){
     for(const p of (b.parcelas||[])){ if(!p.vencimento){ alert('Informe o vencimento de todas as parcelas.'); return; } }
   }
   const soma=bls.reduce((s,b)=>s+(parseFloat(b.valor)||0),0);
-  if(Math.abs(soma-ctx.totalAberto)>0.005){ alert('🚫 As formas somam '+fmtMoney(soma)+', mas o valor em aberto da conta é '+fmtMoney(ctx.totalAberto)+'.\n\nO valor fechado com o cliente NÃO muda aqui — ajuste as parcelas até bater exatamente.'); return; }
+  if(Math.abs(soma-ctx.totalAberto)>0.005){ alert('🚫 As formas somam '+fmtMoney(soma)+', mas o valor travado da troca é '+fmtMoney(ctx.totalAberto)+'.\n\nO valor fechado com o cliente NÃO muda aqui — ajuste as parcelas até bater exatamente.'); return; }
+  // v252 — TROCA POR SELEÇÃO: só as parcelas selecionadas são substituídas; as demais em aberto são
+  // MANTIDAS como estão. Guarda de corrida: se alguma selecionada foi recebida enquanto o modal
+  // estava aberto, aborta (reabrir para recalcular) — nunca sobrescrever baixa.
+  const _idxSet=Array.isArray(ctx.trocaIdx)&&ctx.trocaIdx.length?new Set(ctx.trocaIdx):null;
+  if(_idxSet){
+    for(let k=0;k<ctx.trocaIdx.length;k++){ const i=ctx.trocaIdx[k]; const p=(c.parcelas||[])[i]; const s=(ctx.trocaSnap||[])[k];
+      if(!p || p.pago || !s || Math.abs((parseFloat(p.valor)||0)-s.valor)>0.005 || (p.vencimento||'')!==s.vencimento){
+        alert('⚠ Esta conta mudou enquanto o modal estava aberto (parcela selecionada recebida ou alterada).\n\nNada foi trocado — reabra a troca para recalcular.'); return; } }
+  }
   const pagas=(c.parcelas||[]).filter(p=>p.pago);
-  const antes=(c.parcelas||[]).filter(p=>!p.pago).map(p=>({forma:p.forma||c.formaPag||'',valor:parseFloat(p.valor)||0,vencimento:p.vencimento||''}));
+  const mantidas=_idxSet?(c.parcelas||[]).filter((p,i)=>!p.pago&&!_idxSet.has(i)):[];
+  const antes=(c.parcelas||[]).filter((p,i)=>!p.pago&&(!_idxSet||_idxSet.has(i))).map(p=>({forma:p.forma||c.formaPag||'',valor:parseFloat(p.valor)||0,vencimento:p.vencimento||''}));
   const novas=[];
   bls.forEach(b=>{
     // v227 — NSU do bloco de cartão viaja COM as parcelas (reporte do dono 14/09: convênio recebido em
@@ -21006,8 +21033,8 @@ function _finTrocaSalvar(){
     const bnsu=(b.forma==='Cartão de Crédito'||b.forma==='Cartão de Débito')?String(b.nsu||'').trim():'';
     (b.parcelas||[]).forEach(p=>{ novas.push(Object.assign({valor:parseFloat(p.valor)||0,vencimento:p.vencimento,pago:false,boleto:(p.boleto||'').trim(),forma:b.forma}, bnsu?{nsu:bnsu}:{})); });
   });
-  novas.sort((a,b2)=>String(a.vencimento||'').localeCompare(String(b2.vencimento||'')));
-  c.parcelas=pagas.concat(novas).map((p,i)=>Object.assign(p,{num:i+1}));
+  const abertasFinais=mantidas.concat(novas).sort((a,b2)=>String(a.vencimento||'').localeCompare(String(b2.vencimento||''))); // v252 — mantidas + novas, por vencimento
+  c.parcelas=pagas.concat(abertasFinais).map((p,i)=>Object.assign(p,{num:i+1}));
   const por=(currentUser&&currentUser.name)||'—';
   c.recebAjuste={em:today(),por:por,ts:Date.now()};
   (c.recebTrocas=c.recebTrocas||[]).push({ts:Date.now(),por:por,antes:antes,depois:novas.map(p=>({forma:p.forma,valor:p.valor,vencimento:p.vencimento,boleto:p.boleto||'',nsu:p.nsu||''}))});
@@ -30238,6 +30265,29 @@ function renderDashConversas(){
   // sai de TODOS os quadros, KPIs e tempos desta aba. O fio continua normal na tela de Conversas.
   const _intIdsDash=new Set((clients||[]).filter(c=>c&&c.interno).map(c=>String(c.id)));
   const _ehInterna=cv=>!!(cv&&cv.clienteId&&_intIdsDash.has(String(cv.clienteId)));
+  // v252 — FECHO DE CORTESIA DETERMINÍSTICO (caso Renata 15/10: "Obrigada" às 18:27 ficou em
+  // Aguardando resposta porque o vigia só roda 2×/dia e a triagem IA tem essa defasagem): cortesia
+  // CRISTALINA sai do quadro na hora, sem esperar o robô — a IA continua cobrindo os casos ambíguos
+  // (wa_triagem). Regra conservadora: TODAS as mensagens do cliente DEPOIS da nossa última resposta
+  // precisam ser fechos curtos da lista (qualquer pergunta/pedido no bloco final = fica no quadro).
+  const _CORTESIAS=new Set(['obrigado','obrigada','muito obrigado','muito obrigada','obg','obgda','obrigadaa','obrigadoo','ok','okay','blz','beleza','combinado','perfeito','certo','ta bom','tabom','tudo bem','tudo certo','joia','show','otimo','otima','grata','grato','valeu','de nada','por nada','disponha','boa','top','maravilha','amem','amen']);
+  const _ehFechoCortesia=tx=>{
+    const s=String(tx||'');
+    if(s.length>40 || s.indexOf('?')>=0) return false;
+    const norm=s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
+    if(!norm) return /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(s); // só emoji (👍🙏😊) = cortesia
+    return _CORTESIAS.has(norm);
+  };
+  const _soCortesiaNoFim=msgs=>{ // bloco final de msgs do CLIENTE (após a última nossa) é todo cortesia?
+    let viu=false;
+    for(let i=msgs.length-1;i>=0;i--){ const m=msgs[i];
+      if(m.de==='atendente') return viu; // chegou na nossa última resposta: só havia cortesias depois
+      if(m.anexo) return false;          // anexo do cliente nunca é cortesia
+      if(!_ehFechoCortesia(m.texto)) return false;
+      viu=true;
+    }
+    return false; // conversa sem resposta nossa nenhuma → não é fecho (fica no Sem resposta)
+  };
   const _respNossaApos=(cv,ts)=>((cv.mensagens||[]).some(m=>m&&m.de==='atendente'&&(m.em||0)>ts+2000&&!_msgFantasma(m)&&((_bcCount[(m.texto||'').slice(0,80)]||0)<5)));
   const porAtend={}; const ensure=id=>{ if(!porAtend[id]) porAtend[id]={atendidas:0,ativas:0,msgs:0,fr:[],resp:[]}; return porAtend[id]; };
   convs.forEach(cv=>{
@@ -30251,7 +30301,7 @@ function renderDashConversas(){
     const temCli=msgs.some(m=>m.de==='cliente'); const temAt=msgs.some(m=>m.de==='atendente');
     if(temCli) comCliente++; if(temAt) comAtend++;
     if(temCli && !temAt){ const pc=msgs.find(m=>m.de==='cliente'); const lc=[...msgs].reverse().find(m=>m.de==='cliente'); const lcEm=(lc&&lc.em)||0; if((!cv.aguardAckEm || lcEm>cv.aguardAckEm) && !_triSet.has(String(cv.id)+'|'+String(lcEm))){ semResposta.push({cv, desde:(pc&&pc.em)||cv.criadaEm||now}); } }
-    if(ativa && temAt && msgs.length){ const ult=msgs[msgs.length-1]; if(ult.de==='cliente' && (ult.em||0) > (cv.aguardAckEm||0) && !_triSet.has(String(cv.id)+'|'+String(ult.em||0))) aguardando.push({cv, desde:ult.em||now}); }
+    if(ativa && temAt && msgs.length){ const ult=msgs[msgs.length-1]; if(ult.de==='cliente' && (ult.em||0) > (cv.aguardAckEm||0) && !_triSet.has(String(cv.id)+'|'+String(ult.em||0)) && !_soCortesiaNoFim(msgs)) aguardando.push({cv, desde:ult.em||now}); }
     if(cv.atendenteId){ const a=ensure(cv.atendenteId); a.atendidas++; if(ativa) a.ativas++; }
     let pend=null, firstDone=false;
     msgs.forEach(m=>{
@@ -34828,9 +34878,15 @@ function _orcOperyProcessar(txt){
       } else {
         var vLec=partes.reduce(function(s,o){ return s+(parseFloat(o.valor)||0); },0);
         var fLec=partes.reduce(function(s,o){ return s+(parseFloat(o.freteCob)||0); },0);
-        if(Math.abs(vLec-vTot)>0.01 || Math.abs(fLec-frete)>0.01)
+        // v252 — caso 103673/CINTIA (fantasma eterno no "Resolvidas"): CSV SEM frete informado não é
+        // divergência (lacuna do export do Opery, não erro) — frete só compara quando o CSV TRAZ frete;
+        // e o item guarda fOpery/fLecare p/ a reconferência usar a MESMA régua (régua única).
+        var _fOp=parseFloat(frete)||0;
+        var _freteDiv=(_fOp>0 && Math.abs(fLec-_fOp)>0.01);
+        if(Math.abs(vLec-vTot)>0.01 || _freteDiv)
           divg.push({cat:'valor', num:cod, tipo:_tipoLbl, data:dBr, cliente:cliNome, atend:atend, vOpery:vTot, vLecare:+vLec.toFixed(2),
-            obs:(Math.abs(fLec-frete)>0.01?('frete Opery '+fmtMoney(frete)+' × sistema '+fmtMoney(fLec)+' · '):'')+'apenas apresentar — vale o valor fechado com o cliente (sistema); Opery muda por troca de lote'});
+            fOpery:_fOp, fLecare:+fLec.toFixed(2),
+            obs:(_freteDiv?('frete Opery '+fmtMoney(_fOp)+' × sistema '+fmtMoney(fLec)+' · '):'')+'apenas apresentar — vale o valor fechado com o cliente (sistema); Opery muda por troca de lote'});
       }
     }
     // v229 — o orçamento Opery também se identifica por NÚMERO+TIPO (dois documentos "32" de tipos
@@ -34927,7 +34983,13 @@ function _orcDivgReconferir(){
       else if(x.cat==='aguardando'){ x.resolvidoEm=agora; x.resolvidoComo='pedido entrou no sistema (pagamento concluído)'; mudou=true; }
       else if(x.cat==='valor'){
         var v=partes.reduce(function(s,o){ return s+(parseFloat(o.valor)||0); },0);
-        if(Math.abs(v-(parseFloat(x.vOpery)||0))<=0.01){ x.resolvidoEm=agora; x.resolvidoComo='valores conferem agora'; mudou=true; }
+        // v252 — régua ÚNICA com a importação (caso 103673): o item só resolve quando VALOR confere
+        // E, se a divergência registrada incluiu FRETE (fOpery>0), o frete também confere.
+        var _vOk=(Math.abs(v-(parseFloat(x.vOpery)||0))<=0.01);
+        var _fOpx=parseFloat(x.fOpery)||0;
+        var _fOk=true;
+        if(_fOpx>0){ var _fv=partes.reduce(function(s,o){ return s+(parseFloat(o.freteCob)||0); },0); _fOk=(Math.abs(_fv-_fOpx)<=0.01); }
+        if(_vOk && _fOk){ x.resolvidoEm=agora; x.resolvidoComo='valores conferem agora'; mudou=true; }
         else if(Math.abs(v-(parseFloat(x.vLecare)||0))>0.01){ x.vLecare=+v.toFixed(2); mudou=true; }
       }
     });
@@ -38950,6 +39012,13 @@ function renderConversaTela(convId, containerId){
   if(!el) return;
   // v107 — captura o que está sendo digitado (texto + cursor + foco) ANTES de reconstruir, p/ realtime não apagar
   const _mesmaConv = (_convTelaUltimoId===convId);
+  // v252 — PRESERVA A ROLAGEM no re-render da MESMA conversa (reporte do dono 15/10: "estou lendo a
+  // conversa, de repente a tela atualiza e vai lá para baixo"): captura a posição ANTES de reconstruir;
+  // só rola ao fim se o leitor já estava perto do fim (mesma régua <80px do renderConversaMsgs) ou se
+  // a conversa é outra (abertura nova).
+  const _prevField = _mesmaConv ? el.querySelector('.conv-msgs-field') : null;
+  const _prevScrollTop = _prevField ? _prevField.scrollTop : null;
+  const _prevPerto = _prevField ? ((_prevField.scrollHeight - _prevField.scrollTop - _prevField.clientHeight) < 80) : true;
   const _prevTa = _mesmaConv ? el.querySelector('.conv-input-field') : null;
   const _prevVal = _prevTa ? _prevTa.value : null;
   const _prevFoco = !!_prevTa && document.activeElement===_prevTa;
@@ -39111,8 +39180,9 @@ function renderConversaTela(convId, containerId){
     if(_prevFoco){ try{ _ta.focus(); if(_prevSelS!=null) _ta.setSelectionRange(_prevSelS, _prevSelE); }catch(_e){} }
   }
   _convTelaUltimoId=convId;
-  // scroll to bottom
-  setTimeout(()=>{const m=el.querySelector('.conv-msgs-field');if(m)m.scrollTop=m.scrollHeight;},50);
+  // v252 — rolagem: conversa nova ou leitor perto do fim → vai ao fim; leitor no meio do histórico →
+  // volta exatamente para onde estava (fim do "pula lá pra baixo" no refresh do realtime/poll)
+  setTimeout(()=>{const m=el.querySelector('.conv-msgs-field');if(!m)return; if(_prevPerto||_prevScrollTop==null){m.scrollTop=m.scrollHeight;}else{m.scrollTop=_prevScrollTop;}},50);
   _waLoadMedia(el); // v93 — preenche imagens/áudios/vídeos (URL assinada)
   // v95.1 — preserva a escolha do toggle DENTRO da mesma conversa (reset só ao TROCAR de conversa).
   // Antes resetava a cada render → após registrar uma fala do cliente, a próxima ia como "atendente"

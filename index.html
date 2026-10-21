@@ -743,14 +743,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </div>
         </div>
 
-        <!-- v118 — Produtividade do Designer -->
-        <div class="panel" style="margin-bottom:16px">
-          <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center">
-            <h2>🎨 Produtividade do Designer</h2>
-            <select id="dc-prod-mes" onchange="renderProdutividadeDesigner()" style="font-size:12px;padding:4px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-primary)"></select>
-          </div>
-          <div id="dc-prod-designer" style="padding:10px 16px"></div>
-        </div>
+        <!-- v118 — Produtividade do Designer → MOVIDA na v253 p/ Análise Gerencial › Controle de Produtividade -->
 
         <!-- Legenda + Pedidos Recentes -->
         <div style="display:grid;grid-template-columns:3fr 1fr;gap:16px;margin-bottom:20px">
@@ -1217,6 +1210,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <button onclick="tcNavMes(-1)" style="font-size:16px;padding:2px 10px;background:none;border:.5px solid var(--border-md);border-radius:var(--r-md);cursor:pointer">‹</button>
               <span id="tc-mes-label" style="font-size:14px;font-weight:600;min-width:130px;text-align:center">—</span>
               <button onclick="tcNavMes(1)" style="font-size:16px;padding:2px 10px;background:none;border:.5px solid var(--border-md);border-radius:var(--r-md);cursor:pointer">›</button>
+              <button onclick="tcGerarPdf()" title="Exporta em PDF os quadros exibidos na tela (mês selecionado)" style="font-size:12px;padding:5px 12px;margin-left:auto">🖨 Gerar PDF</button><!-- v253 -->
             </div>
           </div>
           <div class="panel" style="border-radius:0 0 var(--r-lg) var(--r-lg);border-top:none;margin-bottom:0">
@@ -2779,6 +2773,14 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <select id="ag-prod-mes" onchange="renderProdutividadeProducao()" style="font-size:12px;padding:4px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-primary)"></select>
             </div>
             <div id="ag-prod-content" style="padding:12px 16px"></div>
+          </div>
+          <!-- v253 — Produtividade do Designer MOVIDA do Dashboard de Controle p/ cá (pedido do dono 16/10: "abaixo da produção") -->
+          <div class="panel" style="margin-top:16px">
+            <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center">
+              <h2>🎨 Produtividade do Designer</h2>
+              <select id="dc-prod-mes" onchange="renderProdutividadeDesigner()" style="font-size:12px;padding:4px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);background:var(--bg-primary)"></select>
+            </div>
+            <div id="dc-prod-designer" style="padding:10px 16px"></div>
           </div>
         </div>
 
@@ -4949,14 +4951,24 @@ async function _sepLoadOne(cfg, forceFull){
     // A thread completa desce só ao ABRIR a conversa (_convHidratar). Toda gravação continua
     // passando pela UNIÃO com o servidor (v107) — cópia fatiada NUNCA sobrescreve a completa.
     if(cfg.key==='conversas'){
+      // v253 — EGRESS (incidente 21/10 "Egress Exceeded", serviço restringido pelo Supabase): no
+      // RE-SYNC (foco da aba / ciclo de 180s) as conversas NÃO descem de novo — realtime + poll de
+      // 10s (varredura id+updated_at com guard) já as mantêm vivas; a recarga integral (todas as
+      // conversas × 30 msgs) era o maior consumidor de tráfego do sistema. Boot/F5 (memória vazia)
+      // e recuperação (forceFull) continuam com a carga completa de sempre.
+      if(!forceFull && (cfg.get()||[]).length && _convPollFirst) return true;
       // v174 — INCIDENTE 28/07 ("conversas sumindo"): o PostgREST corta QUALQUER resposta em 1000 linhas
       // e o sistema passou de 1000 conversas — a RPC vinha truncada e ~66 conversas NUNCA chegavam ao
       // navegador (e sem ORDER BY, QUAIS somem variava a cada carga). O atendente abria o cliente,
       // o front não achava a conversa e criava uma NOVA VAZIA. Fix: RPC com ORDER BY id + paginação aqui.
+      // v253 — paginação por CURSOR (conversas_boot_pag): a RPC antiga recalculava a lista INTEIRA a
+      // cada página (o corte do .range é DEPOIS da função) — 10 páginas custavam 10× o boot. O cursor
+      // processa só a página. Qualquer erro → loop antigo (abas/banco defasados) → carga completa.
+      var _cvCarregou=false;
       try{
-        var _cvFrom=0, _cvPg=500;
+        var _cvAfter='', _cvPg=500;
         while(true){
-          const { data:_lz, error:_le } = await _sb.rpc('conversas_boot', { p_msgs: 30 }).range(_cvFrom, _cvFrom+_cvPg-1);
+          const { data:_lz, error:_le } = await _sb.rpc('conversas_boot_pag', { p_msgs:30, p_after_id:_cvAfter, p_limit:_cvPg });
           if(_le) throw _le;
           var _lzN=Array.isArray(_lz)?_lz.length:0;
           for(var _li=0;_li<_lzN;_li++){
@@ -4964,9 +4976,26 @@ async function _sepLoadOne(cfg, forceFull){
             if(_lr.data.id==null && _lr.id!=null) _lr.data.id=_lr.id; // v175 — mesma blindagem anti-clone
             all.push(_lr.data);
             try{ _convMsgsTotais[String(_lr.data.id)] = Number(_lr.msgs_totais)||0; }catch(_e){}
+            if(_lr.id!=null && String(_lr.id)>_cvAfter) _cvAfter=String(_lr.id);
           }
           if(_lzN<_cvPg) break;
-          _cvFrom+=_cvPg;
+        }
+        _cvCarregou=true;
+      }catch(_e){ all=[]; console.warn('conversas_boot_pag indisponível; caminho antigo:', _e && _e.message); }
+      if(!_cvCarregou) try{
+        var _cvFrom=0, _cvPg2=500;
+        while(true){
+          const { data:_lz2, error:_le2 } = await _sb.rpc('conversas_boot', { p_msgs: 30 }).range(_cvFrom, _cvFrom+_cvPg2-1);
+          if(_le2) throw _le2;
+          var _lzN2=Array.isArray(_lz2)?_lz2.length:0;
+          for(var _lj=0;_lj<_lzN2;_lj++){
+            var _lr2=_lz2[_lj]; if(!_lr2 || !_lr2.data) continue;
+            if(_lr2.data.id==null && _lr2.id!=null) _lr2.data.id=_lr2.id; // v175 — anti-clone
+            all.push(_lr2.data);
+            try{ _convMsgsTotais[String(_lr2.data.id)] = Number(_lr2.msgs_totais)||0; }catch(_e){}
+          }
+          if(_lzN2<_cvPg2) break;
+          _cvFrom+=_cvPg2;
         }
       }catch(_e){ all=[]; console.warn('conversas_boot falhou; carga completa:', _e && _e.message); }
     }
@@ -5253,7 +5282,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v252';
+var APP_VERSION = 'v253';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -9190,7 +9219,9 @@ function _soAdminApaga(){
 // identidade e passa a ser EXCLUSIVA do administrador. Comercial que suspeitar de duplicidade
 // avisa o administrador — ele confere e unifica sem perder nada.
 function _soAdminFunde(){
-  if(!currentUser || currentUser.perfil!=='admin'){ alert('Unificação/fusão de cadastros: somente o administrador.\n\nSe você acredita que são o mesmo cliente, avise o administrador — ele confere e unifica sem perder nada.'); return false; }
+  // v253 — dono 16/10: diretora comercial LIBERADA para vinculação/fusão de cadastros (relaxa a
+  // v186 SÓ aqui — exclusão (_soAdminApaga) e troca de documento continuam somente admin).
+  if(!currentUser || !['admin','diretor_comercial'].includes(currentUser.perfil)){ alert('Unificação/fusão de cadastros: somente o administrador ou a diretora comercial.\n\nSe você acredita que são o mesmo cliente, avise um deles — a unificação migra tudo sem perder nada.'); return false; }
   return true;
 }
 function confirmDel(type,id,nome){
@@ -29072,7 +29103,7 @@ function setAgTab(tab){
     const pg=document.getElementById('ag-pg-'+t);
     if(pg) pg.style.display = t===tab?'':'none';
   });
-  if(tab==='produtividade'){ try{ renderProdutividadeProducao(); }catch(_e){} }
+  if(tab==='produtividade'){ try{ renderProdutividadeProducao(); }catch(_e){} try{ renderProdutividadeDesigner(); }catch(_e){} } // v253 — designer junto (movido p/ cá)
   else if(tab==='analise'){ try{ renderAnaliseComercial(); }catch(_e){} }
   else if(tab==='lucr'){ try{ _alInitMeses(); renderAnaliseLucr(); }catch(_e){} } // v187 — Análise de Lucratividade
   else if(tab==='pausas'){ try{ renderPausasPanel(); }catch(_e){} }
@@ -29514,12 +29545,17 @@ function renderProdutividadeProducao(){
     sel.innerHTML=meses.map(m=>'<option value="'+m+'">'+nm[m.slice(5,7)]+'/'+m.slice(0,4)+'</option>').join('');
   }
   const mk=(sel&&sel.value)||(function(){const h=new Date();return h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0');})();
-  const qtd={}, itens={}, peds={};
+  // v253 — PRODUTIVIDADE SEPARADA POR LINHA (pedido do dono 16/10): dois quadros — Anestésico e
+  // Linha Personalizada — fatiados pela LINHA do pedido (régua canônica (o.linha||'personalizada'));
+  // a fonte segue sendo QUEM PRODUZIU (prodResp*, v119/v203) nas duas — o envase v223 continua fora —
+  // então Anestésico + Linha = o total que o quadro único mostrava.
+  const grp={ anest:{qtd:{},itens:{},peds:{}}, linha:{qtd:{},itens:{},peds:{}} };
   (orders||[]).forEach(o=>{
     // v188 — regra do dono 04/08: o MÊS da produção é o do PEDIDO (D1, padrão v133 de todas as telas),
     // NÃO a data em que o status de produção foi movido — pedidos de julho finalizados em agosto
     // apareciam como produtividade de agosto.
     if(String((o&&o.d1)||'').slice(0,7)!==mk) return;
+    const g=((o.linha||'personalizada')==='anestesico')?grp.anest:grp.linha;
     const _its=Array.isArray(o.itens)?o.itens:[]; const _respPed=new Set();
     _its.forEach(it=>{
       const resp=it.prodRespNome || o.producaoExecutorNome || ''; // v119 — POR ITEM; fallback ao executor único (pedidos antigos)
@@ -29529,22 +29565,31 @@ function renderProdutividadeProducao(){
       // total do mês continua batendo com o produzido); o item e o pedido contam para os dois.
       const resp2=(it.prodResp2Nome && it.prodResp2Nome!==resp) ? it.prodResp2Nome : '';
       const _cota=resp2 ? q/2 : q;
-      qtd[resp]=(qtd[resp]||0)+_cota; itens[resp]=(itens[resp]||0)+1; _respPed.add(resp);
-      if(resp2){ qtd[resp2]=(qtd[resp2]||0)+_cota; itens[resp2]=(itens[resp2]||0)+1; _respPed.add(resp2); }
+      g.qtd[resp]=(g.qtd[resp]||0)+_cota; g.itens[resp]=(g.itens[resp]||0)+1; _respPed.add(resp);
+      if(resp2){ g.qtd[resp2]=(g.qtd[resp2]||0)+_cota; g.itens[resp2]=(g.itens[resp2]||0)+1; _respPed.add(resp2); }
     });
-    _respPed.forEach(r=>{ peds[r]=(peds[r]||0)+1; });
+    _respPed.forEach(r=>{ g.peds[r]=(g.peds[r]||0)+1; });
   });
-  const rows=Object.entries(qtd).sort((a,b)=>b[1]-a[1]);
-  const tot=rows.reduce((s,r)=>s+r[1],0);
-  const maxN=Math.max(1,...rows.map(r=>r[1]));
-  if(!rows.length){ el.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Sem produção atribuída neste mês. (O responsável é escolhido no status de Produção — "Quem produziu".)</div>'; return; }
-  el.innerHTML='<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Total de '+tot.toLocaleString('pt-BR')+' unidade(s) produzida(s) no mês · a produtividade conta a QUANTIDADE de cada item (ex.: 10 itens × 30 = 300); item com 2 responsáveis divide as unidades meio a meio.</div>'+rows.map(function(r){ const nome=r[0], n=r[1];
-    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
-      '<span style="font-size:12px;color:var(--text-secondary);min-width:110px;flex-shrink:0">'+escapeHtml(nome)+'</span>'+
-      '<div style="flex:1;height:18px;background:var(--bg-secondary);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+Math.round(n/maxN*100)+'%;background:#1D9E75;border-radius:3px"></div></div>'+
-      '<span style="font-size:12px;font-weight:600;min-width:120px;text-align:right">'+n.toLocaleString('pt-BR')+' un. <span style="font-size:10px;font-weight:400;color:var(--text-tertiary)">('+(itens[nome]||0)+' itens · '+(peds[nome]||0)+' ped.)</span></span>'+
-    '</div>';
-  }).join('');
+  const bloco=function(titulo, cor, g){
+    const rows=Object.entries(g.qtd).sort((a,b)=>b[1]-a[1]);
+    if(!rows.length) return '<div style="font-size:12px;font-weight:600;margin:14px 0 6px">'+titulo+'</div><div style="font-size:12px;color:var(--text-tertiary);padding:4px 0 8px">Sem produção atribuída neste mês.</div>';
+    const tot=rows.reduce((s,r)=>s+r[1],0);
+    const maxN=Math.max(1,...rows.map(r=>r[1]));
+    return '<div style="font-size:12px;font-weight:600;margin:14px 0 2px">'+titulo+'</div>'+
+      '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Total de '+tot.toLocaleString('pt-BR')+' unidade(s) produzida(s) no mês.</div>'+
+      rows.map(function(r){ const nome=r[0], n=r[1];
+        return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+          '<span style="font-size:12px;color:var(--text-secondary);min-width:110px;flex-shrink:0">'+escapeHtml(nome)+'</span>'+
+          '<div style="flex:1;height:18px;background:var(--bg-secondary);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+Math.round(n/maxN*100)+'%;background:'+cor+';border-radius:3px"></div></div>'+
+          '<span style="font-size:12px;font-weight:600;min-width:120px;text-align:right">'+n.toLocaleString('pt-BR')+' un. <span style="font-size:10px;font-weight:400;color:var(--text-tertiary)">('+(g.itens[nome]||0)+' itens · '+(g.peds[nome]||0)+' ped.)</span></span>'+
+        '</div>';
+      }).join('');
+  };
+  const nadaA=!Object.keys(grp.anest.qtd).length, nadaL=!Object.keys(grp.linha.qtd).length;
+  if(nadaA && nadaL){ el.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Sem produção atribuída neste mês. (O responsável é escolhido no status de Produção — "Quem produziu".)</div>'; return; }
+  el.innerHTML='<div style="font-size:11px;color:var(--text-tertiary)">A produtividade conta a QUANTIDADE de cada item (ex.: 10 itens × 30 = 300); item com 2 responsáveis divide as unidades meio a meio; a linha do pedido define o quadro.</div>'+
+    bloco('💉 Anestésico','#BA7517',grp.anest)+
+    bloco('🧴 Linha Personalizada','#1D9E75',grp.linha);
 }
 
 // v82: período da Análise Gerencial — janela de dias OU intervalo (data início → data fim)
@@ -30567,6 +30612,52 @@ function renderTimeComercial(){
   h+='<div style="margin-top:14px;font-size:11px;color:var(--text-tertiary)">Fonte: classificação diária pela rotina IA (tc_conv_class). Aprovações = estimativa (cliente com pedido de venda no mês — decisão de 13/10). Mensagens enviadas pelo celular são atribuídas ao atendente da conversa. Clique numa linha para ver as conversas.</div>';
   el.innerHTML=h;
 }
+// v253 — GERAR PDF do Time Comercial (pedido do dono 16/10): exporta os MESMOS quadros da tela
+// (dados de _tcRows, o que está carregado p/ o mês selecionado), no padrão de impressão da casa
+// (_finGerarPdf: janela + window.print). Mesma permissão da aba.
+function tcGerarPdf(){
+  if(!_podeVerTimeComercial()){ alert('Sem permissão para exportar o Time Comercial.'); return; }
+  const rows=_tcRows||[];
+  if(!rows.length || _tcMesCarregado!==_tcMes){ alert('Não há dados carregados na tela para exportar — aguarde o quadro do mês carregar e tente de novo.'); return; }
+  const porAt={};
+  rows.forEach(r=>{ (porAt[r.atendente_id]=porAt[r.atendente_id]||[]).push(r); });
+  const nomeDe=id=>{ const u=(users||[]).find(x=>x&&x.id===id); return (u&&u.name)||id; };
+  const pct=(a,b)=>b>0?(Math.round(a*1000/b)/10).toLocaleString('pt-BR')+'%':'—';
+  const ats=Object.keys(porAt).sort((a,b)=>porAt[b].length-porAt[a].length);
+  let corpo='';
+  ats.forEach(aid=>{
+    const rs=porAt[aid];
+    let linhas='', tConv=0, tResp=0, tAprov=0;
+    _TC_TIPOS.forEach(([tipo,rotulo])=>{
+      const x=rs.filter(r=>r.tipo===tipo);
+      const conv=x.length, resp=x.filter(r=>r.respondeu).length, aprov=x.reduce((s,r)=>s+(r.aprovacoes||0),0);
+      tConv+=conv; tResp+=resp; tAprov+=aprov;
+      linhas+='<tr><td>'+rotulo+'</td><td style="text-align:right">'+conv+'</td><td style="text-align:right">'+resp+'</td>'
+        +'<td style="text-align:right">'+pct(resp,conv)+'</td><td style="text-align:right">'+aprov+'</td>'
+        +'<td style="text-align:right">'+pct(aprov,conv)+'</td></tr>';
+    });
+    corpo+='<div class="atend"><h3>'+escapeHtml(nomeDe(aid))+' <span class="sub">· '+tConv+' conversas no mês</span></h3>'
+      +'<table><thead><tr><th>Tipo de conversa</th><th style="text-align:right">Conversas</th><th style="text-align:right">Respostas</th>'
+      +'<th style="text-align:right">% Resposta</th><th style="text-align:right">Aprovações</th><th style="text-align:right">% Conversão</th></tr></thead>'
+      +'<tbody>'+linhas+'</tbody>'
+      +'<tfoot><tr><td>Total</td><td style="text-align:right">'+tConv+'</td><td style="text-align:right">'+tResp+'</td>'
+      +'<td style="text-align:right">'+pct(tResp,tConv)+'</td><td style="text-align:right">'+tAprov+'</td>'
+      +'<td style="text-align:right">'+pct(tAprov,tConv)+'</td></tr></tfoot></table></div>';
+  });
+  const html='<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Time Comercial — Lecare</title>'+
+    '<style>@page{size:A4;margin:12mm}body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;margin:24px}h1{font-size:19px;margin:0 0 2px}h2{font-size:12px;font-weight:normal;color:#555;margin:0 0 14px}'+
+    'h3{font-size:14px;margin:0 0 6px}.sub{font-size:11px;font-weight:normal;color:#777}.atend{margin-top:18px;page-break-inside:avoid}'+
+    'table{width:100%;border-collapse:collapse;font-size:11px}th{background:#f0f0f0;border:1px solid #ccc;padding:6px 8px;text-align:left;font-size:10px}td{border:1px solid #ccc;padding:5px 8px;vertical-align:middle}'+
+    'tfoot td{background:#f0f0f0;font-weight:bold}.rodape{margin-top:14px;font-size:10px;color:#777}@media print{body{margin:0}}</style></head><body>'+
+    '<h1>Lecare — Time Comercial</h1>'+
+    '<h2>'+escapeHtml(getMesLabel(_tcMes))+' · gerado em '+new Date().toLocaleString('pt-BR')+' · '+ats.length+' atendente(s) · '+rows.length+' conversas classificadas</h2>'+
+    corpo+
+    '<div class="rodape">Documento gerado pelo sistema Lecare — reflete os quadros exibidos na tela no momento da geração. Fonte: classificação diária pela rotina IA (tc_conv_class). Aprovações = estimativa (cliente com pedido de venda no mês). Mensagens enviadas pelo celular são atribuídas ao atendente da conversa.</div>'+
+    '<script>window.onload=function(){ setTimeout(function(){ window.print(); }, 250); };<\/script></body></html>';
+  const w=window.open('','_blank');
+  if(!w){ alert('O navegador bloqueou a janela do PDF — libere pop-ups para este site e tente de novo.'); return; }
+  w.document.write(html); w.document.close(); w.focus();
+}
 function tcDetalhe(aid,tipo){
   const rs=(_tcRows||[]).filter(r=>r.atendente_id===aid && r.tipo===tipo);
   if(!rs.length) return;
@@ -30936,18 +31027,25 @@ function renderMetasEquipe(mes, receitaMes){
   // chave vendedor_<userId>_<mes> em metasMensais (prefixo novo; o legado 'user_...' descontinuado
   // não é tocado), mesma mecânica mkEditableVal/saveMetaInline/registro dedicado anti-clobber v169.
   // Lista = quem vendeu no mês ∪ quem tem meta definida no mês (vendedor com meta e sem venda aparece zerado).
+  // v253 — colunas Anestésico e Linhas (pedido do dono 16/10): o realizado de cada vendedor é
+  // fatiado pela LINHA do pedido ((o.linha||'personalizada')==='anestesico' — mesma régua canônica
+  // do sistema inteiro); cada pedido cai INTEIRO em um dos dois baldes → anest + linha = realizado.
   const vendMap={};
   orders.forEach(o=>{ if(!o.d1||o.d1.slice(0,7)!==mes||!_ehReceita(o)) return;
-    const aid=o.atendenteId||o.atendente||''; vendMap[aid]=(vendMap[aid]||0)+(parseFloat(o.valor)||0); });
-  (users||[]).forEach(u=>{ if(u&&u.id!=null&&(parseFloat(metasMensais['vendedor_'+u.id+'_'+mes])||0)>0&&!(u.id in vendMap)) vendMap[u.id]=0; });
-  const vendRows=Object.entries(vendMap).map(([aid,val])=>{
+    const aid=o.atendenteId||o.atendente||''; const vv=parseFloat(o.valor)||0;
+    const e=(vendMap[aid]=vendMap[aid]||{val:0,anest:0,linha:0});
+    e.val+=vv; if((o.linha||'personalizada')==='anestesico') e.anest+=vv; else e.linha+=vv; });
+  (users||[]).forEach(u=>{ if(u&&u.id!=null&&(parseFloat(metasMensais['vendedor_'+u.id+'_'+mes])||0)>0&&!(u.id in vendMap)) vendMap[u.id]={val:0,anest:0,linha:0}; });
+  const vendRows=Object.entries(vendMap).map(([aid,vs])=>{
     const u=users.find(x=>String(x.id)===String(aid));
     const vkey=aid?('vendedor_'+aid+'_'+mes):null;
     const vmeta=vkey?(parseFloat(metasMensais[vkey])||0):0;
-    return{aid, vkey, nome:u?u.name:(aid?'(id '+aid+')':'(sem vendedor)'), val, meta:vmeta, pct:vmeta>0?val/vmeta*100:0};
+    return{aid, vkey, nome:u?u.name:(aid?'(id '+aid+')':'(sem vendedor)'), val:vs.val, anest:vs.anest, linha:vs.linha, meta:vmeta, pct:vmeta>0?vs.val/vmeta*100:0};
   }).sort((a,b)=>b.val-a.val);
   const vendTotMeta=vendRows.reduce((s,v)=>s+v.meta,0);
   const vendTotReal=vendRows.reduce((s,v)=>s+v.val,0);
+  const vendTotAnest=vendRows.reduce((s,v)=>s+v.anest,0);
+  const vendTotLinha=vendRows.reduce((s,v)=>s+v.linha,0);
 
   el.innerHTML=`
     <div style="overflow-x:auto">
@@ -30999,10 +31097,12 @@ function renderMetasEquipe(mes, receitaMes){
 
     <div style="margin-top:16px;font-size:12px;font-weight:600;color:var(--text-secondary)">👤 Por vendedor</div>
     <div style="overflow-x:auto;margin-top:8px">
-    <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:760px">
       <thead><tr>
         <th style="padding:6px 12px;background:var(--bg-secondary);text-align:left;font-size:11px;font-weight:500;color:var(--text-secondary)">Vendedor</th>
         <th style="padding:6px 12px;background:var(--bg-secondary);text-align:right;font-size:11px;font-weight:500;color:var(--text-secondary)">Meta ${isAdm?'(clique para editar)':''}</th>
+        <th style="padding:6px 12px;background:var(--bg-secondary);text-align:right;font-size:11px;font-weight:500;color:var(--text-secondary)" title="Vendas do mês em pedidos da linha Anestésico">Anestésico</th>
+        <th style="padding:6px 12px;background:var(--bg-secondary);text-align:right;font-size:11px;font-weight:500;color:var(--text-secondary)" title="Vendas do mês em pedidos de Linha Personalizada">Linhas</th>
         <th style="padding:6px 12px;background:var(--bg-secondary);text-align:right;font-size:11px;font-weight:500;color:var(--text-secondary)">Realizado</th>
         <th style="padding:6px 12px;background:var(--bg-secondary);text-align:left;font-size:11px;font-weight:500;color:var(--text-secondary);min-width:160px">Progresso</th>
         <th style="padding:6px 12px;background:var(--bg-secondary);text-align:right;font-size:11px;font-weight:500;color:var(--text-secondary)">%</th>
@@ -31014,6 +31114,8 @@ function renderMetasEquipe(mes, receitaMes){
           return`<tr>
             <td style="padding:6px 12px;border-bottom:.5px solid var(--border);font-weight:500">${escapeHtml(v.nome)}</td>
             <td style="padding:6px 12px;border-bottom:.5px solid var(--border);text-align:right">${v.vkey?mkEditableVal(v.vkey,v.meta,isAdm):'—'}</td>
+            <td style="padding:6px 12px;border-bottom:.5px solid var(--border);text-align:right;color:var(--text-secondary)">${v.anest>0?fmtMoney(v.anest):'—'}</td>
+            <td style="padding:6px 12px;border-bottom:.5px solid var(--border);text-align:right;color:var(--text-secondary)">${v.linha>0?fmtMoney(v.linha):'—'}</td>
             <td style="padding:6px 12px;border-bottom:.5px solid var(--border);text-align:right;font-weight:500;color:var(--st-ok-tx)">${fmtMoney(v.val)}</td>
             <td style="padding:6px 12px;border-bottom:.5px solid var(--border);min-width:160px">${v.meta>0?mkProgress(v.pct,corV):'<span style="font-size:10px;color:var(--text-tertiary)">sem meta</span>'}</td>
             <td style="padding:6px 12px;border-bottom:.5px solid var(--border);text-align:right;font-weight:600;color:${corV}">${v.meta>0?Math.round(v.pct)+'%':'—'}</td>
@@ -31024,13 +31126,15 @@ function renderMetasEquipe(mes, receitaMes){
       <tfoot><tr style="background:var(--bg-secondary)">
         <td style="padding:6px 12px;font-weight:600;font-size:12px">Total</td>
         <td style="padding:6px 12px;text-align:right;font-weight:600">${vendTotMeta>0?fmtMoney(vendTotMeta):'—'}</td>
+        <td style="padding:6px 12px;text-align:right;font-weight:600;color:var(--text-secondary)">${fmtMoney(vendTotAnest)}</td>
+        <td style="padding:6px 12px;text-align:right;font-weight:600;color:var(--text-secondary)">${fmtMoney(vendTotLinha)}</td>
         <td style="padding:6px 12px;text-align:right;font-weight:600;color:var(--st-ok-tx)">${fmtMoney(vendTotReal)}</td>
         <td style="padding:6px 12px">${vendTotMeta>0?mkProgress(vendTotReal/vendTotMeta*100):''}</td>
         <td style="padding:6px 12px;text-align:right;font-weight:700">${vendTotMeta>0?Math.round(vendTotReal/vendTotMeta*100)+'%':'—'}</td>
         <td style="padding:6px 12px;text-align:right;font-weight:600">${vendTotMeta>0?fmtMoney(Math.max(0,vendTotMeta-vendTotReal)):'—'}</td>
       </tr></tfoot>
     </table></div>
-    <div style="margin-top:4px;font-size:10.5px;color:var(--text-tertiary)">Vendedor = quem está no pedido (atendente). A meta por vendedor é independente da meta por equipe — as duas tabelas fatiam o mesmo realizado do mês.</div>`;
+    <div style="margin-top:4px;font-size:10.5px;color:var(--text-tertiary)">Vendedor = quem está no pedido (atendente). A meta por vendedor é independente da meta por equipe — as duas tabelas fatiam o mesmo realizado do mês. Anestésico + Linhas = Realizado (a linha do pedido define a coluna).</div>`;
 }
 
 // ── Bloco 3: Tipo de Pedido ──────────────────────────────

@@ -5282,7 +5282,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v253';
+var APP_VERSION = 'v254';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -13079,7 +13079,7 @@ function _solTabelaWrap(corpo){
 // v210 — LINHA DO ITEM SOLICITADO extraída para helper (usada pelo bloco por-solicitação do menu
 // Solicitação de Compra E pela visão consolidada por item da Gestão a Vista): calcula li/inf e
 // TODAS as colunas de acompanhamento (situação k/st, pedido de compra, NF, compra, recebimento).
-function _solItemLinhaInfo(s, it, lst){
+function _solItemLinhaInfo(s, it, lst, _prof){
   var sub='font-size:10.5px;color:var(--text-tertiary)';
   var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
   var inf=_solItemCompraInfo(li), c=inf.c;
@@ -13205,6 +13205,39 @@ function _solItemLinhaInfo(s, it, lst){
         (c.recebido||(typeof _recebFisicoConta==='function'&&_recebFisicoConta(c))?'<br><span style="color:var(--st-ok-tx);font-weight:600;font-size:11px">✔ recebido</span>':'<br><span style="color:var(--text-tertiary);font-size:10.5px">aguardando recebimento</span>')+_nfSub+_avisos;
     }
   }
+  // v254 — ITEM TROCADO SEGUE O SUBSTITUTO (ordem do dono 22/10, caso 103826: 100372 trocado por
+  // 101368 ficava em traços embora o substituto já estivesse COMPRADO E RECEBIDO): quando a resolução
+  // é troca_solicitada, as colunas Fornecedor/Pedido de compra/Compra/Recebimento/Status passam a
+  // mostrar a jornada do item ESCOLHIDO NA TROCA (a solicitação substituta mais recente do MESMO
+  // pedido), rotuladas "↪ substituto <código>". Cadeia de trocas segue até 3 níveis; substituto
+  // ainda sem compra mostra a situação dele (em lista/cotado). Falha em achar → traços de antes.
+  if(li && li.naoComprado && li.ncResolucao==='troca_solicitada' && li.trocadoPor && s && s.orderId && (_prof||0)<3){
+    try{
+      var _tp=li.trocadoPor, _cand=null, _candIt=null, _candLst=null, _candEm=-1;
+      (_solTodasSolic(s.orderId, s.tipo||'embalagem')||[]).forEach(function(s2){
+        (s2.itens||[]).forEach(function(it2){
+          var casa=(_tp.itemId!=null&&String(it2.itemId)===String(_tp.itemId))||(_tp.codigo&&it2.codigo===_tp.codigo)||(_tp.nome&&it2.nome===_tp.nome);
+          if(!casa) return;
+          if((s2.criadoEm||0)>=_candEm){ _candEm=s2.criadoEm||0; _cand=s2; _candIt=it2;
+            _candLst=(listasCompra||[]).find(function(l){ return (l.solicIds||[]).indexOf(s2.id)>=0; })||null; }
+        });
+      });
+      if(_cand && _candIt){
+        var _sb2=_solItemLinhaInfo(_cand, _candIt, _candLst, (_prof||0)+1);
+        var _rotSub='<br><span style="'+sub+'" title="Etapas do item escolhido na troca — a compra corre no código substituto">↪ substituto '+escapeHtml(_tp.codigo||_tp.nome||'')+'</span>';
+        if(_sb2.c){
+          c=_sb2.c; inf=_sb2.inf;
+          colPed=_sb2.colPed+_rotSub;
+          colCompra=_sb2.colCompra+_rotSub;
+          colReceb=_sb2.colReceb;
+          colNf=_sb2.colNf;
+          colStPed=_sb2.colStPed+_rotSub;
+        } else {
+          colStPed='<span style="'+sub+'">substituto '+escapeHtml(_tp.codigo||_tp.nome||'')+':</span><br>'+_sb2.st;
+        }
+      }
+    }catch(_e){}
+  }
   return { li:li, inf:inf, c:c, k:k, st:st, qtdS:_qtdS, colCompra:colCompra, colReceb:colReceb, colPed:colPed, colNf:colNf, colStPed:colStPed };
 }
 function _solVerBlocoSolic(s, tally){
@@ -13235,7 +13268,7 @@ function _solVerBlocoSolic(s, tally){
       '<td style="'+tdc+';min-width:230px">'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+'</td>'+
       '<td style="'+tdc+';text-align:right;white-space:nowrap">'+_qtdS.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
       '<td style="'+tdc+'">'+st+'</td>'+
-      '<td style="'+tdc+'"><div style="max-width:180px;overflow-wrap:break-word">'+(c&&c.fornecedorNome?escapeHtml(c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+/* v252 — div interno: max-width em td não vale (sobreposição 16/10) */
+      '<td style="'+tdc+'"><div style="max-width:180px;overflow-wrap:break-word;white-space:normal">'+(c&&c.fornecedorNome?escapeHtml(c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+/* v252 — div interno: max-width em td não vale (sobreposição 16/10) */
       '<td style="'+tdc+';text-align:right;white-space:nowrap">'+(c&&(parseFloat(c.precoPago)||0)>0?fmtMoney(c.precoPago):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
       '<td style="'+tdc+'">'+colPed+'</td>'+
       '<td style="'+tdc+'">'+colCompra+'</td>'+
@@ -13305,7 +13338,7 @@ function verListaCompraPedido(orderId){
           '<br><span style="'+sub+'">'+subLinha+'</span></td>'+
         '<td style="'+tdc+';text-align:right;white-space:nowrap">'+nfo.qtdS.toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</td>'+
         '<td style="'+tdc+'">'+nfo.st+'</td>'+
-        '<td style="'+tdc+'"><div style="max-width:180px;overflow-wrap:break-word">'+(nfo.c&&nfo.c.fornecedorNome?escapeHtml(nfo.c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+/* v252 — max-width em td não vale nos navegadores: div interno quebra de verdade (reporte 16/10, sobreposição) */
+        '<td style="'+tdc+'"><div style="max-width:180px;overflow-wrap:break-word;white-space:normal">'+(nfo.c&&nfo.c.fornecedorNome?escapeHtml(nfo.c.fornecedorNome):'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+/* v252 — max-width em td não vale nos navegadores: div interno quebra de verdade (reporte 16/10, sobreposição) */
         '<td style="'+tdc+'">'+nfo.colPed+'</td>'+
         '<td style="'+tdc+'">'+nfo.colCompra+'</td>'+
         '<td style="'+tdc+'">'+nfo.colStPed+'</td>'+/* v251 — Status do pedido (PC + NF embaixo) no lugar de NF+Recebimento */
@@ -13343,7 +13376,7 @@ function verListaCompraPedido(orderId){
             '<br><span style="font-size:10.5px;font-weight:600;color:var(--text-info)" title="O que aconteceu com esta etapa e por que existe a solicitação seguinte">'+desf+'</span></td>'+
             '<td style="'+tdc+';text-align:right;white-space:nowrap"><span style="'+sub+'">'+(parseFloat(h2.it.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(h2.it.unidade||'')+'</span></td>'+
             '<td style="'+tdc+'">'+h2.info.st+'</td>'+
-            '<td style="'+tdc+'"><div style="max-width:180px;overflow-wrap:break-word">'+(h2.info.c&&h2.info.c.fornecedorNome?'<span style="'+sub+'">'+escapeHtml(h2.info.c.fornecedorNome)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+/* v252 */
+            '<td style="'+tdc+'"><div style="max-width:180px;overflow-wrap:break-word;white-space:normal">'+(h2.info.c&&h2.info.c.fornecedorNome?'<span style="'+sub+'">'+escapeHtml(h2.info.c.fornecedorNome)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</div></td>'+/* v252 */
             '<td style="'+tdc+'">'+h2.info.colPed+'</td>'+
             '<td style="'+tdc+'">'+h2.info.colCompra+'</td>'+
             '<td style="'+tdc+'">'+h2.info.colStPed+'</td>'+/* v251 */
@@ -37671,9 +37704,17 @@ function getConversasVisiveis(){
     const gestor=(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial');
     return conversas.filter(c=>{
       // v245 — FIO ÚNICO POR GRUPO (ordem do dono 07/10: "todas as mensagens do grupo têm que
-      // aparecer para todos que têm acesso"): grupo é da EMPRESA (os dois números são membros) —
-      // aparece no menu de QUALQUER número que o usuário acessa, independente do numeroLecare do fio.
-      if(c && c.grupo) return gestor || meus.length>0;
+      // aparecer para todos que têm acesso"): grupo é da EMPRESA — aparece para quem tem acesso.
+      // v254 — REFINO (reporte do dono 22/10: grupos só-Emilayne na aba Tairine): a premissa de 07/10
+      // era "os dois números são membros", mas grupos de marketing têm UM número só. O grupo aparece
+      // apenas nas abas dos números MEMBROS (numerosMembros: evidência de webhooks, mantida por cron
+      // SQL de 5min + backfill 22/10); fio legado sem o campo cai no numeroLecare. "Equipe comercial"
+      // (E+T) segue nas duas abas — a ordem de 07/10 continua valendo onde o grupo existe de fato.
+      if(c && c.grupo){
+        if(!(gestor || meus.length>0)) return false;
+        const _mem=(Array.isArray(c.numerosMembros)&&c.numerosMembros.length)?c.numerosMembros:[_waNumDaConv(c)];
+        return _mem.includes(numAtivo);
+      }
       if(_waNumDaConv(c)!==numAtivo) return false;
       if(gestor) return true;
       if(meus.includes(numAtivo)) return true;      // pool compartilhado: autorizado no numero ve todas dele

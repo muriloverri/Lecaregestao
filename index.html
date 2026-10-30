@@ -4090,6 +4090,14 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <span><b>Sem acesso ao sistema</b> — colaborador só para indicação (ex.: quem produziu). Informe apenas o nome e o setor; não cria login nem senha.</span>
       </label>
     </div>
+    <!-- v255 — DEMITIDO(A) (ordem do dono 29/10): registra o desligamento, bloqueia o acesso na hora e preserva todo o histórico no nome do colaborador -->
+    <div id="u-demitido-wrap" style="background:var(--st-bad-bg);border:.5px solid var(--st-bad-bd,var(--border));border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;display:none">
+      <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;margin:0">
+        <input type="checkbox" id="u-demitido" style="width:14px;height:14px;accent-color:#B00020;margin-top:1px">
+        <span><b>🚫 Demitido(a)</b> — registra o desligamento: o acesso é bloqueado imediatamente (login e sessões abertas) e TODO o histórico — conversas, vendas, produtividade, comissões — permanece no nome do colaborador. Desmarcar = readmissão.</span>
+      </label>
+      <div id="u-demitido-info" style="font-size:11px;color:var(--st-bad-tx);margin-top:4px"></div>
+    </div>
     <div class="form-row"><div class="form-group"><label>Nome completo</label><input type="text" id="u-nome"></div><div class="form-group" id="u-login-wrap"><label>Usuário (login)</label><input type="text" id="u-login"></div></div>
     <div class="form-row" id="u-senha-row"><div class="form-group"><label>Senha</label><div style="position:relative"><input type="password" id="u-senha" placeholder="Mín. 12 — maiúsc., minúsc., número e símbolo" style="padding-right:38px;width:100%;box-sizing:border-box"><button type="button" title="Segure para ver" tabindex="-1" onmousedown="_pwHold('u-senha',1)" onmouseup="_pwHold('u-senha',0)" onmouseleave="_pwHold('u-senha',0)" ontouchstart="_pwHold('u-senha',1)" ontouchend="_pwHold('u-senha',0)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;padding:2px;line-height:1">👁</button></div></div><div class="form-group"><label>Confirmar Senha</label><div style="position:relative"><input type="password" id="u-senha2" style="padding-right:38px;width:100%;box-sizing:border-box"><button type="button" title="Segure para ver" tabindex="-1" onmousedown="_pwHold('u-senha2',1)" onmouseup="_pwHold('u-senha2',0)" onmouseleave="_pwHold('u-senha2',0)" ontouchstart="_pwHold('u-senha2',1)" ontouchend="_pwHold('u-senha2',0)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;padding:2px;line-height:1">👁</button></div></div></div>
     <div class="form-row" id="u-perfil-row">
@@ -5282,7 +5290,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v254';
+var APP_VERSION = 'v255';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7059,6 +7067,13 @@ async function doLogin(){
     try{ await _sb.auth.signOut(); }catch(e){}
     return;
   }
+  // v255 — DEMITIDO(A): colaborador desligado não entra, mesmo com a senha certa (o histórico
+  // permanece no nome dele; a readmissão é desmarcar o status no cadastro de usuários).
+  if(uCandidate.demitido){
+    _mostrarErro('Acesso bloqueado: colaborador desligado da empresa'+(uCandidate.demitidoEm?' em '+fmtDate(uCandidate.demitidoEm):'')+'. Fale com o administrador.');
+    try{ await _sb.auth.signOut(); }catch(e){}
+    return;
+  }
   const u = uCandidate;
   currentUser=u;
   await _reconciliarPerfis(); // v88 — UI sempre bate com o RLS (corrige u.perfil/setores se o blob divergiu)
@@ -7074,7 +7089,10 @@ async function doLogin(){
   document.getElementById('sb-role').textContent=perfilLabels[u.perfil]||(u.setores?.length?'Usuário — '+u.setores.map(s=>SETORES[s]?.label||s).join(', '):'Usuário');
   const isAdmin=u.perfil==='admin';
   const isComercial=PERFIS_COMERCIAIS.includes(u.perfil);
-  ['nav-usuarios','nav-auditoria','nav-relatorio'].forEach(id=>document.getElementById(id).classList.toggle('hidden',!isAdmin));
+  ['nav-auditoria','nav-relatorio'].forEach(id=>document.getElementById(id).classList.toggle('hidden',!isAdmin));
+  // v255 — ordem do dono 29/10: tela Usuários para admin E diretor comercial (o diretor já geria
+  // perfis operacionais pela regra v217; agora enxerga a tela — a trava real segue na edge admin-user)
+  document.getElementById('nav-usuarios').classList.toggle('hidden', !(isAdmin || u.perfil==='diretor_comercial'));
   const _canEquipes=u.perfil==='admin'||u.perfil==='diretor_comercial';
   document.getElementById('nav-equipes')?.classList.toggle('hidden',!_canEquipes);
   // First show ALL nav items, then hide what this user can't see
@@ -9066,6 +9084,11 @@ function openUserModal(id){
   // Coordinator sector checkboxes
   document.getElementById('u-coord-setor-cb').innerHTML=SETOR_KEYS.map(k=>`<div class="cb-item"><input type="checkbox" id="ccs-${k}" value="${k}" ${u&&u.coordSetores&&u.coordSetores.includes(k)?'checked':''}><label for="ccs-${k}">${SETORES[k].label}</label></div>`).join('');
   document.getElementById('u-sem-acesso').checked=!!(u&&u.semAcesso); // v131 — colaborador sem acesso
+  // v255 — demitido(a): só na EDIÇÃO de usuário com conta (colaborador sem acesso não tem o que bloquear)
+  { const _dw=document.getElementById('u-demitido-wrap'); if(_dw) _dw.style.display=(u && !u.semAcesso)?'':'none';
+    const _dc=document.getElementById('u-demitido'); if(_dc) _dc.checked=!!(u&&u.demitido);
+    const _di=document.getElementById('u-demitido-info');
+    if(_di) _di.textContent=(u&&u.demitido)?('Desligamento registrado'+(u.demitidoEm?' em '+fmtDate(u.demitidoEm):'')+(u.demitidoPor?' por '+u.demitidoPor:'')+'.'):''; }
   togglePerfilUI();
   toggleSemAcessoUI();
   document.getElementById('user-overlay').classList.add('open');
@@ -9193,6 +9216,17 @@ async function saveUser(){
       u.name=nome;u.login=login;u.perfil=perfil;
       u.setores=effSetores;u.coordSetores=effCoordSetores;u.coordenadorId=effCoordenadorId;u.verEquipe=effVerEquipe;
       _syncAtendenteEquipe(u.id); // v217
+      // v255 — DEMITIDO(A) (ordem do dono 29/10): marca o desligamento (carimbo + autor), bloqueia o
+      // login, tira dos fluxos ativos (ativo=false — a régua ativo/semAcesso já rege equipes, pool e
+      // seletores) e DERRUBA as sessões abertas na hora (kicked; o heartbeat encerra em ~30s).
+      // Nome e histórico permanecem. Desmarcar = readmissão explícita (reativa o acesso).
+      { const _dem=!!document.getElementById('u-demitido')?.checked;
+        if(_dem && !u.demitido){
+          u.demitido=true; u.demitidoEm=today(); u.demitidoPor=(currentUser&&currentUser.name)||'—'; u.ativo=false;
+          try{ await _sb.from('sessions').update({ kicked:true }).eq('user_id', String(u.id)); }catch(_e){ /* best-effort — o login já está bloqueado */ }
+        } else if(!_dem && u.demitido){
+          delete u.demitido; delete u.demitidoEm; delete u.demitidoPor; u.ativo=true;
+        } }
       // 3) sincroniza perfil/setores em user_profiles (fonte da verdade da RLS)
       const p=await _sb.from('user_profiles').update({ perfil, setores:effSetores, coord_setores:effCoordSetores, coordenador_id:effCoordenadorId, updated_at:new Date().toISOString() }).eq('login', login);
       if(p.error) console.warn('user_profiles update falhou:', p.error.message);
@@ -22758,9 +22792,10 @@ function renderUsers(){
     const perfilLabel=perfilLabels[u.perfil]||u.perfil;
     const coordInfo=u.perfil==='atendente'&&u.coordenadorId?`<div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">Equipe: ${users.find(x=>x.id===u.coordenadorId)?.name||'—'}</div>`:'';
     const verEquipeInfo=u.perfil==='atendente'?`<div style="font-size:10px;color:var(--text-tertiary);margin-top:1px">${u.verEquipe?'👥 Vê toda a equipe':'👤 Vê apenas próprios leads'}</div>`:'';
+    const demitidoInfo=u.demitido?`<div style="font-size:10px;font-weight:700;color:var(--st-bad-tx);margin-top:2px">🚫 Demitido(a)${u.demitidoEm?' em '+fmtDate(u.demitidoEm):''} — acesso bloqueado; histórico preservado</div>`:''; // v255
     const isComercial=PERFIS_COMERCIAIS.includes(u.perfil);
     const tags=u.perfil==='admin'?`<span class="sector-tag" style="background:${c}22;color:${c}">Acesso total</span>`:isComercial?`<span class="sector-tag" style="background:${c}22;color:${c}">${perfilLabel}</span>`:(u.setores||[]).map(s=>`<span class="sector-tag" style="background:${SETORES[s]?.color||'#888'}22;color:${SETORES[s]?.color||'#888'}">${SETORES[s]?.label||s}</span>`).join('');
-    return`<div class="card"><div class="card-top"><div class="avatar" style="background:${c}22;color:${c}">${initials(u.name)}</div><div><div class="card-name">${u.name}</div><div class="card-sub">${u.semAcesso?'Colaborador · 🚫 sem acesso ao sistema':perfilLabel+' · @'+u.login}</div>${coordInfo}${verEquipeInfo}</div></div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px">${tags}</div><div class="card-actions"><button onclick="openUserModal('${u.id}')" style="font-size:12px;padding:5px 12px">Editar</button>${u.perfil!=='admin'?`<button onclick="confirmDel('user','${u.id}','${u.name.replace(/'/g,"\\'")}')" style="font-size:12px;padding:5px 12px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">Excluir</button>`:''}</div></div>`;
+    return`<div class="card"><div class="card-top"><div class="avatar" style="background:${c}22;color:${c}">${initials(u.name)}</div><div><div class="card-name">${u.name}</div><div class="card-sub">${u.semAcesso?'Colaborador · 🚫 sem acesso ao sistema':perfilLabel+' · @'+u.login}</div>${coordInfo}${verEquipeInfo}${demitidoInfo}</div></div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px">${tags}</div><div class="card-actions"><button onclick="openUserModal('${u.id}')" style="font-size:12px;padding:5px 12px">Editar</button>${u.perfil!=='admin'?`<button onclick="confirmDel('user','${u.id}','${u.name.replace(/'/g,"\\'")}')" style="font-size:12px;padding:5px 12px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">Excluir</button>`:''}</div></div>`;
   }).join('');
 }
 
@@ -22812,6 +22847,9 @@ function toggleSidebar(){ const sb=document.getElementById('sidebar'); if(!sb) r
 try{ if(localStorage.getItem('lecare_sidebar_col')==='1'){ const _sb=document.getElementById('sidebar'); if(_sb) _sb.classList.add('collapsed'); } }catch(_){}
 function showPage(p){
   const _t0=performance.now(); // v204 — medidor discreto (só loga no console se a troca passar de 300ms)
+  // v255 — portão da tela Usuários (ordem do dono 29/10: só admin e diretor comercial); vale também
+  // p/ chamada direta — menu escondido não é trava.
+  if(p==='usuarios' && !(currentUser && (currentUser.perfil==='admin' || currentUser.perfil==='diretor_comercial'))) p='dashboard';
   _currentPage=p;
   // v204 — badges DEPOIS da troca de página: o recálculo (getAlerts em ~2.500 pedidos + leads)
   // rodava ANTES da tela trocar e era parte do delay do clique. Adiado ~50ms, resultado idêntico.
@@ -30520,6 +30558,7 @@ function renderDashConversas(){
 }
 
 function setDcSubTab(tab){
+  if(typeof _podeVerDcDashboard==='function' && !_podeVerDcDashboard() && tab!=='atendimento') tab='atendimento'; // v255 — comercial só vê Atendimento
   activeDcSubTab = tab;
   document.querySelectorAll('.dcsub-tab').forEach(b=>b.classList.toggle('active', b.dataset.dcsub===tab));
   document.querySelectorAll('.dcsub-pg').forEach(pg=>{
@@ -30537,6 +30576,11 @@ function _atualizaAbaAlertas(){
 }
 
 function setDcTab(tab){
+  // v255 — VISIBILIDADE (ordens do dono 27/10, incl. refino da sub-aba): a aba Dashboard fica
+  // aberta a todos da tela, mas para o SETOR COMERCIAL (coordenador/atendente/SDR) somente a
+  // sub-aba 💬 Atendimento é visível — Visão Geral/Funil/Análise/Recompra/Atenção/Leads são de
+  // admin, diretor comercial e financeiro (_podeVerDcDashboard). Metas segue aberta a todos
+  // (edição só admin, v247); Comissionamento (v136) e Time Comercial (v249) intactos.
   // v136 — aba Comissionamento é RESTRITA (admin, diretora comercial, financeiro)
   const _tc=document.getElementById('dc-tab-comissao');
   if(_tc) _tc.style.display=_podeVerComissao()?'':'none';
@@ -30554,7 +30598,19 @@ function setDcTab(tab){
   if(tab==='metas') renderMetas();
   if(tab==='comissao') renderComissao();
   if(tab==='time') renderTimeComercial();
-  if(tab==='dashboard'){ renderDashComercial(); renderDcPositivacao(); if(typeof renderCrossSell==='function') renderCrossSell(); }
+  if(tab==='dashboard'){ _dcAplicarSubRestricao(); renderDashComercial(); renderDcPositivacao(); if(typeof renderCrossSell==='function') renderCrossSell(); }
+}
+// v255 — sub-abas do Dashboard restritas (ordem do dono 27/10): setor comercial vê SÓ Atendimento;
+// Alertas mantém a regra própria v105 (admin/diretor). Chokepoint duplo: botões escondidos aqui e
+// o setDcSubTab recusa sub-aba não permitida (link direto/estado salvo não fura a regra).
+function _dcAplicarSubRestricao(){
+  const full=_podeVerDcDashboard();
+  document.querySelectorAll('.dcsub-tab').forEach(b=>{
+    if(b.id==='dcsub-tab-alertas') return;           // regra própria (v105)
+    if(b.dataset.dcsub==='atendimento'){ b.style.display=''; return; }
+    b.style.display=full?'':'none';
+  });
+  if(!full && activeDcSubTab!=='atendimento') setDcSubTab('atendimento');
 }
 
 // ── v249: TIME COMERCIAL ───────────────────────────────────
@@ -30565,6 +30621,14 @@ function setDcTab(tab){
 function _podeVerTimeComercial(){
   const u=currentUser; if(!u) return false;
   return u.perfil==='admin' || u.perfil==='diretor_comercial';
+}
+// v255 — aba DASHBOARD do Dashboard Comercial restrita (ordem do dono 27/10): admin, diretor
+// comercial e setor financeiro. O setor comercial (coordenador/atendente/SDR) mantém a TELA e vê
+// a aba Metas; a edição das metas continua exclusiva do admin (v247).
+function _podeVerDcDashboard(){
+  const u=currentUser; if(!u) return false;
+  return u.perfil==='admin' || u.perfil==='diretor_comercial'
+    || (u.setores||[]).includes('financeiro') || (u.coordSetores||[]).includes('financeiro');
 }
 var _tcMes=new Date().toISOString().slice(0,7);
 var _tcRows=[], _tcMesCarregado='', _tcAt=0, _tcBusy=false;
@@ -37404,6 +37468,30 @@ function getOuCriarConversa(clienteId, telefone){
   // previsível, o upsert converge para a MESMA linha e a união entre abas junta tudo sozinha.
   // Sem telefone (raro): mantém o id aleatório antigo.
   const _numConv=(_numOut||_waNumPadrao()||'E');
+  // v255 — GUARDA DO NÚMERO NA CRIAÇÃO (incidente J.m. Odontologia 20-27/10, ordem do dono "arrume
+  // imediatamente e definitivamente"): gestora com os DOIS números no menu E abriu cliente atendido
+  // no T → o front criava um fio E silencioso e o envio saía FISICAMENTE pelo número da Emilayne;
+  // a cliente passou a receber de dois números e respondeu ao errado. Regra: criar fio novo num
+  // número quando o MESMO contato (telefone) já tem conversa REAL em OUTRO número é BLOQUEADO —
+  // o atendimento segue no fio existente; só gestor cria deliberadamente, com confirmação explícita.
+  // Reabertura no MESMO número nunca passa por aqui (o lookup acima acha o fio). Modo 1 número intacto.
+  if(_waModoDois()){
+    const _outros=(conversas||[]).filter(c=>c && !c.grupo && c.clienteId===clienteId
+      && Array.isArray(c.mensagens) && c.mensagens.length>0
+      && _waNumDaConv(c)!==_numConv
+      && (!tk || !_telKey(c.telefone) || _telKey(c.telefone)===tk));
+    if(_outros.length){
+      const _ex=_outros.sort((a,b)=>(b.ultimaMsgEm||0)-(a.ultimaMsgEm||0))[0];
+      const _rotN=function(n){ const i=(typeof _waNumInfo==='function')?_waNumInfo(n):null; return (i&&i.rotulo)||n; };
+      const _gestor=currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial');
+      const _criaMesmoAssim=_gestor && confirm('⚠ Este contato já é atendido pelo número '+_rotN(_waNumDaConv(_ex))+'.\n\nCriar uma conversa NOVA pelo número '+_rotN(_numConv)+' fará o cliente receber mensagens de DOIS números da Lecare (foi assim que a cliente J.m. passou a responder ao número errado).\n\nOK = criar mesmo assim (deliberado)\nCancelar = continuar no fio existente do número '+_rotN(_waNumDaConv(_ex)));
+      if(!_criaMesmoAssim){
+        if(!_gestor){ try{ alert('Este contato é atendido pelo número '+_rotN(_waNumDaConv(_ex))+' — abrindo a conversa existente de lá.'); }catch(_e){} }
+        _sincronizarDonoConversa(_ex);
+        return _ex;
+      }
+    }
+  }
   const _idDet = tk ? ('conv_'+String(clienteId).replace(/\W/g,'')+'_'+tk+'_'+String(_numConv).replace(/\W/g,'')) : ('conv_'+Date.now()+Math.floor(Math.random()*1000));
   conv = { id:_idDet, clienteId, telefone:tel||'', atendenteId:dono.atendenteId, equipeId:dono.equipeId, canal:'whatsapp', ultimaMsg:'', ultimaMsgEm:null, naoLidas:0, mensagens:[], status:'ativa', criadaEm:Date.now(), numeroLecare:(_numOut||_waNumPadrao()) };
   conversas.push(conv);
@@ -39040,9 +39128,37 @@ function _waQuoteTxt(r){
   return '';
 }
 // v109 — rola até a mensagem citada e dá um destaque rápido
-function _waScrollToMsg(mid){
-  const el=document.querySelector('.wa-bubble[data-mid="'+(mid||'').replace(/"/g,'')+'"]');
+// v255 — alvo fora da JANELA de render (150 últimas, v150): expande a janela e re-renderiza antes
+// de rolar (o clique na citação de mensagem antiga "não fazia nada" — reporte do dono 30/10).
+function _waScrollToMsg(mid, convId){
+  const sel='.wa-bubble[data-mid="'+(mid||'').replace(/"/g,'')+'"]';
+  let el=document.querySelector(sel);
+  if(!el && convId){
+    _convJanelaMsgs[convId]=999999;
+    try{ renderConversaMsgs(convId); }catch(_e){ try{ renderConversaTela(convId); }catch(_e2){} }
+    el=document.querySelector(sel);
+  }
   if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.classList.add('wa-flash'); setTimeout(()=>el.classList.remove('wa-flash'),1200); }
+}
+// v255 — clique na citação SEM alvo local (reporte do dono 30/10, caso Ana Cecília): tenta baixar a
+// thread COMPLETA do servidor (boot leve = 30 msgs) e rolar até a mensagem; se ela não existe no
+// sistema (enviada pelo celular antes do registro, apagada, ou anterior ao sistema — e o WhatsApp
+// não entrega o conteúdo da citação no webhook), avisa com todas as letras em vez de clique morto.
+async function _waQuoteBuscar(convId, refId){
+  const cv=(conversas||[]).find(c=>String(c.id)===String(convId)); if(!cv) return;
+  const acha=()=> (cv.mensagens||[]).find(x=>[x.provedorMsgId,x.providerMsgId,x.zapiMessageId,x.id].filter(Boolean).map(String).includes(String(refId)));
+  let alvo=acha();
+  if(!alvo && (Number((typeof _convMsgsTotais!=='undefined'&&_convMsgsTotais[String(convId)])||0)) > (cv.mensagens||[]).length){
+    try{ _convHidratadas[convId]=false; await _convHidratar(cv); }catch(_e){}
+    alvo=acha();
+  }
+  if(alvo && alvo.id){
+    _convJanelaMsgs[convId]=999999;
+    try{ renderConversaMsgs(convId); }catch(_e){ try{ renderConversaTela(convId); }catch(_e2){} }
+    _waScrollToMsg(String(alvo.id), convId);
+    return;
+  }
+  alert('A mensagem citada não está no histórico do sistema.\n\nEla é anterior ao registro desta conversa (ex.: enviada pelo celular antes do sistema) ou foi apagada — e o WhatsApp não entrega o conteúdo da citação. Confira no aparelho ou peça ao cliente para reenviar.');
 }
 // v111 — monta SÓ o HTML das mensagens (reusado no render completo E no refresh do realtime, que atualiza a lista sem tocar no campo de digitar)
 // v150 : JANELA DE RENDER — conversa gigante (Ana Cecilia: 3.200 msgs) redesenhava TUDO a cada evento e
@@ -39111,15 +39227,15 @@ function _convMsgsHtml(conv){
       if(m.respostaA){
         const _ref=(conv.mensagens||[]).find(x=>[x.provedorMsgId,x.providerMsgId,x.zapiMessageId,x.id].filter(Boolean).map(String).includes(String(m.respostaA)));
         if(_ref){ _q={ aut:(_ref.de==='atendente'?'Você':(nome||'Cliente')), txt:_waQuoteTxt(_ref), mid:_ref.id||'' }; }
-        else if(m.replyTo){ _q={ aut:(m.replyTo.mine?'Você':(nome||'Cliente')), txt:(m.replyTo.texto||''), mid:'' }; }
-        else { _q={ aut:'', txt:'mensagem citada', mid:'' }; }
+        else if(m.replyTo){ _q={ aut:(m.replyTo.mine?'Você':(nome||'Cliente')), txt:(m.replyTo.texto||''), mid:'', ref:String(m.respostaA) }; } // v255 — clique busca no servidor
+        else { _q={ aut:'', txt:'mensagem citada — toque para localizar', mid:'', ref:String(m.respostaA) }; } // v255
       } else if(m.replyTo){ _q={ aut:(m.replyTo.mine?'Você':(nome||'Cliente')), txt:(m.replyTo.texto||''), mid:'' }; }
     }
     return _diaChip+`<div class="wa-row ${mine?'mine':''}">
       <div class="wa-bubble ${mine?'out':'in'}" data-mid="${m.id||''}">
         ${autor?`<div class="wa-author${mine?'':' in'}">${escapeHtml(autor)}</div>`:''}
         ${(m.apagada||m.apagadaPeloCliente)?`<div style="margin-bottom:2px"><span style="font-size:9px;font-weight:700;letter-spacing:.4px;background:#ececea;color:#77756f;border:.5px solid #d9d7d2;border-radius:8px;padding:1px 7px;text-transform:uppercase">${m.apagadaPeloCliente?'Excluída pelo cliente':'Excluída'}</span></div>`:''}
-        ${_q?`<div class="wa-quote" ${_q.mid?`onclick="_waScrollToMsg('${_q.mid}')" style="cursor:pointer"`:''}>${_q.aut?`<div class="wa-quote-aut">${escapeHtml(_q.aut)}</div>`:''}<div class="wa-quote-txt">${escapeHtml((_q.txt||'📎 anexo').slice(0,120))}</div></div>`:''}
+        ${_q?`<div class="wa-quote" ${_q.mid?`onclick="_waScrollToMsg('${_q.mid}','${conv.id}')" style="cursor:pointer"`:(_q.ref?`onclick="_waQuoteBuscar('${conv.id}','${_q.ref}')" style="cursor:pointer" title="Localizar a mensagem citada (busca no servidor se preciso)"`:'')}>${_q.aut?`<div class="wa-quote-aut">${escapeHtml(_q.aut)}</div>`:''}<div class="wa-quote-txt">${escapeHtml((_q.txt||'📎 anexo').slice(0,120))}</div></div>`:''}
         ${m.texto?`<span class="wa-txt"${(m.apagada||m.apagadaPeloCliente)?' style="opacity:.55"':''}>${escapeHtml(m.texto)}</span>`:''}
         ${(m.apagada&&!m.texto&&!m.anexo)?`<span class="wa-txt" style="font-style:italic;color:#8696a0">🚫 mensagem apagada (conteúdo não preservado)</span>`:''}
         ${(m.apagada||m.apagadaPeloCliente)?(m.anexo?`<div style="opacity:.55">${_waAnexoHtml(m.anexo)}</div>`:''):_waAnexoHtml(m.anexo)}

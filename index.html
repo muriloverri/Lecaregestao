@@ -5290,7 +5290,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v255';
+var APP_VERSION = 'v256';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5799,6 +5799,7 @@ const STATUS_DEADLINES = [
   { linha:'personalizada', setor:'designer', status:'Envio p/ aprovação',   limitDay:3,  level:'warn', desc:'Envio para aprovação interna' },
   { linha:'personalizada', setor:'designer', status:'Aprovado',             limitDay:4,  level:'warn', desc:'Aprovação concluída' },
   { linha:'personalizada', setor:'designer', status:'Montagem pranchas',    limitDay:5,  level:'warn', desc:'Montagem das pranchas' },
+  { linha:'personalizada', setor:'designer', status:'Prancha finalizada',   limitDay:5,  level:'warn', desc:'Prancha finalizada (medição — mesmo prazo da montagem)' }, // v256
   { linha:'personalizada', setor:'designer', status:'Enviado p/ gráfica',   limitDay:6,  level:'warn', desc:'Envio para gráfica' },
   { linha:'personalizada', setor:'designer', status:'Rótulos recebidos',    limitDay:9,  level:'crit', desc:'Rótulos chegaram na Lecare' },
   { linha:'personalizada', setor:'designer', status:'Conferido e liberado', limitDay:9,  level:'crit', desc:'Rótulos conferidos e liberados' },
@@ -5873,9 +5874,9 @@ const SETORES = {
     statuses:['Não iniciado','Solicitado compra','Separação completa']},
   compras:   {label:'Compras',   color:'#D4537E', // v156 — escada nova (os dois 'finalizado' são o mesmo degrau); 'Compra finalizada' = legado (pedidos pré-virada)
     statuses:['Não iniciado','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Compra finalizada','Produto entregue']},
-  designer:  {label:'Designer',  color:'#0F6E56',
+  designer:  {label:'Designer',  color:'#0F6E56', // v256 — 'Prancha finalizada' (medição do tempo de prancha; ordem do dono 03/11)
     statuses:['Não iniciado','Em produção','Envio p/ aprovação','Aprovado',
-              'Montagem pranchas','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno']},
+              'Montagem pranchas','Prancha finalizada','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno']},
   producao:  {label:'Produção',  color:'#533AB7',
     statuses:['Não iniciado','Conferência inicial','Liberado produção','Checagem ativos',
               'Checagem embalagens','Em produção','Finalizado e conf.','Enviado para expedição']},
@@ -6573,7 +6574,7 @@ const STATUS_SEQUENCE = {
   financeiro: ['Não iniciado','Concluído','Emitido NF','Emitido sem NF'],
   estoque:    ['Não iniciado','Solicitado compra','Separação completa'],
   compras:    ['Não iniciado','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Compra finalizada','Produto entregue'], // v156 — novos rótulos por lado
-  designer:   ['Não iniciado','Em produção','Envio p/ aprovação','Aprovado','Montagem pranchas','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno'],
+  designer:   ['Não iniciado','Em produção','Envio p/ aprovação','Aprovado','Montagem pranchas','Prancha finalizada','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno'], // v256
   producao:   ['Não iniciado','Conferência inicial','Liberado produção','Checagem ativos','Checagem embalagens','Em produção','Finalizado e conf.','Enviado para expedição'],
   rotulos:    ['Não iniciado','Em andamento','Finalizado'],
   expedicao:  ['Não iniciado','Distribuido tarefas','Em expedição','Concluído','Envio Parcial','Enviado','Entregue Parcial','Entregue'],
@@ -6714,7 +6715,7 @@ function badgeClass(st,alertLevel){
   if(st==='Entregue Parcial')return'b-inf'; // v131 — entrega parcial de volumes (azul, distinto de Enviado/Entregue)
   const ok=['Concluído','Concluído (caixa)','Finalizado','Entregue','Enviado','Fechamento concluído','Produtos informados','Separação completa','Produto entregue','Compra finalizada','Aprovado','Emitido NF','Emitido s/ NF','Emitido sem NF','Rótulos recebidos','Separação concluída','Finalizado e conferido','Conferido e liberado','Enviado para expedição','Finalizado e conf.','Rótulo Interno'];
   if(ok.includes(st))return'b-ok';
-  const mid=['Em produção','Em separação','Em andamento','Em expedição','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Montagem pranchas','Envio p/ aprovação','Enviado p/ gráfica','Conferência inicial','Checagem ativos','Checagem embalagens','Solicitado compra','Liberado produção','Distribuido tarefas','Rotulando'];
+  const mid=['Em produção','Em separação','Em andamento','Em expedição','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Montagem pranchas','Prancha finalizada','Envio p/ aprovação','Enviado p/ gráfica','Conferência inicial','Checagem ativos','Checagem embalagens','Solicitado compra','Liberado produção','Distribuido tarefas','Rotulando'];
   if(mid.includes(st))return'b-mid';
   return'b-inf';
 }
@@ -6771,6 +6772,17 @@ function _sepPodeAlterar(){ return !!(currentUser&&currentUser.perfil==='admin')
 // v238 — leitura do COMPRAS pelo setor estoque (Gestão a Vista): quem tem estoque e NÃO tem compras
 function _temSetorEstoque(){ return !!(currentUser && (((currentUser.setores||[]).includes('estoque'))||((currentUser.coordSetores||[]).includes('estoque')))); }
 function _temSetorExpedicao(){ return !!(currentUser && (((currentUser.setores||[]).includes('expedicao'))||((currentUser.coordSetores||[]).includes('expedicao')))); } // v243 — expedicao tambem ve o modal de Compras em leitura (ordem do dono 01/10: Everton como o Luiz)
+// v256 — PAPEL NO DESIGNER (ordem do dono 03/11): COLABORADOR = perfil 'user' com o setor designer
+// e SEM a coordenação dele (Michael/Kaiky). Marca só os degraus do próprio trabalho, avançando:
+// Em produção → Envio p/ aprovação (ciclo dos rótulos) e Montagem pranchas → Prancha finalizada
+// (ciclo da prancha). Aprovado, regressões e tudo após Prancha finalizada = coordenadora (coordSetores
+// designer) e administrador. Perfis de gestão (gerente geral etc.) ficam fora da restrição.
+function _designerColab(){
+  const u=currentUser; if(!u) return false;
+  if(u.perfil==='admin') return false;
+  return u.perfil==='user' && (u.setores||[]).includes('designer') && !((u.coordSetores||[]).includes('designer'));
+}
+const _DES_COLAB_STATUS=['Em produção','Envio p/ aprovação','Montagem pranchas','Prancha finalizada'];
 function canEdit(setor){
   if(!currentUser)return false;
   if(currentUser.perfil==='admin')return true;
@@ -7883,6 +7895,12 @@ function openStatusModal(oid,setor){
       locked = true;
       lockReason = 'Automático — movimentado pela Solicitação de Compra';
     }
+    // v256 — COLABORADOR do Designer (ordem do dono 03/11): só os degraus do próprio trabalho e
+    // sempre avançando — Aprovado, regressões e os degraus pós-prancha são da coordenação/admin.
+    if(setor==='designer' && !locked && _designerColab()){
+      if(!_DES_COLAB_STATUS.includes(s)){ locked=true; lockReason='Degrau da coordenação do Designer'; }
+      else if(si<curIdx){ locked=true; lockReason='Voltar status é com a coordenação/admin'; }
+    }
 
     const lockStyle = locked
       ? 'opacity:0.55;cursor:not-allowed;pointer-events:none;'
@@ -7945,10 +7963,14 @@ function openStatusModal(oid,setor){
     if(!w||!sel) return;
     if(setor==='designer'){
       const execs=_setorExecutores('designer');
-      const atual=(o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorId)||o.designerExecutorId||((currentUser&&_ehSetorExec(currentUser,'designer'))?currentUser.id:'');
-      if(lbl) lbl.textContent='🎨 Quem executou (designer)';
+      // v256 — COLABORADOR: executor é ELE (automático, travado). Coordenação/admin: seletor livre
+      // de sempre (pode indicar qualquer executor, inclusive a própria coordenadora) e corrige engano.
+      const _colabD=_designerColab();
+      const atual=_colabD?currentUser.id:((o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorId)||o.designerExecutorId||((currentUser&&_ehSetorExec(currentUser,'designer'))?currentUser.id:''));
+      if(lbl) lbl.textContent='🎨 Quem executou (designer)'+(_colabD?' — você':'');
       sel.innerHTML='<option value="">— selecione —</option>'+execs.map(u=>'<option value="'+u.id+'"'+(String(u.id)===String(atual)?' selected':'')+'>'+escapeHtml(u.name||u.login||u.id)+'</option>').join('');
-      sel.disabled=false; sel.style.display=''; if(btn)btn.style.display='none'; if(res)res.style.display='none';
+      sel.disabled=!!_colabD; sel.title=_colabD?'Colaborador: o executor é você — a coordenação pode corrigir depois, se preciso':'';
+      sel.style.display=''; if(btn)btn.style.display='none'; if(res)res.style.display='none';
       var _be0=document.getElementById('sm-env-btn'), _re0=document.getElementById('sm-env-resumo');
       if(_be0)_be0.style.display='none'; if(_re0)_re0.style.display='none';
       w.style.display='';
@@ -8157,19 +8179,44 @@ function confirmStatus(){
     return;
   }
 
+  // v256 — CHOKEPOINT do papel no Designer (menu travado não é trava): colaborador só grava os
+  // degraus permitidos e nunca regride — Aprovado, regressão e pós-prancha são da coordenação/admin.
+  if(statusCtx.setor==='designer' && selectedStatus && selectedStatus!==o.statuses.designer && _designerColab()){
+    const _seqD=STATUS_SEQUENCE.designer;
+    const _de=_seqD.indexOf(o.statuses.designer||'Não iniciado'), _para=_seqD.indexOf(selectedStatus);
+    if(!_DES_COLAB_STATUS.includes(selectedStatus) || _para<_de){
+      alert('Este degrau é da coordenação do Designer.\n\nColaborador marca: Em produção, Envio p/ aprovação, Montagem pranchas e Prancha finalizada — sempre avançando. Aprovar ou voltar status é com a coordenadora/administrador.');
+      return;
+    }
+  }
   // ── DEFAULT FLOW (all other sectors) ─────────────────
   const prev=o.statuses[statusCtx.setor];
   if(prev!==selectedStatus){
     addAudit(o,statusCtx.setor,'status',prev,selectedStatus);
     o.statuses[statusCtx.setor]=selectedStatus;
     if(!o.statusDates)o.statusDates={};
-    o.statusDates[statusCtx.setor]={ts:Date.now(),by:currentUser.name,from:prev,to:selectedStatus};
+    // v256 — o registro do setor PRESERVA executor e marcos de medição (antes era substituído inteiro
+    // a cada troca — os carimbos da medição do Designer se perderiam); os demais campos recomeçam.
+    { const _sdPrev=o.statusDates[statusCtx.setor]||{};
+      const _sdNovo={ts:Date.now(),by:currentUser.name,from:prev,to:selectedStatus};
+      if(_sdPrev.executorId!==undefined){ _sdNovo.executorId=_sdPrev.executorId; _sdNovo.executorNome=_sdPrev.executorNome; }
+      if(_sdPrev.marcos) _sdNovo.marcos=_sdPrev.marcos;
+      o.statusDates[statusCtx.setor]=_sdNovo; }
+    // v256 — MARCOS DE MEDIÇÃO do Designer (ordem do dono 03/11): carimbo por degrau; retrabalho
+    // sobrescreve (mede o ÚLTIMO ciclo). Rótulos: Em produção → Envio p/ aprovação; Prancha:
+    // Montagem pranchas → Prancha finalizada. Vale a partir de agora (pedidos antigos sem marcos).
+    if(statusCtx.setor==='designer'){
+      const _mc=(o.statusDates.designer.marcos=o.statusDates.designer.marcos||{});
+      _mc[selectedStatus]=Date.now();
+    }
     if(statusCtx.setor==='expedicao'&&['Enviado','Entregue'].includes(selectedStatus))
       o.envioReal=new Date().toISOString().split('T')[0];
   }
   // v118 — grava o EXECUTOR do DESIGNER (produtividade por rótulos). PRODUÇÃO é por produto (modal próprio: openProdRespModal).
   if(statusCtx.setor==='designer' && selectedStatus){
-    const _ex=document.getElementById('sm-exec'); const _exid=_ex?_ex.value:'';
+    const _ex=document.getElementById('sm-exec');
+    // v256 — colaborador: o executor é SEMPRE ele (ignora o DOM; o seletor já vem travado nele)
+    const _exid=_designerColab()?String(currentUser.id):(_ex?_ex.value:'');
     const _u=_exid?users.find(x=>String(x.id)===String(_exid)):null;
     o.designerExecutorId=_exid||''; o.designerExecutorNome=(_u&&_u.name)||'';
     if(!o.statusDates)o.statusDates={}; if(!o.statusDates.designer)o.statusDates.designer={};
@@ -24870,6 +24917,23 @@ function calcOTD(meses=1){
   return Math.round((noPrazo/entregues.length)*100);
 }
 
+// v256 — MINUTOS ÚTEIS entre dois instantes (ordem do dono 03/11): janela de trabalho 08h–18h,
+// somente dias úteis do calendário oficial do sistema (_isBday: seg–sex menos feriados cadastrados).
+// Exemplo do dono: 17h de um dia → 9h do seguinte = 120 min (17–18h + 8–9h).
+function _minUteisEntre(t1,t2){
+  if(!t1||!t2||t2<=t1) return 0;
+  let tot=0; const d=new Date(t1); d.setHours(0,0,0,0);
+  for(let g=0; g<400 && d.getTime()<t2; g++, d.setDate(d.getDate()+1)){
+    if(typeof _isBday==='function' && !_isBday(_toDateStr(d))) continue;
+    const ini=new Date(d); ini.setHours(8,0,0,0);
+    const fim=new Date(d); fim.setHours(18,0,0,0);
+    const a=Math.max(t1, ini.getTime()), b=Math.min(t2, fim.getTime());
+    if(b>a) tot+=(b-a)/60000;
+  }
+  return Math.round(tot);
+}
+// v256 — mês local de um timestamp (mesma régua do seletor do quadro)
+function _mesDeTs(ts){ const d=new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 // v118 — Produtividade do Designer: conta pedidos por executor no mês (executor escolhido no status do Designer)
 function renderProdutividadeDesigner(){
   const el=document.getElementById('dc-prod-designer'); if(!el) return;
@@ -24895,14 +24959,52 @@ function renderProdutividadeDesigner(){
   const rows=Object.entries(cnt).sort((a,b)=>b[1]-a[1]);
   const tot=rows.reduce((s,r)=>s+r[1],0);
   const maxN=Math.max(1,...rows.map(r=>r[1]));
-  if(!rows.length){ el.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Sem atividades de designer atribuídas neste mês. (O executor é escolhido no status do Designer.)</div>'; return; }
+  // v256 — MEDIÇÃO EM MINUTOS ÚTEIS (ordem do dono 03/11), dois ciclos independentes com as mesmas
+  // duas métricas (tempo médio por pedido e rótulos por minuto; rótulos = nº de itens, régua v118):
+  // RÓTULOS = Em produção → Envio p/ aprovação · PRANCHA = Montagem pranchas → Prancha finalizada.
+  // Fonte: carimbos statusDates.designer.marcos (existem só a partir da v256 — "vale a partir de
+  // agora"); retrabalho sobrescreve o carimbo e mede o último ciclo; mês = mês do FIM do ciclo;
+  // executor = o indicado no pedido. Minutos úteis: 08h–18h em dias úteis do calendário oficial.
+  const _med={ rot:{}, pra:{} };
+  (orders||[]).forEach(function(o){
+    const sd=o.statusDates&&o.statusDates.designer, mc=sd&&sd.marcos; if(!mc) return;
+    const ex=(sd.executorNome)||o.designerExecutorNome||''; if(!ex) return;
+    const nRot=Array.isArray(o.itens)?o.itens.length:0; if(!nRot) return;
+    [['rot','Em produção','Envio p/ aprovação'],['pra','Montagem pranchas','Prancha finalizada']].forEach(function(cfg2){
+      const a=mc[cfg2[1]], b=mc[cfg2[2]];
+      if(!a||!b||b<=a) return;
+      if(_mesDeTs(b)!==mk) return;
+      const min=_minUteisEntre(a,b); if(min<=0) return;
+      const g=(_med[cfg2[0]][ex]=_med[cfg2[0]][ex]||{peds:0,rot:0,min:0});
+      g.peds++; g.rot+=nRot; g.min+=min;
+    });
+  });
+  const _medTab=function(titulo, dados){
+    const ks=Object.keys(dados); if(!ks.length) return '';
+    const th='padding:4px 8px;background:var(--bg-secondary);font-size:10px;font-weight:600;color:var(--text-secondary);text-align:right;border-bottom:.5px solid var(--border)';
+    const td='padding:4px 8px;border-bottom:.5px solid var(--border);font-size:11.5px;text-align:right';
+    return '<div style="font-size:12px;font-weight:600;margin:12px 0 4px">'+titulo+'</div>'+
+      '<table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+';text-align:left">Colaborador</th><th style="'+th+'">Pedidos</th><th style="'+th+'">Rótulos</th><th style="'+th+'">Min úteis</th><th style="'+th+'">Min/pedido</th><th style="'+th+'">Rótulos/min</th></tr></thead><tbody>'+
+      ks.sort(function(x,y){ return dados[y].rot-dados[x].rot; }).map(function(nm){ const g=dados[nm];
+        return '<tr><td style="'+td+';text-align:left;font-weight:600">'+escapeHtml(nm)+'</td>'+
+          '<td style="'+td+'">'+g.peds+'</td><td style="'+td+'">'+g.rot+'</td>'+
+          '<td style="'+td+'">'+g.min.toLocaleString('pt-BR')+'</td>'+
+          '<td style="'+td+'">'+Math.round(g.min/g.peds)+'</td>'+
+          '<td style="'+td+'">'+(g.rot/g.min).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+      }).join('')+'</tbody></table>';
+  };
+  const _medHtml=(_medTab('⏱ Produção de rótulos — Em produção → Envio p/ aprovação', _med.rot)
+    + _medTab('⏱ Montagem de pranchas — Montagem pranchas → Prancha finalizada', _med.pra))
+    || '<div style="font-size:11px;color:var(--text-tertiary);margin-top:10px">⏱ Medição por minutos úteis: sem ciclos concluídos neste mês ainda (os carimbos passaram a existir em 03/11 — os números aparecem conforme os colaboradores atualizarem os status).</div>';
+  const _medRodape='<div style="font-size:10px;color:var(--text-tertiary);margin-top:6px">Minutos ÚTEIS: janela 08h–18h, somente dias úteis do calendário do sistema (ex.: 17h → 9h do dia seguinte = 120 min). Retrabalho (status que volta e avança de novo) mede o último ciclo. Rótulos = nº de itens do pedido.</div>';
+  if(!rows.length){ el.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Sem atividades de designer atribuídas neste mês. (O executor é escolhido no status do Designer.)</div>'+_medHtml+(_medHtml.indexOf('<table')>=0?_medRodape:''); return; }
   el.innerHTML='<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:8px">'+tot+' rótulo(s) no mês · 1 rótulo = 1 item/produto informado (não conta a quantidade)</div>'+rows.map(function(r){ const nome=r[0], n=r[1];
     return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">'+
       '<span style="font-size:12px;color:var(--text-secondary);min-width:90px;flex-shrink:0">'+escapeHtml(nome)+'</span>'+
       '<div style="flex:1;height:16px;background:var(--bg-secondary);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+Math.round(n/maxN*100)+'%;background:#533AB7;border-radius:3px"></div></div>'+
       '<span style="font-size:12px;font-weight:600;min-width:64px;text-align:right">'+n+' rót. <span style="font-size:10px;font-weight:400;color:var(--text-tertiary)">('+(peds[nome]||0)+' ped.)</span></span>'+
     '</div>';
-  }).join('');
+  }).join('')+_medHtml+(_medHtml.indexOf('<table')>=0?_medRodape:'');
 }
 function renderDashboardMelhorias(){
   const hoje = today();
@@ -26185,7 +26287,12 @@ function _applyStatusChange(){
     addAudit(o,statusCtx.setor,'status',prev,selectedStatus);
     o.statuses[statusCtx.setor] = selectedStatus;
     if(!o.statusDates) o.statusDates={};
-    o.statusDates[statusCtx.setor]={ts:Date.now(),by:currentUser?.name||'—',from:prev,to:selectedStatus};
+    // v256 — mesmo merge preservador do fluxo principal (executor/marcos não se perdem na troca)
+    { const _sdPrev=o.statusDates[statusCtx.setor]||{};
+      const _sdNovo={ts:Date.now(),by:currentUser?.name||'—',from:prev,to:selectedStatus};
+      if(_sdPrev.executorId!==undefined){ _sdNovo.executorId=_sdPrev.executorId; _sdNovo.executorNome=_sdPrev.executorNome; }
+      if(_sdPrev.marcos) _sdNovo.marcos=_sdPrev.marcos;
+      o.statusDates[statusCtx.setor]=_sdNovo; }
     if(selectedStatus==='Enviado'||selectedStatus==='Entregue')
       o.envioReal=new Date().toISOString().split('T')[0];
   }

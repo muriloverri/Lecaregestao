@@ -1335,7 +1335,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
             <input type="text" id="ins-busca" placeholder="Buscar insumo (ativo)..." oninput="renderCatSimples('insumo')" style="min-width:220px">
             <button class="btn-primary" id="ins-novo-btn" onclick="openInsumoModal('insumo')">+ Cadastrar insumo</button>
-            <label class="btn-primary" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (ativos/MTP) exportado do Opery, mostra os que ainda NÃO estão no catálogo e cadastra com a sua confirmação — custo do relatório como custo base e markup automático pela CATEGORIA DE CUSTO. Nada é gravado sem confirmar.">📥 Importar ativos<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarAtivosPDF(this)"></label><!-- v187 -->
+            <label class="btn-primary" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (ativos/MTP) exportado do Opery: cadastra os que faltam E atualiza o CUSTO BASE dos já cadastrados que divergirem (v258) — sempre com conferência; preço de venda nunca muda. Nada é gravado sem confirmar.">📥 Importar ativos<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarAtivosPDF(this)"></label><!-- v187 -->
           </div>
           <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Insumo (ativo)</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Quantidade em estoque (na unidade de compra)">Estoque</th><th style="padding:8px 10px;text-align:right" title="Média ponderada das compras efetivadas">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço pago na compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
@@ -1348,8 +1348,10 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
             <input type="text" id="emb-busca" placeholder="Buscar embalagem..." oninput="renderCatSimples('embalagem')" style="min-width:220px">
             <button class="btn-primary" id="emb-novo-btn" onclick="openInsumoModal('embalagem')">+ Cadastrar embalagem</button>
-            <label class="btn-primary" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (embalagens) exportado do Opery, mostra as que ainda NÃO estão no catálogo e cadastra com a sua confirmação — nada é gravado sem confirmar.">📥 Importar embalagens<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarEmbalagensPDF(this)"></label><!-- v170 -->
+            <label class="btn-primary" id="emb-imp-btn" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (embalagens) exportado do Opery, mostra as que ainda NÃO estão no catálogo e cadastra com a sua confirmação — nada é gravado sem confirmar.">📥 Importar embalagens<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarEmbalagensPDF(this)"></label><!-- v170 -->
           </div>
+          <div id="emb-pend-chips" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div><!-- v258 — pendências de classificação/custo -->
+
           <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Embalagem</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Quantidade em estoque (na unidade de compra)">Estoque</th><th style="padding:8px 10px;text-align:right" title="Média ponderada das compras efetivadas">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço pago na compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
             <tbody id="emb-tbody"></tbody>
@@ -1365,7 +1367,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <input type="text" id="ge-busca" placeholder="Buscar grupo..." oninput="renderGruposEmb()" style="min-width:220px">
             <button class="btn-primary" id="ge-novo-btn" onclick="openGrpEmbModal()">+ Montar grupo</button>
           </div>
-          <div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:12px">Um grupo liga a <b>embalagem completa</b> aos seus <b>componentes</b> (para quando a nota do fornecedor vem desmembrada). O custo do grupo é a soma do custo de cada componente (custo base; sem base, a última compra).</div>
+          <div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:12px">Um grupo liga a <b>embalagem completa</b> aos seus <b>componentes</b> (para quando a nota do fornecedor vem desmembrada). O custo do grupo é a soma do custo de cada componente (v258: última compra; sem compra, o custo base).</div>
           <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Embalagem completa</th><th style="padding:8px 10px;text-align:left">Componentes</th><th style="padding:8px 10px;text-align:right" title="Soma do custo unitário dos componentes × quantidade">Custo somado</th><th style="padding:8px 10px;text-align:right" title="Custo da embalagem completa (base ou última compra)">Custo da completa</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
             <tbody id="ge-tbody"></tbody>
@@ -1377,6 +1379,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div class="des-tabs" style="margin-bottom:12px;gap:4px">
             <div class="des-tab active" id="cn-sub-formulas" onclick="setCatNovoSub('formulas')">Fórmulas</div>
             <div class="des-tab" id="cn-sub-simulador" onclick="setCatNovoSub('simulador')">🧮 Simulador</div>
+            <div class="des-tab" id="cn-sub-lucr" onclick="setCatNovoSub('lucr')">📊 Lucratividade</div><!-- v258 — vigia de margem (só visual) -->
             <div class="des-tab" id="cn-sub-config" onclick="setCatNovoSub('config')">⚙ Configuração</div>
           </div>
           <div id="cn-pg-formulas">
@@ -1385,12 +1388,13 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <button class="btn-primary" id="cn-novo-btn" onclick="openCnModal()">+ Nova fórmula</button>
             </div>
             <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
-              <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Fórmula</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:left">Forma</th><th style="padding:8px 10px;text-align:center">Composição</th><th style="padding:8px 10px;text-align:left">Padrão</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
+              <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Fórmula</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:left">Forma</th><th style="padding:8px 10px;text-align:center">Composição</th><th style="padding:8px 10px;text-align:left">Padrão</th><th style="padding:8px 10px;text-align:right" title="Preço de venda fixo por unidade + farol de margem (v258)">Preço venda</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
               <tbody id="cn-tbody"></tbody>
             </table></div>
             <div id="cn-vazio" style="display:none;color:var(--text-secondary);font-size:13px;padding:24px;text-align:center">Nenhuma fórmula cadastrada. Clique em "+ Nova fórmula".</div>
           </div>
           <div id="cn-pg-simulador" style="display:none"><div id="cn-sim-box"></div></div>
+          <div id="cn-pg-lucr" style="display:none"><div id="cn-lucr-box"></div></div><!-- v258 -->
           <div id="cn-pg-config" style="display:none"><div id="cn-cfg-box"></div></div>
         </div>
       </div>
@@ -1420,6 +1424,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <div class="form-group"><label>Unidade de dosagem</label><select id="ins-unidpad"><option value="">— (usa a da fórmula)</option><option value="%">%</option><option value="mg">mg</option><option value="g">g</option><option value="mcg">mcg</option><option value="UI">UI</option></select></div>
               <div class="form-group"><label>Fator UI→mg <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(só p/ dosagem em UI)</span></label><input type="number" min="0" step="0.000001" id="ins-fatorui" placeholder="mg por 1 UI"></div>
             </div>
+            <!-- v259 — BASE (ordem do dono 04/11): base = veículo = excipiente são SINÔNIMOS (excipiente mais usado no oral; base/veículo no tópico). Marcado, o insumo entra na fórmula já como excipiente/QSP. -->
+            <label style="display:flex;align-items:center;gap:7px;font-size:13px;margin-bottom:12px"><input type="checkbox" id="ins-ehbase" style="width:15px;height:15px"> Este insumo é uma <b>BASE</b> <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(veículo/excipiente do produto — sinônimos; entra na fórmula como excipiente/QSP)</span></label>
           </div>
           <!-- v174 — F1: capacidade da EMBALAGEM (filtra compatível com o QSP escolhido na venda) -->
           <div id="ins-f1-emb" style="display:none">
@@ -1427,11 +1433,31 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <div class="form-group"><label>Capacidade</label><input type="number" min="0" step="0.01" id="ins-capacidade" placeholder="ex: 120"></div>
               <div class="form-group"><label>Unidade da capacidade</label><select id="ins-capun"><option value="mL">mL</option><option value="g">g</option></select></div>
             </div>
+            <!-- v259 — RÓTULO vive na embalagem (ordem do dono 04/11): soma ao valor dela no orçamento, com o markup da embalagem -->
+            <div class="form-row">
+              <div class="form-group"><label>Custo do rótulo (R$) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(soma ao valor desta embalagem no orçamento)</span></label><input type="number" min="0" step="0.01" id="ins-rotulo" placeholder="0,00"></div>
+              <div class="form-group"></div>
+            </div>
+            <!-- v258 — formas farmacêuticas que a embalagem atende (regra do dono 04/11: sem classificação = aparece no orçamento mas NÃO seleciona)
+                 v259 — seleção em MODAL À PARTE (pedido do dono: não poluir a ficha); aqui fica só o resumo + botão -->
+            <div class="form-group" style="margin-bottom:12px"><label>Formas farmacêuticas que atende <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(sem marcação, a embalagem NÃO pode ser escolhida no orçamento)</span></label>
+              <div style="display:flex;gap:10px;align-items:center">
+                <span id="ins-formas-sum" style="font-size:12px;color:var(--text-secondary)">—</span>
+                <button type="button" id="ins-formas-btn" onclick="_embFormasModal(_insEditId)" style="font-size:12px;padding:5px 12px;white-space:nowrap">🧪 Selecionar formas</button>
+              </div>
+            </div>
+            <!-- v258 — foto da embalagem (catálogo visual do orçamento); redimensionada no upload p/ até 300 KB -->
+            <div class="form-group" style="margin-bottom:12px"><label>Foto <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(aparece no catálogo visual do orçamento)</span></label>
+              <div style="display:flex;gap:10px;align-items:center">
+                <div id="ins-foto-prev" style="width:72px;height:72px;border-radius:8px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:20px;color:var(--text-tertiary)">📦</div>
+                <button type="button" id="ins-foto-btn" onclick="_embFotoModal(_insEditId)" style="font-size:12px;padding:5px 12px">📷 Gerenciar foto</button>
+              </div>
+            </div>
           </div>
           <!-- v174 — F1: precificação (vale p/ insumo E embalagem): custo-base editável + markup próprio -->
           <!-- v188 — markup em DOIS campos sincronizados (pedido do dono): % de acréscimo e VEZES (multiplicador); alterar um atualiza o outro (200% = 3×) -->
           <div class="form-row">
-            <div class="form-group"><label>Custo base (R$) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(usado no preço; vazio = último custo)</span></label><input type="number" min="0" step="0.0001" id="ins-custobase" placeholder="por unidade de compra"></div>
+            <div class="form-group"><label>Custo base (R$) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(v258: a compra mais recente VENCE; o base vale sem compra no sistema)</span></label><input type="number" min="0" step="0.0001" id="ins-custobase" placeholder="por unidade de compra"></div>
             <div class="form-group"><label>Quantidade em estoque <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(na unidade de compra)</span></label><input type="number" min="0" step="any" id="ins-estoque" placeholder="0"></div>
           </div>
           <div class="form-row">
@@ -1471,7 +1497,17 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           </div>
           <div class="form-row">
             <div class="form-group"><label>Categoria do produto <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(perdas e custo fixo vêm da Configuração)</span></label><select id="cn-cat"></select></div>
-            <div class="form-group"><label>Forma farmacêutica *</label><select id="cn-forma" onchange="_cnFormaChange()"><option value="semisolido">Semisólido (creme/gel/pomada)</option><option value="liquido">Líquido</option><option value="capsula">Cápsulas</option></select></div>
+            <!-- v258 — formas farmacêuticas: união da lista do dono (04/11) com as existentes; o filtro de embalagens do orçamento usa este campo -->
+            <div class="form-group"><label>Forma farmacêutica *</label><select id="cn-forma" onchange="_cnFormaChange()"><option value="semisolido">Semisólido (legado — reclassificar)</option><option value="gel">Gel</option><option value="gel_creme">Gel creme</option><option value="creme">Creme</option><option value="serum">Sérum</option><option value="liquido">Líquido</option><option value="oleo">Óleo</option><option value="espuma">Espuma</option><option value="spray">Spray/Bruma</option><option value="sabonete">Sabonete</option><option value="shampoo">Shampoo</option><option value="solido">Sólido</option><option value="capsula">Cápsulas</option><option value="goma">Goma</option><option value="scoop">Scoop (pó)</option></select></div>
+          </div>
+          <!-- v258 — categoria de USO (vitrine do catálogo no orçamento) + PREÇO DE VENDA FIXO (regras do dono 04/11; preço só admin) -->
+          <div class="form-row">
+            <div class="form-group"><label>Categoria de uso <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(agrupa o catálogo visual do orçamento)</span></label><select id="cn-catuso"></select></div>
+            <div class="form-group"><label>Margem extra (%) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(acréscimo manual sobre o preço — perdas etc.)</span></label><input type="number" min="0" step="0.01" id="cn-margemextra" placeholder="0"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Preço de venda (R$ por <span id="cn-pv-un">g</span>) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(FIXO — cobre tudo menos a embalagem; vazio = vende pelo sugerido)</span></label><input type="number" min="0" step="0.0001" id="cn-precovenda" placeholder="só o administrador define" oninput="_cnPvDigitou()"></div>
+            <div class="form-group"><label>Sugerido hoje <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(custo atual × markups — a referência da margem)</span></label><div style="display:flex;gap:8px;align-items:center"><div id="cn-pv-sug" style="font-size:13px;font-weight:600;padding:8px 0">—</div><button type="button" id="cn-pv-aderir" onclick="_cnPvAderir()" style="font-size:11px;padding:4px 10px;display:none" title="Copia o sugerido de hoje para o campo de preço de venda">↺ Aderir</button></div></div>
           </div>
           <div class="modal-section">
             <div class="modal-section-title">Composição — vinculada aos insumos <span id="cn-comp-hint" style="font-weight:400;color:var(--text-tertiary);font-size:11px"></span></div>
@@ -1492,10 +1528,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="form-group"><label>QSP padrão <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(pré-preenchido na venda; editável lá)</span></label><input type="number" min="0" step="0.01" id="cn-qspv" placeholder="ex: 120"></div>
             <div class="form-group"><label>Unidade do QSP</label><select id="cn-qspu"><option value="g">g (peso)</option><option value="mL">mL (volume)</option></select></div>
           </div>
-          <div class="form-row">
-            <div class="form-group"><label>Custo do rótulo (R$ por produto)</label><input type="number" min="0" step="0.01" id="cn-rotulo" placeholder="0,00"></div>
-            <div class="form-group"><label>Markup do rótulo (%)</label><input type="number" min="0" step="0.01" id="cn-rotulomk" placeholder="0"></div>
-          </div>
+          <!-- v259 — rótulo SAIU do produto (ordem do dono 04/11): o custo do rótulo vive na FICHA DA EMBALAGEM (o rótulo depende do tamanho da embalagem, não do produto) -->
           <div class="form-group" style="margin-bottom:10px"><label>Modo de uso</label><textarea id="cn-modouso" rows="2" style="width:100%;font-size:12px"></textarea></div>
           <div class="form-group" style="margin-bottom:10px"><label>Observações</label><textarea id="cn-obs" rows="2" style="width:100%;font-size:12px"></textarea></div>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:12px"><input type="checkbox" id="cn-ativo" checked style="width:auto"> Fórmula ativa</label>
@@ -1516,7 +1549,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         <!-- v195 — Seção: RECEBIDOS A MENOS (entrega do fornecedor menor que a compra; decidir recompra) -->
         <div id="sol-sec-menos" style="display:none">
           <div class="panel" style="margin-bottom:12px"><div style="padding:10px 14px;font-size:12px;color:var(--text-secondary)">
-            Itens cuja entrega chegou <b>menor que a quantidade comprada</b>. O recebimento seguiu com a quantidade real (estoque e custo já refletem o que chegou); o rateio por D1 mostra quem ficou descoberto. Decida aqui: <b>↪ Incluir na próxima lista</b> (o faltante vira solicitação pendente dos pedidos descobertos) ou <b>✕ Sem recompra</b>.
+            Itens cuja entrega chegou <b>menor que a quantidade comprada</b>. O recebimento seguiu com a quantidade real (estoque e custo já refletem o que chegou); o rateio por D1 mostra quem ficou descoberto. Decida aqui: <b>↪ Incluir na próxima lista</b> (o faltante vira solicitação pendente dos pedidos descobertos), <b>📦 Incluir no pedido</b> (o fornecedor manda em outro pedido de compra — a conferência daquele pedido completa este recebimento) ou <b>✕ Sem recompra</b>.
           </div></div>
           <div id="sol-menos-list"></div>
         </div>
@@ -5290,7 +5323,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v256';
+var APP_VERSION = 'v259';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7128,10 +7161,12 @@ async function doLogin(){
   document.getElementById('nav-agenda').classList.toggle('hidden',!isComercial&&!isAdmin);
   document.getElementById('nav-orcamentos-crm')?.classList.toggle('hidden',!isComercial&&!isAdmin);
   const _ehEstoque=(u.setores?.includes('estoque')||u.coordSetores?.includes('estoque')); // v233
-  document.getElementById('nav-catalogo')?.classList.toggle('hidden',!isComercial&&!isAdmin&&!canAccessCompras()&&!_ehEstoque); // v130 — compras acessa p/ cadastrar insumos/embalagens; v233 — estoque acessa (aba Embalagens; caso Luiz, importação)
+  const _ehExped=(u.setores?.includes('expedicao')||u.coordSetores?.includes('expedicao')); // v258 — expedição anexa FOTOS de embalagem (Everton; regra do dono 04/11)
+  document.getElementById('nav-catalogo')?.classList.toggle('hidden',!isComercial&&!isAdmin&&!canAccessCompras()&&!_ehEstoque&&!_ehExped); // v130 — compras acessa p/ cadastrar insumos/embalagens; v233 — estoque acessa (aba Embalagens; caso Luiz, importação); v258 — expedição acessa (fotos)
   // v233 — pedido do dono 22/09: quem SÓ tem estoque vê o Catálogo apenas na aba EMBALAGENS
   // (importar/cadastrar); Produtos, Insumos, Grupos e Catálogo Novo ficam ocultos para ele.
-  const _soEmb=!isAdmin&&!isComercial&&!canAccessCompras()&&_ehEstoque;
+  // v258 — mesma régua para quem só tem EXPEDIÇÃO (entra só para as fotos das embalagens).
+  const _soEmb=!isAdmin&&!isComercial&&!canAccessCompras()&&(_ehEstoque||_ehExped);
   ['produtos','insumos','grpemb','catnovo'].forEach(t=>document.getElementById('cat-tab-'+t)?.classList.toggle('hidden',_soEmb));
   if(_soEmb){ try{ setCatalogoTab('embalagens'); }catch(_e){} }
   document.getElementById('nav-venda-prog').classList.toggle('hidden',!isComercial&&!isAdmin&&!(u.setores?.includes('financeiro')||u.coordSetores?.includes('financeiro'))); // v106 — financeiro (Rhuan) também acessa Venda Programada
@@ -11889,21 +11924,43 @@ function renderCatSimples(tipo){
   var tb=document.getElementById(tipo==='insumo'?'ins-tbody':'emb-tbody'); if(!tb) return;
   var pode = tipo==='embalagem' ? _canEditEmbalagens() : _canEditInsumos(); // v233 — estoque edita embalagens
   var nb=document.getElementById(tipo==='insumo'?'ins-novo-btn':'emb-novo-btn'); if(nb) nb.style.display=pode?'':'none';
+  if(tipo==='embalagem'){ var _ib=document.getElementById('emb-imp-btn'); if(_ib) _ib.style.display=pode?'':'none'; } // v258 — expedição (só fotos) não importa
   var busca=(document.getElementById(tipo==='insumo'?'ins-busca':'emb-busca')?.value||'').toLowerCase().trim();
   var lista=(insumos||[]).filter(function(x){ return x.tipo===tipo; });
   if(busca) lista=lista.filter(function(x){ return ((x.nome||'')+' '+(x.codigo||'')+' '+(x.categoria||'')).toLowerCase().indexOf(busca)>=0; }); // v150 — busca também por categoria
   lista.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
   var vazio=document.getElementById(tipo==='insumo'?'ins-vazio':'emb-vazio'); if(vazio) vazio.style.display=lista.length?'none':'block';
+  // v258 — pendências do catálogo de embalagens (o que de fato puxa o mutirão da fase de dados):
+  // contadores no topo + selos na linha; embalagem sem classificação OU sem custo aparece no
+  // orçamento mas NÃO seleciona.
+  if(tipo==='embalagem'){
+    var _todas=(insumos||[]).filter(function(x){ return x.tipo==='embalagem' && x.ativo!==false; });
+    var _semCls=_todas.filter(function(x){ return !_embFormasDe(x).length; }).length;
+    var _semCusto=_todas.filter(function(x){ return !(_cnCustoUnit(x).v>0); }).length;
+    var _chips=document.getElementById('emb-pend-chips');
+    if(_chips) _chips.innerHTML=(_semCls||_semCusto)?('<span style="font-size:11.5px;color:var(--text-secondary)">Pendências do catálogo (bloqueiam a seleção no orçamento): </span>'+(_semCls?'<span style="font-size:11.5px;padding:2px 10px;border-radius:12px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:600">'+_semCls+' sem classificação de forma</span> ':'')+(_semCusto?'<span style="font-size:11.5px;padding:2px 10px;border-radius:12px;background:var(--st-bad-bg);color:var(--st-bad-tx);font-weight:600">'+_semCusto+' sem custo</span>':'')):'<span style="font-size:11.5px;color:var(--st-ok-tx);font-weight:600">✓ Catálogo de embalagens sem pendências</span>';
+  }
+  var _fotoOk=(tipo==='embalagem') && (typeof _canFotoEmb==='function') && _canFotoEmb();
   tb.innerHTML=lista.map(function(x){
     var acoes = pode
       ? '<button onclick="openInsumoModal(\''+tipo+'\',\''+x.id+'\')" style="font-size:11px;padding:3px 9px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit">Editar</button> <button onclick="deleteInsumo(\''+x.id+'\')" style="font-size:11px;padding:3px 9px;border:.5px solid var(--st-bad-bd);border-radius:var(--r-md);background:var(--st-bad-bg);color:var(--st-bad-tx);cursor:pointer;font-family:inherit">Excluir</button>'
       : '—';
+    if(tipo==='embalagem' && _fotoOk){
+      var _fB='<button onclick="_embFotoModal(\''+x.id+'\')" title="'+(x.fotoUrl?'Foto anexada — ver/trocar':'Anexar foto (catálogo visual do orçamento)')+'" style="font-size:11px;padding:3px 9px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit">'+(x.fotoUrl?'🖼':'📷')+'</button>';
+      acoes=(pode?acoes+' ':'')+_fB; if(!pode) acoes=_fB; // expedição sem edição da ficha vê só o botão de foto
+    }
     // v150 — custos derivados do histórico de compras (médio ponderado, última, menor)
     var cst=_custosItem(x.id, x.codigo);
     var _tit=cst?' title="'+cst.n+' compra(s) no histórico"':'';
+    var _selos='';
+    if(tipo==='embalagem'){
+      if(!_embFormasDe(x).length) _selos+=' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:700" title="Sem classificação de forma farmacêutica — não pode ser escolhida no orçamento">sem classificação</span>';
+      if(!(_cnCustoUnit(x).v>0)) _selos+=' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;background:var(--st-bad-bg);color:var(--st-bad-tx);font-weight:700" title="Sem custo (base ou compra) — não pode ser escolhida no orçamento">sem custo</span>';
+    }
+    if(tipo==='insumo' && x.ehBase===true) _selos+=' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;background:var(--bg-info);color:var(--text-info);font-weight:700" title="BASE (veículo/excipiente — sinônimos): entra na fórmula como excipiente/QSP">BASE</span>'; // v259
     return '<tr style="border-bottom:.5px solid var(--border);'+(x.ativo===false?'opacity:.5;':'')+'">'+
       '<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.codigo||'—')+'</td>'+
-      '<td style="padding:7px 10px">'+escapeHtml(x.nome||'—')+'</td>'+
+      '<td style="padding:7px 10px">'+escapeHtml(x.nome||'—')+_selos+'</td>'+
       '<td style="padding:7px 10px">'+escapeHtml(x.unidade||'UN')+'</td>'+
       '<td style="padding:7px 10px;font-size:12px">'+((x.categoria&&x.categoria!=='sem categoria')?'<span style="padding:2px 8px;border-radius:12px;background:var(--bg-info);color:var(--text-info);font-size:11px">'+escapeHtml(x.categoria)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
       '<td style="padding:7px 10px;text-align:right;white-space:nowrap">'+((x.estoqueQtd!=null&&x.estoqueQtd!=='')?(parseFloat(x.estoqueQtd)||0).toLocaleString('pt-BR'):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
@@ -11924,7 +11981,18 @@ function openInsumoModal(tipo, id){
   document.getElementById('ins-codigo').value=x?(x.codigo||''):'';
   document.getElementById('ins-nome').value=x?(x.nome||''):'';
   var _nc=document.getElementById('ins-nomecom'); if(_nc) _nc.value=x?(x.nomeComercial||''):''; // v188 — nome comercial (PDF do orçamento)
-  document.getElementById('ins-unidade').value=x?(x.unidade||'UN'):'UN';
+  // v259 — EMBALAGEM é SEMPRE por UNIDADE (ordem do dono 04/11): o select só oferece UN; o valor
+  // legado minúsculo "un" (1.717 cadastros) não casava com a opção "UN" e o campo abria VAZIO.
+  var _unSel=document.getElementById('ins-unidade');
+  if(_unSel){
+    _unSel.innerHTML = ehIns
+      ? '<option value="UN">UN (unidade)</option><option value="g">g (grama)</option><option value="mg">mg</option><option value="kg">kg</option><option value="ml">ml</option><option value="L">L (litro)</option>'
+      : '<option value="UN">UN (unidade)</option>';
+    var _unV=x?(x.unidade||'UN'):'UN';
+    if(String(_unV).toUpperCase()==='UN') _unV='UN';
+    _unSel.value=_unV;
+    if(!_unSel.value && !ehIns) _unSel.value='UN'; // embalagem: sempre UN; insumo com unidade fora da lista fica em branco p/ escolha consciente
+  }
   // v150 — categorias por tipo (pedido do dono)
   var _catSel=document.getElementById('ins-categoria');
   if(_catSel){
@@ -11938,8 +12006,22 @@ function openInsumoModal(tipo, id){
   if(_f1e) _f1e.style.display=ehIns?'none':'';
   var _setV=function(id,v){ var e=document.getElementById(id); if(e) e.value=(v!=null&&v!=='')?v:''; };
   _setV('ins-densidade', x&&x.densidade); _setV('ins-conc', x&&x.concentracao); _setV('ins-fatorui', x&&x.fatorUI);
+  var _eb=document.getElementById('ins-ehbase'); if(_eb) _eb.checked=!!(x&&x.ehBase); // v259 — base/veículo/excipiente
   var _up=document.getElementById('ins-unidpad'); if(_up) _up.value=(x&&x.unidadePadrao)||'';
   _setV('ins-capacidade', x&&x.capacidade); var _cu=document.getElementById('ins-capun'); if(_cu) _cu.value=(x&&x.capacidadeUn)||'mL';
+  _setV('ins-rotulo', x&&x.custoRotulo); // v259 — rótulo da embalagem
+  // v259 — formas farmacêuticas em MODAL À PARTE (não polui a ficha): aqui só o RESUMO + botão
+  var _fs=document.getElementById('ins-formas-sum');
+  if(_fs && !ehIns){
+    var _marc=_embFormasDe(x);
+    _fs.innerHTML=_marc.length?escapeHtml(_marc.map(function(k){ return k==='todas'?'Todas':( _cnFormaLbl(k)); }).join(', ')):'<span style="color:var(--st-mid-tx);font-weight:600">sem classificação — não seleciona no orçamento</span>';
+  }
+  var _fbF=document.getElementById('ins-formas-btn');
+  if(_fbF) _fbF.style.display=(!ehIns && id)?'':'none'; // embalagem nova: salve primeiro (o modal grava direto no cadastro)
+  var _fp=document.getElementById('ins-foto-prev');
+  if(_fp && !ehIns) _fp.innerHTML=(x&&x.fotoUrl)?'<img src="'+escapeHtml(x.fotoUrl)+'" alt="" style="width:100%;height:100%;object-fit:contain">':'📦';
+  var _fb=document.getElementById('ins-foto-btn');
+  if(_fb) _fb.style.display=(!ehIns && id && _canFotoEmb())?'':'none'; // foto só em embalagem já cadastrada
   _setV('ins-custobase', x&&x.custoBase); _setV('ins-markup', x&&x.markup);
   _setV('ins-estoque', x&&x.estoqueQtd); // v187 — quantidade em estoque
   _insMkSync('pct'); // v188 — espelha o markup em VEZES (200% = 3×)
@@ -11950,7 +12032,7 @@ function openInsumoModal(tipo, id){
     var _partes=[];
     // v188 — os campos de custo aparecem SEMPRE na ficha (pedido do dono): sem histórico, mostram "—"
     if(x){
-      if(_cst) _partes.push('📈 '+(_cst.deCotacao?'Cotações (sem compra efetivada no sistema)':'Compras')+' (por '+escapeHtml((x&&x.unidade)||'UN')+'): último <b>'+fmtMoney(_cst.ultimo)+'</b> · médio <b>'+fmtMoney(_cst.medio)+'</b> · menor 12m <b>'+(_m12!=null?fmtMoney(_m12):'—')+'</b> · menor geral '+fmtMoney(_cst.minimo)+' <span style="color:var(--text-tertiary)">(custo base vazio → usa o último'+(_cst.deCotacao?'; valores de cotação NÃO são gravados como custo':'')+')</span>');
+      if(_cst) _partes.push('📈 '+(_cst.deCotacao?'Cotações (sem compra efetivada no sistema)':'Compras')+' (por '+escapeHtml((x&&x.unidade)||'UN')+'): último <b>'+fmtMoney(_cst.ultimo)+'</b> · médio <b>'+fmtMoney(_cst.medio)+'</b> · menor 12m <b>'+(_m12!=null?fmtMoney(_m12):'—')+'</b> · menor geral '+fmtMoney(_cst.minimo)+' <span style="color:var(--text-tertiary)">(v258: a compra mais recente VENCE o custo base'+(_cst.deCotacao?'; valores de cotação NÃO são gravados como custo':'')+')</span>');
       else _partes.push('📈 Compras (por '+escapeHtml((x&&x.unidade)||'UN')+'): último <b>—</b> · médio <b>—</b> · menor 12m <b>—</b> <span style="color:var(--text-tertiary)">(sem compra nem cotação no sistema ainda'+(x.custoBase!=null&&x.custoBase!==''?'; o preço usa o custo base':'')+')</span>');
     }
     // v188 — categoria de custo do ativo (automática pelo custo vigente; markup digitado prevalece)
@@ -11994,6 +12076,9 @@ function saveInsumo(){
     unidadePadrao:(document.getElementById('ins-unidpad')?.value||''),
     capacidade:_num('ins-capacidade'), capacidadeUn:(document.getElementById('ins-capun')?.value||'mL'),
     custoBase:_num('ins-custobase'), markup:_num('ins-markup'),
+    // v259 — formasFarm agora é salvo pelo MODAL próprio (_embFormasModal), nunca pela ficha (senão a ficha apagaria a classificação)
+    custoRotulo:(_insTipo==='embalagem')?_num('ins-rotulo'):undefined, // v259 — rótulo vive na embalagem
+    ehBase:(_insTipo==='insumo')?!!document.getElementById('ins-ehbase')?.checked:undefined, // v259 — base/veículo/excipiente (sinônimos)
     estoqueQtd:_num('ins-estoque'), // v187 — quantidade em estoque
     nomeComercial:(document.getElementById('ins-nomecom')?.value||'').trim() }; // v188 — nome p/ o cliente no PDF do orçamento
   if(_insEditId){
@@ -12003,7 +12088,113 @@ function saveInsumo(){
     if(!codigo) codigo=_proximoCodigoInsumo(_insTipo);
     insumos.push(Object.assign({ id:(_insTipo==='insumo'?'ins':'emb')+Date.now(), codigo:codigo, nome:nome, tipo:_insTipo, unidade:unidade, categoria:categoria, ativo:true, criadoEm:Date.now() }, extra));
   }
-  closeInsumoModal(); renderCatSimples(_insTipo); saveData();
+  closeInsumoModal(); renderCatSimples(_insTipo); _cnVigiaInvalidar(); saveData(); // v258 — custo/markup mudou → farol recalcula
+}
+// ═══ v259 — FORMAS FARMACÊUTICAS DA EMBALAGEM EM MODAL À PARTE (pedido do dono 04/11: não poluir a ficha) ═══
+function _embFormasModal(id){
+  var e=(insumos||[]).find(function(x){ return x&&x.id===id&&x.tipo==='embalagem'; });
+  if(!e){ alert('Salve a embalagem primeiro — a classificação grava direto no cadastro.'); return; }
+  if(!_canEditEmbalagens()){ alert('Sem permissão para classificar embalagens.'); return; }
+  var ov=document.getElementById('emb-formas-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='emb-formas-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4500'; document.body.appendChild(ov); }
+  var marc=_embFormasDe(e);
+  var ops=[['todas','Todas (componente: tampa, válvula, colher...)']].concat(Object.keys(CN_FORMAS_LBL).map(function(k){ return [k, CN_FORMAS_LBL[k]]; }));
+  ov.innerHTML='<div class="modal" style="width:440px;max-width:95vw">'+
+    '<h2 style="font-size:15px">🧪 Formas farmacêuticas — '+escapeHtml(e.nome||'')+'</h2>'+
+    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:10px">Marque as formas que esta embalagem atende. Sem marcação, ela aparece no orçamento mas <b>não pode ser selecionada</b>.</div>'+
+    '<div style="display:flex;flex-direction:column;gap:7px;max-height:50vh;overflow-y:auto;padding:2px 0 8px">'+
+      ops.map(function(o){ return '<label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" class="embf-ck" value="'+o[0]+'"'+(marc.indexOf(o[0])>=0?' checked':'')+' style="width:15px;height:15px"> '+o[1]+'</label>'; }).join('')+
+    '</div>'+
+    '<div class="modal-footer"><button onclick="document.getElementById(\'emb-formas-overlay\').classList.remove(\'open\')">Cancelar</button><button class="btn-primary" onclick="_embFormasSalvar(\''+e.id+'\')">💾 Salvar</button></div></div>';
+  ov.classList.add('open');
+}
+function _embFormasSalvar(id){
+  var e=(insumos||[]).find(function(x){ return x&&x.id===id; }); if(!e) return;
+  if(!_canEditEmbalagens()){ alert('Sem permissão.'); return; }
+  e.formasFarm=Array.prototype.slice.call(document.querySelectorAll('#emb-formas-overlay .embf-ck:checked')).map(function(c){ return c.value; });
+  saveData();
+  var ov=document.getElementById('emb-formas-overlay'); if(ov) ov.classList.remove('open');
+  try{ renderCatSimples('embalagem'); }catch(_e){}
+  // ficha aberta: atualiza o resumo
+  var _fs=document.getElementById('ins-formas-sum');
+  if(_fs && _insEditId===id) _fs.innerHTML=e.formasFarm.length?escapeHtml(e.formasFarm.map(function(k){ return k==='todas'?'Todas':_cnFormaLbl(k); }).join(', ')):'<span style="color:var(--st-mid-tx);font-weight:600">sem classificação — não seleciona no orçamento</span>';
+}
+// ═══ v258 — FOTO DA EMBALAGEM (catálogo visual do orçamento; regras do dono 04/11) ═══
+// Upload com REDIMENSIONAMENTO no navegador (lado maior ≤ 640 px, JPEG com qualidade decrescente
+// até ficar ≤ 300 KB — teto do dono). Bucket público 'embalagens-fotos' (só leitura pública;
+// escrita autenticada). Podem anexar: estoque/compras (régua da ficha) e EXPEDIÇÃO (Everton).
+function _embFotoModal(id){
+  var e=(insumos||[]).find(function(x){ return x&&x.id===id&&x.tipo==='embalagem'; });
+  if(!e){ alert('Abra a foto a partir de uma embalagem já cadastrada.'); return; }
+  if(!_canFotoEmb()){ alert('Sem permissão para gerenciar fotos de embalagem.'); return; }
+  var ov=document.getElementById('emb-foto-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='emb-foto-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4500'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:420px;max-width:95vw">'+
+    '<h2 style="font-size:15px">📷 Foto — '+escapeHtml(e.nome||'')+'</h2>'+
+    '<div id="emb-foto-area" style="width:100%;height:220px;border-radius:10px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:10px;color:var(--text-tertiary);font-size:34px">'+
+      (e.fotoUrl?'<img src="'+escapeHtml(e.fotoUrl)+'" alt="" style="width:100%;height:100%;object-fit:contain">':'📦')+'</div>'+
+    '<div id="emb-foto-st" style="font-size:11.5px;color:var(--text-secondary);min-height:16px;margin-bottom:8px"></div>'+
+    '<div class="modal-footer">'+
+      (e.fotoUrl?'<button onclick="_embFotoRemover(\''+e.id+'\')" style="color:var(--st-bad-tx);border-color:var(--st-bad-bd);margin-right:auto">Remover foto</button>':'')+
+      '<button onclick="document.getElementById(\'emb-foto-overlay\').classList.remove(\'open\')">Fechar</button>'+
+      '<label class="btn-primary" style="cursor:pointer">'+(e.fotoUrl?'Trocar foto':'Enviar foto')+'<input type="file" accept="image/*" style="display:none" onchange="_embFotoUpload(\''+e.id+'\', this)"></label>'+
+    '</div></div>';
+  ov.classList.add('open');
+}
+async function _embFotoRedimensionar(file){
+  // ≤640 px no lado maior; JPEG com qualidade em degraus até caber em 300 KB
+  var bmp;
+  try{ bmp=await createImageBitmap(file, {imageOrientation:'from-image'}); }
+  catch(_e){
+    bmp=await new Promise(function(res,rej){ var img=new Image(); img.onload=function(){ res(img); }; img.onerror=rej; img.src=URL.createObjectURL(file); });
+  }
+  var w=bmp.width||bmp.naturalWidth, h=bmp.height||bmp.naturalHeight;
+  var esc=Math.min(1, 640/Math.max(w,h));
+  var cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(w*esc)); cv.height=Math.max(1,Math.round(h*esc));
+  var cx=cv.getContext('2d'); cx.fillStyle='#ffffff'; cx.fillRect(0,0,cv.width,cv.height); cx.drawImage(bmp,0,0,cv.width,cv.height);
+  var quals=[0.85,0.7,0.55,0.4,0.3];
+  for(var i=0;i<quals.length;i++){
+    var blob=await new Promise(function(res){ cv.toBlob(res,'image/jpeg',quals[i]); });
+    if(blob && blob.size<=300*1024) return blob;
+    if(i===quals.length-1) return blob; // último degrau: segue (640px a q0.3 praticamente nunca passa de 300 KB)
+  }
+}
+async function _embFotoUpload(id, input){
+  var file=input&&input.files&&input.files[0]; if(input) input.value=''; if(!file) return;
+  var e=(insumos||[]).find(function(x){ return x&&x.id===id; }); if(!e||!_sb) return;
+  if(!_canFotoEmb()){ alert('Sem permissão.'); return; }
+  var st=document.getElementById('emb-foto-st');
+  try{
+    if(st) st.textContent='Redimensionando...';
+    var blob=await _embFotoRedimensionar(file);
+    if(!blob) throw new Error('não consegui processar a imagem');
+    if(blob.size>300*1024) throw new Error('mesmo reduzida a foto passou de 300 KB — use uma imagem mais simples');
+    if(st) st.textContent='Enviando ('+Math.round(blob.size/1024)+' KB)...';
+    var path='emb/'+id+'.jpg';
+    var up=await _sb.storage.from('embalagens-fotos').upload(path, blob, {upsert:true, contentType:'image/jpeg'});
+    if(up.error) throw new Error(up.error.message);
+    var pu=_sb.storage.from('embalagens-fotos').getPublicUrl(path);
+    var url=(pu&&pu.data&&pu.data.publicUrl)?pu.data.publicUrl+'?v='+Date.now():null;
+    if(!url) throw new Error('não obtive a URL pública');
+    e.fotoUrl=url; e.fotoEm=Date.now(); e.fotoPor=(currentUser&&currentUser.name)||'';
+    saveData();
+    if(st) st.textContent='✓ Foto salva.';
+    _embFotoModal(id); // re-renderiza com a foto nova
+    try{ renderCatSimples('embalagem'); }catch(_e){}
+  }catch(err){
+    if(st) st.textContent='';
+    alert('Falha no envio da foto: '+((err&&err.message)||err));
+  }
+}
+async function _embFotoRemover(id){
+  var e=(insumos||[]).find(function(x){ return x&&x.id===id; }); if(!e) return;
+  if(!_canFotoEmb()){ alert('Sem permissão.'); return; }
+  if(!confirm('Remover a foto de "'+(e.nome||'')+'"?')) return;
+  try{ if(_sb) await _sb.storage.from('embalagens-fotos').remove(['emb/'+id+'.jpg']); }catch(_e){}
+  e.fotoUrl=null; e.fotoEm=null; e.fotoPor=null;
+  saveData();
+  _embFotoModal(id);
+  try{ renderCatSimples('embalagem'); }catch(_e){}
 }
 function deleteInsumo(id){
   var _xg=(insumos||[]).find(function(p){ return p.id===id; });
@@ -12030,6 +12221,29 @@ function _geResolve(txt){
       || embs.find(function(x){ return String(x.nome||'').toLowerCase()===low; })
       || null;
 }
+// ═══ v258 — EMBALAGEM × FORMA FARMACÊUTICA (regras do dono 04/11) ═══
+// A embalagem declara as formas que atende (formasFarm[]; 'todas' = componente tipo tampa/válvula).
+// No ORÇAMENTO: sem classificação ou sem custo = APARECE mas NÃO SELECIONA (obriga a equipe a
+// completar o cadastro); incompatível com a forma do produto = não serve. A FAMÍLIA faz a ponte
+// dos valores legados enquanto a reclassificação (fase de dados) não termina:
+// semisolido ≈ {gel, gel creme, creme} · liquido ≈ {óleo} · capsula ≈ {sólido (pote)}.
+function _embFormasDe(e){ return Array.isArray(e&&e.formasFarm)?e.formasFarm.filter(Boolean):[]; }
+function _embCompat(forma, e){
+  var fs=_embFormasDe(e);
+  if(!fs.length) return null; // sem classificação — o chamador decide (no orçamento: não seleciona)
+  if(fs.indexOf('todas')>=0) return true;
+  var fam=_CN_FAMILIA[forma]||[forma];
+  return fs.some(function(x){ return fam.indexOf(x)>=0 || x===forma || ((_CN_FAMILIA[x]||[]).indexOf(forma)>=0); });
+}
+function _embSelProblema(e, forma){
+  if(!e) return 'embalagem não encontrada no catálogo';
+  if(!_embFormasDe(e).length) return 'sem classificação de forma farmacêutica — classifique na ficha da embalagem';
+  if(_embCompat(forma, e)!==true) return 'não atende a forma farmacêutica deste produto ('+_cnFormaLbl(forma)+')';
+  if(!(_cnCustoUnit(e).v>0)) return 'sem custo cadastrado — o estoque precisa lançar o custo da embalagem';
+  return null;
+}
+// v258 — foto da embalagem: estoque/compras (régua da ficha) E expedição (Everton) podem anexar
+function _canFotoEmb(){ return _canEditEmbalagens() || (typeof _temSetor==='function' && _temSetor('expedicao')); }
 function _geCustoComp(c){ var x=(insumos||[]).find(function(i){ return i.id===c.insumoId; }); if(!x) return null; var u=_cnCustoUnit(x); return {v:(u.v||0)*(parseFloat(c.qtd)||0), fonte:u.fonte}; }
 function _geCustoSomado(g){ var t=0, incompleto=false; (g.componentes||[]).forEach(function(c){ var cc=_geCustoComp(c); if(!cc||!(cc.v>0)) incompleto=true; else t+=cc.v; }); return {total:t, incompleto:incompleto}; }
 function renderGruposEmb(){
@@ -12166,7 +12380,7 @@ function _cnMenor12m(itemId, codigo){
   return min;
 }
 // v188 — MARKUP POR CATEGORIA DE CUSTO (regra do dono 04/08): ativos classificados AUTOMATICAMENTE
-// pelo custo por grama vigente (cascata custo base > última compra > médio) — Categoria 1 (barato,
+// pelo custo por grama vigente (cascata v258: última compra > custo base > médio) — Categoria 1 (barato,
 // < lim1 R$/g) markup alto; Categoria 2 (médio, < lim2) intermediário; Categoria 3 (caro, ≥ lim2)
 // baixo. Dimensionado nas vendas reais de jul-ago/26: 8×/7×/4× (700/600/300%) mantém 75% de
 // lucratividade líquida no mix. Markup DIGITADO na ficha do ativo prevalece (exceção consciente).
@@ -12187,8 +12401,14 @@ function _cnMarkupInsumo(x){
   var f=_cnFaixaDoInsumo(x);
   return f?f.mk:200; // embalagem sem markup próprio: padrão 200%
 }
-// custo unitário-base do componente (na UNIDADE DE COMPRA): custoBase editável > último > médio
+// custo unitário-base do componente (na UNIDADE DE COMPRA).
+// v258 — REGRA DO DONO 04/11: a COMPRA MAIS RECENTE SEMPRE VENCE (o custo acompanha a realidade;
+// quem nunca foi comprado pelo Lecare pode ficar com o custo base, que não é problema — "será
+// utilizado do estoque com preço antigo"). O custo base segue editável e é o ponto de partida dos
+// importados do Opery, mas uma compra posterior o supera. Usa o campo PERSISTIDO custoUltimo
+// (v187, sincronizado a cada compra/correção/estorno) — O(1), sem varrer o histórico.
 function _cnCustoUnit(x){
+  if(x && x.custoUltimo>0) return {v:x.custoUltimo, fonte:'último'};
   if(x && x.custoBase!=null && x.custoBase>0) return {v:x.custoBase, fonte:'base'};
   var c=_custosItem(x&&x.id, x&&x.codigo);
   if(c&&c.ultimo>0) return {v:c.ultimo, fonte:'último'};
@@ -12215,15 +12435,17 @@ function _cnCatCfg(nomeCat){ return (_cnCfgGet().categorias||[]).find(function(c
 // ── MOTOR DE CÁLCULO ── opts: {qspValor,qspUn} (semisólido/líquido) ou {nCaps,capsTam,involucroId} (cápsula); {embalagemId}
 function _cnCalcular(f, opts){
   var linhas=[], avisos=[], custoT=0, precoT=0;
+  var embC=0, embP=0; // v258 — parcelas da EMBALAGEM separadas (o preço fixo do produto cobre tudo MENOS a embalagem)
   var cat=_cnCatCfg(f.categoria), perdas=(cat&&parseFloat(cat.perdas))||0;
   var comp=(f.composicao||[]).map(function(cp){ return Object.assign({}, cp, {_x:(insumos||[]).find(function(i){ return i.id===cp.insumoId; })}); });
   comp.forEach(function(cp){ if(!cp._x) avisos.push('insumo da fórmula não encontrado no catálogo: '+(cp.nome||cp.insumoId)); });
   var ativos=comp.filter(function(c){ return c.papel!=='excipiente' && c._x; });
   var excip=comp.find(function(c){ return c.papel==='excipiente' && c._x; });
-  var addLinha=function(nome, qtd, un, custo, markup, fonte, aviso){
+  var addLinha=function(nome, qtd, un, custo, markup, fonte, aviso, grupo){
     var preco=custo*(1+(parseFloat(markup)||0)/100);
     custoT+=custo; precoT+=preco;
-    linhas.push({nome:nome, qtd:qtd, un:un, custo:custo, markup:parseFloat(markup)||0, preco:preco, fonte:fonte||'', aviso:aviso||''});
+    if(grupo==='emb'){ embC+=custo; embP+=preco; }
+    linhas.push({nome:nome, qtd:qtd, un:un, custo:custo, markup:parseFloat(markup)||0, preco:preco, fonte:fonte||'', aviso:aviso||'', grupo:grupo||'produto'});
   };
   var sugestaoTam=null;
   if(f.forma==='capsula'){
@@ -12285,28 +12507,210 @@ function _cnCalcular(f, opts){
   if(_embIds.length){
     _embIds.forEach(function(eid){
       var emb=(insumos||[]).find(function(i){ return i.id===eid; });
-      if(emb){ var cE=_cnCustoUnit(emb); addLinha(emb.nome+' (embalagem)', 1, 'UN', cE.v, _cnMarkupInsumo(emb), cE.fonte); }
+      if(emb){
+        // v259 — o RÓTULO vive na embalagem (ordem do dono 04/11: o rótulo depende do tamanho da
+        // embalagem, não do produto): soma ao custo dela e segue o markup da embalagem.
+        var cE=_cnCustoUnit(emb), rot=parseFloat(emb.custoRotulo)||0;
+        addLinha(emb.nome+' (embalagem'+(rot>0?' + rótulo':'')+')', 1, 'UN', cE.v+rot, _cnMarkupInsumo(emb), cE.fonte, '', 'emb');
+      }
       else avisos.push('embalagem do item não encontrada no catálogo (foi excluída?)');
     });
   } else avisos.push('escolha a EMBALAGEM para custear');
   if(cat && (parseFloat(cat.custoFixo)||0)>0) addLinha('Custo fixo — categoria '+cat.nome, 1, '', parseFloat(cat.custoFixo)||0, cat.markupFixo, 'config');
   else if(!cat && f.categoria) avisos.push('categoria "'+f.categoria+'" sem configuração (perdas/custo fixo) — cadastre em ⚙ Configuração');
-  if((parseFloat(f.custoRotulo)||0)>0) addLinha('Rótulo', 1, '', parseFloat(f.custoRotulo)||0, f.markupRotulo, 'produto');
-  return {linhas:linhas, custoTotal:custoT, precoTotal:precoT, avisos:avisos, perdas:perdas, sugestaoTam:sugestaoTam};
+  // v259 — a linha "Rótulo" do PRODUTO foi aposentada (f.custoRotulo não custeia mais; o rótulo está na embalagem)
+  // v258 — decomposição produto × embalagem: o preço de venda FIXO cobre a parte do PRODUTO
+  // (ativos + base + perdas + custo fixo + invólucro); a embalagem (com o rótulo dela) soma por cima.
+  return {linhas:linhas, custoTotal:custoT, precoTotal:precoT, avisos:avisos, perdas:perdas, sugestaoTam:sugestaoTam,
+    embCusto:embC, embPreco:embP, custoProduto:custoT-embC, precoProduto:precoT-embP};
+}
+// ═══ v258 — PREÇO DE VENDA FIXO + VIGIA DE MARGEM (regras do dono 04/11) ═══
+// O produto ganha PREÇO DE VENDA FIXO por unidade (R$/g, R$/mL ou R$/cápsula): manual do admin ou
+// "aderido" do sugerido — e ele NUNCA se move sozinho. O cálculo custo×markup continua vivo como
+// SUGERIDO (referência): custo subiu → sugerido sobe, preço fixo fica → a margem real encolhe.
+// Farol: perda de 20–70% da margem de referência = AMARELO; >70% ou prejuízo = VERMELHO. Só visual
+// no catálogo (decisão do dono: sem sino). MARGEM EXTRA % opcional por produto: preço praticado =
+// preço de venda × (1+extra) — incide na parte do PRODUTO (a embalagem soma por cima com o markup
+// próprio) e vale também quando o produto está no sugerido-fallback.
+var CN_CATS_USO=[['labial','Labial'],['facial','Facial'],['capilar','Capilar'],['corporal','Corporal'],['interno','Interno'],['intimo','Íntimo'],['tratamento','Tratamento']];
+function _cnCatUsoLbl(v){ var p=CN_CATS_USO.find(function(c){ return c[0]===v; }); return p?p[1]:''; }
+function _cnPrecoUnLbl(f){ return (f&&f.forma==='capsula')?'cápsula':(((f&&f.qspUn)==='mL')?'mL':'g'); }
+function _cnQtdRef(f){ if(f&&f.forma==='capsula') return 60; var v=parseFloat(f&&f.qspValor); return v>0?v:120; }
+// sugerido POR UNIDADE na volumetria de referência (QSP padrão da fórmula; cápsulas: pote de 60),
+// SEM embalagem. ok=false quando o custo não fecha (insumo sem custo, fórmula incompleta) — nunca
+// se finge margem com número furado.
+function _cnSugerido(f){
+  try{
+    var opts=(f.forma==='capsula')?{nCaps:60, capsTam:f.capsTam||'', involucroId:f.involucroId||null}:{qspValor:_cnQtdRef(f), qspUn:f.qspUn||'g'};
+    var c=_cnCalcular(f, opts);
+    var qr=_cnQtdRef(f);
+    var avs=(c.avisos||[]).filter(function(a){ return String(a).indexOf('escolha a EMBALAGEM')<0; });
+    var ok=(c.custoProduto>0) && !avs.length && !(c.linhas||[]).some(function(l){ return (l.grupo||'produto')!=='emb' && l.aviso; });
+    return { ok:ok, qtdRef:qr, custoUn:(c.custoProduto||0)/qr, precoUn:(c.precoProduto||0)/qr, avisos:avs };
+  }catch(e){ return { ok:false, qtdRef:_cnQtdRef(f), custoUn:0, precoUn:0, avisos:[String((e&&e.message)||e)] }; }
+}
+function _cnPrecoPraticadoUn(f, sug){
+  var pv=parseFloat(f&&f.precoVenda);
+  var base=(pv>0)?pv:((sug&&sug.ok)?sug.precoUn:0);
+  return base*(1+((parseFloat(f&&f.margemExtra)||0)/100));
+}
+function _cnVigia(f, sug){
+  sug=sug||_cnSugerido(f);
+  if(!sug.ok) return {st:'cinza', sug:sug};
+  var pv=parseFloat(f&&f.precoVenda);
+  var r={sug:sug, prat:_cnPrecoPraticadoUn(f, sug), mRef:sug.precoUn-sug.custoUn, red:null};
+  r.mReal=r.prat-sug.custoUn;
+  if(!(pv>0)){ r.st=(r.mReal<=0)?'vermelho':'sempreco'; r.prejuizo=(r.mReal<=0); return r; } // vendendo pelo sugerido vivo
+  if(r.mReal<=0){ r.st='vermelho'; r.prejuizo=true; return r; }
+  if(!(r.mRef>0)){ r.st='ok'; return r; } // sugerido não supera o custo (markups zerados) — sem régua possível
+  r.red=Math.round(((r.mRef-r.mReal)/r.mRef)*1e6)/1e6; // 6 casas — fronteiras 20%/70% estáveis (sem ruído de float)
+  r.st = r.red>0.7 ? 'vermelho' : (r.red>=0.2 ? 'amarelo' : 'ok');
+  return r;
+}
+// cache do vigia (uma varredura cobre as ~1.008 fórmulas; nunca recalcular por tecla digitada)
+var _cnVigiaCache=null, _cnVigiaCacheEm=0, _cnVigiaBuilding=false;
+function _cnVigiaInvalidar(){ _cnVigiaCache=null; _cnVigiaCacheEm=0; }
+function _cnVigiaMapa(){
+  if(_cnVigiaCache && (Date.now()-_cnVigiaCacheEm)<60000) return _cnVigiaCache;
+  var m={};
+  (catalogoNovo||[]).forEach(function(f){ if(f&&f.id){ try{ m[f.id]=_cnVigia(f); }catch(_e){ m[f.id]={st:'cinza'}; } } });
+  _cnVigiaCache=m; _cnVigiaCacheEm=Date.now();
+  return m;
+}
+function _cnFarolHtml(v){
+  if(!v) return '';
+  var dot=function(cor,tit){ return '<span title="'+tit+'" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+cor+';vertical-align:middle"></span>'; };
+  if(v.st==='vermelho') return dot('var(--st-bad-tx)', v.prejuizo?'PREJUÍZO: preço praticado abaixo do custo atual':'Margem encolheu mais de 70% da referência');
+  if(v.st==='amarelo') return dot('var(--st-mid-tx)','Margem encolheu entre 20% e 70% da referência — atenção');
+  if(v.st==='cinza') return dot('var(--text-tertiary)','Custo não calculável (insumo sem custo ou fórmula incompleta) — sem régua de margem');
+  return '';
+}
+function _cnPvCellHtml(f, v){
+  var pv=parseFloat(f&&f.precoVenda), un=_cnPrecoUnLbl(f);
+  var ex=(parseFloat(f&&f.margemExtra)||0);
+  var txt=(pv>0)?('R$ '+(Math.round(pv*10000)/10000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})+'/'+un+(ex?' <span style="color:var(--text-tertiary)" title="Margem extra">+'+ex+'%</span>':'')):'<span style="color:var(--text-tertiary)" title="Sem preço definido — o orçamento usa o SUGERIDO vivo do cálculo">sugerido</span>';
+  var farol=_cnFarolHtml(v);
+  return txt+(farol?' '+farol:'');
+}
+// definição inicial em massa: grava o SUGERIDO DE HOJE como preço de venda de quem ainda não tem
+// (fórmula com cálculo incompleto fica "sem preço" — nunca se congela número furado). Só admin.
+function _cnDefinirPrecosIniciais(){
+  if(!(currentUser&&currentUser.perfil==='admin')){ alert('Somente o administrador define preços de venda.'); return; }
+  var jaTem=0, semCalc=0, definir=[];
+  (catalogoNovo||[]).forEach(function(f){
+    if(!f||!f.id) return;
+    if(parseFloat(f.precoVenda)>0){ jaTem++; return; }
+    var s=_cnSugerido(f);
+    if(s.ok && s.precoUn>0) definir.push({f:f, v:Math.round(s.precoUn*10000)/10000});
+    else semCalc++;
+  });
+  if(!definir.length){ alert('Nenhuma fórmula a definir: '+jaTem+' já têm preço e '+semCalc+' estão sem cálculo completo.'); return; }
+  if(!confirm('Definir o preço de venda de '+definir.length+' fórmula(s) pelo SUGERIDO DE HOJE?\n\n· '+jaTem+' já têm preço (não mudam)\n· '+semCalc+' sem cálculo completo (ficam "sem preço" até o custo fechar)\n\nO preço gravado é FIXO: só muda por ajuste manual.')) return;
+  var em=Date.now(), por=(currentUser&&currentUser.name)||'';
+  definir.forEach(function(d){ d.f.precoVenda=d.v; d.f.precoVendaFonte='sugerido'; d.f.precoVendaEm=em; d.f.precoVendaPor=por; });
+  _cnVigiaInvalidar(); saveData();
+  alert('✓ '+definir.length+' preço(s) de venda definidos pelo sugerido de hoje.');
+  try{ renderCnLucr(); }catch(_e){} try{ if(_cnSub==='formulas') renderCatNovo(); }catch(_e){}
+}
+// "aderir ao sugerido" pontual (linha da aba Lucratividade) — re-fotografa o preço daquele produto
+function _cnAderirSugerido(fid){
+  if(!(currentUser&&currentUser.perfil==='admin')){ alert('Somente o administrador define preços de venda.'); return; }
+  var f=(catalogoNovo||[]).find(function(x){ return x&&x.id===fid; }); if(!f) return;
+  var s=_cnSugerido(f);
+  if(!(s.ok&&s.precoUn>0)){ alert('O cálculo desta fórmula não fecha — resolva o custo dos insumos antes.'); return; }
+  var v=Math.round(s.precoUn*10000)/10000;
+  if(!confirm('Gravar o sugerido de hoje como preço de venda de "'+(f.nome||'')+'"?\n\nR$ '+v+' por '+_cnPrecoUnLbl(f)+(parseFloat(f.precoVenda)>0?('\n(substitui o preço atual R$ '+f.precoVenda+')'):''))) return;
+  f.precoVenda=v; f.precoVendaFonte='sugerido'; f.precoVendaEm=Date.now(); f.precoVendaPor=(currentUser&&currentUser.name)||'';
+  _cnVigiaInvalidar(); saveData(); try{ renderCnLucr(); }catch(_e){}
+}
+// ── ABA LUCRATIVIDADE (vigia de margem — só visual, pedido do dono 04/11) ──
+var _cnLucrFiltro='atencao';
+function _cnLucrSetF(x){ _cnLucrFiltro=x; renderCnLucr(); }
+function renderCnLucr(){
+  var box=document.getElementById('cn-lucr-box'); if(!box) return;
+  var mapa=_cnVigiaMapa();
+  var admin=!!(currentUser&&currentUser.perfil==='admin');
+  var q=(document.getElementById('cn-lucr-busca')?.value||'').toLowerCase().trim();
+  var lista=(catalogoNovo||[]).filter(function(f){ return f&&f.id&&f.ativo!==false; });
+  var cont={vermelho:0, amarelo:0, ok:0, sempreco:0, cinza:0};
+  lista.forEach(function(f){ var v=mapa[f.id]; if(v&&cont[v.st]!=null) cont[v.st]++; });
+  var ordem={vermelho:0, amarelo:1, sempreco:2, cinza:3, ok:4};
+  var vis=lista.filter(function(f){
+    var v=mapa[f.id]||{st:'cinza'};
+    if(q && ((f.nome||'')+' '+(f.codigo||'')).toLowerCase().indexOf(q)<0) return false;
+    if(_cnLucrFiltro==='atencao') return v.st==='vermelho'||v.st==='amarelo';
+    if(_cnLucrFiltro==='todos') return true;
+    return v.st===_cnLucrFiltro;
+  });
+  vis.sort(function(a,b){ var va=mapa[a.id]||{st:'cinza'}, vb=mapa[b.id]||{st:'cinza'};
+    if(ordem[va.st]!==ordem[vb.st]) return ordem[va.st]-ordem[vb.st];
+    var ra=(va.red!=null?va.red:-1), rb=(vb.red!=null?vb.red:-1); if(ra!==rb) return rb-ra;
+    return (a.nome||'').localeCompare(b.nome||''); });
+  var chip=function(key,lbl,n,cor){ var on=_cnLucrFiltro===key; return '<button onclick="_cnLucrSetF(\''+key+'\')" style="font-size:11.5px;padding:4px 11px;border-radius:14px;border:.5px solid '+(on?cor:'var(--border)')+';background:'+(on?cor:'transparent')+';color:'+(on?'#fff':'var(--text-secondary)')+';cursor:pointer;font-family:inherit">'+lbl+' ('+n+')</button>'; };
+  var fmt4=function(v){ return 'R$ '+(Math.round(v*10000)/10000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4}); };
+  var td='padding:6px 8px;border-bottom:.5px solid var(--border);font-size:12px';
+  var rows=vis.slice(0,400).map(function(f){
+    var v=mapa[f.id]||{st:'cinza'}, s=v.sug||{};
+    var un=_cnPrecoUnLbl(f);
+    var pv=parseFloat(f.precoVenda);
+    var fonteTit=(pv>0)?('Definido '+(f.precoVendaFonte==='sugerido'?'pelo sugerido':'manualmente')+(f.precoVendaEm?' em '+new Date(f.precoVendaEm).toLocaleDateString('pt-BR'):'')+(f.precoVendaPor?' por '+f.precoVendaPor:'')):'';
+    return '<tr>'+
+      '<td style="'+td+';text-align:center">'+(_cnFarolHtml(v)||'<span title="Margem dentro da referência" style="color:var(--st-ok-tx)">✓</span>')+'</td>'+
+      '<td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(f.codigo||'—')+'</td>'+
+      '<td style="'+td+'">'+escapeHtml(f.nome||'—')+'</td>'+
+      '<td style="'+td+'">'+_cnFormaLbl(f.forma)+'</td>'+
+      '<td style="'+td+';text-align:right" title="Custo atual por '+un+' (pré-embalagem: ativos+base+perdas+custo fixo'+(f.forma==='capsula'?'+invólucro':'')+'; o rótulo está na embalagem — v259)">'+(v.st==='cinza'?'<span style="color:var(--text-tertiary)">sem custo</span>':fmt4(s.custoUn||0)+'/'+un)+'</td>'+
+      '<td style="'+td+';text-align:right" title="Sugerido VIVO de hoje (custo atual × markups do cadastro) — a referência da margem">'+(v.st==='cinza'?'—':fmt4(s.precoUn||0)+'/'+un)+'</td>'+
+      '<td style="'+td+';text-align:right" title="'+escapeHtml(fonteTit)+'">'+((pv>0)?fmt4(pv)+'/'+un:'<span style="color:var(--text-tertiary)">— (vende pelo sugerido)</span>')+'</td>'+
+      '<td style="'+td+';text-align:right">'+((parseFloat(f.margemExtra)||0)?('+'+f.margemExtra+'%'):'—')+'</td>'+
+      '<td style="'+td+';text-align:right;font-weight:600" title="Preço praticado por '+un+' (preço de venda × margem extra; sem a embalagem)">'+(v.prat!=null?fmt4(v.prat)+'/'+un:'—')+'</td>'+
+      '<td style="'+td+';text-align:right" title="Quanto da margem de referência já se perdeu com a alta do custo">'+(v.red!=null?('<b>'+Math.round(v.red*100)+'%</b>'):'—')+'</td>'+
+      (admin?('<td style="'+td+';text-align:center;white-space:nowrap"><button onclick="openCnModal(\''+f.id+'\')" style="font-size:11px;padding:3px 9px">✏ Preço</button> <button onclick="_cnAderirSugerido(\''+f.id+'\')" style="font-size:11px;padding:3px 9px" title="Grava o sugerido de hoje como novo preço de venda — a régua da margem zera">↺ Aderir</button></td>'):'')+'</tr>';
+  }).join('');
+  box.innerHTML='<div class="panel" style="padding:14px">'+
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'+
+      '<input type="text" id="cn-lucr-busca" placeholder="Buscar fórmula..." oninput="renderCnLucr()" value="'+escapeHtml(document.getElementById('cn-lucr-busca')?.value||'')+'" style="min-width:200px;font-size:13px">'+
+      chip('atencao','⚠ Atenção', cont.vermelho+cont.amarelo, 'var(--st-bad-tx)')+
+      chip('vermelho','Vermelhos', cont.vermelho, 'var(--st-bad-tx)')+
+      chip('amarelo','Amarelos', cont.amarelo, 'var(--st-mid-tx)')+
+      chip('sempreco','Sem preço', cont.sempreco, 'var(--text-tertiary)')+
+      chip('cinza','Sem custo', cont.cinza, 'var(--text-tertiary)')+
+      chip('todos','Todos', lista.length, 'var(--text-secondary)')+
+      (admin?'<button class="btn-primary" style="margin-left:auto;font-size:12px;padding:6px 14px" onclick="_cnDefinirPrecosIniciais()" title="Grava o sugerido de hoje como preço de venda de TODAS as fórmulas que ainda não têm preço (cálculo incompleto fica de fora). Nada muda em quem já tem preço.">Definir preços iniciais (sugerido do dia)</button>':'')+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">Régua (regra do dono 04/11): a referência é o <b>sugerido vivo</b> (custo atual × markups do cadastro). O preço de venda é FIXO — custo subiu e o preço ficou → a margem real encolhe. Perda de <b>20–70%</b> da margem de referência = <span style="color:var(--st-mid-tx);font-weight:700">amarelo</span>; <b>mais de 70% ou prejuízo</b> = <span style="color:var(--st-bad-tx);font-weight:700">vermelho</span>. Alerta só visual, aqui no catálogo.</div>'+
+    '<div class="table-scroll"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--bg-secondary);font-size:10.5px">'+
+    '<th style="padding:6px 8px"></th><th style="padding:6px 8px;text-align:left">Código</th><th style="padding:6px 8px;text-align:left">Produto</th><th style="padding:6px 8px;text-align:left">Forma</th><th style="padding:6px 8px;text-align:right">Custo atual</th><th style="padding:6px 8px;text-align:right">Sugerido hoje</th><th style="padding:6px 8px;text-align:right">Preço de venda</th><th style="padding:6px 8px;text-align:right">Extra</th><th style="padding:6px 8px;text-align:right">Praticado</th><th style="padding:6px 8px;text-align:right">Margem perdida</th>'+(admin?'<th style="padding:6px 8px">Ações</th>':'')+
+    '</tr></thead><tbody>'+(rows||'<tr><td colspan="11" style="padding:18px;text-align:center;color:var(--text-tertiary);font-size:12px">Nada neste filtro.</td></tr>')+'</tbody></table></div>'+
+    (vis.length>400?'<div style="font-size:11px;color:var(--text-tertiary);padding:6px 0">Mostrando 400 de '+vis.length+' — refine a busca.</div>':'')+
+  '</div>';
 }
 // ── SUB-ABAS ──
 function setCatNovoSub(sub){
   _cnSub=sub;
-  ['formulas','simulador','config'].forEach(function(t){
+  ['formulas','simulador','lucr','config'].forEach(function(t){
     var b=document.getElementById('cn-sub-'+t); if(b) b.classList.toggle('active', t===sub);
     var p=document.getElementById('cn-pg-'+t); if(p) p.style.display=(t===sub)?'':'none';
   });
   if(sub==='formulas') renderCatNovo();
   if(sub==='config') renderCnConfig();
   if(sub==='simulador') renderCnSimulador();
+  if(sub==='lucr') renderCnLucr(); // v258 — vigia de margem
 }
 // ── LISTA DE FÓRMULAS ──
-function _cnFormaLbl(fm){ return fm==='capsula'?'Cápsulas':(fm==='liquido'?'Líquido':'Semisólido'); }
+// v258 — formas farmacêuticas: união da lista do dono (04/11) com as existentes; 'semisolido' é
+// legado e será reclassificado uma a uma (gel / gel creme / creme). A FAMÍLIA faz a ponte na
+// compatibilidade de embalagens enquanto a reclassificação não termina.
+// v259 — padronização do dono (04/11): gel, gel creme, líquido, óleo, scoop, cápsula, SABONETE e
+// SHAMPOO entram; as demais já existentes no acervo permanecem (regra do dono: "se tem alguma forma
+// que eu não citei mas já tem no sistema, pode manter, depois vamos ajustando uma a uma").
+// v259 — acréscimos do dono (04/11): ESPUMA e SPRAY/BRUMA são formas SEM ponte de família (exigem
+// embalagem espumadora/borrifadora — frasco comum não serve); SÉRUM tem ponte com a família líquido
+// (frasco pump/conta-gotas marcado "líquido" serve sérum). Sachê NÃO é forma — é embalagem (definição
+// do dono): o sachê é classificado com as formas que acondiciona.
+var CN_FORMAS_LBL={ semisolido:'Semisólido', gel:'Gel', gel_creme:'Gel creme', creme:'Creme', serum:'Sérum', liquido:'Líquido', oleo:'Óleo', espuma:'Espuma', spray:'Spray/Bruma', sabonete:'Sabonete', shampoo:'Shampoo', solido:'Sólido', capsula:'Cápsulas', goma:'Goma', scoop:'Scoop (pó)' };
+var _CN_FAMILIA={ semisolido:['semisolido','gel','gel_creme','creme'], liquido:['liquido','oleo','sabonete','shampoo','serum'], capsula:['capsula','solido'] };
+function _cnFormaLbl(fm){ return CN_FORMAS_LBL[fm]||CN_FORMAS_LBL.semisolido; }
 function renderCatNovo(){
   var tb=document.getElementById('cn-tbody'); if(!tb) return;
   var pode=_canEditInsumos();
@@ -12316,6 +12720,13 @@ function renderCatNovo(){
   if(q) lista=lista.filter(function(f){ return ((f.nome||'')+' '+(f.codigo||'')+' '+(f.categoria||'')).toLowerCase().indexOf(q)>=0; });
   lista.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
   var vazio=document.getElementById('cn-vazio'); if(vazio) vazio.style.display=lista.length?'none':'block';
+  // v258 — farol de margem na lista: usa o cache do vigia; se está frio, pinta sem farol e agenda
+  // UMA reconstrução (a flag impede re-agendamento em cascata a cada tecla da busca)
+  var _vMapa=(_cnVigiaCache && (Date.now()-_cnVigiaCacheEm)<60000)?_cnVigiaCache:null;
+  if(!_vMapa && !_cnVigiaBuilding){
+    _cnVigiaBuilding=true;
+    setTimeout(function(){ try{ _cnVigiaMapa(); }finally{ _cnVigiaBuilding=false; } try{ if(_cnSub==='formulas') renderCatNovo(); }catch(_e){} }, 30);
+  }
   tb.innerHTML=lista.map(function(f){
     var nAt=(f.composicao||[]).filter(function(c){ return c.papel!=='excipiente'; }).length;
     var temEx=(f.composicao||[]).some(function(c){ return c.papel==='excipiente'; });
@@ -12328,6 +12739,7 @@ function renderCatNovo(){
       '<td style="padding:7px 10px;font-size:12px">'+_cnFormaLbl(f.forma)+'</td>'+
       '<td style="padding:7px 10px;text-align:center;font-size:12px">'+nAt+' ativo(s)'+(temEx?' + QSP':' <span style="color:var(--st-bad-tx)" title="sem base/excipiente">⚠</span>')+'</td>'+
       '<td style="padding:7px 10px;font-size:11px;color:var(--text-secondary)">'+escapeHtml(padrao)+'</td>'+
+      '<td style="padding:7px 10px;font-size:12px;text-align:right;white-space:nowrap">'+_cnPvCellHtml(f, _vMapa?_vMapa[f.id]:null)+'</td>'+ /* v258 — preço fixo + farol */
       '<td style="padding:7px 10px;text-align:center;white-space:nowrap">'+acoes+'</td></tr>';
   }).join('');
 }
@@ -12346,15 +12758,32 @@ function openCnModal(id){
   catSel.innerHTML='<option value="">— sem categoria —</option>'+cats.map(function(c){ return '<option value="'+escapeHtml(c)+'">'+escapeHtml(c)+'</option>'; }).join('');
   catSel.value=(f&&f.categoria&&cats.indexOf(f.categoria)>=0)?f.categoria:'';
   document.getElementById('cn-forma').value=f?(f.forma||'semisolido'):'semisolido';
+  // v258 — categoria de uso + preço de venda fixo (só admin) + margem extra
+  var cuSel=document.getElementById('cn-catuso');
+  if(cuSel){
+    cuSel.innerHTML='<option value="">— sem categoria de uso —</option>'+CN_CATS_USO.map(function(c){ return '<option value="'+c[0]+'">'+c[1]+'</option>'; }).join('');
+    cuSel.value=(f&&f.categoriaUso)||'';
+  }
+  var _admin=!!(currentUser&&currentUser.perfil==='admin');
+  _cnPvAderiu=false;
+  var pvI=document.getElementById('cn-precovenda'), meI=document.getElementById('cn-margemextra');
+  if(pvI){ pvI.value=(f&&f.precoVenda!=null&&f.precoVenda!=='')?f.precoVenda:''; pvI.disabled=!_admin; pvI.title=_admin?'':'Somente o administrador define o preço de venda.'; }
+  if(meI){ meI.value=(f&&f.margemExtra!=null&&f.margemExtra!=='')?f.margemExtra:''; meI.disabled=!_admin; meI.title=_admin?'':'Somente o administrador define a margem extra.'; }
+  var unS=document.getElementById('cn-pv-un'); if(unS) unS.textContent=f?_cnPrecoUnLbl(f):'g';
+  var sugD=document.getElementById('cn-pv-sug'), adB=document.getElementById('cn-pv-aderir');
+  _cnPvSugVal=null;
+  if(sugD){
+    if(f){ var _s=_cnSugerido(f); if(_s.ok&&_s.precoUn>0){ _cnPvSugVal=Math.round(_s.precoUn*10000)/10000; sugD.textContent='R$ '+_cnPvSugVal+' / '+_cnPrecoUnLbl(f); sugD.title='Na volumetria de referência ('+_s.qtdRef+' '+_cnPrecoUnLbl(f)+(f.forma==='capsula'?'s':'')+'), sem embalagem'; } else { sugD.textContent='— cálculo incompleto'; sugD.title=(_s.avisos||[]).join(' | '); } }
+    else { sugD.textContent='— salve a fórmula primeiro'; sugD.title=''; }
+  }
+  if(adB) adB.style.display=(_admin&&_cnPvSugVal!=null)?'':'none';
   _cnComp=f?(f.composicao||[]).map(function(c){ return Object.assign({},c); }):[];
   _cnInvId=f?(f.involucroId||null):null;
   document.getElementById('cn-inv-busca').value=(f&&f.involucroNome)||'';
   document.getElementById('cn-capstam').value=(f&&f.capsTam)||'';
   document.getElementById('cn-qspv').value=(f&&f.qspValor!=null)?f.qspValor:'';
   document.getElementById('cn-qspu').value=(f&&f.qspUn)||'g';
-  document.getElementById('cn-rotulo').value=(f&&f.custoRotulo!=null)?f.custoRotulo:'';
-  document.getElementById('cn-rotulomk').value=(f&&f.markupRotulo!=null)?f.markupRotulo:'';
-  document.getElementById('cn-modouso').value=f?(f.modoUso||''):'';
+  document.getElementById('cn-modouso').value=f?(f.modoUso||''):''; // v259 — rótulo saiu do produto (vive na embalagem)
   document.getElementById('cn-obs').value=f?(f.obs||''):'';
   document.getElementById('cn-ativo').checked=f?(f.ativo!==false):true;
   document.getElementById('cn-ins-busca').value='';
@@ -12362,12 +12791,17 @@ function openCnModal(id){
   document.getElementById('cn-modal').classList.add('open');
 }
 function closeCnModal(){ document.getElementById('cn-modal').classList.remove('open'); _cnEditId=null; _cnComp=[]; _cnInvId=null; }
+// v258 — rastreio do "Aderir" (fonte do preço: 'sugerido' quando veio do botão, 'manual' quando digitado)
+var _cnPvAderiu=false, _cnPvSugVal=null;
+function _cnPvDigitou(){ _cnPvAderiu=false; }
+function _cnPvAderir(){ var i=document.getElementById('cn-precovenda'); if(i&&_cnPvSugVal!=null&&!i.disabled){ i.value=_cnPvSugVal; _cnPvAderiu=true; } }
 function _cnFormaChange(){
   var fm=document.getElementById('cn-forma').value;
   document.getElementById('cn-box-caps').style.display=(fm==='capsula')?'':'none';
   document.getElementById('cn-box-qsp').style.display=(fm==='capsula')?'none':'';
   var h=document.getElementById('cn-comp-hint');
   if(h) h.textContent=(fm==='capsula')?'— dose POR CÁPSULA (mg/g/mcg/UI); excipiente completa pelo volume da cápsula':'— ativos em % (ou peso absoluto); a BASE marcada como excipiente completa o QSP';
+  var unS=document.getElementById('cn-pv-un'); if(unS) unS.textContent=(fm==='capsula')?'cápsula':((document.getElementById('cn-qspu')?.value==='mL')?'mL':'g'); // v258
   _cnRenderComp();
 }
 function _cnInsSearch(){
@@ -12383,7 +12817,7 @@ function _cnAddComp(insumoId){
   var x=(insumos||[]).find(function(p){ return p.id===insumoId; }); if(!x) return;
   if(_cnComp.some(function(c){ return c.insumoId===insumoId; })){ document.getElementById('cn-ins-ac').classList.remove('open'); return; }
   var fm=document.getElementById('cn-forma').value;
-  var ehBase=/excipiente|base/i.test(x.categoria||'');
+  var ehBase=(x.ehBase===true) || /excipiente|base/i.test(x.categoria||''); // v259 — checkbox BASE da ficha decide; categoria segue como fallback
   var un=x.unidadePadrao||((fm==='capsula')?'mg':'%');
   _cnComp.push({insumoId:x.id, codigo:x.codigo||'', nome:x.nome||'', papel:ehBase?'excipiente':'ativo', dose:ehBase?'':'', unidade:ehBase?'':un});
   document.getElementById('cn-ins-busca').value=''; document.getElementById('cn-ins-ac').classList.remove('open');
@@ -12428,17 +12862,35 @@ function saveCnFormula(){
   var _num=function(id){ var v=parseFloat(document.getElementById(id).value); return isNaN(v)?null:v; };
   var dados={ codigo:codigo, nome:nome, categoria:document.getElementById('cn-cat').value||'',
     forma:document.getElementById('cn-forma').value, composicao:comp,
+    categoriaUso:(document.getElementById('cn-catuso')?.value||''), // v258 — vitrine do orçamento
     capsTam:document.getElementById('cn-capstam').value||'', involucroId:_cnInvId||null, involucroNome:invNome,
     qspValor:_num('cn-qspv'), qspUn:document.getElementById('cn-qspu').value||'g',
-    custoRotulo:_num('cn-rotulo'), markupRotulo:_num('cn-rotulomk'),
+    // v259 — custoRotulo/markupRotulo saíram do produto: o rótulo vive na embalagem
     modoUso:document.getElementById('cn-modouso').value.trim(), obs:document.getElementById('cn-obs').value.trim(),
     ativo:document.getElementById('cn-ativo').checked };
+  // v258 — PREÇO DE VENDA FIXO + margem extra: SÓ o administrador grava; demais perfis preservam o
+  // que está (os campos abrem desabilitados, e aqui a gravação também é barrada — defesa dupla).
+  var fAtual=_cnEditId?(catalogoNovo||[]).find(function(x){ return x.id===_cnEditId; }):null;
+  if(currentUser&&currentUser.perfil==='admin'){
+    var pvNovo=_num('cn-precovenda'), meNovo=_num('cn-margemextra');
+    dados.precoVenda=pvNovo; dados.margemExtra=meNovo;
+    var pvAntigo=fAtual?(fAtual.precoVenda!=null?parseFloat(fAtual.precoVenda):null):null;
+    if(pvNovo!==pvAntigo){
+      dados.precoVendaFonte=(pvNovo!=null)?(_cnPvAderiu?'sugerido':'manual'):null;
+      dados.precoVendaEm=(pvNovo!=null)?Date.now():null;
+      dados.precoVendaPor=(pvNovo!=null)?((currentUser&&currentUser.name)||''):null;
+    } else if(fAtual){ dados.precoVendaFonte=fAtual.precoVendaFonte||null; dados.precoVendaEm=fAtual.precoVendaEm||null; dados.precoVendaPor=fAtual.precoVendaPor||null; }
+  } else if(fAtual){
+    dados.precoVenda=fAtual.precoVenda!=null?fAtual.precoVenda:null; dados.margemExtra=fAtual.margemExtra!=null?fAtual.margemExtra:null;
+    dados.precoVendaFonte=fAtual.precoVendaFonte||null; dados.precoVendaEm=fAtual.precoVendaEm||null; dados.precoVendaPor=fAtual.precoVendaPor||null;
+  }
   if(_cnEditId){
     var f=(catalogoNovo||[]).find(function(x){ return x.id===_cnEditId; });
     if(f) Object.assign(f, dados);
   } else {
     catalogoNovo.push(Object.assign({ id:'cn'+Date.now(), criadoEm:Date.now(), criadoPor:(currentUser&&currentUser.name)||'' }, dados));
   }
+  _cnVigiaInvalidar(); // v258 — composição/preço mudou → farol recalcula
   closeCnModal(); renderCatNovo(); saveData();
 }
 function deleteCnFormula(id){
@@ -12467,7 +12919,7 @@ function renderCnConfig(){
   '</div>'+
   '<div class="panel" style="padding:14px;margin-bottom:12px">'+
     '<div style="font-weight:600;margin-bottom:4px">Precificação por categoria de custo (ativos)</div>'+
-    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">Regra do dono 04/08: cada ativo é classificado AUTOMATICAMENTE pelo custo por grama vigente (custo base > última compra). Markup digitado na ficha do ativo prevalece sobre a faixa. As premissas alimentam a recalibração anual da aba Análise de Lucratividade.</div>'+
+    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">Regra do dono 04/08: cada ativo é classificado AUTOMATICAMENTE pelo custo por grama vigente (v258: última compra > custo base). Markup digitado na ficha do ativo prevalece sobre a faixa. As premissas alimentam a recalibração anual da aba Análise de Lucratividade.</div>'+
     (function(){ var fx=_cnFaixasCfg(); var inp=function(campo,val,w,step){ return '<input type="number" min="0" step="'+(step||'0.01')+'" value="'+val+'" onchange="_cnCfgSetFx(\''+campo+'\',this.value)" style="width:'+(w||'80')+'px;text-align:right;font-size:12px"'+(pode?'':' disabled')+'>'; };
       return '<div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px;align-items:center;margin-bottom:8px">'+
         '<span>Cat. 1 (barato): até R$ '+inp('lim1',fx.lim1)+' /g → markup '+inp('mk1',fx.mk1,'70','1')+' %</span>'+
@@ -12682,11 +13134,16 @@ function renderSolMenos(){
     var acoes;
     if(comAcoes){
       acoes='<button class="btn-primary" onclick="_rmIncluirProxima(\''+l.id+'\',\''+escapeHtml(String(it.itemId||''))+'\')" title="O faltante dos pedidos descobertos vira solicitação pendente e entra na próxima lista de compra (ou num Complementar)" style="font-size:11px;padding:4px 10px;white-space:nowrap">↪ Incluir na próxima lista</button> '+
+            '<button onclick="_rmIncluirNoPc(\''+l.id+'\',\''+escapeHtml(String(it.itemId||''))+'\')" title="O fornecedor vai mandar o faltante na entrega de OUTRO pedido de compra (aberto ou fechado): anexa a ele — na conferência de recebimento daquele pedido a chegada confirma e completa este recebimento" style="font-size:11px;padding:4px 10px;white-space:nowrap">📦 Incluir no pedido</button> '+ // v257
             '<button onclick="_rmSemRecompra(\''+l.id+'\',\''+escapeHtml(String(it.itemId||''))+'\')" title="Registrar que o faltante NÃO será recomprado (fica auditado)" style="font-size:11px;padding:4px 10px;white-space:nowrap">✕ Sem recompra</button>';
     } else {
       var r=x.res;
       acoes = r.acao==='recompra'
         ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">↪ re-solicitado</span><br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.por||'')+' · '+(r.em?fmtDate(_gstDataDe(r.em)):'')+'</span>'
+        : r.acao==='incluir_pc' // v257 — faltante anexado a outro pedido de compra
+        ? '<span style="font-size:11px;color:var(--st-inf-tx);font-weight:600">📦 aguarda no '+escapeHtml(r.pcNumero||'PC')+'</span>'+
+          ((r.chegadas||[]).length?'<br><span style="font-size:10px;color:var(--st-ok-tx);font-weight:600">✔ chegou '+((r.chegadas||[]).reduce(function(a2,x2){ return a2+(parseFloat(x2.qtd)||0); },0)).toLocaleString('pt-BR')+' '+escapeHtml(un)+'</span>':'')+
+          '<br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.por||'')+' · '+(r.em?fmtDate(_gstDataDe(r.em)):'')+'</span>'
         : '<span style="font-size:11px;color:var(--text-secondary);font-weight:600">✕ sem recompra</span>'+(r.motivo?'<br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.motivo)+'</span>':'')+'<br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.por||'')+' · '+(r.em?fmtDate(_gstDataDe(r.em)):'')+'</span>';
     }
     var _pcRef=_rmPcDoItem(c); // v209 — pedido de compra de onde o item veio a menos
@@ -12774,6 +13231,54 @@ function _rmSemRecompra(listaId, itemId){
     if(o){ try{ addAudit(o,'compras','faltante sem recompra','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': faltante de '+(parseFloat(og.qtd)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' NÃO será recomprado'+((motivo||'').trim()?' — '+motivo.trim():'')); }catch(_e){} }
   });
   renderSolMenos(); saveData();
+}
+// v257 — 📦 INCLUIR NO PEDIDO (ordem do dono 03/11): o fornecedor não mandou o faltante nesta
+// entrega e vai mandar na de OUTRO pedido de compra (aberto ou fechado — só não os já recebidos).
+// Abre um MODAL para escolher o PC; na conferência de recebimento daquele PC aparece a seção
+// "Faltantes anexados": a chegada confirmada soma no recebimento da compra ORIGINAL, abate o
+// rateio dos pedidos descobertos e dá entrada no estoque. Tudo auditado.
+var _rmPcCtx=null;
+function _rmIncluirNoPc(listaId, itemId){
+  var b=_rmItemBusca(listaId, itemId); if(!b){ alert('Item não encontrado (a lista mudou em outra tela).'); return; }
+  var it=b.it, c=it.compra, f=c&&c.recebFaltante;
+  if(!f){ alert('Este item não tem faltante registrado.'); return; }
+  if(c.recebFaltanteRes){ renderSolMenos(); return; }
+  var cands=(pedidosCompra||[]).filter(function(p){ return p && p.status!=='recebido'; })
+    .sort(function(a,b2){ return String(b2.numero||'').localeCompare(String(a.numero||'')); });
+  if(!cands.length){ alert('Nenhum pedido de compra disponível (todos já recebidos).\nSe a mercadoria vier numa compra nova, o pedido de compra nasce na própria compra — use esta opção depois.'); return; }
+  _rmPcCtx={ listaId:listaId, itemId:itemId };
+  var ov=document.getElementById('rm-pc-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='rm-pc-overlay'; ov.className='overlay'; ov.style.zIndex='480'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:560px;max-width:94vw">'+
+    '<h2 style="font-size:16px;margin:0 0 4px">📦 Incluir no pedido de compra</h2>'+
+    '<div style="font-size:12.5px;margin-bottom:4px"><b>'+(it.codigo?escapeHtml(it.codigo)+' — ':'')+escapeHtml(it.nome||'')+'</b> · faltam <b>'+(parseFloat(f.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'</b></div>'+
+    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:10px">Escolha o pedido de compra em que o faltante vai chegar (aberto ou fechado). Na conferência de recebimento daquele pedido, a chegada confirma e completa este recebimento — os pedidos descobertos são cobertos e o estoque entra.</div>'+
+    '<select id="rm-pc-sel" style="width:100%;font-size:13px;padding:7px 8px">'+cands.map(function(p){ return '<option value="'+escapeHtml(p.id)+'">'+escapeHtml((p.numero||'—')+' — '+(p.fornecedorNome||''))+' ('+escapeHtml((_PC_ST_LBL[p.status]||p.status||'')+(p.nf?' · NF '+p.nf:''))+')</option>'; }).join('')+'</select>'+
+    '<div class="modal-footer" style="margin-top:14px"><button onclick="document.getElementById(\'rm-pc-overlay\').classList.remove(\'open\')">Cancelar</button><button class="btn-primary" onclick="_rmIncluirNoPcConfirmar()">📦 Anexar ao pedido</button></div>'+
+  '</div>';
+  ov.classList.add('open');
+}
+function _rmIncluirNoPcConfirmar(){
+  if(!_rmPcCtx) return;
+  var b=_rmItemBusca(_rmPcCtx.listaId, _rmPcCtx.itemId);
+  if(!b){ alert('Item não encontrado (a lista mudou em outra tela).'); document.getElementById('rm-pc-overlay').classList.remove('open'); return; }
+  var it=b.it, c=it.compra, f=c&&c.recebFaltante;
+  if(!f || c.recebFaltanteRes){ document.getElementById('rm-pc-overlay').classList.remove('open'); renderSolMenos(); return; }
+  var pcId=document.getElementById('rm-pc-sel')?.value||'';
+  var pc=(pedidosCompra||[]).find(function(p){ return p && p.id===pcId; });
+  if(!pc){ alert('Escolha um pedido de compra.'); return; }
+  if(pc.status==='recebido'){ alert('Este pedido já foi recebido — escolha outro.'); return; }
+  if(!confirm('📦 Anexar o faltante de "'+(it.nome||'')+'" ('+(parseFloat(f.qtd)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+') ao '+(pc.numero||'')+' — '+(pc.fornecedorNome||'')+'?')) return;
+  c.recebFaltanteRes={ acao:'incluir_pc', pcId:pc.id, pcNumero:pc.numero||'', em:Date.now(), por:(currentUser&&currentUser.name)||'', chegadas:[] };
+  _rmFaltCache.map=null;
+  (f.aloc||[]).forEach(function(og){
+    var o=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+    if(o){ try{ addAudit(o,'compras','faltante anexado a outro PC','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': faltante de '+(parseFloat(og.qtd)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' vai chegar no '+(pc.numero||'')+' ('+(pc.fornecedorNome||'')+')'); }catch(_e){} }
+  });
+  _rmPcCtx=null;
+  document.getElementById('rm-pc-overlay').classList.remove('open');
+  renderSolMenos(); saveData();
+  alert('✓ Faltante anexado ao '+(pc.numero||'')+'.\nNa conferência de recebimento daquele pedido aparecerá a seção "Faltantes anexados" para confirmar a chegada.');
 }
 // ══════════════════════════════════════════════════════════
 // v164 — GASTOS da Solicitação de Compra (pedido do dono 17/07).
@@ -13164,8 +13669,24 @@ function _solItemLinhaInfo(s, it, lst, _prof){
   var sub='font-size:10.5px;color:var(--text-tertiary)';
   var li=lst?(lst.itens||[]).find(function(x){ return (it.itemId&&x.itemId===it.itemId)||(it.codigo&&x.codigo===it.codigo)||(x.nome&&x.nome===it.nome); }):null;
   var inf=_solItemCompraInfo(li), c=inf.c;
+  // v257 — vínculo verdadeiro (regra do dono 03/11): o pedido não herda o status da compra de um item
+  // em que ele NÃO está (origem viva). Quinhão resolvido em marcação anterior mostra a resolução;
+  // fora de ambos = "fora da lista". Pseudo (avulsa/uso interno) mantém o caminho antigo.
+  var _qnS=null;
+  if(li && s && s.orderId && lst && !(typeof _solEhPseudo==='function' && _solEhPseudo(s.orderId))){
+    try{ _qnS=_lcQuinhaoPartes(_lcPartesDoItem(lst, li.itemId), s.orderId); }catch(_e){ _qnS=null; }
+  }
+  if(_qnS && _qnS.t!=='vivo'){ c=null; inf={c:null, pc:null, lanc:null, nf:''}; }
   var st='', k='';
-  if(c){
+  if(_qnS && _qnS.t==='resolvido'){
+    var _rA=_qnS.r;
+    var _cauda=(_rA.ncResolucao==='ajustado'||_rA.ncResolucao==='tinha_estoque'||_rA.ncResolucao==='troca_estoque')?'conta como entregue':(_rA.ncResolucao==='troca_solicitada'?'substituta foi solicitada':(_rA.ncResolucao==='sem_estoque'?'quantidade devolvida à fila na época':'resolvido sem compra'));
+    k='resolvido';
+    st='<span style="color:var(--st-inf-tx)">🔧 '+escapeHtml(_lcResolucaoLbl(_rA).toLowerCase())+(_rA.motivo?'<br><span style="'+sub+'">'+escapeHtml(_rA.motivo)+'</span>':'')+'<br><span style="'+sub+'">resolvido em marcação anterior — '+_cauda+'</span></span>';
+  } else if(_qnS && _qnS.t==='fora'){
+    k='fora_lista';
+    st='<span style="color:var(--st-bad-tx);font-weight:600">⚠ fora da lista<br><span style="'+sub+'">vínculo inconsistente — use "Devolver à fila" no Acompanhamento</span></span>';
+  } else if(c){
     k = (li&&li.compraParcial)?'parcial':'comprado';
     st='<span style="color:var(--st-ok-tx);font-weight:600">✔ comprado</span>'+(li&&li.compraParcial?'<br><span style="color:var(--st-bad-tx);font-weight:600;font-size:10.5px" title="Solicitado subiu acima do comprado — estornar e comprar o total">⚠ compra parcial</span>':'');
   } else if(li && li.naoComprado){
@@ -13188,7 +13709,9 @@ function _solItemLinhaInfo(s, it, lst, _prof){
   // v218 — DATA DA SITUAÇÃO (pedido do dono 26/08): embaixo do rótulo, a data do FATO que definiu
   // o status — compra (compradoEm), decisão de não comprar/resolução (naoCompradoEm), entrada na
   // lista (lst.criadoEm), solicitação (s.criadoEm). Cotação não tem carimbo próprio — sem data.
-  var _stEm = c ? c.compradoEm
+  var _stEm = (_qnS&&_qnS.t==='resolvido') ? (_qnS.r.em||null)
+    : (_qnS&&_qnS.t==='fora') ? null
+    : c ? c.compradoEm
     : (li && li.naoComprado) ? li.naoCompradoEm
     : (li && ((li.cotacoes||[]).length || li.escolhida!=null)) ? null
     : li ? (lst && lst.criadoEm)
@@ -13208,7 +13731,7 @@ function _solItemLinhaInfo(s, it, lst, _prof){
     colReceb='<span style="color:var(--st-ok-tx);font-weight:600;white-space:nowrap">✔ recebido</span>'+
       (c.recebidoEm?'<br><span style="'+sub+'">'+fmtDate(_gstDataDe(c.recebidoEm))+'</span>':'')+
       (_rf?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="A entrega veio menor que a compra — faltaram '+(parseFloat(_rf.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'">📉 a menos ('+(parseFloat(_rf.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+')</span>'+
-        (_rfr?'<br><span style="'+sub+'">'+(_rfr.acao==='recompra'?'↪ re-solicitado':'✕ sem recompra')+'</span>':'<br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>'):'')+
+        (_rfr?'<br><span style="'+sub+'">'+(_rfr.acao==='recompra'?'↪ re-solicitado':_rfr.acao==='incluir_pc'?('📦 aguarda no '+escapeHtml(_rfr.pcNumero||'PC')):'✕ sem recompra')+'</span>':'<br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>'):'')+
       (c.recebidoDivergente&&!_rf?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="Quantidade ou preço recebidos diferentes do que foi comprado">⚠ divergente</span>':'');
     // v210 — quinhão DESTE pedido no rateio (caso 102798/válvula 14/08): "recebido" no geral, mas o
     // rateio por D1 deixou este pedido descoberto — destaca a falta específica dele
@@ -13475,6 +13998,7 @@ function verListaCompraPedido(orderId){
     ['aguarda_lista','📨 aguardando entrar em lista','var(--text-secondary)'],
     ['resolvido','🔧 resolvidos sem compra','var(--st-inf-tx)'],
     ['sem_estoque','🚫 sem estoque','var(--st-bad-tx)'],
+    ['fora_lista','⚠ fora da lista (vínculo inconsistente)','var(--st-bad-tx)'], // v257
     ['nao_comprado','✕ não comprados','var(--st-bad-tx)']
   ].filter(function(c){ return tally[c[0]]; }).map(function(c){
     return '<span style="font-size:11.5px;font-weight:600;color:'+c[2]+';border:.5px solid var(--border);border-radius:14px;padding:3px 10px;white-space:nowrap">'+tally[c[0]]+' '+c[1]+'</span>';
@@ -14417,9 +14941,14 @@ function _cplAplicarSelecao(listaId){
         // v169 — item estava "não comprado" (devolvido): reativa do zero com a quantidade nova
         // (as qtds antigas já viraram a própria pendência que está entrando agora)
         if(ex.naoComprado){
-          delete ex.naoComprado; delete ex.naoCompradoMotivo; delete ex.naoCompradoEm; delete ex.naoCompradoPor; delete ex.ncResolucao; // v171 — limpa a resolução junto
+          // v257 — EMPILHA a resolução antiga antes de reativar (caso 103687/lista 25, 03/11): as
+          // origens resolvidas ficam em ex.resolvidos — o pedido antigo segue mostrando a resolução
+          // ("conta como entregue"); nada some em silêncio. A regra do dono: resolução encerra a
+          // necessidade daquele momento; re-solicitação é necessidade NOVA.
+          (ex.resolvidos=ex.resolvidos||[]).push({ ncResolucao:ex.ncResolucao||null, motivo:ex.naoCompradoMotivo||'', em:ex.naoCompradoEm||null, por:ex.naoCompradoPor||'', trocadoPor:ex.trocadoPor||null, origens:(ex.origem||[]).map(function(og){ return {orderId:og.orderId, orderNum:og.orderNum, qtd:og.qtd}; }) });
+          delete ex.naoComprado; delete ex.naoCompradoMotivo; delete ex.naoCompradoEm; delete ex.naoCompradoPor; delete ex.ncResolucao; delete ex.trocadoPor; // v171 — limpa a resolução junto
           ex.qtdTotal=q; ex.origem=[{orderId:s.orderId, orderNum:s.orderNum, qtd:q}]; somados++;
-          avisos.push('↩ '+(ex.nome||'')+': estava "NÃO COMPRADO" — reativado com '+q+' '+(ex.unidade||''));
+          avisos.push('↩ '+(ex.nome||'')+': estava "NÃO COMPRADO" — reativado com '+q+' '+(ex.unidade||'')+' (resolução anterior guardada no histórico do item)');
           return;
         }
         ex.qtdTotal=(parseFloat(ex.qtdTotal)||0)+q; (ex.origem=ex.origem||[]).push({orderId:s.orderId, orderNum:s.orderNum, qtd:q}); somados++;
@@ -14988,6 +15517,15 @@ function _acompStatusItem(s, it){
   var parts=l?_lcPartesDoItem(l, it.itemId):[]; // v186 — compra dividida: o status agrega as partes
   var li=parts[0]||null;
   if(!li) return {st:'Em lista', li:null};
+  // v257 — vínculo verdadeiro (regra do dono 03/11): o status deste PEDIDO depende de ele estar na
+  // ORIGEM viva do item; quinhão resolvido em marcação anterior mostra a resolução; fora de ambos =
+  // dado inconsistente ("Fora da lista", com ação de devolver à fila). Avulsa/uso interno (pseudo)
+  // mantém o caminho antigo — a origem dela pode ser '__geral__'.
+  if(!(typeof _solEhPseudo==='function' && _solEhPseudo(s.orderId))){
+    var _qn=_lcQuinhaoPartes(parts, s.orderId);
+    if(_qn.t==='resolvido') return {st:_lcResolucaoLbl(_qn.r), li:li, resAnt:_qn.r};
+    if(_qn.t==='fora') return {st:'Fora da lista', li:li, fora:true};
+  }
   // (usa _recebFisicoConta — v218: conferência física com qtd ZERO não conta como recebido)
   if(parts.every(function(p){ return p.naoComprado; })) return {st: li.ncResolucao==='ajustado'?'Ajustado':li.ncResolucao==='tinha_estoque'?'Tinha estoque':li.ncResolucao==='troca_estoque'?'Trocada — tinha estoque':li.ncResolucao==='troca_solicitada'?'Trocada — solicitada':li.ncResolucao==='sem_estoque'?'Sem estoque':'Não comprado', li:li}; // v171 — resolução por item; v232 — troca de embalagem
   if(parts.some(function(p){ return p.compraParcial && p.compra && p.compra.comprado; })) return {st:'Compra parcial', li:li}; // v169 — solicitado subiu acima do comprado
@@ -15000,7 +15538,7 @@ function _acompStatusItem(s, it){
     // dizia "faltam 10" ao mesmo tempo. Agora o status cruza com o rateio: quinhão descoberto =
     // "Recebido a menos", com a quantidade e o estado da decisão.
     var _mine=null;
-    parts.some(function(p){ var f=p.compra&&p.compra.recebFaltante; var a=f&&(f.aloc||[]).find(function(x){ return String(x.orderId)===String(s.orderId); }); if(a){ _mine={qtd:(parseFloat(a.qtd)||0), res:p.compra.recebFaltanteRes||null}; return true; } return false; });
+    parts.some(function(p){ var f=p.compra&&p.compra.recebFaltante; var a=f&&(f.aloc||[]).find(function(x){ return String(x.orderId)===String(s.orderId) && (parseFloat(x.qtd)||0)>0; }); if(a){ _mine={qtd:(parseFloat(a.qtd)||0), res:p.compra.recebFaltanteRes||null}; return true; } return false; }); // v257 — quinhão já coberto (chegou em outro PC) não reaparece como "a menos"
     if(_mine) return {st:'Recebido a menos', li:li, falt:_mine};
     return {st:'Recebido', li:li};
   }
@@ -15011,7 +15549,7 @@ function _acompStatusItem(s, it){
 // v248 — FILTRO DE STATUS POR CHECKBOX no Acompanhamento (ordem do dono 13/10: "pode filtrar
 // selecionando um, dois ou mais status de uma vez"). Estado em window._acompStatusSel (vazio =
 // todos); o botão resume a seleção; clique fora fecha o painel.
-var _ACOMP_STATUS_OPTS=['Solicitado','Em lista','Orçado','Comprado','Recebido','Recebido a menos','Não comprado','Sem estoque','Ajustado','Tinha estoque','Trocada — tinha estoque','Trocada — solicitada'];
+var _ACOMP_STATUS_OPTS=['Solicitado','Em lista','Orçado','Comprado','Recebido','Recebido a menos','Fora da lista','Não comprado','Sem estoque','Ajustado','Tinha estoque','Trocada — tinha estoque','Trocada — solicitada']; // v257 — 'Fora da lista' (vínculo inconsistente)
 function _acompStFiltroToggle(ev){
   if(ev){ try{ ev.stopPropagation(); }catch(_e){} }
   var pop=document.getElementById('acomp-status-pop'); if(!pop) return;
@@ -15075,6 +15613,7 @@ function renderSolAcomp(){
       var linha={
         tipo:s.tipo, codigo:it.codigo||'', nome:it.nome||'', qtd:parseFloat(it.qtd)||0, unidade:it.unidade||'UN',
         pedido:s.orderNum||'—', status:r.st, lista:_codL,
+        sid:s.id, iid:(it.itemId!=null?String(it.itemId):''), fora:!!r.fora, resAnt:r.resAnt||null, // v257 — ação "Devolver à fila" e motivo da resolução guardada
         limite:(function(){ var _lr=_limiteCompraPedido(s.orderId, s.tipo); if(_lr) return _lr.date;
           if(s.pedidoUso&&s.pedidoUso.orderId){ var _lu=_limiteCompraPedido(s.pedidoUso.orderId, s.tipo); if(_lu) return _lu.date; } // v248 — avulsa vinculada a pedido de uso herda a régua dele
           return s.limiteCompra||null; })(), // v246 — régua da lista; v248 — data manual do estoque
@@ -15083,7 +15622,7 @@ function renderSolAcomp(){
         fornecedor:(r.st==='Comprado'||r.st==='Recebido'||r.st==='Recebido a menos')?(cmp.fornecedorNome||''):'',
         dtSolic:s.criadoEm||null, dtCompra:(cmp.comprado&&cmp.compradoEm)||null,
         nf:(cmp.comprado&&cmp.nf)||'', preco:(cmp.comprado?parseFloat(cmp.precoPago)||0:0),
-        motivo:(r.li&&r.li.naoCompradoMotivo)||''
+        motivo:(r.resAnt&&r.resAnt.motivo)||(r.li&&r.li.naoCompradoMotivo)||'' // v257 — motivo da resolução guardada quando o item foi reativado depois
       };
       linha.total=linha.preco*linha.qtd;
       if(fStatusSel.length && fStatusSel.indexOf(linha.status)<0) return; // v248 — casa qualquer status marcado
@@ -15096,7 +15635,7 @@ function renderSolAcomp(){
   var info=document.getElementById('acomp-info');
   if(info) info.innerHTML=linhas.length+' item(ns)'+(totComprado>0?' · comprado: <b>'+fmtMoney(totComprado)+'</b>':'');
   if(!linhas.length){ el.innerHTML='<div class="empty" style="padding:24px">Nenhum item solicitado'+(fMes?' neste mês':'')+'.</div>'; return; }
-  var _cor={ 'Solicitado':'var(--text-info)', 'Em lista':'var(--st-mid-tx)', 'Orçado':'var(--st-mid-tx)', 'Comprado':'var(--st-ok-tx)', 'Recebido':'var(--st-ok-tx)', 'Recebido a menos':'var(--st-bad-tx)', 'Não comprado':'var(--st-bad-tx)', 'Sem estoque':'var(--st-bad-tx)', 'Ajustado':'var(--st-ok-tx)', 'Tinha estoque':'var(--st-inf-tx)', 'Trocada — tinha estoque':'var(--st-inf-tx)', 'Trocada — solicitada':'#B45309' };
+  var _cor={ 'Solicitado':'var(--text-info)', 'Em lista':'var(--st-mid-tx)', 'Orçado':'var(--st-mid-tx)', 'Comprado':'var(--st-ok-tx)', 'Recebido':'var(--st-ok-tx)', 'Recebido a menos':'var(--st-bad-tx)', 'Fora da lista':'var(--st-bad-tx)', 'Não comprado':'var(--st-bad-tx)', 'Sem estoque':'var(--st-bad-tx)', 'Ajustado':'var(--st-ok-tx)', 'Tinha estoque':'var(--st-inf-tx)', 'Trocada — tinha estoque':'var(--st-inf-tx)', 'Trocada — solicitada':'#B45309' };
   var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border);white-space:nowrap';
   var td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
   el.innerHTML='<div class="panel" style="padding:0"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:1000px">'+
@@ -15117,7 +15656,9 @@ function renderSolAcomp(){
           return '<span style="'+_sty+'">'+fmtDate(x.limite)+(_pend&&x.limite<_hj?' ⚠':'')+'</span>';
         })()+'</td>'+
         '<td style="'+td+'"><span style="font-size:11px;font-weight:600;color:'+(_cor[x.status]||'')+'">'+x.status+'</span>'+(x.motivo?' <span style="font-size:10px;color:var(--text-tertiary)" title="'+escapeHtml(x.motivo)+'">ⓘ</span>':'')+
-          (x.falt?'<div style="font-size:9.5px;color:var(--st-bad-tx);font-weight:600" title="O rateio por D1 do recebimento a menos deixou este pedido descoberto">faltam '+x.falt.qtd.toLocaleString('pt-BR')+' '+escapeHtml(x.unidade||'')+' deste pedido · '+(x.falt.res?(x.falt.res.acao==='recompra'?'↪ re-solicitado':'✕ sem recompra'):'decidir em Recebidos a menos')+'</div>':'')+
+          (x.resAnt?'<div style="font-size:9.5px;color:var(--text-tertiary)" title="O quinhão deste pedido foi resolvido numa marcação anterior; o item foi recomprado depois para outros pedidos">resolvido em marcação anterior — conta como entregue</div>':'')+ // v257
+          (x.fora?'<div style="margin-top:3px"><span style="font-size:9.5px;color:var(--st-bad-tx);font-weight:600" title="A solicitação aponta para a lista, mas a quantidade deste pedido não está no item (dado antigo — a reativação de item descartava origens antes da v257)">vínculo inconsistente</span><br><button onclick="_foraListaDevolver(\''+escapeHtml(x.sid)+'\',\''+escapeHtml(x.iid)+'\')" title="O item sai da solicitação presa à lista e vira solicitação pendente — entra na próxima lista de compra" style="font-size:10px;padding:2px 8px;margin-top:2px">↪ Devolver à fila</button></div>':'')+ // v257
+          (x.falt?'<div style="font-size:9.5px;color:var(--st-bad-tx);font-weight:600" title="O rateio por D1 do recebimento a menos deixou este pedido descoberto">faltam '+x.falt.qtd.toLocaleString('pt-BR')+' '+escapeHtml(x.unidade||'')+' deste pedido · '+(x.falt.res?(x.falt.res.acao==='recompra'?'↪ re-solicitado':x.falt.res.acao==='incluir_pc'?'📦 aguarda no '+escapeHtml(x.falt.res.pcNumero||'PC'):'✕ sem recompra'):'decidir em Recebidos a menos')+'</div>':'')+
           ((x.lista&&(x.status==='Em lista'||x.status==='Orçado'))?'<div style="font-size:9.5px;font-family:monospace;color:var(--text-tertiary)" title="Lista de compra em que o item está">'+escapeHtml(x.lista)+'</div>':'')+'</td>'+
         '<td style="'+td+'">'+escapeHtml(x.fornecedor||'—')+'</td>'+
         '<td style="'+td+'">'+(x.dtSolic?fmtDate(_dtLocalStr(x.dtSolic)):'—')+'</td>'+
@@ -15126,6 +15667,41 @@ function renderSolAcomp(){
         '<td style="'+td+';text-align:right">'+(x.preco>0?fmtMoney(x.preco):'—')+'</td>'+
         '<td style="'+td+';text-align:right;font-weight:600">'+(x.total>0?fmtMoney(x.total):'—')+'</td></tr>';
     }).join('')+'</tbody></table></div></div>';
+}
+// v257 — DEVOLVER À FILA um quinhão "fora da lista" (regra do dono 03/11: "se não tivesse entrado
+// nesta lista, ficaria disponível para entrar nas próximas"). Move o item da solicitação presa à
+// lista para uma solicitação PENDENTE do mesmo pedido (agrupa na aberta ou cria nova) — entra na
+// próxima lista. Pedido já expedido não devolve (resolvido de fato); ativo bloqueado segue a v248.
+function _foraListaDevolver(solicId, itemId){
+  var s=(solicitacoesCompra||[]).find(function(x){ return x && x.id===solicId; });
+  if(!s){ alert('Solicitação não encontrada (a tela mudou em outra sessão). Atualize e tente de novo.'); return; }
+  var it=(s.itens||[]).find(function(x){ return x && String(x.itemId)===String(itemId); });
+  if(!it){ alert('Item não encontrado na solicitação.'); return; }
+  var l=(listasCompra||[]).find(function(x){ return x && x.id===s.listaId; });
+  var _qn=l?_lcQuinhaoPartes(_lcPartesDoItem(l, it.itemId), s.orderId):{t:'fora'};
+  if(_qn.t!=='fora'){ alert('Este item não está mais "fora da lista" (mudou em outra tela).'); renderSolAcomp(); return; }
+  var o=(orders||[]).find(function(x){ return String(x.id)===String(s.orderId); });
+  if(o && typeof _expSaiu==='function' && _expSaiu(o)){ alert('O pedido '+(s.orderNum||'')+' já foi expedido — o vínculo está resolvido de fato e não se devolve à fila. Se o insumo for necessário, use a compra avulsa para estoque.'); return; }
+  if(s.tipo==='ativo' && typeof _solAtivoBloqueado==='function' && _solAtivoBloqueado(s.orderId)){ alert('Ativo de pedido já produzido e enviado não volta à fila preso ao pedido (regra v248) — use compra avulsa para estoque.'); return; }
+  var q=parseFloat(it.qtd)||0;
+  if(!confirm('↪ DEVOLVER À FILA\n\n'+(it.codigo?it.codigo+' — ':'')+(it.nome||'')+' ('+q.toLocaleString('pt-BR')+' '+(it.unidade||'')+')\nPedido '+(s.orderNum||'')+'\n\nA solicitação apontava para a lista '+(l?_lcCodigo(l):'—')+' sem a quantidade constar no item. O item volta como solicitação PENDENTE e entra na próxima lista de compra. Confirmar?')) return;
+  var now=Date.now();
+  var alvo=(solicitacoesCompra||[]).find(function(x){ return x && String(x.orderId)===String(s.orderId) && x.tipo===s.tipo && x.status==='solicitado'; });
+  if(!alvo){
+    alvo={ id:'solc'+now+'fl0', orderId:s.orderId, orderNum:s.orderNum||'', cliente:s.cliente||'', tipo:s.tipo, itens:[], status:'solicitado', listaId:null, criadoPor:(currentUser&&currentUser.name)||'', criadoEm:now, atualizadoEm:now };
+    solicitacoesCompra.push(alvo);
+  }
+  var ex=(alvo.itens||[]).find(function(x){ return x && String(x.itemId)===String(it.itemId); });
+  if(ex) ex.qtd=(parseFloat(ex.qtd)||0)+q;
+  else alvo.itens.push({ itemId:it.itemId, codigo:it.codigo, nome:it.nome, qtd:q, unidade:it.unidade||'UN' });
+  alvo.atualizadoEm=now;
+  s.itens=(s.itens||[]).filter(function(x){ return x!==it; });
+  s.atualizadoEm=now;
+  if(s.tipo==='embalagem') try{ _autoEstoqueSolicitadoPorOrderId(s.orderId,'quinhão fora da lista devolvido à fila'); }catch(_e){}
+  if(o){ try{ addAudit(o,'compras','devolvido à fila','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': '+q.toLocaleString('pt-BR')+' '+(it.unidade||'')+' estavam presos à lista '+(l?_lcCodigo(l):'—')+' sem constar no item — devolvidos como solicitação pendente'); }catch(_e){} }
+  try{ _reavaliarComprasPedido(s.orderId); }catch(_e){}
+  renderSolAcomp(); saveData();
+  alert('✓ Devolvido à fila — entra na próxima lista de compra de '+(s.tipo==='ativo'?'ativos':'embalagens')+'.');
 }
 // ═══════════ v156 — MOTOR NOVO do setor COMPRAS (por LADO ativo/embalagem) ═══════════
 // VIRADA: pedidos LANÇADOS no sistema (criadoEm) a partir de 15/07/2026 usam a escada nova
@@ -15169,6 +15745,13 @@ function _ladoComprasEstado(o, tipo, cutTs){
     for(var j=0;j<s.itens.length;j++){
       var lis=_lcPartesDoItem(l, s.itens[j].itemId); // v186 — compra dividida: o pedido só avança quando TODAS as partes estão compradas/recebidas
       if(!lis.length){ compradoOk=false; recebidoOk=false; continue; }
+      // v257 — vínculo verdadeiro (regra do dono 03/11): o pedido só é avaliado por item em que ele
+      // ESTÁ (origem viva). Quinhão resolvido em marcação anterior não segura (igual "não comprado");
+      // vínculo falso ('fora', dado antigo) SEGURA o lado — salvo pedido que já saiu fisicamente
+      // (resolvido de fato, mesma regra v175 da linha acima).
+      var _qn=_lcQuinhaoPartes(lis, o.id);
+      if(_qn.t==='resolvido') continue;
+      if(_qn.t==='fora'){ if(!(typeof _expSaiu==='function' && _expSaiu(o))){ compradoOk=false; recebidoOk=false; } continue; }
       for(var j2=0;j2<lis.length;j2++){ var li=lis[j2];
         if(li.naoComprado) continue;
         // v169 — COMPRA PARCIAL (solicitado subiu acima do comprado após complemento): conta como NÃO comprado
@@ -15209,6 +15792,13 @@ function _ladoComprasPendentes(o, tipo){
     (s.itens||[]).forEach(function(it){
       var lis=_lcPartesDoItem(l, it.itemId);
       if(!lis.length){ out.push('• '+fmtIt(it)+' — sem par na lista '+cod+' (avisar o suporte)'); return; }
+      // v257 — espelha o motor: quinhão resolvido não segura; vínculo falso ('fora') segura e diz o remédio
+      var _qn=_lcQuinhaoPartes(lis, s.orderId);
+      if(_qn.t==='resolvido') return;
+      if(_qn.t==='fora'){
+        if(!(typeof _expSaiu==='function' && _expSaiu(o))) out.push('• '+fmtIt(it)+' — FORA DA LISTA '+cod+' (vínculo inconsistente): use "Devolver à fila" no Acompanhamento para entrar na próxima lista');
+        return;
+      }
       lis.forEach(function(li){
         if(li.naoComprado) return; // resolvido sem compra — não segura
         if(!li.compra || !li.compra.comprado || li.compraParcial){
@@ -15542,6 +16132,25 @@ function _lcPartesDoItem(l, itemId){
   if(itemId==null||itemId==='') return [];
   return (l&&l.itens||[]).filter(function(x){ return x && (String(x.itemId)===String(itemId) || String(x.splitDe||'')===String(itemId)); });
 }
+// v257 — QUINHÃO DE UM PEDIDO nas partes de um item de lista (regra do dono 03/11, caso 103687/
+// lista 25: a reativação v169 descartava em silêncio as origens de outros pedidos — o pedido ficava
+// "vinculado à lista sem estar nela"). Responde: {t:'vivo'} (pedido na origem de alguma parte),
+// {t:'resolvido', r} (quinhão encerrado numa marcação anterior, guardada em it.resolvidos) ou
+// {t:'fora'} (vínculo falso — só dado antigo; a reativação agora EMPILHA as resoluções, não descarta).
+function _lcQuinhaoPartes(lis, orderId){
+  var oid=String(orderId), res=null;
+  for(var i=0;i<(lis||[]).length;i++){ var li=lis[i]; if(!li) continue;
+    if((li.origem||[]).some(function(og){ return og && String(og.orderId)===oid; })) return {t:'vivo'};
+    var rs=li.resolvidos||[];
+    for(var j=rs.length-1;j>=0;j--){ if(!res && rs[j] && (rs[j].origens||[]).some(function(og){ return og && String(og.orderId)===oid; })) res=rs[j]; }
+  }
+  return res?{t:'resolvido', r:res}:{t:'fora'};
+}
+// rótulo humano de uma resolução guardada (mesmo mapa do item "não comprado" vivo)
+function _lcResolucaoLbl(r){
+  var m={ajustado:'Ajustado', tinha_estoque:'Tinha estoque', troca_estoque:'Trocada — tinha estoque', troca_solicitada:'Trocada — solicitada', sem_estoque:'Sem estoque'};
+  return m[(r&&r.ncResolucao)||'']||'Não comprado';
+}
 function _salvarCompraDual(l, it){
   var esc=_cotItemEscolhida(it);
   if(!esc){ alert('A compra em 2 fornecedores usa a cotação escolhida como fornecedor 1 — cote o item primeiro.'); return; }
@@ -15648,6 +16257,14 @@ function saveCompraItem(){
   var _mudou=_corrigindo && (Math.abs(qtd-(parseFloat(it.compra.qtdComprada)||0))>0.0001 || Math.abs(preco-(parseFloat(it.compra.precoPago)||0))>0.0001);
   it.compra=Object.assign({}, it.compra||{}, { fornecedorId:f?f.id:null, fornecedorNome:forn, qtdComprada:qtd, precoPago:preco, nf:nf, comprado:true, compradoEm:(_eraComprado&&it.compra.compradoEm)||Date.now(), compradoPor:_eraComprado?(it.compra.compradoPor||''):((currentUser&&currentUser.name)||'') });
   if(it.compraParcial && qtd >= (parseFloat(it.qtdTotal)||0)-0.0001) delete it.compraParcial; // v169 — a compra passou a cobrir o solicitado: deixa de ser parcial
+  // v257 — COMPRADO A MENOS no fechamento (regra do dono 03/11): quantidade abaixo do total
+  // solicitado vira COMPRA PARCIAL na hora (mesma semântica v169 — conta como NÃO comprado no
+  // status até completar) e o aviso nomeia os pedidos do item. Só em compra nova ou correção.
+  if((!_eraComprado || _corrigindo) && qtd < (parseFloat(it.qtdTotal)||0)-0.0001){
+    it.compraParcial=true;
+    var _origTx=(it.origem||[]).map(function(og){ return (og.orderNum||'—')+' ('+(parseFloat(og.qtd)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+')'; }).join(', ');
+    alert('⚠ COMPRADO A MENOS: '+qtd.toLocaleString('pt-BR')+' de '+(parseFloat(it.qtdTotal)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' solicitados.\n\nPedidos neste item: '+(_origTx||'—')+'\n\nO item fica como COMPRA PARCIAL (conta como NÃO comprado no status) até completar a quantidade — complete a compra ou resolva o restante.');
+  }
   if(_mudou){ it.compra.corrigidoEm=Date.now(); it.compra.corrigidoPor=(currentUser&&currentUser.name)||''; }
   _cmpModoCorrecao=false;
   // v160 — compra NOVA entra no PEDIDO DE COMPRA aberto do fornecedor (cria se não houver).
@@ -15710,14 +16327,32 @@ function _recebGrupos(){
 // financeiro nasce depois, na CONCILIAÇÃO (menu Compras), que agora só libera com o pedido recebido.
 // Extras NÃO entram no estoque aqui: entram na conciliação, quando forem conciliados com a NF
 // (mesma via "na NF fora do pedido" de sempre — evita dupla entrada).
-var _gpRows=[], _gpExtras=[], _gpPcId=null;
+var _gpRows=[], _gpExtras=[], _gpAnexos=[], _gpPcId=null;
+// v257 — faltantes de OUTROS pedidos de compra anexados a este PC (opção "Incluir no pedido" dos
+// Recebidos a menos): o que ficou devendo lá e o fornecedor manda nesta entrega.
+function _gpAnexosDoPc(pcId){
+  var out=[];
+  (listasCompra||[]).forEach(function(l){
+    (l.itens||[]).forEach(function(it){
+      var c=it&&it.compra, r=c&&c.recebFaltanteRes;
+      if(!r || r.acao!=='incluir_pc' || r.pcId!==pcId) return;
+      var f=c.recebFaltante; if(!f) return;
+      var resta=parseFloat(f.qtd)||0;
+      if(resta<=0) return;
+      out.push({ listaId:l.id, itemId:it.itemId, codigo:it.codigo||'', nome:it.nome||'', unidade:it.unidade||'', listaCod:(function(){ try{ return _lcCodigo(l); }catch(_e){ return ''; } })(), qtdEsperada:resta, qtd:resta });
+    });
+  });
+  return out;
+}
 function _gpReceberAbrir(pcId){
   var pc=(pedidosCompra||[]).find(function(p){ return p.id===pcId; }); if(!pc) return;
   if(pc.status!=='em_recebimento' && pc.status!=='conciliado'){ alert('O pedido precisa estar ENVIADO PARA RECEBIMENTO (fechar → informar a NF → 📤 Enviar para recebimento).'); return; }
   if(!(pc.nf||'').trim()){ alert('Informe a NF do pedido antes de receber.'); return; }
   var pend=_pcItens(pc).filter(function(x){ return !x.it.compra.recebido; });
-  if(!pend.length){ alert('Todos os itens deste pedido já foram processados.'); return; }
+  var _anx=_gpAnexosDoPc(pcId); // v257 — faltantes anexados contam como pendência de conferência
+  if(!pend.length && !_anx.length){ alert('Todos os itens deste pedido já foram processados.'); return; }
   _gpPcId=pcId; _gpExtras=[];
+  _gpAnexos=_anx; // v257
   _gpRows=pend.map(function(x){
     return { listaId:x.listaId, ref:x.ref, itemId:(x.it.itemId!=null?x.it.itemId:null), nome:x.it.nome||'', codigo:x.it.codigo||'',
              unidade:x.it.unidade||'', qtdPedida:(parseFloat(x.it.compra.qtdComprada)||0), qtd:(parseFloat(x.it.compra.qtdComprada)||0) };
@@ -15747,6 +16382,15 @@ function _gpRender(pcIn){
     '</tr></thead><tbody>'+
       _gpRows.map(function(r,i){ return linha(r,i,false); }).join('')+
       _gpExtras.map(function(r,i){ return linha(r,i,true); }).join('')+
+      // v257 — FALTANTES ANEXADOS (de outros PCs, opção "Incluir no pedido"): confirmar a chegada
+      // aqui soma no recebimento da compra ORIGINAL e cobre os pedidos descobertos
+      _gpAnexos.map(function(r,i){
+        return '<tr style="background:var(--st-mid-bg,#FFF8EC)">'+
+          '<td style="'+td+'"><span style="font-size:9px;font-weight:700;color:#B45309;text-transform:uppercase" title="Faltante de outro pedido de compra anexado a esta entrega (Recebidos a menos › Incluir no pedido)">Faltante anexado'+(r.listaCod?' · lista '+escapeHtml(r.listaCod):'')+'</span> '+(r.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.codigo)+'</span> ':'')+escapeHtml(r.nome)+'</td>'+
+          '<td style="'+td+';text-align:right;color:var(--text-secondary);white-space:nowrap">'+r.qtdEsperada.toLocaleString('pt-BR')+' '+escapeHtml(r.unidade||'')+' <span style="font-size:9.5px;color:var(--text-tertiary)">(devidos)</span></td>'+
+          '<td style="'+td+';text-align:right;white-space:nowrap"><input type="number" min="0" step="any" value="'+r.qtd+'" oninput="_gpAnexoSet('+i+',this.value)" style="width:95px;text-align:right;font-size:12px;padding:3px 5px"> <span style="font-size:11px;color:var(--text-secondary)">'+escapeHtml(r.unidade||'')+'</span></td>'+
+          '<td style="'+td+'"></td></tr>';
+      }).join('')+
     '</tbody></table></div>'+
     '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:8px 10px;background:var(--bg-secondary);border-radius:8px">'+
       '<span style="font-size:11.5px;font-weight:600;color:var(--text-secondary)">＋ Adicionar item que veio fora do pedido:</span>'+
@@ -15765,6 +16409,7 @@ function _gpRender(pcIn){
 }
 function _gpSet(i,v){ var r=_gpRows[i]; if(r) r.qtd=(String(v).trim()==='')?0:(parseFloat(v)||0); }
 function _gpExtraSet(i,v){ var r=_gpExtras[i]; if(r) r.qtd=(String(v).trim()==='')?0:(parseFloat(v)||0); }
+function _gpAnexoSet(i,v){ var r=_gpAnexos[i]; if(r) r.qtd=(String(v).trim()==='')?0:(parseFloat(v)||0); } // v257
 function _gpRemExtra(i){ _gpExtras.splice(i,1); _gpRender(); }
 function _gpAddItem(){
   var txt=(document.getElementById('gp-add-busca')?.value||'').trim();
@@ -15795,14 +16440,16 @@ async function _gpReceberConfirmar(){
   var valorNota=parseFloat(document.getElementById('gp-valor-nota')?.value)||0;
   if(!(valorNota>0)){ alert('Informe o VALOR TOTAL da nota fiscal (R$) — campo obrigatório da conferência.'); return; }
   var recebidos=_gpRows.filter(function(r){ return r.qtd>0; });
-  if(!recebidos.length && !_gpExtras.length){ alert('Nenhuma quantidade recebida — se nada chegou, use Cancelar.'); return; }
+  if(!recebidos.length && !_gpExtras.length && !(_gpAnexos||[]).some(function(a){ return (parseFloat(a.qtd)||0)>0; })){ alert('Nenhuma quantidade recebida — se nada chegou, use Cancelar.'); return; } // v257 — entrega só de faltante anexado também conta
   var aMenos=_gpRows.filter(function(r){ return r.qtd<r.qtdPedida-0.001; }).length;
   var aMais=_gpRows.filter(function(r){ return r.qtd>r.qtdPedida+0.001; }).length;
-  if(!confirm('📦 Confirmar o RECEBIMENTO do '+(pc.numero||'pedido')+' — NF '+(pc.nf||'')+'?\n\n• '+recebidos.length+' de '+_gpRows.length+' item(ns) do pedido com quantidade recebida'+(aMenos?' · '+aMenos+' a MENOS':'')+(aMais?' · '+aMais+' a MAIS':'')+(_gpExtras.length?' · '+_gpExtras.length+' item(ns) FORA do pedido':'')+'\n• Valor da nota: '+fmtMoney(valorNota)+'\n\n• Os itens do pedido entram no ESTOQUE agora.\n• A CONCILIAÇÃO com a NF (valores, XML) e o lançamento para o Caixa são o próximo passo, no menu Compras › Recebimento de Pedido.')) return;
+  var _anxCheg=(_gpAnexos||[]).filter(function(a){ return (parseFloat(a.qtd)||0)>0; }); // v257
+  if(!confirm('📦 Confirmar o RECEBIMENTO do '+(pc.numero||'pedido')+' — NF '+(pc.nf||'')+'?\n\n• '+recebidos.length+' de '+_gpRows.length+' item(ns) do pedido com quantidade recebida'+(aMenos?' · '+aMenos+' a MENOS':'')+(aMais?' · '+aMais+' a MAIS':'')+(_gpExtras.length?' · '+_gpExtras.length+' item(ns) FORA do pedido':'')+(_anxCheg.length?' · '+_anxCheg.length+' faltante(s) anexado(s) chegando':'')+'\n• Valor da nota: '+fmtMoney(valorNota)+'\n\n• Os itens do pedido entram no ESTOQUE agora.\n• A CONCILIAÇÃO com a NF (valores, XML) e o lançamento para o Caixa são o próximo passo, no menu Compras › Recebimento de Pedido.')) return;
   var now=Date.now();
   pc.recebFisico={ em:now, por:(currentUser&&currentUser.name)||'', valorNota:+valorNota.toFixed(2),
     itens:_gpRows.map(function(r){ return { listaId:r.listaId, ref:r.ref, itemId:r.itemId, codigo:r.codigo, nome:r.nome, unidade:r.unidade, qtdPedida:r.qtdPedida, qtd:r.qtd }; }),
-    extras:_gpExtras.map(function(e){ return { insumoId:e.insumoId, codigo:e.codigo, nome:e.nome, unidade:e.unidade, qtd:e.qtd }; }) };
+    extras:_gpExtras.map(function(e){ return { insumoId:e.insumoId, codigo:e.codigo, nome:e.nome, unidade:e.unidade, qtd:e.qtd }; }),
+    anexos:_anxCheg.map(function(a){ return { listaId:a.listaId, itemId:a.itemId, codigo:a.codigo, nome:a.nome, unidade:a.unidade, qtd:(parseFloat(a.qtd)||0) }; }) }; // v257 — faltantes anexados que chegaram nesta entrega
   // carimbo por item (referência p/ conciliação e auditoria) + eventos de ESTOQUE dos itens do pedido
   var _evts=[], _oidsFis={};
   _gpRows.forEach(function(r){
@@ -15823,19 +16470,68 @@ async function _gpReceberConfirmar(){
   // PC-065: aromas registrados pelo Luiz não davam entrada — o evento só era montado p/ itens do
   // pedido). Na conciliação, o extra vindo do físico NÃO re-entra (marca fisico nos eventos de lá).
   _gpExtras.forEach(function(e){ if(e && (parseFloat(e.qtd)||0)>0) _evts.push({ itemId:e.insumoId, codigo:e.codigo, qtd:(parseFloat(e.qtd)||0) }); });
+  // v257 — chegada dos FALTANTES ANEXADOS ("Incluir no pedido"): soma no recebimento físico da
+  // compra ORIGINAL, abate o faltante e o rateio dos pedidos descobertos (na ordem do rateio),
+  // entra no estoque e reavalia os pedidos cobertos. A decisão guarda cada chegada (auditável).
+  _anxCheg.forEach(function(a){
+    var q=parseFloat(a.qtd)||0; if(q<=0) return;
+    try{
+      var la=(listasCompra||[]).find(function(x){ return x.id===a.listaId; });
+      var ita=la?(la.itens||[]).find(function(x){ return x && String(x.itemId)===String(a.itemId); }):null;
+      var ca=ita&&ita.compra, fa=ca&&ca.recebFaltante, ra=ca&&ca.recebFaltanteRes;
+      if(!fa || !ra || ra.acao!=='incluir_pc') return;
+      ca.recebFisicoQtd=(parseFloat(ca.recebFisicoQtd)||0)+q;
+      if(ca.recebFisicoEm==null){ ca.recebFisicoEm=now; ca.recebFisicoPor=(currentUser&&currentUser.name)||''; }
+      (ra.chegadas=ra.chegadas||[]).push({ pcId:pc.id, pcNumero:pc.numero||'', qtd:q, em:now, por:(currentUser&&currentUser.name)||'' });
+      var sobra=q;
+      (fa.aloc||[]).forEach(function(og){
+        if(sobra<=0) return;
+        var oq=parseFloat(og.qtd)||0; if(oq<=0) return;
+        var usa=Math.min(oq,sobra); og.qtd=+(oq-usa).toFixed(4); sobra=+(sobra-usa).toFixed(4);
+        var o2=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+        if(o2){ try{ addAudit(o2,'compras','faltante chegou em outro PC','', (ita.codigo?ita.codigo+' ':'')+(ita.nome||'')+': '+usa.toLocaleString('pt-BR')+' '+(ita.unidade||'')+' chegaram no '+(pc.numero||'')+' (NF '+(pc.nf||'')+')'); }catch(_e){} }
+        try{ _reavaliarComprasPedido(og.orderId); }catch(_e){}
+      });
+      if(sobra>0 && (parseFloat(fa.estoqueQtd)||0)>0){ var usaE=Math.min(parseFloat(fa.estoqueQtd)||0,sobra); fa.estoqueQtd=+((parseFloat(fa.estoqueQtd)||0)-usaE).toFixed(4); sobra=+(sobra-usaE).toFixed(4); }
+      fa.qtd=Math.max(0, +((parseFloat(fa.qtd)||0)-q).toFixed(4));
+      if(ita.itemId!=null) _evts.push({ itemId:ita.itemId, splitDe:ita.splitDe, codigo:ita.codigo, qtd:q });
+    }catch(_e){}
+  });
+  try{ if(_anxCheg.length && typeof _rmFaltCache!=='undefined') _rmFaltCache.map=null; }catch(_e){}
   try{ _rcbEstoqueEntrada(_evts); }catch(_e){}
   // v213 — o recebimento FÍSICO já conta como recebido (regra do dono 19/08): reavalia o setor
   // Compras dos pedidos atendidos — "Produto entregue" não espera mais a conciliação de preços
   try{ Object.keys(_oidsFis).forEach(function(oid){ _reavaliarComprasPedido(oid); }); }catch(_e){}
+  // v257 — VERIFICAÇÃO DE VALOR nota × pedido (ordem do dono 03/11): o total do pedido (preço
+  // unitário × quantidade comprada) só pode divergir da nota se veio produto a mais/a menos (ou
+  // preço diferente). Divergiu além de centavos → recebe NORMALMENTE, mas o pedido fica visível
+  // na Gestão de Pedidos com o alerta até o ADMINISTRADOR dar o visto de ciente.
+  var _esp=0; try{ _pcItens(pc).forEach(function(x){ var cc=(x.it&&x.it.compra)||{}; _esp+=(parseFloat(cc.precoPago)||0)*(parseFloat(cc.qtdComprada)||0); }); }catch(_e){}
+  _esp=+_esp.toFixed(2);
+  var _dvg=(_esp>0 && Math.abs(_esp-valorNota)>0.10);
+  if(_dvg){ pc.divergVal={ esperado:_esp, nf:+valorNota.toFixed(2), dif:+(valorNota-_esp).toFixed(2), em:now, por:(currentUser&&currentUser.name)||'' }; }
+  else if(pc.divergVal && !pc.divergVal.cienteEm){ delete pc.divergVal; }
   pc.status='recebido';
   if(!pc.recebidoEm){ pc.recebidoEm=now; pc.recebidoPor=(currentUser&&currentUser.name)||''; }
   var ov=document.getElementById('gp-fis-overlay'); if(ov) ov.classList.remove('open');
   saveData();
   try{ renderRecebimento(); }catch(_e){}
   try{ if(typeof renderCompRecebimento==='function') renderCompRecebimento(); }catch(_e){}
-  alert('📦 Recebimento do '+(pc.numero||'pedido')+' registrado — estoque atualizado.\n\n🧾 Próximo passo: CONCILIAÇÃO com a nota (menu Compras › Recebimento de Pedido) — valores unitários, XML e o lançamento para o Caixa.');
+  alert('📦 Recebimento do '+(pc.numero||'pedido')+' registrado — estoque atualizado.'+
+    (_dvg?'\n\n⚠ DIVERGÊNCIA DE VALOR: a nota ('+fmtMoney(valorNota)+') difere do total do pedido ('+fmtMoney(_esp)+'; diferença '+fmtMoney(valorNota-_esp)+'). Isso só acontece com produto a mais/a menos ou preço diferente — confira as quantidades. O pedido fica visível na Gestão de Pedidos até o ADMINISTRADOR dar o visto de ciente.':'')+
+    '\n\n🧾 Próximo passo: CONCILIAÇÃO com a nota (menu Compras › Recebimento de Pedido) — valores unitários, XML e o lançamento para o Caixa.');
 }
 var _pcMostrarRecebidos=false;
+// v257 — VISTO DE CIENTE da divergência de valor (só admin, ordem do dono 03/11): o pedido recebido
+// com nota divergente fica visível na Gestão de Pedidos até aqui; o registro (valores, quem e
+// quando) permanece no pedido para auditoria.
+function _pcDivergCiente(pcId){
+  if(!(currentUser&&currentUser.perfil==='admin')){ alert('Só o administrador pode dar o ciente da divergência de valor.'); return; }
+  var pc=(pedidosCompra||[]).find(function(p){ return p&&p.id===pcId; }); if(!pc||!pc.divergVal||pc.divergVal.cienteEm) return;
+  if(!confirm('✓ CIENTE — divergência de valor do '+(pc.numero||'')+'\n\nTotal do pedido: '+fmtMoney(pc.divergVal.esperado)+'\nValor da nota: '+fmtMoney(pc.divergVal.nf)+'\nDiferença: '+fmtMoney(pc.divergVal.dif)+'\n\nRegistrar ciência? O pedido passa a se comportar como recebido normal (sai desta tela).')) return;
+  pc.divergVal.cienteEm=Date.now(); pc.divergVal.cientePor=(currentUser&&currentUser.name)||'';
+  renderRecebimento(); saveData();
+}
 // v224 — TOTAL NF do pedido de compra (pedido do dono 03/09): o valor REAL da nota, com encargos,
 // acréscimos e descontos — o que o colaborador preenche ao receber. Fonte: recebFisico.valorNota
 // (conferência física v212, campo obrigatório); fluxo anterior (levas conciliadas) = soma de
@@ -15848,7 +16544,9 @@ function _pcTotalNF(pc){
 }
 function _pcSecaoHtml(){
   var lista=[...(pedidosCompra||[])].sort(function(a,b){ return String(b.numero||'').localeCompare(String(a.numero||'')); });
-  if(!_pcMostrarRecebidos) lista=lista.filter(function(p){ return p.status!=='recebido'; });
+  // v257 — pedido recebido com DIVERGÊNCIA DE VALOR (nota × pedido) não some da tela até o
+  // administrador dar o visto de ciente (ordem do dono 03/11)
+  if(!_pcMostrarRecebidos) lista=lista.filter(function(p){ return p.status!=='recebido' || (p.divergVal && !p.divergVal.cienteEm); });
   var th='padding:8px 10px;background:var(--bg-secondary);font-size:11px;font-weight:600;color:var(--text-secondary);text-align:left;border-bottom:.5px solid var(--border)';
   var td='padding:7px 10px;border-bottom:.5px solid var(--border);font-size:12px;vertical-align:middle';
   var head='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;flex-wrap:wrap">'+
@@ -15861,7 +16559,10 @@ function _pcSecaoHtml(){
       '<td style="'+td+';font-weight:600;font-family:monospace">'+escapeHtml(pc.numero||'')+'</td>'+
       '<td style="'+td+'">'+escapeHtml(pc.fornecedorNome||'—')+'</td>'+
       '<td style="'+td+'">'+_pcStatusBadge(pc)+
-        (function(){ var ts=_pcStatusEmData(pc); return ts?'<div style="font-size:9.5px;color:var(--text-tertiary);margin-top:2px" title="Data em que o pedido entrou neste status">'+new Date(ts).toLocaleDateString('pt-BR')+'</div>':''; })()+'</td>'+
+        (function(){ var ts=_pcStatusEmData(pc); return ts?'<div style="font-size:9.5px;color:var(--text-tertiary);margin-top:2px" title="Data em que o pedido entrou neste status">'+new Date(ts).toLocaleDateString('pt-BR')+'</div>':''; })()+
+        // v257 — alerta de DIVERGÊNCIA DE VALOR (nota × pedido) com visto de ciente do administrador
+        ((pc.divergVal&&!pc.divergVal.cienteEm)?'<div style="margin-top:3px"><span style="font-size:10px;font-weight:700;color:var(--st-bad-tx)" title="Valor da nota ('+fmtMoney(pc.divergVal.nf)+') difere do total do pedido ('+fmtMoney(pc.divergVal.esperado)+') — só acontece com produto a mais/a menos ou preço diferente">⚠ divergência de valor ('+fmtMoney(pc.divergVal.dif)+')</span>'+((currentUser&&currentUser.perfil==='admin')?'<br><button onclick="_pcDivergCiente(\''+pc.id+'\')" title="Registrar ciência da divergência — o pedido passa a se comportar como recebido normal" style="font-size:10px;padding:2px 8px;margin-top:2px">✓ Ciente</button>':'<br><span style="font-size:9px;color:var(--text-tertiary)">aguardando ciente do administrador</span>')+'</div>':'')+
+        ((pc.divergVal&&pc.divergVal.cienteEm)?'<div style="font-size:9px;color:var(--text-tertiary);margin-top:2px" title="Nota '+fmtMoney(pc.divergVal.nf)+' × pedido '+fmtMoney(pc.divergVal.esperado)+'">divergência de valor — ciente por '+escapeHtml(pc.divergVal.cientePor||'')+'</div>':'')+'</td>'+
       '<td style="'+td+';text-align:right">'+t.n+(t.pendentes&&t.pendentes<t.n?' <span style="font-size:10px;color:var(--text-tertiary)">('+t.pendentes+' pend.)</span>':'')+'</td>'+
       '<td style="'+td+';text-align:right;font-weight:600">'+fmtMoney(t.total)+'</td>'+
       (function(){ var _tnf=_pcTotalNF(pc); return '<td style="'+td+';text-align:right"'+(_tnf>0?' title="Valor total da nota informado no recebimento (com encargos, acréscimos e descontos)"':'')+'>'+(_tnf>0?('<b>'+fmtMoney(_tnf)+'</b>'):'<span style="color:var(--text-tertiary)">—</span>')+'</td>'; })()+
@@ -23011,6 +23712,7 @@ var _embImpStage=null;
 const _EMB_IMP_CATS=['EMB COMPLETA FORN','EMB COMPLETA INTERNA','CORPO EMBALAGEM','COMPLEMENTOS','TAMPAS','TAMPA','VALVULAS','VALVULA','VÁLVULA','RÓTULO','ROTULO','CAIXAS','CAIXA','ACESSORIO','ACESSÓRIO','MATERIAL DE CONSUMO','SEMI-ACABADO DERMATO','SEMI-ACABADO','CAPSULAS E INVOLUCROS'];
 function _embImpNorm(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9]/g,''); }
 async function importarEmbalagensPDF(input){
+  if(!_canEditEmbalagens()){ alert('Sem permissão para importar embalagens.'); if(input) input.value=''; return; } // v258 — expedição entra no Catálogo só p/ fotos
   const file=input.files&&input.files[0]; if(input) input.value=''; if(!file) return;
   let linhas;
   try{ linhas=await _extrairLinhasPDF(file); }
@@ -23171,6 +23873,7 @@ async function _ativosImpLerPDF(file){
   return {itens:itens, semCusto:semCusto, duvidosos:duvidosos};
 }
 async function importarAtivosPDF(input){
+  if(!_canEditInsumos()){ alert('Sem permissão para importar ativos.'); if(input) input.value=''; return; } // v258
   const file=input.files&&input.files[0]; if(input) input.value=''; if(!file) return;
   let lido;
   try{ lido=await _ativosImpLerPDF(file); }
@@ -23179,8 +23882,8 @@ async function importarAtivosPDF(input){
   if(!itens.length){ alert('Não reconheci ativos neste PDF.\n\nEle é o "Cadastro de Produtos" (tipo Resumida, itens MTP) exportado do Opery?'); return; }
   const codSet={}, nomeSet={};
   (insumos||[]).filter(x=>x && x.tipo==='insumo').forEach(x=>{
-    if(x.codigo) codSet[String(x.codigo).trim()]=1;
-    const n=_embImpNorm(x.nome); if(n) nomeSet[n]=1;
+    if(x.codigo) codSet[String(x.codigo).trim()]=x;
+    const n=_embImpNorm(x.nome); if(n && !nomeSet[n]) nomeSet[n]=x;
   });
   const _vistos={};
   const faltam=itens.filter(it=>{
@@ -23190,8 +23893,24 @@ async function importarAtivosPDF(input){
     return true;
   });
   const jaTem=itens.length-faltam.length;
-  if(!faltam.length){ alert('✓ PDF lido: '+itens.length+' ativos — TODOS já estão cadastrados. Nada a importar.'); return; }
+  // v258 — ATUALIZAÇÃO DE CUSTO dos JÁ CADASTRADOS (aprovada pelo dono 04/11): o relatório do Opery
+  // também re-alinha o CUSTO BASE de quem já existe, SEMPRE com conferência (nada automático) e sem
+  // tocar em preço de venda. Para quem tem compra no Lecare, a última compra segue vencendo o base.
+  const _updVisto={};
+  const atualizar=[];
+  itens.forEach(it=>{
+    if(it.custo==null || it.duvida) return; // leitura ambígua nunca atualiza custo
+    const n=_embImpNorm(it.nome);
+    const x=codSet[it.codigo]||(n?nomeSet[n]:null);
+    if(!x || _updVisto[x.id]) return;
+    _updVisto[x.id]=1;
+    const atual=(x.custoBase!=null && x.custoBase!=='')?parseFloat(x.custoBase):null;
+    if(atual!=null && Math.abs(atual-it.custo)<0.00005) return; // já igual
+    atualizar.push({id:x.id, codigo:x.codigo||it.codigo, nome:x.nome||it.nome, atual:atual, novo:it.custo, temCompra:(x.custoUltimo>0), incluir:true});
+  });
+  if(!faltam.length && !atualizar.length){ alert('✓ PDF lido: '+itens.length+' ativos — todos já cadastrados e com o custo base alinhado ao relatório. Nada a fazer.'); return; }
   _insImpStage=faltam.map(f=>({codigo:f.codigo, nome:f.nome, custo:f.custo, duvida:!!f.duvida, incluir:true}));
+  _insImpStageUpd=atualizar;
   const td='padding:5px 8px;border-bottom:.5px solid var(--border)';
   const rows=_insImpStage.map((f,i)=>'<tr'+(f.duvida?' style="background:var(--st-mid-bg)"':'')+'>'+
     '<td style="'+td+';text-align:center"><input type="checkbox" checked onchange="_insImpStage['+i+'].incluir=this.checked;_insImpCount()" style="width:14px;height:14px"></td>'+
@@ -23199,34 +23918,52 @@ async function importarAtivosPDF(input){
     '<td style="'+td+';font-size:12px">'+escapeHtml(f.nome)+'</td>'+
     '<td style="'+td+';font-size:12px;text-align:right;white-space:nowrap">'+(f.custo!=null?fmtMoney(f.custo):(f.duvida?'<span style="color:var(--st-mid-tx)" title="Leitura AMBÍGUA da coluna de custo nesta linha — por segurança o custo NÃO foi preenchido; confira no relatório e preencha na ficha">⚠ conferir</span>':'<span style="color:var(--st-mid-tx)" title="Relatório sem custo (0,00 ou em branco) — cadastra sem custo base">—</span>'))+'</td></tr>').join('');
   const nDuv=_insImpStage.filter(x=>x.duvida).length;
-  const html='<div class="overlay open" id="ins-imp-overlay" data-dyn="1"><div class="modal" style="width:720px;max-width:95vw;max-height:86vh;display:flex;flex-direction:column">'+
+  // v258 — segunda seção: atualização de custo base dos já cadastrados (conferência, nada automático)
+  const fmt4=v=>(v==null?'—':('R$ '+(Math.round(v*10000)/10000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})));
+  const rowsUpd=_insImpStageUpd.map((u,i)=>'<tr>'+
+    '<td style="'+td+';text-align:center"><input type="checkbox" checked onchange="_insImpStageUpd['+i+'].incluir=this.checked;_insImpCount()" style="width:14px;height:14px"></td>'+
+    '<td style="'+td+';font-family:monospace;font-size:11px">'+escapeHtml(u.codigo||'')+'</td>'+
+    '<td style="'+td+';font-size:12px">'+escapeHtml(u.nome||'')+(u.temCompra?' <span style="font-size:9.5px;color:var(--text-tertiary)" title="Este item tem compra no Lecare — a ÚLTIMA COMPRA vence o custo base no preço; o base atualizado só vale se as compras forem estornadas">tem compra</span>':'')+'</td>'+
+    '<td style="'+td+';font-size:12px;text-align:right;white-space:nowrap">'+fmt4(u.atual)+'</td>'+
+    '<td style="'+td+';font-size:12px;text-align:right;white-space:nowrap;font-weight:600">'+fmt4(u.novo)+'</td>'+
+    '<td style="'+td+';font-size:11px;text-align:right;white-space:nowrap;color:'+((u.atual!=null&&u.novo>u.atual)?'var(--st-bad-tx)':'var(--st-ok-tx)')+'">'+(u.atual!=null&&u.atual>0?((u.novo>u.atual?'+':'')+Math.round((u.novo-u.atual)/u.atual*1000)/10+'%'):'novo')+'</td></tr>').join('');
+  const html='<div class="overlay open" id="ins-imp-overlay" data-dyn="1"><div class="modal" style="width:780px;max-width:95vw;max-height:86vh;display:flex;flex-direction:column">'+
     '<h2 style="font-size:16px;flex-shrink:0">📥 Importar ativos — conferência</h2>'+
-    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;flex-shrink:0">PDF lido: <b>'+itens.length+'</b> ativos · <b>'+jaTem+'</b> já cadastrados · <b style="color:var(--st-mid-tx)">'+faltam.length+' SEM cadastro</b> (listados abaixo). Leitura por posição de coluna; custo do relatório vira o CUSTO BASE; markup automático pela <b>categoria de custo</b> (faixas da Configuração).'+(nDuv?' <b style="color:var(--st-mid-tx)">'+nDuv+' linha(s) com leitura ambígua — o custo ficou vazio por segurança (nunca se chuta).</b>':'')+' Desmarque o que não quiser — <b>nada é gravado sem a sua confirmação</b>.</div>'+
-    '<div style="flex:1;overflow:auto;border:.5px solid var(--border);border-radius:8px"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;flex-shrink:0">PDF lido: <b>'+itens.length+'</b> ativos · <b>'+jaTem+'</b> já cadastrados · <b style="color:var(--st-mid-tx)">'+faltam.length+' SEM cadastro</b> · <b style="color:var(--st-mid-tx)">'+_insImpStageUpd.length+'</b> com custo base a atualizar (v258). Custo do relatório vira o CUSTO BASE; markup automático pela <b>categoria de custo</b>; <b>preço de venda NÃO muda</b>.'+(nDuv?' <b style="color:var(--st-mid-tx)">'+nDuv+' linha(s) com leitura ambígua — o custo ficou vazio por segurança (nunca se chuta).</b>':'')+' Desmarque o que não quiser — <b>nada é gravado sem a sua confirmação</b>.</div>'+
+    '<div style="flex:1;overflow:auto">'+
+    (rows?('<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-secondary);margin:4px 0 4px">Novos cadastros ('+_insImpStage.length+')</div><div style="border:.5px solid var(--border);border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
     '<th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px">✔</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:left">Código</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:left">Ativo</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:right">Custo (R$)</th>'+
-    '</tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table></div>'):'')+
+    (rowsUpd?('<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-secondary);margin:10px 0 4px">Atualização de custo base — já cadastrados ('+_insImpStageUpd.length+')</div><div style="border:.5px solid var(--border);border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse"><thead><tr>'+
+    '<th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px">✔</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:left">Código</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:left">Ativo</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:right">Base atual</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:right">Relatório</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:11px;text-align:right">Δ</th>'+
+    '</tr></thead><tbody>'+rowsUpd+'</tbody></table></div>'):'')+
+    '</div>'+
     '<div class="modal-footer" style="margin-top:10px;flex-shrink:0"><span id="ins-imp-count" style="margin-right:auto;font-size:12px;color:var(--text-secondary)"></span>'+
-    '<button onclick="document.getElementById(\'ins-imp-overlay\').remove();_insImpStage=null">Cancelar</button>'+
-    '<button class="btn-primary" onclick="_insImpConfirmar()">Cadastrar selecionados</button></div></div></div>';
+    '<button onclick="document.getElementById(\'ins-imp-overlay\').remove();_insImpStage=null;_insImpStageUpd=null">Cancelar</button>'+
+    '<button class="btn-primary" onclick="_insImpConfirmar()">Aplicar selecionados</button></div></div></div>';
   const old=document.getElementById('ins-imp-overlay'); if(old) old.remove();
   document.body.insertAdjacentHTML('beforeend', html);
   _insImpCount();
 }
-function _insImpCount(){ const e=document.getElementById('ins-imp-count'); if(e&&_insImpStage) e.textContent=_insImpStage.filter(x=>x.incluir).length+' selecionado(s) para cadastro'; }
+var _insImpStageUpd=null; // v258 — atualização de custo base dos já cadastrados
+function _insImpCount(){ const e=document.getElementById('ins-imp-count'); if(!e) return; const a=_insImpStage?_insImpStage.filter(x=>x.incluir).length:0; const b=_insImpStageUpd?_insImpStageUpd.filter(x=>x.incluir).length:0; e.textContent=a+' cadastro(s) · '+b+' atualização(ões) de custo'; }
 function _insImpConfirmar(){
-  if(!_insImpStage) return;
-  const sel=_insImpStage.filter(x=>x.incluir);
-  if(!sel.length){ alert('Nenhum ativo selecionado.'); return; }
-  if(!confirm('Cadastrar '+sel.length+' ativo(s) no catálogo?\n\nCusto do relatório = custo base · markup automático pela categoria de custo.')) return;
+  const sel=_insImpStage?_insImpStage.filter(x=>x.incluir):[];
+  const selUpd=_insImpStageUpd?_insImpStageUpd.filter(x=>x.incluir):[];
+  if(!sel.length && !selUpd.length){ alert('Nada selecionado.'); return; }
+  if(!confirm((sel.length?('Cadastrar '+sel.length+' ativo(s) novo(s)'):'')+(sel.length&&selUpd.length?' e ':'')+(selUpd.length?('atualizar o CUSTO BASE de '+selUpd.length+' já cadastrado(s)'):'')+'?\n\nCusto do relatório = custo base · markup pela categoria de custo · preço de venda NÃO muda.')) return;
   const now=Date.now();
   sel.forEach((f,i)=>{ insumos.push({ id:'ins'+(now+i), codigo:f.codigo, nome:f.nome, tipo:'insumo', unidade:'g', categoria:'sem categoria', ativo:true,
     custoBase:(f.custo!=null?f.custo:null), custoBaseFonte:(f.custo!=null?'relatorio_ativos_opery':null),
     criadoEm:now+i, criadoPor:(currentUser&&currentUser.name)||'', origem:'import_pdf_opery' }); });
+  // v258 — custo base re-alinhado ao relatório (aprovado na conferência); nunca toca preço de venda
+  selUpd.forEach(u=>{ const x=(insumos||[]).find(p=>p&&p.id===u.id); if(x){ x.custoBase=u.novo; x.custoBaseFonte='relatorio_ativos_opery'; x.custoBaseEm=new Date().toISOString(); } });
   const ov=document.getElementById('ins-imp-overlay'); if(ov) ov.remove();
-  _insImpStage=null;
+  _insImpStage=null; _insImpStageUpd=null;
+  try{ _cnVigiaInvalidar(); }catch(_e){} // custos mudaram → farol recalcula
   saveData();
   try{ renderCatSimples('insumo'); }catch(_e){}
-  alert('✓ '+sel.length+' ativo(s) cadastrado(s) no catálogo (markup pela categoria de custo).');
+  alert('✓ '+(sel.length?sel.length+' ativo(s) cadastrado(s)':'')+(sel.length&&selUpd.length?' · ':'')+(selUpd.length?selUpd.length+' custo(s) base atualizado(s)':'')+'.');
 }
 function _parsePedidoLecarePDF(linhas){
   const txt=linhas.join('\n'); const L=linhas;
@@ -26802,9 +27539,27 @@ async function renderImportacoes(){
   }
   try{ localStorage.setItem('lecare_import_seen', new Date().toISOString()); }catch(_e){}
   const badge=document.getElementById('nav-importacoes-badge'); if(badge) badge.style.display='none';
+  // v257 — PENDÊNCIAS ABERTAS direto do ESTADO (import_processados.status='pendencia') — caso
+  // 104089/104138 (04/11): a pendência era citada só no texto da rodada e as rodadas seguintes
+  // passaram a tratar a linha do dedupe como "já constava" — o alerta morreu em silêncio e os
+  // pedidos nunca subiram. Este painel não depende do relatório: fica até a pendência resolver
+  // (o robô atualiza o status para 'inserido' quando o pedido finalmente entra).
+  let pendAb=[];
+  try{
+    const { data:pd } = await _sb.from('import_processados').select('file_id,file_name,num,motivo,criado_em').eq('status','pendencia').order('criado_em',{ascending:true});
+    pendAb=pd||[];
+  }catch(_e){}
   let html='<div class="panel" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">';
   html+='<div><div style="font-weight:600;font-size:15px">Importações de Pedidos (agente)</div><div style="color:var(--text-tertiary);font-size:13px">Relatório de cada rodada do agente que lê os PDFs do Drive e lança os pedidos no sistema.</div></div>';
   html+='<button class="btn-primary" style="padding:4px 10px;font-size:13px" onclick="renderImportacoes()">↻ Atualizar</button></div>';
+  if(pendAb.length){
+    html+='<div class="panel" style="margin-bottom:12px;border-left:3px solid #C0392B">'
+      +'<div style="font-weight:700;font-size:14px;color:var(--st-bad-tx)">⚠ Pendências de importação ABERTAS ('+pendAb.length+') — pedidos que NÃO subiram</div>'
+      +'<div style="font-size:12px;color:var(--text-tertiary);margin-top:2px">Fonte: estado da importação (não depende do relatório de rodada). Cada caso fica aqui até resolver — o alerta não expira com a virada do mês.</div>'
+      +'<div style="display:flex;flex-direction:column;gap:5px;margin-top:8px">'
+      +pendAb.map(p=>{ const d=new Date(p.criado_em); return '<div style="font-size:13px;border-left:3px solid #C0392B;padding-left:8px"><b>'+esc(p.num||p.file_name||'?')+'</b>'+(p.file_name?' <span style="color:var(--text-tertiary)">('+esc(p.file_name)+')</span>':'')+' — pendente desde '+(isNaN(d.getTime())?'?':d.toLocaleDateString('pt-BR'))+(p.motivo?'<br><span style="color:var(--st-bad-tx)">'+esc(p.motivo)+'</span>':' <span style="color:var(--text-tertiary)">· motivo no relatório da data acima</span>')+'</div>'; }).join('')
+      +'</div></div>';
+  }
   if(!rows.length){ html+='<div class="panel"><div style="color:var(--text-tertiary)">Nenhuma importação registrada ainda.</div></div>'; el.innerHTML=html; return; }
   // v190 — SUB-ABAS POR MÊS (pedido do dono 04/08): rodadas agrupadas pelo mês da rodada (criado_em)
   const _mesDe=r=>{ const d=new Date(r.criado_em); return isNaN(d.getTime())?'':(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')); };
@@ -26851,7 +27606,11 @@ async function _checkImportBadge(){
     const { data } = await _sb.from('import_relatorios').select('criado_em').order('criado_em',{ascending:false}).limit(20);
     const seen=localStorage.getItem('lecare_import_seen');
     let novos=0; (data||[]).forEach(r=>{ if(!seen || new Date(r.criado_em) > new Date(seen)) novos++; });
-    if(novos>0 && _currentPage!=='importacoes'){ badge.textContent=novos>9?'9+':String(novos); badge.style.display=''; }
+    // v257 — pendência de importação ABERTA mantém o badge aceso mesmo com a aba já vista (caso
+    // 104089/104138: o alerta não pode morrer enquanto o pedido não subir)
+    let pendAb=0;
+    try{ const { count } = await _sb.from('import_processados').select('file_id',{count:'exact', head:true}).eq('status','pendencia'); pendAb=count||0; }catch(_e){}
+    if((novos>0 || pendAb>0) && _currentPage!=='importacoes'){ const t=novos+pendAb; badge.textContent=t>9?'9+':String(t); badge.title=pendAb>0?(pendAb+' pendência(s) de importação aberta(s)'):''; badge.style.display=''; }
     else badge.style.display='none';
   }catch(_e){}
 }
@@ -34620,7 +35379,8 @@ function _obResolveF(txt){
 function openOrcBuilder(id, viewOnly){
   var ex=id?(orcamentosCrm||[]).find(function(o){ return o.id===id; }):null;
   if(id && (!ex || !ex.detalhado)){ alert('Este orçamento é do registro antigo — use o Editar padrão.'); return; }
-  _ob=ex?JSON.parse(JSON.stringify(ex)):{ id:null, num:null, clienteId:null, clienteNome:'', tipo:'venda', itens:[], frete:0, descGeral:0, formaPag:'PIX', obs:'', status:'aberto' };
+  _ob=ex?JSON.parse(JSON.stringify(ex)):{ id:null, num:null, clienteId:null, clienteNome:'', tipo:'venda', itens:[], frete:0, descGeral:0, formaPag:'PIX', obs:'', status:'aberto',
+    responsavel:((currentUser&&currentUser.name)||'') }; // v259 — VENDEDOR = quem lança o orçamento (regra do dono 04/11)
   _obSelFid=null;
   _obView=!!viewOnly; // v191 — "Abrir" = ver tudo sem editar
   _obRender();
@@ -34680,10 +35440,15 @@ function _obRender(){
     var b=(parseFloat(it.precoUnit)||0)*(parseFloat(it.qtd)||0);
     // v196 — COMPOSIÇÃO visível na linha (pedido do dono 06/08): derivada ao vivo da fórmula (mesma
     // fonte do PDF), com os invisíveis marcados 🚫 (só aqui — o PDF do cliente continua sem eles)
+    // v259 — item PERSONALIZADO carrega a composição NO ITEM: ela prevalece sobre a do catálogo
     var _fIt=(catalogoNovo||[]).find(function(x){ return x && x.id===it.fid; });
-    var compTxt=_fIt?(_fIt.composicao||[]).filter(function(cp){ return cp && cp.papel!=='excipiente' && (parseFloat(cp.dose)||0)>0; }).map(function(cp){
-      return escapeHtml((cp.nome||'?')+' '+cp.dose+(cp.unidade||'%'))+(cp.invisivel?' <span title="Não aparece no PDF do cliente">🚫</span>':'');
-    }).join(' · '):'';
+    var _compArr=(it.composicao&&it.composicao.length)?it.composicao:(_fIt?(_fIt.composicao||[]):[]);
+    // v259 — internamente o sistema mostra TUDO: nome de cadastro + nome comercial efetivo do PDF (quando difere) + 🚫
+    var compTxt=_compArr.filter(function(cp){ return cp && cp.papel!=='excipiente' && (parseFloat(cp.dose)||0)>0; }).map(function(cp){
+      var _insC=(insumos||[]).find(function(x){ return x && x.id===cp.insumoId; });
+      var _nmEf=(String(cp.nomeComercial||'').trim())||((_insC&&(_insC.nomeComercial||'').trim())||'');
+      return escapeHtml((cp.nome||'?')+' '+cp.dose+(cp.unidade||'%'))+(_nmEf&&_nmEf!==cp.nome?' <span style="color:var(--text-tertiary)" title="Nome que sai no PDF deste orçamento">→ “'+escapeHtml(_nmEf)+'”</span>':'')+(cp.invisivel?' <span title="Não aparece no PDF do cliente (só neste orçamento)">🚫</span>':'');
+    }).join(' · ');
     // v196 — o TEXTO dos avisos do motor (antes só saía a contagem, sem dizer o quê)
     var avTxt=(it.avisosTxt&&it.avisosTxt.length)?it.avisosTxt:null;
     var avHtml = avTxt
@@ -34706,6 +35471,13 @@ function _obRender(){
       '<div class="form-group"><label>Tipo do pedido *</label><select id="ob-tipo" onchange="_obSet(\'tipo\',this.value)" style="font-size:13px"'+dis+'>'+tiposOpts+'</select></div>'+
     '</div>'+
     '<div style="font-size:11px;color:var(--text-secondary);margin:-4px 0 10px">📍 Endereço: <span id="ob-end">'+escapeHtml(cli?(_obEnderecoTxt(cli)||'cadastro sem endereço'):'— selecione um cliente do cadastro —')+'</span></div>'+
+    // v259 — VENDEDOR (regra do dono 04/11): nasce com quem LANÇA o orçamento; SÓ administrador e
+    // diretora comercial podem trocar (os demais veem travado).
+    '<div class="form-row"><div class="form-group"><label>Vendedor <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(quem lançou; só admin/diretora comercial trocam)</span></label>'+
+      ((!V && _obPodeTrocarVendedor())
+        ? '<select id="ob-vendedor" onchange="_obSetVend(this.value)" style="font-size:13px">'+_obVendedorOpts(_ob.responsavel||((currentUser&&currentUser.name)||''))+'</select>'
+        : '<input type="text" value="'+escapeHtml(_ob.responsavel||((currentUser&&currentUser.name)||''))+'" disabled title="Somente administrador e diretora comercial trocam o vendedor.">')+
+    '</div><div class="form-group"></div></div>'+
     '<div class="modal-section"><div class="modal-section-title" style="display:flex;align-items:center;gap:10px">Itens do orçamento'+(V?'':' <button class="btn-primary" onclick="_obAddModal()" style="font-size:12px;padding:5px 14px" title="Abre o modal de inserção: fórmula, composição, QSP/cápsulas, frasco e quantidade">＋ Adicionar produto</button>')+'</div>'+
     ((_ob.itens||[]).length?('<div class="table-scroll"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:left">Produto</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Qtd</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Preço unit.</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Desc. %</th><th style="padding:6px 8px;background:var(--bg-secondary);font-size:10.5px;text-align:right">Total</th>'+(V?'':'<th style="padding:6px 8px;background:var(--bg-secondary)"></th>')+'</tr></thead><tbody>'+itensRows+'</tbody></table></div>'):'<div style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Nenhum item ainda — use "＋ Adicionar produto".</div>')+
     '</div>'+
@@ -34729,6 +35501,15 @@ function _obRender(){
   _obPgInit();
   _obRefreshTotais();
 }
+// v259 — VENDEDOR do orçamento (regra do dono 04/11): default = quem lança; troca só admin/diretora comercial
+function _obPodeTrocarVendedor(){ return !!(currentUser && (currentUser.perfil==='admin' || currentUser.perfil==='diretor_comercial')); }
+function _obVendedorOpts(sel){
+  var lista=(typeof users!=='undefined'?users:[]).filter(function(u){ return u && u.ativo!==false && PERFIS_COMERCIAIS.includes(u.perfil); }).map(function(u){ return u.name||''; }).filter(Boolean);
+  if(sel && lista.indexOf(sel)<0) lista.unshift(sel); // valor atual fora da lista (usuário desativado/legado) não some
+  lista.sort(function(a,b){ return a.localeCompare(b); });
+  return lista.map(function(n){ return '<option value="'+escapeHtml(n)+'"'+(n===sel?' selected':'')+'>'+escapeHtml(n)+'</option>'; }).join('');
+}
+function _obSetVend(v){ if(!_ob) return; if(!_obPodeTrocarVendedor()){ alert('Somente administrador e diretora comercial trocam o vendedor.'); return; } _ob.responsavel=String(v||'').trim(); }
 function _obModF(){ try{ return _formaModalidadeDoTipo(_ob&&_ob.tipo||'venda')||''; }catch(_e){ return ''; } }
 function _obPgInit(){
   var t=_obTotais(), modF=_obModF(), tot=+t.tot.toFixed(2);
@@ -34795,8 +35576,8 @@ function _obAddModal(editIdx){
   if(_obEditIdx!=null && !editing){ _obEditIdx=null; }
   ov.innerHTML='<div class="modal" style="width:660px;max-width:95vw;max-height:90vh;overflow-y:auto">'+
     '<h2 style="font-size:16px">'+(editing?'✏ Editar produto':'＋ Adicionar produto')+'</h2>'+
-    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px">Funciona como o simulador: fórmula → composição → QSP/cápsulas → embalagem → preço automático pelo motor de precificação.'+(editing?' <b>Editando um item já inserido</b> — ao salvar, o item é recalculado (o desconto % da linha é mantido).':'')+'</div>'+
-    '<div class="form-group" style="margin-bottom:8px"><label>Fórmula do catálogo *</label><input type="text" id="ob-f" list="ob-f-dl" placeholder="Código ou nome da fórmula..." onchange="_obPickFormula(this.value)"><datalist id="ob-f-dl">'+_obFormulas().slice(0,1500).map(function(f){ return '<option value="'+escapeHtml(_obFLabel(f))+'">'; }).join('')+'</datalist></div>'+
+    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px">Fórmula → composição (editável: vira "— personalizado") → QSP/cápsulas → embalagem → preço pelo PREÇO DE VENDA do produto (sem preço definido, pelo sugerido) + embalagem.'+(editing?' <b>Editando um item já inserido</b> — ao salvar, o item é recalculado (o desconto % da linha é mantido).':'')+'</div>'+
+    '<div class="form-group" style="margin-bottom:8px"><label>Fórmula do catálogo *</label><div style="display:flex;gap:6px"><input type="text" id="ob-f" list="ob-f-dl" placeholder="Código ou nome da fórmula..." onchange="_obPickFormula(this.value)" style="flex:1"><button type="button" onclick="_obCatModal()" style="font-size:12px;padding:5px 12px;white-space:nowrap" title="Catálogo visual por categoria de uso (v258)">📚 Catálogo</button></div><datalist id="ob-f-dl">'+_obFormulas().slice(0,1500).map(function(f){ return '<option value="'+escapeHtml(_obFLabel(f))+'">'; }).join('')+'</datalist></div>'+
     '<div id="ob-f-campos"><div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Escolha a fórmula para ver a composição e os campos.</div></div>'+
     '<div class="modal-footer"><button onclick="document.getElementById(\'ob-add-overlay\').classList.remove(\'open\')">Cancelar</button>'+
       (editing?'<button class="btn-primary" onclick="_obAddItem(false)">✓ Salvar alterações</button>'
@@ -34819,16 +35600,16 @@ function _obPickFormula(txt, fid, pre){
   if(!f){ box.innerHTML='<div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Escolha a fórmula para ver a composição e os campos.</div>'; _obSelFid=null; return; }
   _obSelFid=f.id;
   var caps=(f.forma==='capsula');
-  var ativos=(f.composicao||[]).filter(function(cp){ return cp.papel!=='excipiente'; });
-  var exc=(f.composicao||[]).filter(function(cp){ return cp.papel==='excipiente'; });
-  var ajRows=ativos.map(function(cp,i){
-    return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:12px"><span style="flex:1;min-width:0">'+escapeHtml(cp.nome||'?')+(cp.invisivel?' <span style="font-size:9px;color:var(--text-tertiary)" title="Não aparece no PDF do cliente">🚫 invisível</span>':'')+'</span><input type="number" min="0" step="any" id="ob-aj-'+i+'" value="'+(cp.dose!=null?cp.dose:'')+'" style="width:90px;text-align:right;font-size:12px"><span style="width:36px;color:var(--text-secondary)">'+escapeHtml(cp.unidade||(caps?'mg':'%'))+'</span></div>';
-  }).join('');
+  // v259 — PERSONALIZADO (fase 3, regras do dono 04/11): a composição do ITEM é editável de verdade
+  // (muda dose, ADICIONA e REMOVE ativo) sem criar fórmula no catálogo — o item carrega a composição
+  // e o nome ganha "— personalizado". Substitui o fluxo AJ (registros AJ antigos permanecem).
+  _obComp=((pre&&Array.isArray(pre.composicao)&&pre.composicao.length)?pre.composicao:(f.composicao||[])).map(function(c){ return Object.assign({},c); });
   box.innerHTML=
     // v191 — a COMPOSIÇÃO abre junto com a fórmula (pedido do dono): dose editável ali mesmo
-    '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-secondary);margin-bottom:6px">Composição <span style="font-weight:400;text-transform:none;color:var(--text-tertiary)">(pode editar as doses — qualquer alteração salva uma fórmula nova com "AJ" no nome; a original não muda)</span></div>'+
-    (ajRows||'<div style="font-size:12px;color:var(--text-tertiary)">Sem ativos cadastrados.</div>')+
-    (exc.length?'<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">Excipiente: '+exc.map(function(cp){ return escapeHtml(cp.nome||'?'); }).join(' · ')+' (qsp)</div>':'')+'</div>'+
+    '<div style="background:var(--bg-secondary);border-radius:8px;padding:10px 12px;margin-bottom:10px"><div style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-secondary);margin-bottom:6px">Composição <span style="font-weight:400;text-transform:none;color:var(--text-tertiary)">(v259: mude doses, adicione ou remova ativos — o item sai como "— personalizado"; o catálogo não muda)</span></div>'+
+    '<div id="ob-comp-rows"></div>'+
+    '<div class="autocomplete-wrap" style="margin-top:6px"><input type="text" id="ob-addativo" placeholder="+ adicionar ativo (código ou nome)..." oninput="_obAtivoSearch()" autocomplete="off" style="font-size:12px"><div class="autocomplete-list" id="ob-addativo-ac"></div></div>'+
+    '</div>'+ /* v259 — o veículo/excipiente agora tem linha própria no editor (invisível/nome comercial por orçamento) */
     '<div class="form-row">'+
     (caps
       ? '<div class="form-group"><label>Nº de cápsulas *</label><input type="number" min="1" step="1" id="ob-ncaps" value="60"></div><div class="form-group"><label>Tamanho da cápsula</label><select id="ob-capstam" style="font-size:13px">'+['00','0','1','2','3','4'].map(function(t){ return '<option'+(String(f.capsTam||'0')===t?' selected':'')+'>'+t+'</option>'; }).join('')+'</select></div>'
@@ -34838,7 +35619,8 @@ function _obPickFormula(txt, fid, pre){
       // v196 — embalagem DESMEMBRADA (pedido do dono 06/08): frasco + válvula + tampa etc., uma linha por parte
       '<div class="form-group"><label>Embalagem <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(uma linha por parte: frasco, válvula, tampa...)</span></label>'+
         '<div id="ob-embs"></div>'+
-        '<button type="button" onclick="_obEmbAdd()" style="font-size:11px;padding:3px 10px;margin-top:2px">+ adicionar embalagem</button>'+
+        '<button type="button" onclick="_obEmbAdd()" style="font-size:11px;padding:3px 10px;margin-top:2px">+ adicionar embalagem</button> '+
+        '<button type="button" onclick="_obEmbCatModal()" style="font-size:11px;padding:3px 10px;margin-top:2px" title="Catálogo visual de embalagens com foto, filtrado pela forma farmacêutica do produto (v258)">📦 Catálogo de embalagens</button>'+
         '<datalist id="ob-emb-dl">'+_geEmbs().slice(0,900).map(function(x){ return '<option value="'+escapeHtml(_geLabel(x))+'">'; }).join('')+'</datalist></div>'+
       '<div class="form-group"><label>Qtd de unidades</label><input type="number" min="1" step="1" id="ob-qtd" value="1" style="text-align:right"></div>'+
     '</div>';
@@ -34858,6 +35640,66 @@ function _obPickFormula(txt, fid, pre){
   } else {
     _obEmbAdd(); // primeira linha já aberta
   }
+  _obCompRender(); // v259 — pinta as linhas editáveis da composição
+}
+// ═══ v259 — editor de composição do ITEM (personalizado) ═══
+var _obComp=[];
+function _obCompRender(){
+  var c=document.getElementById('ob-comp-rows'); if(!c) return;
+  var f=_obSelFid?(catalogoNovo||[]).find(function(x){ return x.id===_obSelFid; }):null;
+  var caps=!!(f&&f.forma==='capsula');
+  var rows='';
+  // v259 — pedido do dono 04/11: invisível POR ORÇAMENTO (vale só neste item) e NOME COMERCIAL por
+  // componente (o que o cliente vê no PDF); internamente o sistema mostra tudo (nome de cadastro +
+  // nome do orçamento). São marcações COSMÉTICAS: não mudam preço nem tornam o item personalizado.
+  var ncPh=function(cp){ var ins=(insumos||[]).find(function(x){ return x.id===cp.insumoId; }); var pad=(ins&&(ins.nomeComercial||'').trim())||''; return pad?('vazio = "'+pad+'" (padrão do cadastro)'):'nome no PDF deste orçamento (vazio = nome do cadastro)'; };
+  _obComp.forEach(function(cp,i){
+    if(cp.papel==='excipiente'){
+      rows+='<div style="border-top:.5px dashed var(--border);margin-top:6px;padding-top:6px">'+
+        '<div style="display:flex;gap:8px;align-items:center;font-size:12px">'+
+          '<span style="flex:1;min-width:0;color:var(--text-secondary)">'+escapeHtml(cp.nome||'?')+' <span style="font-size:10px;color:var(--text-tertiary)">(veículo/excipiente — completa o QSP)</span></span>'+
+          '<label style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text-secondary);cursor:pointer" title="Marcado: o veículo aparece na composição do PDF do cliente (como qsp)"><input type="checkbox" '+(cp.pdfMostrar?'checked':'')+' onchange="_obCompPdfEx('+i+',this.checked)" style="width:13px;height:13px">mostrar no PDF</label>'+
+        '</div>'+
+        '<input type="text" value="'+escapeHtml(cp.nomeComercial||'')+'" oninput="_obCompNC('+i+',this.value)" placeholder="'+escapeHtml(ncPh(cp))+'" style="width:100%;font-size:11px;margin-top:3px;color:var(--text-secondary)">'+
+      '</div>';
+      return;
+    }
+    rows+='<div style="margin-bottom:7px">'+
+      '<div style="display:flex;gap:8px;align-items:center;font-size:12px">'+
+        '<span style="flex:1;min-width:0">'+escapeHtml(cp.nome||'?')+(cp._novo?' <span style="font-size:9px;padding:1px 6px;border-radius:10px;background:var(--bg-info);color:var(--text-info);font-weight:700" title="Ativo adicionado neste item (personalizado)">novo</span>':'')+'</span>'+
+        '<label style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text-secondary);cursor:pointer" title="Marcado: este ativo NÃO aparece no PDF do cliente — SÓ neste orçamento (custo/preço não mudam; internamente o sistema mostra tudo)"><input type="checkbox" '+(cp.invisivel?'checked':'')+' onchange="_obCompInv('+i+',this.checked)" style="width:13px;height:13px">🚫 invisível</label>'+
+        '<input type="number" min="0" step="any" value="'+(cp.dose!=null?cp.dose:'')+'" oninput="_obCompDose('+i+',this.value)" style="width:80px;text-align:right;font-size:12px">'+
+        '<span style="width:34px;color:var(--text-secondary)">'+escapeHtml(cp.unidade||(caps?'mg':'%'))+'</span>'+
+        '<button type="button" onclick="_obCompRem('+i+')" title="Remover este ativo do item (vira personalizado; o catálogo não muda)" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:13px">✕</button>'+
+      '</div>'+
+      '<input type="text" value="'+escapeHtml(cp.nomeComercial||'')+'" oninput="_obCompNC('+i+',this.value)" placeholder="'+escapeHtml(ncPh(cp))+'" style="width:100%;font-size:11px;margin-top:3px;color:var(--text-secondary)">'+
+    '</div>';
+  });
+  c.innerHTML=rows||'<div style="font-size:12px;color:var(--text-tertiary)">Sem ativos — adicione abaixo.</div>';
+}
+function _obCompDose(i,val){ if(_obComp[i]) _obComp[i].dose=val; }
+function _obCompRem(i){ if(!_obComp[i]||_obComp[i].papel==='excipiente') return; _obComp.splice(i,1); _obCompRender(); }
+function _obCompInv(i,v){ if(_obComp[i]) _obComp[i].invisivel=!!v; }
+function _obCompNC(i,v){ if(_obComp[i]) _obComp[i].nomeComercial=String(v||'').trim(); }
+function _obCompPdfEx(i,v){ if(_obComp[i]) _obComp[i].pdfMostrar=!!v; }
+function _obAtivoSearch(){
+  var inp=document.getElementById('ob-addativo'), ac=document.getElementById('ob-addativo-ac'); if(!inp||!ac) return;
+  var q=(inp.value||'').toLowerCase().trim();
+  if(q.length<1){ ac.classList.remove('open'); return; }
+  var ja={}; _obComp.forEach(function(c){ if(c.insumoId) ja[c.insumoId]=1; });
+  var m=(insumos||[]).filter(function(x){ return x.tipo==='insumo' && x.ativo!==false && !ja[x.id] && ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(q)>=0; }).slice(0,8);
+  if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nada encontrado em Insumos (Ativos).</div>'; ac.classList.add('open'); return; }
+  ac.innerHTML=m.map(function(x){ return '<div class="autocomplete-item" onmousedown="_obAtivoAdd(\''+x.id+'\')"><div class="ac-name">'+escapeHtml(x.nome)+'</div><div class="ac-doc">'+escapeHtml(x.codigo||'')+' · '+escapeHtml(x.categoria||'')+'</div></div>'; }).join('');
+  ac.classList.add('open');
+}
+function _obAtivoAdd(id){
+  var x=(insumos||[]).find(function(p){ return p.id===id; }); if(!x) return;
+  var f=_obSelFid?(catalogoNovo||[]).find(function(p){ return p.id===_obSelFid; }):null;
+  var caps=!!(f&&f.forma==='capsula');
+  _obComp.push({insumoId:x.id, codigo:x.codigo||'', nome:x.nome||'', papel:'ativo', dose:'', unidade:x.unidadePadrao||(caps?'mg':'%'), _novo:true});
+  var inp=document.getElementById('ob-addativo'); if(inp) inp.value='';
+  var ac=document.getElementById('ob-addativo-ac'); if(ac) ac.classList.remove('open');
+  _obCompRender();
 }
 // v196 — linhas dinâmicas de embalagem do modal de inserção
 function _obEmbAdd(val){
@@ -34869,27 +35711,117 @@ function _obEmbAdd(val){
   c.appendChild(d);
   if(val!=null) d.querySelector('.ob-emb-inp').value=val;
 }
+// ═══ v258 — CATÁLOGO VISUAL no orçamento (regras do dono 04/11) ═══
+// Dois caminhos para inserir: digitar nome/código (como sempre) OU abrir o catálogo visual —
+// produtos agrupados por CATEGORIA DE USO; embalagens com FOTO, filtradas pela forma farmacêutica.
+function _obCatModal(){
+  var ov=document.getElementById('ob-cat-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='ob-cat-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4400'; document.body.appendChild(ov); }
+  var q=(document.getElementById('ob-cat-busca')?.value||'').toLowerCase().trim();
+  var _obCatVigia=_cnVigiaMapa(); // cache 60s — preço praticado/sugerido de cada card sem recálculo
+  var lista=_obFormulas().filter(function(f){ return !q || ((f.nome||'')+' '+(f.codigo||'')).toLowerCase().indexOf(q)>=0; });
+  var grupos=CN_CATS_USO.map(function(c){ return {key:c[0], lbl:c[1], itens:[]}; });
+  var semCat={key:'', lbl:'Sem categoria de uso', itens:[]};
+  lista.forEach(function(f){ var g=grupos.find(function(x){ return x.key===(f.categoriaUso||''); }); (g||semCat).itens.push(f); });
+  grupos.push(semCat);
+  var html=grupos.filter(function(g){ return g.itens.length; }).map(function(g){
+    g.itens.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+    var cards=g.itens.map(function(f){
+      var un=_cnPrecoUnLbl(f), pv=parseFloat(f.precoVenda);
+      var _v=_obCatVigia[f.id]; // v258 — cache do vigia (uma varredura, não um cálculo por card)
+      var prat=(_v&&_v.prat!=null)?_v.prat:((pv>0)?_cnPrecoPraticadoUn(f,null):0);
+      var precoTxt=(prat>0)?('R$ '+(Math.round(prat*10000)/10000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})+'/'+un+((pv>0)?'':' <span style="color:var(--text-tertiary)">(sugerido)</span>')):'<span style="color:var(--text-tertiary)">sem preço</span>';
+      return '<div onclick="_obCatPick(\''+f.id+'\')" style="border:.5px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--bg-primary)" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'+
+        '<div style="font-size:12.5px;font-weight:600;line-height:1.3">'+escapeHtml(f.nome||'—')+'</div>'+
+        '<div style="font-size:10.5px;color:var(--text-tertiary);margin-top:2px">'+escapeHtml(f.codigo||'')+' · '+_cnFormaLbl(f.forma)+'</div>'+
+        '<div style="font-size:11.5px;margin-top:4px">'+precoTxt+'</div>'+
+      '</div>';
+    }).join('');
+    return '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-secondary);margin-bottom:6px">'+g.lbl+' ('+g.itens.length+')</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">'+cards+'</div></div>';
+  }).join('')||'<div style="padding:20px;text-align:center;color:var(--text-tertiary);font-size:12px">Nada encontrado.</div>';
+  ov.innerHTML='<div class="modal" style="width:880px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column">'+
+    '<h2 style="font-size:16px;flex-shrink:0">📚 Catálogo de produtos</h2>'+
+    '<input type="text" id="ob-cat-busca" placeholder="Buscar produto..." oninput="_obCatModal()" value="'+escapeHtml(q)+'" style="font-size:13px;margin-bottom:10px;flex-shrink:0">'+
+    '<div style="flex:1;overflow-y:auto;padding-right:4px">'+html+'</div>'+
+    '<div class="modal-footer" style="flex-shrink:0;margin-top:10px"><button onclick="document.getElementById(\'ob-cat-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
+  ov.classList.add('open');
+  var bi=document.getElementById('ob-cat-busca'); if(bi && q){ bi.focus(); bi.setSelectionRange(q.length,q.length); }
+}
+function _obCatPick(fid){
+  var f=(catalogoNovo||[]).find(function(x){ return x.id===fid; }); if(!f) return;
+  var ov=document.getElementById('ob-cat-overlay'); if(ov) ov.classList.remove('open');
+  var fi=document.getElementById('ob-f'); if(fi) fi.value=_obFLabel(f);
+  _obPickFormula('', fid);
+}
+function _obEmbCatModal(){
+  var f=_obSelFid?(catalogoNovo||[]).find(function(x){ return x.id===_obSelFid; }):null;
+  if(!f){ alert('Escolha primeiro a fórmula do produto — o catálogo de embalagens filtra pela forma farmacêutica dela.'); return; }
+  var ov=document.getElementById('ob-embcat-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='ob-embcat-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4400'; document.body.appendChild(ov); }
+  var q=(document.getElementById('ob-embcat-busca')?.value||'').toLowerCase().trim();
+  // compatível = card clicável · sem classificação / sem custo = aparece CINZA e não seleciona
+  // (regra do dono) · incompatível com a forma = não aparece ("orçamento de líquido só mostra
+  // embalagens de líquido")
+  var sel=[], bloq=[];
+  _geEmbs().forEach(function(e){
+    if(q && ((e.nome||'')+' '+(e.codigo||'')).toLowerCase().indexOf(q)<0) return;
+    var compat=_embCompat(f.forma, e);
+    if(compat===false) return;
+    var pb=_embSelProblema(e, f.forma);
+    (pb?bloq:sel).push({e:e, pb:pb});
+  });
+  var card=function(it){
+    var e=it.e, pb=it.pb;
+    var cu=_cnCustoUnit(e); var pr=(cu.v+(parseFloat(e.custoRotulo)||0))*(1+_cnMarkupInsumo(e)/100); // v259 — rótulo soma ao valor da embalagem
+    var foto=e.fotoUrl?'<img src="'+escapeHtml(e.fotoUrl)+'" loading="lazy" alt="" style="width:100%;height:92px;object-fit:contain;border-radius:8px;background:var(--bg-secondary)">':'<div style="width:100%;height:92px;border-radius:8px;background:var(--bg-secondary);display:flex;align-items:center;justify-content:center;color:var(--text-tertiary);font-size:22px">📦</div>';
+    return '<div '+(pb?('title="'+escapeHtml(pb)+'"'):('onclick="_obEmbCatPick(\''+e.id+'\')"'))+' style="border:.5px solid var(--border);border-radius:10px;padding:8px;background:var(--bg-primary);'+(pb?'opacity:.45;cursor:not-allowed':'cursor:pointer')+'">'+
+      foto+
+      '<div style="font-size:11.5px;font-weight:600;line-height:1.25;margin-top:6px">'+escapeHtml(e.nome||'—')+'</div>'+
+      '<div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">'+escapeHtml(e.codigo||'')+(e.capacidade?' · '+e.capacidade+' '+(e.capacidadeUn||'mL'):'')+'</div>'+
+      '<div style="font-size:11px;margin-top:3px">'+((pr>0)?('R$ '+(Math.round(pr*100)/100).toLocaleString('pt-BR',{minimumFractionDigits:2})):'<span style="color:var(--text-tertiary)">sem custo</span>')+'</div>'+
+      (pb?'<div style="font-size:9.5px;color:var(--st-mid-tx);margin-top:3px;font-weight:600">⚠ '+escapeHtml(pb.split(' — ')[0])+'</div>':'')+
+    '</div>';
+  };
+  ov.innerHTML='<div class="modal" style="width:880px;max-width:96vw;max-height:88vh;display:flex;flex-direction:column">'+
+    '<h2 style="font-size:16px;flex-shrink:0">📦 Catálogo de embalagens <span style="font-size:11px;font-weight:400;color:var(--text-secondary)">— '+_cnFormaLbl(f.forma)+'</span></h2>'+
+    '<input type="text" id="ob-embcat-busca" placeholder="Buscar embalagem..." oninput="_obEmbCatModal()" value="'+escapeHtml(q)+'" style="font-size:13px;margin-bottom:10px;flex-shrink:0">'+
+    '<div style="flex:1;overflow-y:auto;padding-right:4px">'+
+      (sel.length?('<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:12px">'+sel.map(card).join('')+'</div>'):'<div style="padding:14px;text-align:center;color:var(--text-tertiary);font-size:12px">Nenhuma embalagem selecionável para esta forma'+(q?' nesta busca':'')+'.</div>')+
+      (bloq.length?('<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:6px">Aparecem mas NÃO selecionam — cadastro incompleto ('+bloq.length+')</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px">'+bloq.map(card).join('')+'</div>'):'')+
+    '</div>'+
+    '<div class="modal-footer" style="flex-shrink:0;margin-top:10px"><button onclick="document.getElementById(\'ob-embcat-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
+  ov.classList.add('open');
+  var bi=document.getElementById('ob-embcat-busca'); if(bi && q){ bi.focus(); bi.setSelectionRange(q.length,q.length); }
+}
+function _obEmbCatPick(eid){
+  var e=(insumos||[]).find(function(x){ return x.id===eid; }); if(!e) return;
+  var ov=document.getElementById('ob-embcat-overlay'); if(ov) ov.classList.remove('open');
+  var vazia=null;
+  Array.prototype.forEach.call(document.querySelectorAll('#ob-embs .ob-emb-inp'), function(inp){ if(!vazia && !String(inp.value||'').trim()) vazia=inp; });
+  if(vazia) vazia.value=_geLabel(e);
+  else _obEmbAdd(_geLabel(e));
+}
 function _obAddItem(outro){
   var f=_obSelFid?(catalogoNovo||[]).find(function(x){ return x.id===_obSelFid; }):null;
   if(!f){ alert('Selecione uma fórmula do catálogo.'); return; }
   var caps=(f.forma==='capsula');
-  var ativos=(f.composicao||[]).filter(function(cp){ return cp.papel!=='excipiente'; });
-  // ajustes de concentração → fórmula NOVA "AJ " (nunca altera a original)
-  var mudou=false, novasDoses=[];
-  ativos.forEach(function(cp,i){
-    var v=parseFloat((document.getElementById('ob-aj-'+i)||{}).value);
-    novasDoses.push(isNaN(v)?cp.dose:v);
-    if(!isNaN(v) && parseFloat(cp.dose)!==v) mudou=true;
+  // v259 — PERSONALIZADO (fase 3, substitui o fluxo AJ): a composição final vem do editor (_obComp);
+  // ativo sem dose fica de fora; mudou dose/entrou/saiu ativo = MESMO produto, item "— personalizado"
+  // com a composição embarcada NO ITEM (o catálogo não ganha fórmula nova).
+  var compFinal=_obComp.map(function(c){ var o=Object.assign({},c); delete o._novo; return o; })
+    .filter(function(c){ return c.papel==='excipiente' || (parseFloat(c.dose)||0)>0; });
+  if(!compFinal.some(function(c){ return c.papel!=='excipiente'; })){ alert('O item ficou sem nenhum ativo com dose — adicione ao menos um.'); return; }
+  var origAtv=(f.composicao||[]).filter(function(c){ return c.papel!=='excipiente' && (parseFloat(c.dose)||0)>0; });
+  var novAtv=compFinal.filter(function(c){ return c.papel!=='excipiente'; });
+  var personalizado = origAtv.length!==novAtv.length ||
+    novAtv.some(function(c){ var o=origAtv.find(function(x){ return x.insumoId===c.insumoId; }); return !o || parseFloat(o.dose)!==parseFloat(c.dose); });
+  // v259 — marcações COSMÉTICAS por orçamento (invisível/nome comercial/veículo no PDF): não mudam
+  // preço nem viram "personalizado", mas a composição precisa viajar NO ITEM para valerem só aqui.
+  var cosmDiff = compFinal.some(function(c){
+    var o=(f.composicao||[]).find(function(x){ return x.insumoId===c.insumoId; });
+    return (!!c.invisivel)!==(!!(o&&o.invisivel)) || String(c.nomeComercial||'')!==String((o&&o.nomeComercial)||'') || (!!c.pdfMostrar)!==(!!(o&&o.pdfMostrar));
   });
-  var usada=f, ajustadaDeNome='';
-  if(mudou){
-    var nf=JSON.parse(JSON.stringify(f));
-    nf.id='cn'+Date.now(); nf.codigo='AJ-'+(f.codigo||''); nf.nome='AJ '+(f.nome||'');
-    nf.ajustadaDe=f.id; nf.origem='orcamento_ajuste'; nf.criadoEm=Date.now(); nf.criadoPor=(currentUser&&currentUser.name)||'';
-    var k=0; (nf.composicao||[]).forEach(function(cp){ if(cp.papel!=='excipiente'){ cp.dose=novasDoses[k]; k++; } });
-    catalogoNovo.push(nf);
-    usada=nf; ajustadaDeNome=f.nome||'';
-  }
+  var usada = personalizado ? Object.assign({}, f, {composicao:compFinal}) : f;
   var opts={}, detalhe='';
   if(caps){
     var n=parseInt((document.getElementById('ob-ncaps')||{}).value,10)||60;
@@ -34912,13 +35844,47 @@ function _obAddItem(outro){
     else if(!embErro) embErro=v;
   });
   if(embErro){ alert('Embalagem não encontrada no catálogo: "'+embErro+'".\nEscolha uma opção da lista (ou apague a linha).'); return; }
+  // v258 — regra do dono 04/11: embalagem SEM classificação de forma, SEM custo ou INCOMPATÍVEL com
+  // a forma do produto aparece no catálogo mas NÃO pode ser usada no orçamento (obriga o cadastro).
+  for(var ei=0; ei<embIds.length; ei++){
+    var _e=(insumos||[]).find(function(x){ return x.id===embIds[ei]; });
+    var _pb=_embSelProblema(_e, f.forma);
+    if(_pb){ alert('A embalagem "'+((_e&&_e.nome)||'?')+'" não pode ser usada neste orçamento:\n\n'+_pb+'.'); return; }
+  }
   if(embIds.length){ opts.embalagemIds=embIds; opts.embalagemId=embIds[0]; detalhe+=' · '+embNomes.join(' + '); }
-  var calc=_cnCalcular(usada, opts);
+  var calc=_cnCalcular(usada, opts); // usada já carrega a composição final (personalizada ou não)
   var qtd=parseInt((document.getElementById('ob-qtd')||{}).value,10)||1;
-  var item={ fid:usada.id, codigo:usada.codigo||'', nome:usada.nome||'', forma:f.forma, detalhe:detalhe,
+  // v258 — PREÇO FIXO DO PRODUTO: preço de venda por unidade × volumetria × margem extra + embalagem.
+  // v259 — PERSONALIZADO (regra do dono 04/11): o delta de composição entra pelo MARKUP MÉDIO
+  // PRATICADO do produto (praticado ÷ custo atual da composição original) — algebricamente,
+  // preço do personalizado = markup médio × custo atual da composição final: componente que não
+  // mudou reproduz o preço original exato; o que entrou/saiu/mudou move o preço pelo markup médio,
+  // ignorando o markup individual de tabela (p/ mais e p/ menos). Sem preço fixo → sugerido da
+  // composição final (cálculo vigente), com a mesma margem extra.
+  var _qtdRef=caps?(parseInt((document.getElementById('ob-ncaps')||{}).value,10)||60):(parseFloat((document.getElementById('ob-qspv')||{}).value)||120);
+  var _extraM=1+((parseFloat(f.margemExtra)||0)/100);
+  var _pvU=parseFloat(f.precoVenda);
+  var _partePraticada; // parte do PRODUTO, já com a margem extra embutida
+  if(_pvU>0 && personalizado){
+    var _cOrig=_cnCalcular(f, {qspValor:opts.qspValor, qspUn:opts.qspUn, nCaps:opts.nCaps, capsTam:opts.capsTam, involucroId:opts.involucroId});
+    if(_cOrig.custoProduto>0){
+      var _mkMed=(_pvU*_qtdRef*_extraM)/_cOrig.custoProduto; // markup médio praticado (extra incluso)
+      _partePraticada=_mkMed*(calc.custoProduto||0);
+    } else {
+      _partePraticada=((calc.precoTotal||0)-(calc.embPreco||0))*_extraM; // custo original não fecha → sugerido
+    }
+  } else if(_pvU>0){
+    _partePraticada=_pvU*_qtdRef*_extraM;
+  } else {
+    _partePraticada=((calc.precoTotal||0)-(calc.embPreco||0))*_extraM;
+  }
+  var _precoFinal=_partePraticada+(calc.embPreco||0);
+  var item={ fid:f.id, codigo:f.codigo||'', nome:(f.nome||'')+(personalizado?' — personalizado':''), forma:f.forma, detalhe:detalhe,
     opts:opts, embalagemId:embIds[0]||null, embalagemIds:embIds, embalagemNome:embNomes.join(' + '), embalagemNomes:embNomes,
-    qtd:qtd, precoUnit:+(calc.precoTotal||0).toFixed(2), custoUnit:+(calc.custoTotal||0).toFixed(2),
-    descPct:0, avisos:(calc.avisos||[]).length, avisosTxt:(calc.avisos||[]).slice(), ajustadaDeNome:ajustadaDeNome };
+    qtd:qtd, precoUnit:+(_precoFinal||0).toFixed(2), custoUnit:+(calc.custoTotal||0).toFixed(2),
+    precoFonte:(_pvU>0)?'fixo':'sugerido', // v258 — rastreio da origem do preço no item
+    personalizado:personalizado||undefined, composicao:((personalizado||cosmDiff)?compFinal:undefined), // v259 — a composição viaja NO ITEM (personalizado OU marcação cosmética por orçamento)
+    descPct:0, avisos:(calc.avisos||[]).length, avisosTxt:(calc.avisos||[]).slice() };
   if(_obEditIdx!=null && _ob.itens[_obEditIdx]){
     item.descPct=_ob.itens[_obEditIdx].descPct||0; // edição preserva o desconto da linha
     _ob.itens[_obEditIdx]=item;
@@ -35045,10 +36011,14 @@ function _obPdfDoc(o){
     // o nome exibido é o NOME COMERCIAL do cadastro do insumo (vazio = nome normal)
     var compTxt='';
     var f=(catalogoNovo||[]).find(function(x){ return x && x.id===it.fid; });
-    if(f) compTxt=(f.composicao||[]).filter(function(cp){ return cp && cp.papel!=='excipiente' && !cp.invisivel && (parseFloat(cp.dose)||0)>0; }).map(function(cp){
+    // v259 — item personalizado: a composição do ITEM prevalece sobre a do catálogo (mesma regra da linha)
+    var _cArr=(it.composicao&&it.composicao.length)?it.composicao:(f?(f.composicao||[]):[]);
+    // v259 — nome comercial POR ORÇAMENTO vence o do cadastro; invisível vale só neste item;
+    // o veículo/excipiente entra no PDF quando marcado "mostrar no PDF" (como qsp)
+    compTxt=_cArr.filter(function(cp){ return cp && ((cp.papel!=='excipiente' && !cp.invisivel && (parseFloat(cp.dose)||0)>0) || (cp.papel==='excipiente' && cp.pdfMostrar)); }).map(function(cp){
       var ins=(insumos||[]).find(function(x){ return x && x.id===cp.insumoId; });
-      var nm=(ins&&(ins.nomeComercial||'').trim())||cp.nome||'';
-      return nm+' '+cp.dose+(cp.unidade||'%');
+      var nm=(String(cp.nomeComercial||'').trim())||(ins&&(ins.nomeComercial||'').trim())||cp.nome||'';
+      return (cp.papel==='excipiente') ? (nm+' qsp') : (nm+' '+cp.dose+(cp.unidade||'%'));
     }).join(' · ');
     // v188 — embalagem no detalhe também sai com o nome comercial, se houver
     // v196 — vale para CADA parte quando a embalagem é desmembrada (frasco + válvula + tampa)

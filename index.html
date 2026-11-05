@@ -1388,7 +1388,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <button class="btn-primary" id="cn-novo-btn" onclick="openCnModal()">+ Nova fórmula</button>
             </div>
             <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
-              <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Fórmula</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:left">Forma</th><th style="padding:8px 10px;text-align:center">Composição</th><th style="padding:8px 10px;text-align:left">Padrão</th><th style="padding:8px 10px;text-align:right" title="Preço de venda fixo por unidade + farol de margem (v258)">Preço venda</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
+              <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Fórmula</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:left">Forma</th><th style="padding:8px 10px;text-align:left">Padrão</th><th style="padding:8px 10px;text-align:right" title="Venda definida por unidade (fixa) + farol de margem; 'padrão' = vende pela venda calculada">Venda</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
               <tbody id="cn-tbody"></tbody>
             </table></div>
             <div id="cn-vazio" style="display:none;color:var(--text-secondary);font-size:13px;padding:24px;text-align:center">Nenhuma fórmula cadastrada. Clique em "+ Nova fórmula".</div>
@@ -1489,6 +1489,10 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       </div>
       <!-- v174 — modal FÓRMULA do Catálogo Novo -->
       <div class="overlay" id="cn-modal">
+        <style>/* v259 — alinhamento do modal da fórmula (pedido do dono 04/11): mesmo padrão da ficha de insumo — rótulos nivelados, campos lado a lado na mesma altura */
+          #cn-modal .form-row{align-items:end}
+          #cn-modal .form-group label{display:flex;align-items:flex-end;min-height:34px;line-height:1.25}
+        </style>
         <div class="modal" style="width:680px;max-width:95vw;max-height:88vh;overflow-y:auto">
           <h2 id="cn-modal-title">Nova fórmula</h2>
           <div class="form-row">
@@ -1498,16 +1502,12 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div class="form-row">
             <div class="form-group"><label>Categoria do produto <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(perdas e custo fixo vêm da Configuração)</span></label><select id="cn-cat"></select></div>
             <!-- v258 — formas farmacêuticas: união da lista do dono (04/11) com as existentes; o filtro de embalagens do orçamento usa este campo -->
-            <div class="form-group"><label>Forma farmacêutica *</label><select id="cn-forma" onchange="_cnFormaChange()"><option value="semisolido">Semisólido (legado — reclassificar)</option><option value="gel">Gel</option><option value="gel_creme">Gel creme</option><option value="creme">Creme</option><option value="serum">Sérum</option><option value="liquido">Líquido</option><option value="oleo">Óleo</option><option value="espuma">Espuma</option><option value="spray">Spray/Bruma</option><option value="sabonete">Sabonete</option><option value="shampoo">Shampoo</option><option value="solido">Sólido</option><option value="capsula">Cápsulas</option><option value="goma">Goma</option><option value="scoop">Scoop (pó)</option></select></div>
+            <div class="form-group"><label>Forma farmacêutica *</label><select id="cn-forma" onchange="_cnFormaChange()"><option value="semisolido">Semisólido (legado — reclassificar)</option><option value="gel">Gel</option><option value="gel_creme">Gel creme</option><option value="creme">Creme</option><option value="anestesico">Anestésico</option><option value="serum">Sérum</option><option value="liquido">Líquido</option><option value="oleo">Óleo</option><option value="espuma">Espuma</option><option value="spray">Spray/Bruma</option><option value="sabonete">Sabonete</option><option value="shampoo">Shampoo</option><option value="solido">Sólido</option><option value="capsula">Cápsulas</option><option value="goma">Goma</option><option value="scoop">Scoop (pó)</option></select></div>
           </div>
-          <!-- v258 — categoria de USO (vitrine do catálogo no orçamento) + PREÇO DE VENDA FIXO (regras do dono 04/11; preço só admin) -->
+          <!-- v258 — categoria de USO (vitrine do catálogo no orçamento) -->
           <div class="form-row">
             <div class="form-group"><label>Categoria de uso <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(agrupa o catálogo visual do orçamento)</span></label><select id="cn-catuso"></select></div>
-            <div class="form-group"><label>Margem extra (%) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(acréscimo manual sobre o preço — perdas etc.)</span></label><input type="number" min="0" step="0.01" id="cn-margemextra" placeholder="0"></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Preço de venda (R$ por <span id="cn-pv-un">g</span>) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(FIXO — cobre tudo menos a embalagem; vazio = vende pelo sugerido)</span></label><input type="number" min="0" step="0.0001" id="cn-precovenda" placeholder="só o administrador define" oninput="_cnPvDigitou()"></div>
-            <div class="form-group"><label>Sugerido hoje <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(custo atual × markups — a referência da margem)</span></label><div style="display:flex;gap:8px;align-items:center"><div id="cn-pv-sug" style="font-size:13px;font-weight:600;padding:8px 0">—</div><button type="button" id="cn-pv-aderir" onclick="_cnPvAderir()" style="font-size:11px;padding:4px 10px;display:none" title="Copia o sugerido de hoje para o campo de preço de venda">↺ Aderir</button></div></div>
+            <div class="form-group"></div>
           </div>
           <div class="modal-section">
             <div class="modal-section-title">Composição — vinculada aos insumos <span id="cn-comp-hint" style="font-weight:400;color:var(--text-tertiary);font-size:11px"></span></div>
@@ -1529,6 +1529,20 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="form-group"><label>Unidade do QSP</label><select id="cn-qspu"><option value="g">g (peso)</option><option value="mL">mL (volume)</option></select></div>
           </div>
           <!-- v259 — rótulo SAIU do produto (ordem do dono 04/11): o custo do rótulo vive na FICHA DA EMBALAGEM (o rótulo depende do tamanho da embalagem, não do produto) -->
+          <!-- v259 — PREÇO DE VENDA abaixo da composição (pedido do dono 04/11) + termo "PREÇO PADRÃO"
+               (= cálculo pelos markups dos ativos + a margem extra); preço fixo só admin -->
+          <div class="modal-section">
+            <div class="modal-section-title">Venda <span style="font-weight:400;text-transform:none;color:var(--text-tertiary);font-size:11px">(custo = o que pagamos · venda = o que vendemos)</span></div>
+            <div class="form-row">
+              <div class="form-group"><label>Venda definida (R$ por <span id="cn-pv-un">g</span>) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(FIXA — cobre tudo menos a embalagem; vazia = vende pela padrão)</span></label><input type="number" min="0" step="0.0001" id="cn-precovenda" placeholder="só o administrador define" oninput="_cnPvDigitou()"></div>
+              <div class="form-group"><label>Margem extra (%) <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(acréscimo manual sobre a venda — perdas etc.)</span></label><input type="number" min="0" step="0.01" id="cn-margemextra" placeholder="0"></div>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;padding:2px 0 4px">
+              <span style="font-size:12px;color:var(--text-secondary)">Venda padrão hoje <span style="color:var(--text-tertiary);font-size:11px">(markups dos ativos + margem extra — a referência da margem)</span>:</span>
+              <span id="cn-pv-sug" style="font-size:13px;font-weight:600">—</span>
+              <button type="button" id="cn-pv-aderir" onclick="_cnPvAderir()" style="font-size:11px;padding:4px 10px;display:none" title="Copia a venda padrão de hoje para o campo de venda definida (grava o valor-base; a margem extra aplica por cima)">↺ Aderir à padrão</button>
+            </div>
+          </div>
           <div class="form-group" style="margin-bottom:10px"><label>Modo de uso</label><textarea id="cn-modouso" rows="2" style="width:100%;font-size:12px"></textarea></div>
           <div class="form-group" style="margin-bottom:10px"><label>Observações</label><textarea id="cn-obs" rows="2" style="width:100%;font-size:12px"></textarea></div>
           <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:12px"><input type="checkbox" id="cn-ativo" checked style="width:auto"> Fórmula ativa</label>
@@ -4127,7 +4141,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
     <div id="u-demitido-wrap" style="background:var(--st-bad-bg);border:.5px solid var(--st-bad-bd,var(--border));border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;display:none">
       <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;margin:0">
         <input type="checkbox" id="u-demitido" style="width:14px;height:14px;accent-color:#B00020;margin-top:1px">
-        <span><b>🚫 Demitido(a)</b> — registra o desligamento: o acesso é bloqueado imediatamente (login e sessões abertas) e TODO o histórico — conversas, vendas, produtividade, comissões — permanece no nome do colaborador. Desmarcar = readmissão.</span>
+        <span><b>🚫 Demitido(a)</b> — registra o desligamento: o acesso é bloqueado imediatamente (login e sessões abertas; colaborador sem acesso apenas sai dos seletores, ex.: "quem produziu") e TODO o histórico — conversas, vendas, produtividade, comissões — permanece no nome do colaborador. Desmarcar = readmissão.</span>
       </label>
       <div id="u-demitido-info" style="font-size:11px;color:var(--st-bad-tx);margin-top:4px"></div>
     </div>
@@ -5323,7 +5337,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v259';
+var APP_VERSION = 'v260';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7590,7 +7604,7 @@ async function saveOrder(){
 // ═══════════════ STATUS ═══════════════
 // v118 — designers executores (perfil 'user' com setor designer) para atribuir produtividade
 // v119 — executor por setor (designer + produção): perfil 'user' com aquele setor
-function _ehSetorExec(u, setor){ return !!(u && u.perfil==='user' && Array.isArray(u.setores) && u.setores.includes(setor)); }
+function _ehSetorExec(u, setor){ return !!(u && u.perfil==='user' && u.ativo!==false && Array.isArray(u.setores) && u.setores.includes(setor)); } // v259 — demitido (ativo=false) sai dos seletores; histórico já gravado não muda
 function _setorExecutores(setor){ return (users||[]).filter(function(u){return _ehSetorExec(u,setor);}).sort(function(a,b){return (a.name||'').localeCompare(b.name||'');}); }
 function _ehDesignerExec(u){ return _ehSetorExec(u,'designer'); }
 function _designerExecutores(){ return _setorExecutores('designer'); }
@@ -9166,8 +9180,10 @@ function openUserModal(id){
   // Coordinator sector checkboxes
   document.getElementById('u-coord-setor-cb').innerHTML=SETOR_KEYS.map(k=>`<div class="cb-item"><input type="checkbox" id="ccs-${k}" value="${k}" ${u&&u.coordSetores&&u.coordSetores.includes(k)?'checked':''}><label for="ccs-${k}">${SETORES[k].label}</label></div>`).join('');
   document.getElementById('u-sem-acesso').checked=!!(u&&u.semAcesso); // v131 — colaborador sem acesso
-  // v255 — demitido(a): só na EDIÇÃO de usuário com conta (colaborador sem acesso não tem o que bloquear)
-  { const _dw=document.getElementById('u-demitido-wrap'); if(_dw) _dw.style.display=(u && !u.semAcesso)?'':'none';
+  // v255 — demitido(a): só na EDIÇÃO. v259 — vale TAMBÉM para colaborador SEM ACESSO (reporte do
+  // dono 04/11, caso Leidiane): para ele o desligamento não bloqueia login (não existe) — tira dos
+  // seletores ("quem produziu", designer, equipes) preservando o histórico.
+  { const _dw=document.getElementById('u-demitido-wrap'); if(_dw) _dw.style.display=u?'':'none';
     const _dc=document.getElementById('u-demitido'); if(_dc) _dc.checked=!!(u&&u.demitido);
     const _di=document.getElementById('u-demitido-info');
     if(_di) _di.textContent=(u&&u.demitido)?('Desligamento registrado'+(u.demitidoEm?' em '+fmtDate(u.demitidoEm):'')+(u.demitidoPor?' por '+u.demitidoPor:'')+'.'):''; }
@@ -9231,6 +9247,11 @@ async function saveUser(){
     if(editingUserId){
       const u=users.find(x=>x.id===editingUserId); if(!u) return;
       u.name=nome; u.setores=setores; u.semAcesso=true; u.perfil='user'; u.coordSetores=[]; u.coordenadorId=null; u.verEquipe=false;
+      // v259 — DEMITIDO(A) também para colaborador SEM ACESSO (caso Leidiane 04/11): sem login para
+      // bloquear — o desligamento tira dos seletores (ativo=false) e preserva todo o histórico.
+      { const _dem=!!document.getElementById('u-demitido')?.checked;
+        if(_dem && !u.demitido){ u.demitido=true; u.demitidoEm=today(); u.demitidoPor=(currentUser&&currentUser.name)||'—'; u.ativo=false; }
+        else if(!_dem && u.demitido){ delete u.demitido; delete u.demitidoEm; delete u.demitidoPor; u.ativo=true; } }
     } else {
       users.push({ id:'u'+Date.now(), name:nome, login:'colab_'+Date.now(), perfil:'user', setores, coordSetores:[], coordenadorId:null, verEquipe:false, semAcesso:true });
     }
@@ -12043,7 +12064,9 @@ function openInsumoModal(tipo, id){
     _ci.style.display=_partes.length?'':'none';
     _ci.innerHTML=_partes.join('<br>');
   }
-  document.getElementById('insumo-modal').classList.add('open');
+  var _imOv=document.getElementById('insumo-modal');
+  _imOv.style.zIndex='4300'; // v260 — a ficha abre POR CIMA do modal da fórmula (z 100); foto/formas (4500) ficam acima dela
+  _imOv.classList.add('open');
 }
 // v150 — categorias do catálogo de insumos/embalagens (definidas pelo dono 10/07)
 var CAT_INSUMO_CATEGORIAS={
@@ -12089,6 +12112,8 @@ function saveInsumo(){
     insumos.push(Object.assign({ id:(_insTipo==='insumo'?'ins':'emb')+Date.now(), codigo:codigo, nome:nome, tipo:_insTipo, unidade:unidade, categoria:categoria, ativo:true, criadoEm:Date.now() }, extra));
   }
   closeInsumoModal(); renderCatSimples(_insTipo); _cnVigiaInvalidar(); saveData(); // v258 — custo/markup mudou → farol recalcula
+  // v260 — ficha salva com o modal da fórmula aberto (aberta pela composição): re-pinta o preço padrão
+  try{ if(document.getElementById('cn-modal')?.classList.contains('open') && _cnEditId){ _cnPvSugRefresh((catalogoNovo||[]).find(function(x){ return x.id===_cnEditId; })); } }catch(_e){}
 }
 // ═══ v259 — FORMAS FARMACÊUTICAS DA EMBALAGEM EM MODAL À PARTE (pedido do dono 04/11: não poluir a ficha) ═══
 function _embFormasModal(id){
@@ -12558,7 +12583,11 @@ function _cnVigia(f, sug){
   sug=sug||_cnSugerido(f);
   if(!sug.ok) return {st:'cinza', sug:sug};
   var pv=parseFloat(f&&f.precoVenda);
-  var r={sug:sug, prat:_cnPrecoPraticadoUn(f, sug), mRef:sug.precoUn-sug.custoUn, red:null};
+  // v259 — termo do dono: PREÇO PADRÃO = cálculo pelos markups dos ativos + a MARGEM EXTRA.
+  // A referência da margem é o padrão vivo (com o extra), e o praticado também carrega o extra.
+  var _exM=1+((parseFloat(f&&f.margemExtra)||0)/100);
+  var r={sug:sug, padrao:sug.precoUn*_exM, prat:_cnPrecoPraticadoUn(f, sug), red:null};
+  r.mRef=r.padrao-sug.custoUn;
   r.mReal=r.prat-sug.custoUn;
   if(!(pv>0)){ r.st=(r.mReal<=0)?'vermelho':'sempreco'; r.prejuizo=(r.mReal<=0); return r; } // vendendo pelo sugerido vivo
   if(r.mReal<=0){ r.st='vermelho'; r.prejuizo=true; return r; }
@@ -12588,7 +12617,7 @@ function _cnFarolHtml(v){
 function _cnPvCellHtml(f, v){
   var pv=parseFloat(f&&f.precoVenda), un=_cnPrecoUnLbl(f);
   var ex=(parseFloat(f&&f.margemExtra)||0);
-  var txt=(pv>0)?('R$ '+(Math.round(pv*10000)/10000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})+'/'+un+(ex?' <span style="color:var(--text-tertiary)" title="Margem extra">+'+ex+'%</span>':'')):'<span style="color:var(--text-tertiary)" title="Sem preço definido — o orçamento usa o SUGERIDO vivo do cálculo">sugerido</span>';
+  var txt=(pv>0)?('R$ '+(Math.round(pv*10000)/10000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})+'/'+un+(ex?' <span style="color:var(--text-tertiary)" title="Margem extra">+'+ex+'%</span>':'')):'<span style="color:var(--text-tertiary)" title="Sem venda definida — o orçamento usa a VENDA PADRÃO viva (markups dos ativos + margem extra)">padrão</span>';
   var farol=_cnFarolHtml(v);
   return txt+(farol?' '+farol:'');
 }
@@ -12605,11 +12634,11 @@ function _cnDefinirPrecosIniciais(){
     else semCalc++;
   });
   if(!definir.length){ alert('Nenhuma fórmula a definir: '+jaTem+' já têm preço e '+semCalc+' estão sem cálculo completo.'); return; }
-  if(!confirm('Definir o preço de venda de '+definir.length+' fórmula(s) pelo SUGERIDO DE HOJE?\n\n· '+jaTem+' já têm preço (não mudam)\n· '+semCalc+' sem cálculo completo (ficam "sem preço" até o custo fechar)\n\nO preço gravado é FIXO: só muda por ajuste manual.')) return;
+  if(!confirm('Definir a VENDA de '+definir.length+' fórmula(s) pela venda padrão de hoje?\n\n· '+jaTem+' já têm venda definida (não mudam)\n· '+semCalc+' sem cálculo completo (ficam "sem venda" até o custo fechar)\n\nGrava o valor-base (a margem extra de cada produto aplica por cima). A venda gravada é FIXA: só muda por ajuste manual.')) return;
   var em=Date.now(), por=(currentUser&&currentUser.name)||'';
   definir.forEach(function(d){ d.f.precoVenda=d.v; d.f.precoVendaFonte='sugerido'; d.f.precoVendaEm=em; d.f.precoVendaPor=por; });
   _cnVigiaInvalidar(); saveData();
-  alert('✓ '+definir.length+' preço(s) de venda definidos pelo sugerido de hoje.');
+  alert('✓ '+definir.length+' venda(s) definidas pela venda padrão de hoje.');
   try{ renderCnLucr(); }catch(_e){} try{ if(_cnSub==='formulas') renderCatNovo(); }catch(_e){}
 }
 // "aderir ao sugerido" pontual (linha da aba Lucratividade) — re-fotografa o preço daquele produto
@@ -12619,7 +12648,7 @@ function _cnAderirSugerido(fid){
   var s=_cnSugerido(f);
   if(!(s.ok&&s.precoUn>0)){ alert('O cálculo desta fórmula não fecha — resolva o custo dos insumos antes.'); return; }
   var v=Math.round(s.precoUn*10000)/10000;
-  if(!confirm('Gravar o sugerido de hoje como preço de venda de "'+(f.nome||'')+'"?\n\nR$ '+v+' por '+_cnPrecoUnLbl(f)+(parseFloat(f.precoVenda)>0?('\n(substitui o preço atual R$ '+f.precoVenda+')'):''))) return;
+  if(!confirm('Gravar a venda padrão de hoje como venda definida de "'+(f.nome||'')+'"?\n\nR$ '+v+' por '+_cnPrecoUnLbl(f)+' (valor-base; a margem extra aplica por cima)'+(parseFloat(f.precoVenda)>0?('\n(substitui a venda atual R$ '+f.precoVenda+')'):''))) return;
   f.precoVenda=v; f.precoVendaFonte='sugerido'; f.precoVendaEm=Date.now(); f.precoVendaPor=(currentUser&&currentUser.name)||'';
   _cnVigiaInvalidar(); saveData(); try{ renderCnLucr(); }catch(_e){}
 }
@@ -12653,19 +12682,19 @@ function renderCnLucr(){
     var v=mapa[f.id]||{st:'cinza'}, s=v.sug||{};
     var un=_cnPrecoUnLbl(f);
     var pv=parseFloat(f.precoVenda);
-    var fonteTit=(pv>0)?('Definido '+(f.precoVendaFonte==='sugerido'?'pelo sugerido':'manualmente')+(f.precoVendaEm?' em '+new Date(f.precoVendaEm).toLocaleDateString('pt-BR'):'')+(f.precoVendaPor?' por '+f.precoVendaPor:'')):'';
+    var fonteTit=(pv>0)?('Definida '+(f.precoVendaFonte==='sugerido'?'pela venda padrão':'manualmente')+(f.precoVendaEm?' em '+new Date(f.precoVendaEm).toLocaleDateString('pt-BR'):'')+(f.precoVendaPor?' por '+f.precoVendaPor:'')):'';
     return '<tr>'+
       '<td style="'+td+';text-align:center">'+(_cnFarolHtml(v)||'<span title="Margem dentro da referência" style="color:var(--st-ok-tx)">✓</span>')+'</td>'+
       '<td style="'+td+';font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(f.codigo||'—')+'</td>'+
       '<td style="'+td+'">'+escapeHtml(f.nome||'—')+'</td>'+
       '<td style="'+td+'">'+_cnFormaLbl(f.forma)+'</td>'+
       '<td style="'+td+';text-align:right" title="Custo atual por '+un+' (pré-embalagem: ativos+base+perdas+custo fixo'+(f.forma==='capsula'?'+invólucro':'')+'; o rótulo está na embalagem — v259)">'+(v.st==='cinza'?'<span style="color:var(--text-tertiary)">sem custo</span>':fmt4(s.custoUn||0)+'/'+un)+'</td>'+
-      '<td style="'+td+';text-align:right" title="Sugerido VIVO de hoje (custo atual × markups do cadastro) — a referência da margem">'+(v.st==='cinza'?'—':fmt4(s.precoUn||0)+'/'+un)+'</td>'+
-      '<td style="'+td+';text-align:right" title="'+escapeHtml(fonteTit)+'">'+((pv>0)?fmt4(pv)+'/'+un:'<span style="color:var(--text-tertiary)">— (vende pelo sugerido)</span>')+'</td>'+
+      '<td style="'+td+';text-align:right" title="VENDA PADRÃO viva de hoje (custo atual × markups dos ativos + margem extra) — a referência da margem">'+(v.st==='cinza'?'—':fmt4((v.padrao!=null?v.padrao:(s.precoUn||0)))+'/'+un)+'</td>'+
+      '<td style="'+td+';text-align:right" title="'+escapeHtml(fonteTit)+'">'+((pv>0)?fmt4(pv)+'/'+un:'<span style="color:var(--text-tertiary)">— (vende pela padrão)</span>')+'</td>'+
       '<td style="'+td+';text-align:right">'+((parseFloat(f.margemExtra)||0)?('+'+f.margemExtra+'%'):'—')+'</td>'+
       '<td style="'+td+';text-align:right;font-weight:600" title="Preço praticado por '+un+' (preço de venda × margem extra; sem a embalagem)">'+(v.prat!=null?fmt4(v.prat)+'/'+un:'—')+'</td>'+
       '<td style="'+td+';text-align:right" title="Quanto da margem de referência já se perdeu com a alta do custo">'+(v.red!=null?('<b>'+Math.round(v.red*100)+'%</b>'):'—')+'</td>'+
-      (admin?('<td style="'+td+';text-align:center;white-space:nowrap"><button onclick="openCnModal(\''+f.id+'\')" style="font-size:11px;padding:3px 9px">✏ Preço</button> <button onclick="_cnAderirSugerido(\''+f.id+'\')" style="font-size:11px;padding:3px 9px" title="Grava o sugerido de hoje como novo preço de venda — a régua da margem zera">↺ Aderir</button></td>'):'')+'</tr>';
+      (admin?('<td style="'+td+';text-align:center;white-space:nowrap"><button onclick="openCnModal(\''+f.id+'\')" style="font-size:11px;padding:3px 9px">✏ Preço</button> <button onclick="_cnAderirSugerido(\''+f.id+'\')" style="font-size:11px;padding:3px 9px" title="Grava o preço padrão de hoje como novo preço de venda (valor-base; a margem extra aplica por cima) — a régua da margem zera">↺ Aderir ao padrão</button></td>'):'')+'</tr>';
   }).join('');
   box.innerHTML='<div class="panel" style="padding:14px">'+
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'+
@@ -12676,11 +12705,11 @@ function renderCnLucr(){
       chip('sempreco','Sem preço', cont.sempreco, 'var(--text-tertiary)')+
       chip('cinza','Sem custo', cont.cinza, 'var(--text-tertiary)')+
       chip('todos','Todos', lista.length, 'var(--text-secondary)')+
-      (admin?'<button class="btn-primary" style="margin-left:auto;font-size:12px;padding:6px 14px" onclick="_cnDefinirPrecosIniciais()" title="Grava o sugerido de hoje como preço de venda de TODAS as fórmulas que ainda não têm preço (cálculo incompleto fica de fora). Nada muda em quem já tem preço.">Definir preços iniciais (sugerido do dia)</button>':'')+
+      (admin?'<button class="btn-primary" style="margin-left:auto;font-size:12px;padding:6px 14px" onclick="_cnDefinirPrecosIniciais()" title="Grava a venda padrão de hoje como venda definida de TODAS as fórmulas que ainda não têm (cálculo incompleto fica de fora). Nada muda em quem já tem.">Definir vendas iniciais (padrão do dia)</button>':'')+
     '</div>'+
-    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">Régua (regra do dono 04/11): a referência é o <b>sugerido vivo</b> (custo atual × markups do cadastro). O preço de venda é FIXO — custo subiu e o preço ficou → a margem real encolhe. Perda de <b>20–70%</b> da margem de referência = <span style="color:var(--st-mid-tx);font-weight:700">amarelo</span>; <b>mais de 70% ou prejuízo</b> = <span style="color:var(--st-bad-tx);font-weight:700">vermelho</span>. Alerta só visual, aqui no catálogo.</div>'+
+    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">Termos (regra do dono 04/11): <b>CUSTO</b> = o que pagamos; <b>VENDA</b> = o que vendemos — a <b>venda padrão</b> é a calculada (custo × markups dos ativos + margem extra) e a <b>venda definida</b> é a fixa. A referência da margem é a venda padrão viva: custo subiu e a venda definida ficou → a margem real encolhe. Perda de <b>20–70%</b> = <span style="color:var(--st-mid-tx);font-weight:700">amarelo</span>; <b>mais de 70% ou prejuízo</b> = <span style="color:var(--st-bad-tx);font-weight:700">vermelho</span>. Alerta só visual, aqui no catálogo.</div>'+
     '<div class="table-scroll"><table style="width:100%;border-collapse:collapse"><thead><tr style="background:var(--bg-secondary);font-size:10.5px">'+
-    '<th style="padding:6px 8px"></th><th style="padding:6px 8px;text-align:left">Código</th><th style="padding:6px 8px;text-align:left">Produto</th><th style="padding:6px 8px;text-align:left">Forma</th><th style="padding:6px 8px;text-align:right">Custo atual</th><th style="padding:6px 8px;text-align:right">Sugerido hoje</th><th style="padding:6px 8px;text-align:right">Preço de venda</th><th style="padding:6px 8px;text-align:right">Extra</th><th style="padding:6px 8px;text-align:right">Praticado</th><th style="padding:6px 8px;text-align:right">Margem perdida</th>'+(admin?'<th style="padding:6px 8px">Ações</th>':'')+
+    '<th style="padding:6px 8px"></th><th style="padding:6px 8px;text-align:left">Código</th><th style="padding:6px 8px;text-align:left">Produto</th><th style="padding:6px 8px;text-align:left">Forma</th><th style="padding:6px 8px;text-align:right" title="O que PAGAMOS (compras + custo base)">Custo atual</th><th style="padding:6px 8px;text-align:right" title="VENDA calculada: markups dos ativos + margem extra">Venda padrão hoje</th><th style="padding:6px 8px;text-align:right" title="VENDA fixa definida pelo administrador">Venda definida</th><th style="padding:6px 8px;text-align:right">Extra</th><th style="padding:6px 8px;text-align:right" title="VENDA que vai ao orçamento (definida × extra; sem definida, a padrão)">Venda praticada</th><th style="padding:6px 8px;text-align:right">Margem perdida</th>'+(admin?'<th style="padding:6px 8px">Ações</th>':'')+
     '</tr></thead><tbody>'+(rows||'<tr><td colspan="11" style="padding:18px;text-align:center;color:var(--text-tertiary);font-size:12px">Nada neste filtro.</td></tr>')+'</tbody></table></div>'+
     (vis.length>400?'<div style="font-size:11px;color:var(--text-tertiary);padding:6px 0">Mostrando 400 de '+vis.length+' — refine a busca.</div>':'')+
   '</div>';
@@ -12708,8 +12737,8 @@ function setCatNovoSub(sub){
 // embalagem espumadora/borrifadora — frasco comum não serve); SÉRUM tem ponte com a família líquido
 // (frasco pump/conta-gotas marcado "líquido" serve sérum). Sachê NÃO é forma — é embalagem (definição
 // do dono): o sachê é classificado com as formas que acondiciona.
-var CN_FORMAS_LBL={ semisolido:'Semisólido', gel:'Gel', gel_creme:'Gel creme', creme:'Creme', serum:'Sérum', liquido:'Líquido', oleo:'Óleo', espuma:'Espuma', spray:'Spray/Bruma', sabonete:'Sabonete', shampoo:'Shampoo', solido:'Sólido', capsula:'Cápsulas', goma:'Goma', scoop:'Scoop (pó)' };
-var _CN_FAMILIA={ semisolido:['semisolido','gel','gel_creme','creme'], liquido:['liquido','oleo','sabonete','shampoo','serum'], capsula:['capsula','solido'] };
+var CN_FORMAS_LBL={ semisolido:'Semisólido', gel:'Gel', gel_creme:'Gel creme', creme:'Creme', anestesico:'Anestésico', serum:'Sérum', liquido:'Líquido', oleo:'Óleo', espuma:'Espuma', spray:'Spray/Bruma', sabonete:'Sabonete', shampoo:'Shampoo', solido:'Sólido', capsula:'Cápsulas', goma:'Goma', scoop:'Scoop (pó)' };
+var _CN_FAMILIA={ semisolido:['semisolido','gel','gel_creme','creme','anestesico'], liquido:['liquido','oleo','sabonete','shampoo','serum'], capsula:['capsula','solido'] }; // v260 — anestésico na família semisólido (pote/bisnaga/seringa)
 function _cnFormaLbl(fm){ return CN_FORMAS_LBL[fm]||CN_FORMAS_LBL.semisolido; }
 function renderCatNovo(){
   var tb=document.getElementById('cn-tbody'); if(!tb) return;
@@ -12728,8 +12757,6 @@ function renderCatNovo(){
     setTimeout(function(){ try{ _cnVigiaMapa(); }finally{ _cnVigiaBuilding=false; } try{ if(_cnSub==='formulas') renderCatNovo(); }catch(_e){} }, 30);
   }
   tb.innerHTML=lista.map(function(f){
-    var nAt=(f.composicao||[]).filter(function(c){ return c.papel!=='excipiente'; }).length;
-    var temEx=(f.composicao||[]).some(function(c){ return c.papel==='excipiente'; });
     var padrao=f.forma==='capsula' ? ('cáps '+(f.capsTam||'?')+(f.involucroNome?' · '+f.involucroNome:'')) : (f.qspValor?('QSP '+f.qspValor+' '+(f.qspUn||'g')):'—');
     var acoes=pode?('<button onclick="openCnModal(\''+f.id+'\')" style="font-size:11px;padding:3px 9px">Editar</button> <button onclick="_cnSimularDe(\''+f.id+'\')" style="font-size:11px;padding:3px 9px" title="Abrir no simulador">🧮</button> <button onclick="deleteCnFormula(\''+f.id+'\')" style="font-size:11px;padding:3px 9px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">Excluir</button>'):'—';
     return '<tr style="border-bottom:.5px solid var(--border);'+(f.ativo===false?'opacity:.5;':'')+'">'+
@@ -12737,8 +12764,7 @@ function renderCatNovo(){
       '<td style="padding:7px 10px">'+escapeHtml(f.nome||'—')+'</td>'+
       '<td style="padding:7px 10px;font-size:12px">'+(f.categoria?'<span style="padding:2px 8px;border-radius:12px;background:var(--bg-info);color:var(--text-info);font-size:11px">'+escapeHtml(f.categoria)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
       '<td style="padding:7px 10px;font-size:12px">'+_cnFormaLbl(f.forma)+'</td>'+
-      '<td style="padding:7px 10px;text-align:center;font-size:12px">'+nAt+' ativo(s)'+(temEx?' + QSP':' <span style="color:var(--st-bad-tx)" title="sem base/excipiente">⚠</span>')+'</td>'+
-      '<td style="padding:7px 10px;font-size:11px;color:var(--text-secondary)">'+escapeHtml(padrao)+'</td>'+
+      '<td style="padding:7px 10px;font-size:11px;color:var(--text-secondary)">'+escapeHtml(padrao)+'</td>'+ /* v260 — coluna Composição removida (pedido do dono 04/11) */
       '<td style="padding:7px 10px;font-size:12px;text-align:right;white-space:nowrap">'+_cnPvCellHtml(f, _vMapa?_vMapa[f.id]:null)+'</td>'+ /* v258 — preço fixo + farol */
       '<td style="padding:7px 10px;text-align:center;white-space:nowrap">'+acoes+'</td></tr>';
   }).join('');
@@ -12770,13 +12796,7 @@ function openCnModal(id){
   if(pvI){ pvI.value=(f&&f.precoVenda!=null&&f.precoVenda!=='')?f.precoVenda:''; pvI.disabled=!_admin; pvI.title=_admin?'':'Somente o administrador define o preço de venda.'; }
   if(meI){ meI.value=(f&&f.margemExtra!=null&&f.margemExtra!=='')?f.margemExtra:''; meI.disabled=!_admin; meI.title=_admin?'':'Somente o administrador define a margem extra.'; }
   var unS=document.getElementById('cn-pv-un'); if(unS) unS.textContent=f?_cnPrecoUnLbl(f):'g';
-  var sugD=document.getElementById('cn-pv-sug'), adB=document.getElementById('cn-pv-aderir');
-  _cnPvSugVal=null;
-  if(sugD){
-    if(f){ var _s=_cnSugerido(f); if(_s.ok&&_s.precoUn>0){ _cnPvSugVal=Math.round(_s.precoUn*10000)/10000; sugD.textContent='R$ '+_cnPvSugVal+' / '+_cnPrecoUnLbl(f); sugD.title='Na volumetria de referência ('+_s.qtdRef+' '+_cnPrecoUnLbl(f)+(f.forma==='capsula'?'s':'')+'), sem embalagem'; } else { sugD.textContent='— cálculo incompleto'; sugD.title=(_s.avisos||[]).join(' | '); } }
-    else { sugD.textContent='— salve a fórmula primeiro'; sugD.title=''; }
-  }
-  if(adB) adB.style.display=(_admin&&_cnPvSugVal!=null)?'':'none';
+  _cnPvSugRefresh(f); // v260 — linha do preço padrão (também re-pintada quando uma ficha de insumo é salva com este modal aberto)
   _cnComp=f?(f.composicao||[]).map(function(c){ return Object.assign({},c); }):[];
   _cnInvId=f?(f.involucroId||null):null;
   document.getElementById('cn-inv-busca').value=(f&&f.involucroNome)||'';
@@ -12795,6 +12815,24 @@ function closeCnModal(){ document.getElementById('cn-modal').classList.remove('o
 var _cnPvAderiu=false, _cnPvSugVal=null;
 function _cnPvDigitou(){ _cnPvAderiu=false; }
 function _cnPvAderir(){ var i=document.getElementById('cn-precovenda'); if(i&&_cnPvSugVal!=null&&!i.disabled){ i.value=_cnPvSugVal; _cnPvAderiu=true; } }
+// v260 — linha "Preço padrão hoje" do modal da fórmula (chamada no abrir E quando uma ficha de
+// insumo é salva com o modal aberto — a ficha abre por cima, direto da composição)
+function _cnPvSugRefresh(f){
+  var sugD=document.getElementById('cn-pv-sug'), adB=document.getElementById('cn-pv-aderir');
+  _cnPvSugVal=null;
+  if(sugD){
+    if(f){ var _s=_cnSugerido(f);
+      if(_s.ok&&_s.precoUn>0){
+        _cnPvSugVal=Math.round(_s.precoUn*10000)/10000; // valor-base (sem extra) — é o que o Aderir grava
+        var _exP=(parseFloat(f.margemExtra)||0);
+        var _pad=Math.round(_s.precoUn*(1+_exP/100)*10000)/10000; // PREÇO PADRÃO = markups + margem extra
+        sugD.textContent='R$ '+_pad+' / '+_cnPrecoUnLbl(f)+(_exP?(' (base R$ '+_cnPvSugVal+' + extra '+_exP+'%)'):'');
+        sugD.title='Na volumetria de referência ('+_s.qtdRef+' '+_cnPrecoUnLbl(f)+(f.forma==='capsula'?'s':'')+'), sem embalagem';
+      } else { sugD.textContent='— cálculo incompleto'; sugD.title=(_s.avisos||[]).join(' | '); } }
+    else { sugD.textContent='— salve a fórmula primeiro'; sugD.title=''; }
+  }
+  if(adB) adB.style.display=((currentUser&&currentUser.perfil==='admin')&&_cnPvSugVal!=null)?'':'none';
+}
 function _cnFormaChange(){
   var fm=document.getElementById('cn-forma').value;
   document.getElementById('cn-box-caps').style.display=(fm==='capsula')?'':'none';
@@ -12833,7 +12871,8 @@ function _cnRenderComp(){
   tb.innerHTML=_cnComp.map(function(c,i){
     var ehEx=c.papel==='excipiente';
     return '<tr style="border-bottom:.5px solid var(--border)">'+
-      '<td style="padding:4px 6px"><span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(c.codigo||'')+'</span> '+escapeHtml(c.nome||'')+'</td>'+
+      // v260 — clicar no insumo abre a FICHA DE CADASTRO (a mesma da aba Insumos) por cima do modal da fórmula
+      '<td style="padding:4px 6px"><span onclick="openInsumoModal(\'insumo\',\''+c.insumoId+'\')" title="Abrir o cadastro deste insumo (custos, markup, densidade...)" style="cursor:pointer" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'"><span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(c.codigo||'')+'</span> '+escapeHtml(c.nome||'')+'</span></td>'+
       '<td style="padding:4px 6px"><select onchange="_cnSetComp('+i+',\'papel\',this.value)" style="font-size:11px;padding:2px 4px"><option value="ativo"'+(ehEx?'':' selected')+'>Ativo</option><option value="excipiente"'+(ehEx?' selected':'')+'>Excipiente/QSP</option></select></td>'+
       '<td style="padding:4px 6px;text-align:right">'+(ehEx?'<span style="color:var(--text-tertiary);font-size:11px">completa</span>':'<input type="number" min="0" step="any" value="'+(c.dose!=null?c.dose:'')+'" oninput="_cnSetComp('+i+',\'dose\',this.value)" style="width:80px;text-align:right;font-size:12px">')+'</td>'+
       '<td style="padding:4px 6px">'+(ehEx?'—':'<select onchange="_cnSetComp('+i+',\'unidade\',this.value)" style="font-size:11px;padding:2px 4px">'+uns.map(function(u){ return '<option value="'+u+'"'+(u===c.unidade?' selected':'')+'>'+u+'</option>'; }).join('')+'</select>')+'</td>'+
@@ -12941,9 +12980,31 @@ function renderCnConfig(){
   (pode?'<button class="btn-primary" onclick="_cnCfgSalvarClick()" style="font-size:13px">💾 Salvar configuração</button>':'');
   box.innerHTML=h;
 }
-function _cnCfgSetCat(i,campo,val){ var c=_cnCfgGet(); if(!c.categorias[i]) return; c.categorias[i][campo]=(campo==='nome')?String(val).trim():(parseFloat(val)||0); _cnCfg=c; }
+// v260 — INVARIANTE (ordem do dono 04/11): as categorias dos PRODUTOS têm que BATER com as da
+// Configuração. Renomear aqui PROPAGA o nome novo para todas as fórmulas da categoria (senão 492
+// fórmulas ficariam órfãs apontando o nome antigo); excluir categoria EM USO é bloqueado.
+function _cnCfgSetCat(i,campo,val){
+  var c=_cnCfgGet(); if(!c.categorias[i]) return;
+  if(campo==='nome'){
+    var antigo=String(c.categorias[i].nome||'').trim(), novo=String(val).trim();
+    c.categorias[i].nome=novo;
+    if(antigo && novo && antigo!==novo){
+      var n=0; (catalogoNovo||[]).forEach(function(f){ if(f && String(f.categoria||'').trim()===antigo){ f.categoria=novo; n++; } });
+      if(n){ _cnVigiaInvalidar(); saveData(); alert('Categoria renomeada: '+n+' fórmula(s) acompanharam de "'+antigo+'" para "'+novo+'".'); }
+    }
+  } else { c.categorias[i][campo]=parseFloat(val)||0; }
+  _cnCfg=c;
+}
 function _cnCfgAddCat(){ var c=_cnCfgGet(); c.categorias.push({nome:'',perdas:0,custoFixo:0,markupFixo:0}); _cnCfg=c; renderCnConfig(); }
-function _cnCfgRemCat(i){ var c=_cnCfgGet(); c.categorias.splice(i,1); _cnCfg=c; renderCnConfig(); }
+function _cnCfgRemCat(i){
+  var c=_cnCfgGet(); var cat=c.categorias[i];
+  var nome=cat?String(cat.nome||'').trim():'';
+  if(nome){
+    var n=(catalogoNovo||[]).filter(function(f){ return f && String(f.categoria||'').trim()===nome; }).length;
+    if(n){ alert('A categoria "'+nome+'" está em uso por '+n+' fórmula(s) — não pode ser excluída.\n\nRenomeie (as fórmulas acompanham) ou mova as fórmulas para outra categoria antes.'); return; }
+  }
+  c.categorias.splice(i,1); _cnCfg=c; renderCnConfig();
+}
 function _cnCfgSetCaps(t,val){ var c=_cnCfgGet(); c.caps=c.caps||Object.assign({},CN_CAPS_PADRAO); c.caps[t]=parseFloat(val)||0; _cnCfg=c; }
 function _cnCfgSetFx(campo,val){ var c=_cnCfgGet(); c.faixasCusto=Object.assign(_cnFaixasCfg(), c.faixasCusto||{}); c.faixasCusto[campo]=parseFloat(val)||0; _cnCfg=c; } // v188 — faixas de custo/markup
 function _cnCfgSalvarClick(){ var c=_cnCfgGet(); c.categorias=(c.categorias||[]).filter(function(x){ return (x.nome||'').trim(); }); _cnCfg=c; _cnCfgSalvar(); renderCnConfig(); alert('✓ Configuração salva.'); }
@@ -35389,8 +35450,12 @@ function _obCliLabel(c){ return (c.nome||'')+(c.doc?' — '+c.doc:''); }
 function _obResolveCli(txt){
   txt=String(txt||'').trim().toLowerCase(); if(!txt) return null;
   var cs=(clients||[]).filter(function(c){ return c && c.interno!==true; });
+  // v259 — localizar por CPF/CNPJ digitado direto (só dígitos, 11+) — o campo exibe apenas o nome
+  var dig=txt.replace(/\D/g,'');
   return cs.find(function(c){ return _obCliLabel(c).toLowerCase()===txt; })
-      || cs.find(function(c){ return String(c.nome||'').toLowerCase()===txt; }) || null;
+      || cs.find(function(c){ return String(c.nome||'').toLowerCase()===txt; })
+      || ((dig.length>=11)?cs.find(function(c){ return String(c.doc||'').replace(/\D/g,'')===dig; }):null)
+      || null;
 }
 function _obEnderecoTxt(c){
   if(!c) return '';
@@ -35410,6 +35475,9 @@ function _obSetCli(txt){
   var c=_obResolveCli(txt);
   _ob.clienteId=c?c.id:null; _ob.clienteNome=c?(c.nome||''):String(txt||'').trim();
   var e=document.getElementById('ob-end'); if(e) e.textContent=c?(_obEnderecoTxt(c)||'cadastro sem endereço'):'— selecione um cliente do cadastro —';
+  // v259 — pedido do dono: o CPF/CNPJ sai do campo (fica em linha própria, como o endereço)
+  var d=document.getElementById('ob-doc'); if(d) d.textContent=c?((c.doc||'').trim()||'—'):'—';
+  var i=document.getElementById('ob-cli'); if(i&&c) i.value=c.nome||'';
 }
 function _obSetItem(i, campo, val){ var it=_ob.itens[i]; if(!it) return; it[campo]=parseFloat(val)||0; _obRefreshTotais(); }
 function _obRemItem(i){ _ob.itens.splice(i,1); _obRender(); }
@@ -35467,10 +35535,11 @@ function _obRender(){
   ov.innerHTML='<div class="modal" style="width:860px;max-width:96vw;max-height:92vh;overflow-y:auto">'+
     '<h2 style="font-size:16px">'+(V?'👁 ':'🧾 ')+(_ob.id?'Orçamento '+(_ob.num||''):'Novo orçamento')+(V?' <span style="font-size:11px;font-weight:400;color:var(--text-tertiary)">(somente leitura)</span>':'')+'</h2>'+
     '<div class="form-row">'+
-      '<div class="form-group"><label>Cliente * <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(do cadastro)</span></label><input type="text" id="ob-cli" list="ob-cli-dl" value="'+escapeHtml(cli?_obCliLabel(cli):(_ob.clienteNome||''))+'" placeholder="Nome ou CPF/CNPJ..." onchange="_obSetCli(this.value)"'+dis+'><datalist id="ob-cli-dl">'+(clients||[]).filter(function(c){return c&&c.interno!==true;}).slice(0,1500).map(function(c){ return '<option value="'+escapeHtml(_obCliLabel(c))+'">'; }).join('')+'</datalist></div>'+
+      '<div class="form-group"><label>Cliente * <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(do cadastro — busque por nome ou CPF/CNPJ)</span></label><input type="text" id="ob-cli" list="ob-cli-dl" value="'+escapeHtml(cli?(cli.nome||''):(_ob.clienteNome||''))+'" placeholder="Nome ou CPF/CNPJ..." onchange="_obSetCli(this.value)"'+dis+'><datalist id="ob-cli-dl">'+(clients||[]).filter(function(c){return c&&c.interno!==true;}).slice(0,1500).map(function(c){ return '<option value="'+escapeHtml(_obCliLabel(c))+'">'; }).join('')+'</datalist></div>'+
       '<div class="form-group"><label>Tipo do pedido *</label><select id="ob-tipo" onchange="_obSet(\'tipo\',this.value)" style="font-size:13px"'+dis+'>'+tiposOpts+'</select></div>'+
     '</div>'+
-    '<div style="font-size:11px;color:var(--text-secondary);margin:-4px 0 10px">📍 Endereço: <span id="ob-end">'+escapeHtml(cli?(_obEnderecoTxt(cli)||'cadastro sem endereço'):'— selecione um cliente do cadastro —')+'</span></div>'+
+    '<div style="font-size:11px;color:var(--text-secondary);margin:-4px 0 2px">🪪 CPF/CNPJ: <span id="ob-doc">'+escapeHtml(cli?(((cli.doc||'').trim())||'—'):'—')+'</span></div>'+ /* v259 — doc fora do campo (pedido do dono) */
+    '<div style="font-size:11px;color:var(--text-secondary);margin:0 0 10px">📍 Endereço: <span id="ob-end">'+escapeHtml(cli?(_obEnderecoTxt(cli)||'cadastro sem endereço'):'— selecione um cliente do cadastro —')+'</span></div>'+
     // v259 — VENDEDOR (regra do dono 04/11): nasce com quem LANÇA o orçamento; SÓ administrador e
     // diretora comercial podem trocar (os demais veem travado).
     '<div class="form-row"><div class="form-group"><label>Vendedor <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(quem lançou; só admin/diretora comercial trocam)</span></label>'+
@@ -35576,7 +35645,7 @@ function _obAddModal(editIdx){
   if(_obEditIdx!=null && !editing){ _obEditIdx=null; }
   ov.innerHTML='<div class="modal" style="width:660px;max-width:95vw;max-height:90vh;overflow-y:auto">'+
     '<h2 style="font-size:16px">'+(editing?'✏ Editar produto':'＋ Adicionar produto')+'</h2>'+
-    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px">Fórmula → composição (editável: vira "— personalizado") → QSP/cápsulas → embalagem → preço pelo PREÇO DE VENDA do produto (sem preço definido, pelo sugerido) + embalagem.'+(editing?' <b>Editando um item já inserido</b> — ao salvar, o item é recalculado (o desconto % da linha é mantido).':'')+'</div>'+
+    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px">Fórmula → composição (editável: vira "— personalizado") → QSP/cápsulas → embalagem → preço pela VENDA DEFINIDA do produto (sem venda definida, pela VENDA PADRÃO) + embalagem.'+(editing?' <b>Editando um item já inserido</b> — ao salvar, o item é recalculado (o desconto % da linha é mantido).':'')+'</div>'+
     '<div class="form-group" style="margin-bottom:8px"><label>Fórmula do catálogo *</label><div style="display:flex;gap:6px"><input type="text" id="ob-f" list="ob-f-dl" placeholder="Código ou nome da fórmula..." onchange="_obPickFormula(this.value)" style="flex:1"><button type="button" onclick="_obCatModal()" style="font-size:12px;padding:5px 12px;white-space:nowrap" title="Catálogo visual por categoria de uso (v258)">📚 Catálogo</button></div><datalist id="ob-f-dl">'+_obFormulas().slice(0,1500).map(function(f){ return '<option value="'+escapeHtml(_obFLabel(f))+'">'; }).join('')+'</datalist></div>'+
     '<div id="ob-f-campos"><div style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Escolha a fórmula para ver a composição e os campos.</div></div>'+
     '<div class="modal-footer"><button onclick="document.getElementById(\'ob-add-overlay\').classList.remove(\'open\')">Cancelar</button>'+
@@ -35730,7 +35799,7 @@ function _obCatModal(){
       var un=_cnPrecoUnLbl(f), pv=parseFloat(f.precoVenda);
       var _v=_obCatVigia[f.id]; // v258 — cache do vigia (uma varredura, não um cálculo por card)
       var prat=(_v&&_v.prat!=null)?_v.prat:((pv>0)?_cnPrecoPraticadoUn(f,null):0);
-      var precoTxt=(prat>0)?('R$ '+(Math.round(prat*10000)/10000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})+'/'+un+((pv>0)?'':' <span style="color:var(--text-tertiary)">(sugerido)</span>')):'<span style="color:var(--text-tertiary)">sem preço</span>';
+      var precoTxt=(prat>0)?('R$ '+(Math.round(prat*10000)/10000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})+'/'+un+((pv>0)?'':' <span style="color:var(--text-tertiary)">(padrão)</span>')):'<span style="color:var(--text-tertiary)">sem preço</span>';
       return '<div onclick="_obCatPick(\''+f.id+'\')" style="border:.5px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--bg-primary)" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'+
         '<div style="font-size:12.5px;font-weight:600;line-height:1.3">'+escapeHtml(f.nome||'—')+'</div>'+
         '<div style="font-size:10.5px;color:var(--text-tertiary);margin-top:2px">'+escapeHtml(f.codigo||'')+' · '+_cnFormaLbl(f.forma)+'</div>'+

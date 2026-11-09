@@ -773,6 +773,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
           <div style="display:flex;gap:0;border-bottom:.5px solid var(--border)">
             <div class="linha-tab active" id="ltab-personalizada" onclick="setLinha('personalizada')" style="padding:12px 20px;cursor:pointer;font-size:13px;font-weight:500;border-bottom:2px solid var(--text-info);color:var(--text-info)">Linha Personalizada</div>
             <div class="linha-tab" id="ltab-anestesico" onclick="setLinha('anestesico')" style="padding:12px 20px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text-secondary);border-bottom:2px solid transparent">Anestésico</div>
+            <!-- v261 — PAINEL DESIGNER (pedido do dono 09/11): acompanhamento por colaborador; acesso admin/diretora comercial/setor designer -->
+            <div class="linha-tab hidden" id="ltab-paineldsg" onclick="setGestaoPainelDesigner(true)" style="padding:12px 20px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text-secondary);border-bottom:2px solid transparent">🎨 Designer</div>
           </div>
           <!-- Barra de controles -->
           <div id="gestao-ctrls" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:.5px solid var(--border)">
@@ -825,7 +827,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <span style="font-size:11px;color:var(--text-tertiary);margin-left:8px">Passe o mouse sobre o badge para ver prazo e última atualização</span>
           </div>
         </div>
-        <div class="panel" style="border-radius:0 0 var(--r-lg) var(--r-lg)">
+        <div class="panel" id="gestao-tabela-wrap" style="border-radius:0 0 var(--r-lg) var(--r-lg)">
           <div class="panel-header"><h2 id="gestao-title">Gestão a Vista</h2><div class="month-tabs" id="month-tabs"></div><button id="gestao-hdr-toggle" onclick="toggleGestaoHeader()" title="Recolhe a busca e os filtros pra cima (a linha de títulos das colunas continua visível)" style="margin-left:auto;font-size:11px;padding:4px 10px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;white-space:nowrap">↑ Recolher cabeçalho</button></div>
           <div id="gestao-table-scroll" class="table-scroll" style="overflow:auto;max-height:calc(100vh - 250px)">
             <table id="gestao-table" class="gestao-table">
@@ -840,6 +842,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             </table>
           </div>
         </div>
+        <!-- v261 — PAINEL DESIGNER: colunas por colaborador; só leitura, exceto marcar "em execução" -->
+        <div id="gestao-painel-designer" class="panel" style="display:none;border-radius:0 0 var(--r-lg) var(--r-lg);padding:14px"></div>
       </div>
 
       <!-- CRM -->
@@ -5337,7 +5341,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v260';
+var APP_VERSION = 'v261';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5482,16 +5486,26 @@ var _authUidLogin = null;    // uid do Supabase Auth capturado na 1ª batida ap�
 window._authExpirada = false;
 function _authExpirou(motivo){
   if(window._authExpirada) return; window._authExpirada = true;
-  try{ console.warn('⚠ Sessão de login '+motivo+' — envio bloqueado até recarregar.'); }catch(_e){}
+  try{ console.warn('⚠ Sessão de login '+motivo+' — envio e salvamento bloqueados; recarregando automaticamente.'); }catch(_e){}
+  // v261 — REINÍCIO AUTOMÁTICO (ordem do dono 09/11): sessão expirada não fica aberta esperando
+  // alguém clicar — trabalha-se SÓ com sessão em dia e ativa, sem risco de sobrescrever dados com
+  // uma aba morta. Faixa com contagem de 10s e reload; o botão recarrega na hora. Após o reload,
+  // sem login vivo, a tela de entrada aparece normalmente (sem laço de recarga).
   try{
     if(!document.getElementById('_auth-banner')){
       var b=document.createElement('div'); b.id='_auth-banner';
       b.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#B00020;color:#fff;font-size:14px;font-weight:600;text-align:center;padding:10px 16px;box-shadow:0 2px 10px rgba(0,0,0,.35);font-family:inherit';
-      b.innerHTML='⚠ Sua sessão expirou — as mensagens NÃO estão sendo enviadas. '
-        +'<button onclick="location.reload()" style="margin-left:10px;background:#fff;color:#B00020;border:none;border-radius:6px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Recarregar e entrar de novo</button>';
+      b.innerHTML='⚠ Sua sessão expirou — nada está sendo enviado nem salvo. Recarregando automaticamente em <span id="_auth-cd">10</span>s... '
+        +'<button onclick="location.reload()" style="margin-left:10px;background:#fff;color:#B00020;border:none;border-radius:6px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Recarregar agora</button>';
       document.body.appendChild(b);
     }
-  }catch(_e){}
+    var _cdRestam=10;
+    var _cdT=setInterval(function(){
+      _cdRestam--;
+      try{ var e=document.getElementById('_auth-cd'); if(e) e.textContent=String(Math.max(_cdRestam,0)); }catch(_e){}
+      if(_cdRestam<=0){ clearInterval(_cdT); try{ location.reload(); }catch(_e){} }
+    }, 1000);
+  }catch(_e){ try{ location.reload(); }catch(_e2){} }
 }
 async function _sessionHeartbeat(){
   if(!_sb || !_sbReady || !currentUser || _kicked || _versionBlocked) return; // v114 — versão antiga não conta como "online" (e está atualizando sozinha)
@@ -5598,6 +5612,7 @@ async function kickVersaoAntiga(){
 
 async function _commitToDb(){
   if(_versionBlocked){ _setSaveState('error','Versão desatualizada — recarregue (Ctrl+Shift+R)'); return; }
+  if(window._authExpirada){ _setSaveState('error','Sessão expirada — recarregando...'); return; } // v261 — aba morta NÃO grava nada (ordem do dono 09/11)
   if(!_sb || !_sbReady){
     _saveNoConnTries++;
     if(_saveNoConnTries>=2){ _setSaveState('error','Sem conexão com o servidor'); }
@@ -5842,8 +5857,12 @@ const STATUS_DEADLINES = [
   { linha:'personalizada', setor:'compras', status:'Compra ativo finalizado', limitDay:5, level:'warn', desc:'Compra de ativo finalizada' }, // v193 — D5 definido pelo dono 05/08; o lado ATIVO não tinha prazo nenhum (só a embalagem, D4)
   { linha:'personalizada', setor:'compras', status:'Produto entregue',  limitDay:7, level:'crit', desc:'Entrega da embalagem na Lecare' },
   // Designer (ordered by prazo)
+  { linha:'personalizada', setor:'designer', status:'Distribuido',          limitDay:2,  level:'warn', desc:'Distribuição do rótulo ao designer responsável' }, // v261 — ordem do dono 09/11
   { linha:'personalizada', setor:'designer', status:'Em produção',          limitDay:2,  level:'warn', desc:'Início da produção dos rótulos' },
   { linha:'personalizada', setor:'designer', status:'Envio p/ aprovação',   limitDay:3,  level:'warn', desc:'Envio para aprovação interna' },
+  // v261 — 'Solicitado alteração' (ordem do dono 09/11): desvio OPCIONAL entre o envio e a aprovação
+  // (D4); o grupo paralelo destrava 'Aprovado' junto — aprovação direta NÃO exige passar pela alteração.
+  { linha:'personalizada', setor:'designer', status:'Solicitado alteração', limitDay:4,  level:'warn', desc:'Alteração solicitada no rótulo', parallel:['Solicitado alteração','Aprovado'] },
   { linha:'personalizada', setor:'designer', status:'Aprovado',             limitDay:4,  level:'warn', desc:'Aprovação concluída' },
   { linha:'personalizada', setor:'designer', status:'Montagem pranchas',    limitDay:5,  level:'warn', desc:'Montagem das pranchas' },
   { linha:'personalizada', setor:'designer', status:'Prancha finalizada',   limitDay:5,  level:'warn', desc:'Prancha finalizada (medição — mesmo prazo da montagem)' }, // v256
@@ -5921,8 +5940,8 @@ const SETORES = {
     statuses:['Não iniciado','Solicitado compra','Separação completa']},
   compras:   {label:'Compras',   color:'#D4537E', // v156 — escada nova (os dois 'finalizado' são o mesmo degrau); 'Compra finalizada' = legado (pedidos pré-virada)
     statuses:['Não iniciado','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Compra finalizada','Produto entregue']},
-  designer:  {label:'Designer',  color:'#0F6E56', // v256 — 'Prancha finalizada' (medição do tempo de prancha; ordem do dono 03/11)
-    statuses:['Não iniciado','Em produção','Envio p/ aprovação','Aprovado',
+  designer:  {label:'Designer',  color:'#0F6E56', // v256 — 'Prancha finalizada' (medição); v261 — 'Distribuido' (ordem do dono 09/11: entre Não iniciado e Em produção, D2, exige o responsável)
+    statuses:['Não iniciado','Distribuido','Em produção','Envio p/ aprovação','Solicitado alteração','Aprovado',
               'Montagem pranchas','Prancha finalizada','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno']},
   producao:  {label:'Produção',  color:'#533AB7',
     statuses:['Não iniciado','Conferência inicial','Liberado produção','Checagem ativos',
@@ -6621,7 +6640,7 @@ const STATUS_SEQUENCE = {
   financeiro: ['Não iniciado','Concluído','Emitido NF','Emitido sem NF'],
   estoque:    ['Não iniciado','Solicitado compra','Separação completa'],
   compras:    ['Não iniciado','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Compra finalizada','Produto entregue'], // v156 — novos rótulos por lado
-  designer:   ['Não iniciado','Em produção','Envio p/ aprovação','Aprovado','Montagem pranchas','Prancha finalizada','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno'], // v256
+  designer:   ['Não iniciado','Distribuido','Em produção','Envio p/ aprovação','Solicitado alteração','Aprovado','Montagem pranchas','Prancha finalizada','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno'], // v256; v261 — Distribuido + Solicitado alteração
   producao:   ['Não iniciado','Conferência inicial','Liberado produção','Checagem ativos','Checagem embalagens','Em produção','Finalizado e conf.','Enviado para expedição'],
   rotulos:    ['Não iniciado','Em andamento','Finalizado'],
   expedicao:  ['Não iniciado','Distribuido tarefas','Em expedição','Concluído','Envio Parcial','Enviado','Entregue Parcial','Entregue'],
@@ -6669,8 +6688,16 @@ function ruleIsSatisfied(rule, order){
     if(typeof _pedidoNovoCompras==='function' && !_pedidoNovoCompras(order)) return true;
   }
 
-  // Paralelos: basta um do grupo estar ativo
-  if(rule.parallel) return rule.parallel.includes(st);
+  // Paralelos: basta um do grupo estar ativo.
+  // v261 — grupo paralelo NO MEIO da escada (designer: 'Solicitado alteração'/'Aprovado'): status
+  // ALÉM do grupo também satisfaz — senão todo pedido pós-aprovação reacenderia alerta D4 falso.
+  // Financeiro não muda (os paralelos dele são terminais; não existe índice além do grupo).
+  if(rule.parallel){
+    if(rule.parallel.includes(st)) return true;
+    const _mx=Math.max.apply(null, rule.parallel.map(p=>statusIndex(rule.setor,p,isAnes)));
+    const _ci=statusIndex(rule.setor,st,isAnes);
+    return (_mx>0 && _ci>_mx);
+  }
 
   // v92 — status avançados/legados que vêm DEPOIS do alvo na sequência (ex.: financeiro
   // 'Emitido NF'/'Concluído (caixa)' após 'Concluído'). Definidos no 'ok' explícito da regra
@@ -6762,7 +6789,7 @@ function badgeClass(st,alertLevel){
   if(st==='Entregue Parcial')return'b-inf'; // v131 — entrega parcial de volumes (azul, distinto de Enviado/Entregue)
   const ok=['Concluído','Concluído (caixa)','Finalizado','Entregue','Enviado','Fechamento concluído','Produtos informados','Separação completa','Produto entregue','Compra finalizada','Aprovado','Emitido NF','Emitido s/ NF','Emitido sem NF','Rótulos recebidos','Separação concluída','Finalizado e conferido','Conferido e liberado','Enviado para expedição','Finalizado e conf.','Rótulo Interno'];
   if(ok.includes(st))return'b-ok';
-  const mid=['Em produção','Em separação','Em andamento','Em expedição','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Montagem pranchas','Prancha finalizada','Envio p/ aprovação','Enviado p/ gráfica','Conferência inicial','Checagem ativos','Checagem embalagens','Solicitado compra','Liberado produção','Distribuido tarefas','Rotulando'];
+  const mid=['Em produção','Em separação','Em andamento','Em expedição','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Montagem pranchas','Prancha finalizada','Envio p/ aprovação','Enviado p/ gráfica','Conferência inicial','Checagem ativos','Checagem embalagens','Solicitado compra','Liberado produção','Distribuido tarefas','Distribuido','Solicitado alteração','Rotulando'];
   if(mid.includes(st))return'b-mid';
   return'b-inf';
 }
@@ -7012,6 +7039,7 @@ function onLinhaChange(){
   if(document.getElementById('f-urgente').checked) recalcUrgency();
 }
 function setLinha(linha){
+  if(_gestaoPainelDsg){ _gestaoPainelDsgRestore(); } // v261 — sai do Painel Designer ao clicar numa linha
   activeLinha=linha;
   document.querySelectorAll('.linha-tab').forEach(t=>{
     const isActive=t.id==='ltab-'+linha;
@@ -7020,6 +7048,165 @@ function setLinha(linha){
     t.style.fontWeight=isActive?'500':'400';
   });
   renderMonthTabs();renderGestao();
+}
+
+// ═══════════════ v261 — PAINEL DESIGNER (Gestão a Vista; pedido do dono 09/11) ═══════════════
+// Sub-aba de ACOMPANHAMENTO: uma COLUNA por colaborador do Designer com os pedidos sob sua
+// responsabilidade (o vínculo é o executor alimentado no próprio Gestão a Vista) e o status atual.
+// SÓ LEITURA, com uma única ação: marcar "EM EXECUÇÃO" — no máximo UM por colaborador (linha única
+// por colaborador na tabela designer_execucao; marcar outro SUBSTITUI), e a coluna com pedidos e
+// nada executando é COBRADA com selo vermelho. "Não iniciado" e sem responsável ficam na faixa de
+// baixo (a distribuição continua pelo modal do setor, status "Distribuido"). Concluídos (Conferido
+// e liberado / Rótulo Interno) ficam fora. Acesso: admin, diretora comercial e todos do setor
+// designer. Marcação: o PRÓPRIO colaborador (só a dele) e o administrador (todas).
+var _gestaoPainelDsg=false;
+var _dsgExecMap={}, _dsgExecCarregado=false, _dsgExecLoading=false;
+function _podeVerPainelDesigner(){
+  if(!currentUser) return false;
+  if(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial') return true;
+  return !!(((currentUser.setores||[]).includes('designer'))||((currentUser.coordSetores||[]).includes('designer')));
+}
+function _dsgPodeMarcar(colId){
+  if(!currentUser) return false;
+  return currentUser.perfil==='admin' || String(currentUser.id)===String(colId);
+}
+function _dsgPendentes(){
+  return (orders||[]).filter(function(o){
+    if(!o) return false;
+    if((o.tipo||'venda')==='venda_mae') return false;
+    if((o.linha||'personalizada')==='anestesico') return false;
+    var st=(o.statuses&&o.statuses.designer)||'Não iniciado';
+    return st!=='Conferido e liberado' && st!=='Rótulo Interno';
+  });
+}
+function _dsgRespDe(o){
+  var sd=o.statusDates&&o.statusDates.designer;
+  return { id:String((sd&&sd.executorId)||o.designerExecutorId||''), nome:String((sd&&sd.executorNome)||o.designerExecutorNome||'').trim() };
+}
+// agrupamento puro (testável): colunas por colaborador + faixa de baixo (não iniciado / sem responsável)
+function _dsgAgrupar(pend, execs){
+  var cols=(execs||[]).map(function(u){ return {id:String(u.id), nome:u.name||'', itens:[]}; });
+  var baixo=[];
+  (pend||[]).forEach(function(o){
+    var st=(o.statuses&&o.statuses.designer)||'Não iniciado';
+    var r=_dsgRespDe(o);
+    if(st==='Não iniciado' || (!r.id && !r.nome)){ baixo.push(o); return; }
+    var c=null;
+    if(r.id) c=cols.find(function(x){ return x.id===r.id; });
+    if(!c && r.nome) c=cols.find(function(x){ return x.nome.toLowerCase()===r.nome.toLowerCase(); });
+    if(!c){ c={id:'nome:'+r.nome.toLowerCase(), nome:r.nome||'(sem nome)', itens:[], legado:true}; cols.push(c); } // executor fora do pool atual (desativado/legado) não some
+    c.itens.push(o);
+  });
+  var esc=STATUS_SEQUENCE.designer||[];
+  cols.forEach(function(c){ c.itens.sort(function(a,b){
+    var ia=esc.indexOf((a.statuses&&a.statuses.designer)||''), ib=esc.indexOf((b.statuses&&b.statuses.designer)||'');
+    return (ia<0?99:ia)-(ib<0?99:ib) || String(a.d1||'').localeCompare(String(b.d1||''));
+  }); });
+  baixo.sort(function(a,b){ return String(a.d1||'').localeCompare(String(b.d1||'')); });
+  return {cols:cols, baixo:baixo};
+}
+async function _dsgExecLoad(){
+  if(!_sb || _dsgExecLoading) return;
+  _dsgExecLoading=true;
+  try{
+    const r=await _sb.from('designer_execucao').select('id,data').order('id').range(0,999); // limite 1000: tabela tem 1 linha por colaborador
+    if(!r.error && Array.isArray(r.data)){
+      const novo={}; r.data.forEach(function(x){ if(x&&x.id) novo[String(x.id)]=x.data||{}; });
+      const mudou=JSON.stringify(novo)!==JSON.stringify(_dsgExecMap);
+      _dsgExecMap=novo; _dsgExecCarregado=true;
+      if(mudou && _gestaoPainelDsg) renderPainelDesigner();
+    }
+  }catch(_e){ /* indisponibilidade momentânea — o painel mostra o cache */ }
+  _dsgExecLoading=false;
+}
+async function _dsgExecMarcar(uid, oid){
+  if(!_dsgPodeMarcar(uid)){ alert('Cada colaborador marca a própria execução — o administrador pode marcar ou alterar a de todos.'); return; }
+  if(!_sb){ alert('Sem conexão com o servidor.'); return; }
+  try{
+    const reg={ orderId:String(oid), desde:Date.now(), por:String(currentUser.id), porNome:currentUser.name||'' };
+    const r=await _sb.from('designer_execucao').upsert({ id:String(uid), data:reg, updated_at:new Date().toISOString() }, { onConflict:'id' });
+    if(r.error) throw new Error(r.error.message);
+    _dsgExecMap[String(uid)]=reg; // marcar outro SUBSTITUI (linha única por colaborador)
+    renderPainelDesigner();
+  }catch(e){ alert('Não foi possível marcar a execução: '+((e&&e.message)||e)); }
+}
+function _gestaoPainelDsgRestore(){
+  _gestaoPainelDsg=false;
+  var pd=document.getElementById('gestao-painel-designer'); if(pd) pd.style.display='none';
+  var tw=document.getElementById('gestao-tabela-wrap'); if(tw) tw.style.display='';
+  var ctr=document.getElementById('gestao-ctrls'); if(ctr) ctr.style.display='flex';
+  var leg=document.getElementById('gestao-legend'); if(leg) leg.style.display='';
+}
+function setGestaoPainelDesigner(on){
+  if(on && !_podeVerPainelDesigner()){ alert('Painel do Designer: acesso do administrador, da diretora comercial e do setor Designer.'); return; }
+  if(!on){ _gestaoPainelDsgRestore(); renderMonthTabs(); renderGestao(); return; }
+  _gestaoPainelDsg=true;
+  document.querySelectorAll('.linha-tab').forEach(function(t){
+    var act=(t.id==='ltab-paineldsg');
+    t.style.borderBottomColor=act?'var(--text-info)':'transparent';
+    t.style.color=act?'var(--text-info)':'var(--text-secondary)';
+    t.style.fontWeight=act?'500':'400';
+  });
+  var ctr=document.getElementById('gestao-ctrls'); if(ctr) ctr.style.display='none';
+  var leg=document.getElementById('gestao-legend'); if(leg) leg.style.display='none';
+  var tw=document.getElementById('gestao-tabela-wrap'); if(tw) tw.style.display='none';
+  var pd=document.getElementById('gestao-painel-designer'); if(pd) pd.style.display='';
+  renderPainelDesigner();
+  _dsgExecLoad(); // atualiza o "em execução" dos demais (re-pinta se mudou)
+}
+function renderPainelDesigner(){
+  var box=document.getElementById('gestao-painel-designer'); if(!box || !_gestaoPainelDsg) return;
+  var g=_dsgAgrupar(_dsgPendentes(), _setorExecutores('designer'));
+  var semExec=0, comPend=0;
+  var fmtD=function(s){ try{ return fmtDate(s); }catch(_e){ return s||'—'; } };
+  var colsHtml=g.cols.map(function(c){
+    var exec=_dsgExecMap[c.id];
+    var execValida=!!(exec && exec.orderId && c.itens.some(function(o){ return String(o.id)===String(exec.orderId); }));
+    if(c.itens.length){ comPend++; if(!execValida) semExec++; }
+    var pode=_dsgPodeMarcar(c.id);
+    var cards=c.itens.map(function(o){
+      var st=(o.statuses&&o.statuses.designer)||'Não iniciado';
+      var sd=o.statusDates&&o.statusDates.designer;
+      var emExec=execValida && String(exec.orderId)===String(o.id);
+      return '<div style="border:1.5px solid '+(emExec?'var(--st-ok-tx)':'var(--border)')+';border-radius:10px;padding:8px 10px;margin-bottom:6px;background:'+(emExec?'var(--st-ok-bg,var(--bg-secondary))':'var(--bg-primary)')+'">'+
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+          '<span onclick="openDetailModal('+o.id+')" style="font-weight:700;font-size:12px;cursor:pointer" title="Abrir o pedido (leitura)">'+escapeHtml(o.num||'—')+'</span>'+
+          (o.urgente?'<span class="badge b-urg" style="font-size:9px">URGENTE</span>':'')+
+          (emExec?'<span style="font-size:9.5px;font-weight:700;color:var(--st-ok-tx)" title="Desde '+(exec.desde?new Date(exec.desde).toLocaleString('pt-BR'):'')+(exec.porNome?' — marcado por '+escapeHtml(exec.porNome):'')+'">▶ EM EXECUÇÃO</span>':'')+
+        '</div>'+
+        '<div style="font-size:10.5px;color:var(--text-secondary);margin:1px 0 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escapeHtml(o.cliente||'')+'">'+escapeHtml(o.cliente||'—')+'</div>'+
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+          '<span class="badge '+(st==='Não iniciado'?'b-nil':'b-mid')+'" style="font-size:10px">'+escapeHtml(st)+(sd&&sd.ts?' · '+new Date(sd.ts).toLocaleDateString('pt-BR'):'')+'</span>'+
+          '<span style="font-size:9.5px;color:var(--text-tertiary)">D1 '+fmtD(o.d1)+'</span>'+
+          ((pode&&!emExec)?'<button onclick="_dsgExecMarcar(\''+c.id+'\','+JSON.stringify(String(o.id)).replace(/"/g,'&quot;')+')" style="margin-left:auto;font-size:10px;padding:2px 9px;border:.5px solid var(--st-ok-bd,var(--border-md));border-radius:10px;background:transparent;color:var(--st-ok-tx);cursor:pointer;font-family:inherit" title="Marcar como o pedido em execução AGORA (substitui o atual)">▶ Executar</button>':'')+
+        '</div>'+
+      '</div>';
+    }).join('');
+    return '<div style="min-width:235px;flex:1;border:.5px solid var(--border);border-radius:12px;padding:10px;background:var(--bg-secondary)">'+
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">'+
+        '<span style="font-weight:700;font-size:12.5px">'+escapeHtml(c.nome)+'</span>'+
+        '<span style="font-size:10px;color:var(--text-tertiary)">'+c.itens.length+' pedido(s)</span>'+
+        (c.itens.length&&!execValida?'<span style="margin-left:auto;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--st-bad-bg);color:var(--st-bad-tx)" title="É obrigatório estar executando algo — marque um pedido">nenhum em execução</span>':'')+
+        (!c.itens.length?'<span style="margin-left:auto;font-size:9.5px;color:var(--text-tertiary)">sem pedidos</span>':'')+
+      '</div>'+
+      (cards||'<div style="font-size:11px;color:var(--text-tertiary);padding:6px 0">Nenhum pedido sob responsabilidade.</div>')+
+    '</div>';
+  }).join('');
+  var baixoHtml=g.baixo.map(function(o){
+    var st=(o.statuses&&o.statuses.designer)||'Não iniciado';
+    return '<span onclick="openDetailModal('+o.id+')" style="display:inline-flex;align-items:center;gap:6px;border:.5px solid var(--border);border-radius:10px;padding:4px 10px;font-size:11px;cursor:pointer;background:var(--bg-primary)" title="'+escapeHtml(o.cliente||'')+' — abrir (leitura)">'+
+      '<b>'+escapeHtml(o.num||'—')+'</b>'+(o.urgente?' <span class="badge b-urg" style="font-size:8.5px">URG</span>':'')+
+      '<span style="color:var(--text-tertiary)">'+escapeHtml(st)+' · D1 '+fmtD(o.d1)+'</span></span>';
+  }).join(' ');
+  box.innerHTML=
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'+
+      '<h2 style="font-size:15px;margin:0">🎨 Painel do Designer</h2>'+
+      '<span style="font-size:11px;color:var(--text-secondary)">'+comPend+' colaborador(es) com pedidos'+(semExec?' · <b style="color:var(--st-bad-tx)">'+semExec+' sem execução marcada</b>':' · todos executando')+'</span>'+
+      '<button onclick="_dsgExecLoad()" style="margin-left:auto;font-size:11px;padding:4px 12px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit" title="Recarrega o que cada um está executando">↻ Atualizar</button>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Acompanhamento — somente leitura. A única ação é marcar <b>▶ Executar</b> (um por colaborador; marcar outro substitui). Edições de status continuam no fluxo normal dos setores; a distribuição, pelo status "Distribuido" do modal do Designer. Concluídos (Conferido e liberado / Rótulo Interno) não aparecem.</div>'+
+    '<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">'+colsHtml+'</div>'+
+    (g.baixo.length?('<div style="margin-top:14px;border-top:.5px dashed var(--border);padding-top:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-secondary);margin-bottom:6px">Não iniciados / sem responsável — a distribuir ('+g.baixo.length+')</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+baixoHtml+'</div></div>'):'');
 }
 
 // ═══════════════ DELETE ORDER ═══════════════
@@ -7177,6 +7364,7 @@ async function doLogin(){
   const _ehEstoque=(u.setores?.includes('estoque')||u.coordSetores?.includes('estoque')); // v233
   const _ehExped=(u.setores?.includes('expedicao')||u.coordSetores?.includes('expedicao')); // v258 — expedição anexa FOTOS de embalagem (Everton; regra do dono 04/11)
   document.getElementById('nav-catalogo')?.classList.toggle('hidden',!isComercial&&!isAdmin&&!canAccessCompras()&&!_ehEstoque&&!_ehExped); // v130 — compras acessa p/ cadastrar insumos/embalagens; v233 — estoque acessa (aba Embalagens; caso Luiz, importação); v258 — expedição acessa (fotos)
+  document.getElementById('ltab-paineldsg')?.classList.toggle('hidden', !_podeVerPainelDesigner()); // v261 — Painel Designer: admin, diretora comercial e setor designer
   // v233 — pedido do dono 22/09: quem SÓ tem estoque vê o Catálogo apenas na aba EMBALAGENS
   // (importar/cadastrar); Produtos, Insumos, Grupos e Catálogo Novo ficam ocultos para ele.
   // v258 — mesma régua para quem só tem EXPEDIÇÃO (entra só para as fotos das embalagens).
@@ -8235,6 +8423,15 @@ function confirmStatus(){
     const _de=_seqD.indexOf(o.statuses.designer||'Não iniciado'), _para=_seqD.indexOf(selectedStatus);
     if(!_DES_COLAB_STATUS.includes(selectedStatus) || _para<_de){
       alert('Este degrau é da coordenação do Designer.\n\nColaborador marca: Em produção, Envio p/ aprovação, Montagem pranchas e Prancha finalizada — sempre avançando. Aprovar ou voltar status é com a coordenadora/administrador.');
+      return;
+    }
+  }
+  // v261 — DISTRIBUIDO exige o responsável (ordem do dono 09/11): ao distribuir já se informa PARA
+  // QUEM foi distribuído — que é o mesmo que vai produzir; grava no executor do designer (abaixo).
+  if(statusCtx.setor==='designer' && selectedStatus==='Distribuido'){
+    const _exD=document.getElementById('sm-exec');
+    if(!_exD || !_exD.value){
+      alert('Para marcar "Distribuido", informe PARA QUEM foi distribuído no seletor "🎨 Quem executou (designer)" — é quem vai produzir este rótulo.');
       return;
     }
   }
@@ -22912,6 +23109,8 @@ function renderGestao(){
       const roCell = !edit && k==='compras' && typeof _temSetorEstoque==='function' && (_temSetorEstoque()||_temSetorExpedicao());
       const clicavel = edit || roCell;
       const dateStr=sd?`<span class="badge-date">${new Date(sd.ts).toLocaleDateString('pt-BR')}</span>`:'';
+      // v261 — coluna DESIGNER mostra pequeno o responsável (para quem foi distribuído / quem produz)
+      const execStr=(k==='designer' && (((sd&&sd.executorNome)||o.designerExecutorNome||'').trim()))?`<span class="badge-date" title="Responsável (designer) — para quem foi distribuído">👤 ${escapeHtml(((sd&&sd.executorNome)||o.designerExecutorNome||'').trim())}</span>`:'';
       const pendBadge=activePend?`<span class="pend-alert-badge" onclick="event.stopPropagation();openPendAlertModal(${o.id},'${k}')" title="Pendência ativa — clique para ver">⚠ Pendência</span>`:'';
       const obsIcon=(typeof _obsCount==='function'&&_obsCount(o,k)>0)?`<span onclick="event.stopPropagation();openObsModal(${o.id},'${k}')" title="Tem observação — clique para ver" style="cursor:pointer;font-size:12px;line-height:1">💬</span>`:''; // v120 — sinal discreto de observação
       // v156 — COMPRAS (pedidos pós-virada): selos dos DOIS lados (A=ativos, E=embalagem) — "marcados ao mesmo tempo"
@@ -22919,7 +23118,7 @@ function renderGestao(){
       if(k==='compras' && typeof _pedidoNovoCompras==='function' && _pedidoNovoCompras(o) && o.comprasLados && (o.comprasLados.ativo||o.comprasLados.embalagem)){
         ladosSelo=`<span style="font-size:9px;white-space:nowrap;color:var(--st-ok-tx)" title="Lados finalizados (comprado ou não necessário)">${o.comprasLados.ativo?'A✓':''}${o.comprasLados.ativo&&o.comprasLados.embalagem?' ':''}${o.comprasLados.embalagem?'E✓':''}</span>`;
       }
-      return`<td class="audit-cell"><div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap"><span class="badge ${bc} ${clicavel?'clickable':''}" style="flex-direction:column;align-items:flex-start;gap:0" ${roCell?'title="Somente visualização (estoque/expedição)"':''} ${clicavel?`onclick="openStatusModal(${o.id},'${k}')"` :''}>${st}${dateStr}</span>${ladosSelo}${obsIcon}${pendBadge}</div>${tip}</td>`;
+      return`<td class="audit-cell"><div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap"><span class="badge ${bc} ${clicavel?'clickable':''}" style="flex-direction:column;align-items:flex-start;gap:0" ${roCell?'title="Somente visualização (estoque/expedição)"':''} ${clicavel?`onclick="openStatusModal(${o.id},'${k}')"` :''}>${st}${dateStr}${execStr}</span>${ladosSelo}${obsIcon}${pendBadge}</div>${tip}</td>`;
     }).join('');
     return`<tr class="${rc}"><td style="font-weight:500">${escapeHtml(o.num)}${tag}</td><td>${tipoBadgeHtml(o.tipo||'venda')}</td><td>${escapeHtml(o.cliente)}</td><td style="color:var(--text-secondary);font-size:12px;white-space:nowrap">${fmtDate(_dataInclusao(o))}</td><td>${fmtDate(o.previsao)}</td><td>${fmtMoney(o.valor)}</td>${cells}<td style="color:var(--text-secondary);font-size:12px">${(()=>{const hist=o.enviosHistorico||[];if(hist.length<=1)return fmtDate(o.envioReal)||'—';const datas=[...new Set(hist.map(e=>e.data).filter(Boolean))];return datas.length===1?fmtDate(datas[0]):datas.map(d=>fmtDate(d)).join('<br>');})()}</td><td style="font-size:12px">${transpCellHtml(o)}</td><td style="font-size:12px">${rastreiosCellHtml(o)}</td><td style="white-space:nowrap"><button onclick="openDetailModal(${o.id})" class="btn-primary" style="padding:3px 12px;font-size:11px">Abrir</button> <button onclick="openEnvioModal(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px;background:var(--bg-info);color:var(--text-info);border-color:var(--text-info)">📮 Envio</button> ${canEditOrder()?`<button onclick="openOrderModal(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px">Editar</button>`:''} ${currentUser?.perfil==='admin'?`<button onclick="deleteOrderDirect(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">Excluir</button>`:''}</td></tr>`;
   }).join('');
@@ -26057,13 +26256,16 @@ function renderDashboardMelhorias(){
       // do painel "Alertas ativos" (por pedido), inclusive de pedidos já Enviados/Entregues.
       getAlerts(o).forEach(a=>{
         const resp = a.setor==='comercial' ? _respComercial(o) : (coordMap[a.setor] || _gerenteGeral);
-        if(!respStats[resp]) respStats[resp]={nome:resp,ativos:0,criticos:0,setores:new Set(),itens:[]};
-        respStats[resp].ativos++;
-        if(a.level==='crit') respStats[resp].criticos++;
-        respStats[resp].setores.add(SETORES[a.setor]?.label||a.setor);
+        // v261 — pedido do dono 09/11: responsável com DOIS setores separa em duas linhas —
+        // "Agnis (Produção)" e "Agnis (Estoque)" — cada uma com as próprias contagens.
+        const setorLbl = SETORES[a.setor]?.label || a.setor;
+        const chave = resp+'|'+a.setor;
+        if(!respStats[chave]) respStats[chave]={nome:resp,setorLabel:setorLbl,ativos:0,criticos:0,itens:[]};
+        respStats[chave].ativos++;
+        if(a.level==='crit') respStats[chave].criticos++;
         // v82: guarda o detalhe (pedido + setor + status) p/ expandir ao clicar no responsável
         let _dias=0; try{ _dias=Math.max(0,(calcDay(o.d1)||0)-(a.limitDay||0)); }catch(_e){}
-        respStats[resp].itens.push({ num:o.num, cliente:o.cliente, setorLabel:SETORES[a.setor]?.label||a.setor,
+        respStats[chave].itens.push({ num:o.num, cliente:o.cliente, setorLabel:setorLbl,
           status:a.currentStatus||o.statuses?.[a.setor]||'—', level:a.level, desc:a.desc||'', dias:_dias, oid:o.id, mk:monthKey(o.d1) });
       });
     });
@@ -26088,8 +26290,7 @@ function renderDashboardMelhorias(){
         return `<div style="border-bottom:.5px solid var(--border)">
           <div onclick="(function(d){d.style.display=d.style.display==='none'?'block':'none';})(this.parentNode.querySelector('.resp-det'))" style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;cursor:pointer" title="Clique para ver os pedidos">
             <div style="flex:1">
-              <div style="font-size:12px;font-weight:500">▸ ${escapeHtml(r.nome)}</div>
-              <div style="font-size:10px;color:var(--text-tertiary)">${[...r.setores].join(', ')}</div>
+              <div style="font-size:12px;font-weight:500">▸ ${escapeHtml(r.nome)} <span style="font-weight:400;color:var(--text-secondary)">(${escapeHtml(r.setorLabel)})</span></div>
             </div>
             <div style="display:flex;gap:6px;align-items:center">
               ${r.criticos?`<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--st-bad-bg);color:var(--st-bad-tx);font-weight:500">${r.criticos} crítico${r.criticos>1?'s':''}</span>`:''}

@@ -4644,7 +4644,12 @@ async function _sepCarregarDiferidas(){
     var pend=SEP_ENTITIES.filter(function(c){ return _SEP_DEFER[c.key]; });
     for(var i=0;i<pend.length;i++){
       var cfg=pend[i];
-      var pre=(cfg.get()||[]).slice(); // criado nesta sessão antes da carga (ex.: audit de um clique, notificação)
+      // v263 (A2, revisão 09/11): 'pre' preservava TUDO que estava na memória — mas o loadData semeia as
+      // diferidas com o CACHE de dias atrás, e linha apagada no servidor por outra pessoa era re-adicionada
+      // e RE-INSERIDA no próximo save (ressurreição). Agora só preserva o que NÃO veio do cache
+      // (= criado de fato nesta sessão: audit de um clique, notificação emitida antes da carga).
+      var _seedA2=_sepSeedCache[cfg.key]||{};
+      var pre=(cfg.get()||[]).slice().filter(function(po){ return po!=null && !_seedA2[String(cfg.id(po))]; });
       var ok=false;
       try{ ok=await _sepLoadOne(cfg); }catch(_e){ ok=false; }
       if(ok && pre.length){
@@ -4664,6 +4669,18 @@ async function _sepCarregarDiferidas(){
 // v119 — escritas locais EM VOO (ainda não confirmadas no servidor). Protege obs/pendência/status recém-salvos
 // de serem derrubados pelo _resyncFromServer (que substitui o estado local pelo do servidor antes do upsert chegar).
 var _sepDirty={};
+// v263 — GATE DE CARGA (revisão 09/11, achado A1): entidade SEP só pode SINCRONIZAR depois de uma carga
+// CONFIRMADA do servidor NESTA sessão. A memória é semeada pelo cache do localStorage no boot; se a carga
+// da entidade falha (1 erro de rede numa página basta), não nasce snapshot e TODA linha do cache viraria
+// "changed" — o estado de ontem seria upsertado EM MASSA por cima do servidor (a guarda anti-massa v77
+// cobre só DELETES; o merge-3-vias exige snapshot). Com o gate, a entidade fica em memória, o indicador
+// mostra pendência e a carga é re-tentada; nada é gravado às cegas.
+var _sepCarregadaOk={}, _sepCargaRetry={};
+// v263 — ids SEMEADOS DO CACHE nas entidades diferidas (achado A2): a carga diferida re-adicionava à
+// memória toda linha do cache que não está mais no servidor ("criada nesta sessão" era premissa falsa) —
+// registro APAGADO por outra pessoa ressuscitava no próximo save. O conjunto abaixo marca o que veio do
+// cache para a carga diferida preservar SÓ o que nasceu de fato nesta sessão.
+var _sepSeedCache={};
 // v221 — CORREÇÃO 2 do incidente 27/08 (autorizada 28/08): IGUALDADE CANÔNICA no detector de mudanças.
 // PROVA da doença (audit_trail, 24h): 14.386 de 14.467 regravações de contas_receber eram byte a byte
 // IDÊNTICAS à versão anterior — o resync adota do servidor objetos com as chaves na ordem do jsonb
@@ -4786,6 +4803,10 @@ function _scheduleAppDataReload(){
   if(_appDataReloadT) clearTimeout(_appDataReloadT);
   _appDataReloadT=setTimeout(async function(){
     _appDataReloadT=null;
+    // v263 (C7, revisão 09/11) — mesma guarda do _resyncFromServer: NÃO recarrega o blob com gravação
+    // pendente/em voo (o reload substituía users/equipes/config e a edição local era revertida em
+    // silêncio — classe "perfil que revertia"). Re-agenda e tenta de novo quando o save assentar.
+    if(_saveInFlight || _saveDirty){ _scheduleAppDataReload(); return; }
     try{ await _loadFromSupabase(true); }catch(_e){}
     try{ refreshAll(); }catch(_e){}
     _updateSbIndicator('⟳ Atualizado','var(--text-info)');
@@ -4824,6 +4845,20 @@ async function _sepSyncOne(cfg){
     if(!_pend){ for(var _sid in _snap){ if(!_cur[_sid]){ _pend=true; break; } } }
     var _req=_SEP_SETOR_REQ[cfg.table]; var _reqStr=Array.isArray(_req)?_req.join(' ou '):(_req||'');
     return {ok:true, table:cfg.table, skipped:true, pendente:_pend, setor:_reqStr}; // v80: sem acesso ao setor → não grava
+  }
+  // v263 — GATE DE CARGA (achado A1 da revisão 09/11): sem carga confirmada do servidor nesta sessão,
+  // a entidade NÃO sincroniza (memória pode ser o cache de ontem, sem snapshot = tudo viraria "changed"
+  // e iria em massa por cima do servidor). Havendo edição local pendente, re-tenta a carga em background
+  // e re-comita ao conseguir — nada se perde, nada grava às cegas.
+  if(!_sepCarregadaOk[cfg.key]){
+    var _arrG=cfg.get()||[]; var _snapG=_sepSnap[cfg.key]||{}; var _pendG=false;
+    for(var _g=0;_g<_arrG.length;_g++){ var _og=_arrG[_g]; if(_og==null||typeof _og!=='object') continue; if(_snapG[String(cfg.id(_og))]!==JSON.stringify(_og)){ _pendG=true; break; } }
+    if(_pendG && !_sepCargaRetry[cfg.key]){
+      _sepCargaRetry[cfg.key]=true;
+      try{ _sepLoadOne(cfg).then(function(_r){ _sepCargaRetry[cfg.key]=false; if(_r){ try{ refreshAll(); }catch(_e){} try{ _commitToDb(); }catch(_e2){} } }).catch(function(){ _sepCargaRetry[cfg.key]=false; }); }
+      catch(_e){ _sepCargaRetry[cfg.key]=false; }
+    }
+    return {ok:true, table:cfg.table, skipped:true, pendente:_pendG, setor:'', semCarga:true};
   }
   try{
     var arr=cfg.get()||[]; var snap=_sepSnap[cfg.key]||{};
@@ -4884,26 +4919,47 @@ async function _sepSyncOne(cfg){
       return { ok:_savedChg, table:cfg.table, error:_savedChg?'':'delete em massa bloqueado (estado defasado); recarregado do servidor' };
     }
     // v107 — conversas: mescla com o banco antes de gravar (não sobrescreve mensagens que o app ainda não tem, ex.: inbound)
+    // v263 (C9, revisão 09/11) — semântica v183 ("NUNCA GRAVAR ÀS CEGAS") também AQUI: se a releitura da
+    // linha falhar (rede), a conversa SAI do lote desta rodada (fica dirty e re-tenta no próximo ciclo).
+    // Antes o catch engolia e a cópia local defasada ia SEM união — o trigger do banco protege as
+    // mensagens, mas atendente/status/atenção podiam regredir no servidor.
+    var _c9Fora=[]; // v263 (C9) — linhas adiadas: o snapshot delas é RESTAURADO no fim (senão o rebuild as marcaria "já sincronizadas" e a re-tentativa nunca viria)
     if(cfg.key==='conversas' && changed.length && typeof _convUniaoMsgs==='function'){
+      var _okLidas=[];
       for(var _ci=0;_ci<changed.length;_ci++){
+        var _leu=false;
         try{ const { data:_drow }=await _sb.from('conversas').select('data').eq('id', String(changed[_ci].id)).maybeSingle();
-          if(_drow && _drow.data) _convUniaoMsgs(changed[_ci], _drow.data); }catch(_e){}
+          if(_drow && _drow.data) _convUniaoMsgs(changed[_ci], _drow.data);
+          _leu=true; // linha inexistente no servidor (conversa NOVA) também passa: não há o que reler
+        }catch(_e){ console.warn('conversas: releitura falhou, linha fica p/ o próximo ciclo:', String(changed[_ci].id)); _c9Fora.push(String(changed[_ci].id)); }
+        if(_leu) _okLidas.push(changed[_ci]);
       }
+      changed=_okLidas;
     }
     // v126 — PEDIDOS: MERGE DE 3 VIAS antes de gravar (base=snapshot que carreguei, MEU, SERVIDOR) — anti-"status que volta"/clobber.
     // Campo que eu NÃO mexi (meu == base) fica com o do SERVIDOR (preserva a mudança do outro); campo que eu mexi fica o MEU.
     // statuses/statusDates/obsSetor/pendencies mesclados POR SETOR (chave a chave). Pedido NOVO (sem base) pula. Falha na releitura → grava o meu (como hoje).
     if(cfg.key==='orders' && changed.length && typeof _orderMerge3==='function'){
+      // v263 (caso 104081, diagnóstico 09/11) — semântica v183 TAMBÉM no merge dos pedidos: se a
+      // releitura do servidor falhar, o pedido SAI do lote (fica dirty e re-tenta no próximo ciclo).
+      // Antes o catch "grava o meu" upsertava a cópia local SEM merge — foi o vetor da regressão
+      // silenciosa de status da produção (sobrescrita por aba defasada, sem audit).
+      var _okOrd=[];
       for(var _oi=0;_oi<changed.length;_oi++){
-        try{
-          var _lo=changed[_oi]; if(_lo==null) continue;
-          var _bstr=snap[String(cfg.id(_lo))]; var _base=_bstr?JSON.parse(_bstr):null;
-          if(_base){
+        var _lo=changed[_oi]; if(_lo==null) continue;
+        var _bstr=snap[String(cfg.id(_lo))]; var _base=_bstr?JSON.parse(_bstr):null;
+        if(_base){
+          var _leuO=false;
+          try{
             const { data:_srow }=await _sb.from('orders').select('data').eq('id', String(cfg.id(_lo))).maybeSingle();
             if(_srow && _srow.data) _orderMerge3(_lo, _base, _srow.data);
-          }
-        }catch(_e){ console.warn('merge3 pedido falhou (grava o meu):', _e && _e.message); }
+            _leuO=true; // linha inexistente no servidor (pedido novo re-inserido) também passa
+          }catch(_e){ console.warn('merge3: releitura falhou, pedido fica p/ o próximo ciclo:', String(cfg.id(_lo))); _c9Fora.push(String(cfg.id(_lo))); }
+          if(!_leuO) continue;
+        }
+        _okOrd.push(_lo);
       }
+      changed=_okOrd;
     }
     if(changed.length){
       // v205 — DEDUPE DO LOTE (erro real 10/08, tela do dono: "notificacoes: ON CONFLICT DO UPDATE
@@ -4925,6 +4981,9 @@ async function _sepSyncOne(cfg){
     }
     _sepClearDirty(cfg, changed); // v119 — upsert confirmado no servidor → libera a proteção dirty
     _sepBuildSnap(cfg);
+    // v263 (C9) — linha adiada (releitura falhou) volta com o snapshot ANTIGO: continua "mudada" e
+    // re-tenta no próximo ciclo (sem isto o rebuild acima a daria por sincronizada e a edição sumiria).
+    if(_c9Fora.length){ var _snC9=_sepSnap[cfg.key]||{}; _c9Fora.forEach(function(_idf){ if(Object.prototype.hasOwnProperty.call(snap,_idf)) _snC9[_idf]=snap[_idf]; else delete _snC9[_idf]; }); }
     return {ok:true, table:cfg.table};
   }catch(e){ console.warn('sep sync '+cfg.key+' falhou:', e.message); return {ok:false, table:cfg.table, error:e.message}; }
 }
@@ -5008,6 +5067,7 @@ async function _sepLoadOne(cfg, forceFull){
         if(_ex.removidos.length){ _arrI=_ex.arr; for(var _rx=0;_rx<_ex.removidos.length;_rx++) delete _snapI[_ex.removidos[_rx]]; }
       }
       cfg.set(_arrI);
+      _sepCarregadaOk[cfg.key]=true; // v263 (A1) — carga incremental confirmada
       return true;
     }catch(_e){ console.warn(cfg.table+' incremental falhou; carga completa:', _e&&_e.message); }
   }
@@ -5022,7 +5082,10 @@ async function _sepLoadOne(cfg, forceFull){
       // 10s (varredura id+updated_at com guard) já as mantêm vivas; a recarga integral (todas as
       // conversas × 30 msgs) era o maior consumidor de tráfego do sistema. Boot/F5 (memória vazia)
       // e recuperação (forceFull) continuam com a carga completa de sempre.
-      if(!forceFull && (cfg.get()||[]).length && _convPollFirst) return true;
+      // v263 (A1, endurecido na verificação): o atalho SÓ vale com carga real já confirmada nesta sessão —
+      // _convPollFirst NÃO implica boot carregado (cache do localStorage + carga falha + poll de ids
+      // abririam o gate sem snapshot e o cache de ontem iria em massa ao servidor).
+      if(!forceFull && (cfg.get()||[]).length && _convPollFirst && _sepCarregadaOk[cfg.key]) return true;
       // v174 — INCIDENTE 28/07 ("conversas sumindo"): o PostgREST corta QUALQUER resposta em 1000 linhas
       // e o sistema passou de 1000 conversas — a RPC vinha truncada e ~66 conversas NUNCA chegavam ao
       // navegador (e sem ORDER BY, QUAIS somem variava a cada carga). O atendente abria o cliente,
@@ -5256,6 +5319,7 @@ async function _sepLoadOne(cfg, forceFull){
       var _snNow=_sepSnap[cfg.key]||{};
       _pids.forEach(function(_id3){ if(Object.prototype.hasOwnProperty.call(_snBase,_id3)) _snNow[_id3]=_snBase[_id3]; else delete _snNow[_id3]; });
     }
+    _sepCarregadaOk[cfg.key]=true; // v263 (A1) — carga completa confirmada: a entidade pode sincronizar
     return true;
   }catch(e){ console.warn('sep load '+cfg.key+' falhou:', e.message); return false; }
 }
@@ -5348,7 +5412,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v262';
+var APP_VERSION = 'v263';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5418,8 +5482,22 @@ function _fecharModalX(btn){
     // v159 — fechar o modal de conversa do card LIMPA o ponteiro da conversa ativa (fantasma zerava
     // não-lidas de mensagem nova p/ todos via guard v151); se a página Conversas estiver visível
     // atrás, o ponteiro é dela e fica.
+    if(ov.id==='_sessoes-ov'){ try{ if(_sessoesTimer){ clearInterval(_sessoesTimer); _sessoesTimer=null; } ov.remove(); }catch(_e){} } // v263 (D7) — ✕ também limpa o timer de 8s e remove o nó dinâmico
     if(ov.id==='conv-modal-overlay'){
-      try{ var _pgc=document.getElementById('pg-conversas'); if(!(_pgc && _pgc.style.display!=='none')) conversaAtivaId=null; }catch(_e){}
+      // v263 (B1, revisão 09/11): com a página Conversas visível atrás, o ponteiro volta para a conversa
+      // DO PAINEL (guardada ao abrir o modal) e a tela do painel é re-renderizada — antes ficava o
+      // "ponteiro fantasma" do modal: o painel mostrava B, o ponteiro apontava A, e Enter/anexo/áudio
+      // saíam para o cliente ERRADO (além de zerar não-lidas de A para todos e pintar tela híbrida).
+      try{
+        var _pgc=document.getElementById('pg-conversas');
+        if(!(_pgc && _pgc.style.display!=='none')){ conversaAtivaId=null; }
+        else {
+          conversaAtivaId=(typeof _convPonteiroAntesModal!=='undefined')?_convPonteiroAntesModal:null;
+          _convTelaUltimoId=null; delete _convIdPorContainer['conv-modal-tela'];
+          if(conversaAtivaId){ try{ setTimeout(function(){ try{ renderConversaTela(conversaAtivaId,'conv-tela'); }catch(_e2){} },0); }catch(_e3){} }
+        }
+        _convPonteiroAntesModal=null;
+      }catch(_e){}
       // v159 — fechar o modal GRAVANDO áudio: cancela a gravação (o microfone ficava capturando sem ⏹ visível)
       try{ if(typeof _micRec!=='undefined' && _micRec && _micRec.state==='recording'){ _micCancelado=true; _micRec.stop(); } }catch(_e){}
     }
@@ -5563,7 +5641,9 @@ async function _doKickLogout(){
 function abrirSessoesModal(){
   if(!currentUser || currentUser.perfil!=='admin'){ alert('Apenas o administrador.'); return; }
   if(document.getElementById('_sessoes-ov')) return;
-  var ov = document.createElement('div'); ov.id='_sessoes-ov'; ov.className='overlay'; ov.style.display='flex';
+  // v263 (D7, revisão 09/11): abre pela classe 'open' como TODOS os overlays — o display inline 'flex'
+  // vencia o CSS e o ✕ injetado pelo empilhador (que remove a classe) não fechava este modal.
+  var ov = document.createElement('div'); ov.id='_sessoes-ov'; ov.className='overlay open';
   ov.innerHTML = '<div class="modal" style="width:560px">'
     + '<h2 style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">Sessões ativas'
     + '<button onclick="fecharSessoesModal()" style="font-size:13px;font-weight:400;background:var(--bg-secondary);border:.5px solid var(--border-md);border-radius:6px;padding:4px 10px;cursor:pointer;font-family:inherit">Fechar</button></h2>'
@@ -5701,9 +5781,15 @@ async function _commitToDb(){
   }
   if(_skipPend.length){ // v101 — skip com pendência = NÃO salvo (não deixar passar como "✓ salvo")
     ok=false;
-    var _stp=Array.from(new Set(_skipPend.map(function(r){return r.setor;}).filter(Boolean))).join(', ');
-    var _tbp=_skipPend.map(function(r){return r.table;}).join(', ');
-    firstErr=firstErr||('Sem o setor ['+_stp+'] para gravar: '+_tbp);
+    var _scg=_skipPend.filter(function(r){return r.semCarga;}).map(function(r){return r.table;}); // v263 (A1)
+    var _spS=_skipPend.filter(function(r){return !r.semCarga;});
+    var _msgs=[];
+    if(_spS.length){
+      var _stp=Array.from(new Set(_spS.map(function(r){return r.setor;}).filter(Boolean))).join(', ');
+      _msgs.push('Sem o setor ['+_stp+'] para gravar: '+_spS.map(function(r){return r.table;}).join(', '));
+    }
+    if(_scg.length) _msgs.push('Aguardando a 1ª carga do servidor para gravar: '+_scg.join(', '));
+    firstErr=firstErr||_msgs.join(' · ');
   }
   try{ _surfaceSkipWarn(_skipPend); }catch(_e){}
   _saveInFlight=false;
@@ -5826,6 +5912,15 @@ function loadData(){
         historico: [{ts:g.criadoEm||Date.now(),por:'Sistema',acao:'Migrado de Gastos Gráfica'}],
       }));
     }
+    // v263 (A2, revisão 09/11) — marca o que veio do CACHE nas entidades DIFERIDAS: a carga diferida
+    // (_sepCarregarDiferidas) só pode preservar linha criada NESTA sessão; linha do cache que não está
+    // mais no servidor foi APAGADA por alguém e não pode ressuscitar.
+    try{
+      [['auditLog',auditLog],['notificacoes',notificacoes],['agendaEventos',agendaEventos],['catalogo',catalogo]].forEach(function(p){
+        var m={}; (p[1]||[]).forEach(function(o){ if(o&&o.id!=null) m[String(o.id)]=1; });
+        _sepSeedCache[p[0]]=m;
+      });
+    }catch(_e){}
         console.log('✓ Dados carregados do localStorage (' + new Date(data._savedAt).toLocaleString() + ')');
     _normalizarCarteirasAnest();
     console.log('  users:', data.users?.length, '| orders:', data.orders?.length, '| clients:', data.clients?.length);
@@ -5870,7 +5965,11 @@ const STATUS_DEADLINES = [
   // v261 — 'Solicitado alteração' (ordem do dono 09/11): desvio OPCIONAL entre o envio e a aprovação
   // (D4); o grupo paralelo destrava 'Aprovado' junto — aprovação direta NÃO exige passar pela alteração.
   { linha:'personalizada', setor:'designer', status:'Solicitado alteração', limitDay:4,  level:'warn', desc:'Alteração solicitada no rótulo', parallel:['Solicitado alteração','Aprovado'] },
-  { linha:'personalizada', setor:'designer', status:'Aprovado',             limitDay:4,  level:'warn', desc:'Aprovação concluída' },
+  // v263 (D1, revisão 09/11): a regra 'Aprovado' também ganha o grupo paralelo — sem ele, pedido
+  // legitimamente parado em 'Solicitado alteração' após o D4 disparava alerta FALSO "Aprovação
+  // concluída" (contrariando a ordem de 09/11: o desvio é OPCIONAL e destrava o Aprovado junto).
+  // A cobrança de um pedido parado no desvio segue existindo pelo degrau seguinte (Montagem, D5).
+  { linha:'personalizada', setor:'designer', status:'Aprovado',             limitDay:4,  level:'warn', desc:'Aprovação concluída', parallel:['Solicitado alteração','Aprovado'] },
   { linha:'personalizada', setor:'designer', status:'Montagem pranchas',    limitDay:5,  level:'warn', desc:'Montagem das pranchas' },
   { linha:'personalizada', setor:'designer', status:'Prancha finalizada',   limitDay:5,  level:'warn', desc:'Prancha finalizada (medição — mesmo prazo da montagem)' }, // v256
   { linha:'personalizada', setor:'designer', status:'Enviado p/ gráfica',   limitDay:6,  level:'warn', desc:'Envio para gráfica' },
@@ -6250,6 +6349,10 @@ function _rebuildCreditosFromOrders(){
     if(t==='venda_mae'){
       // crédito da mãe só após o Caixa — EXCETO mães históricas (até 2025): no v111 o crédito nascia na
       // criação, sem passar pelo Caixa. Grandfather mantém os saldos históricos. Mães de 2026+ exigem Caixa.
+      // v263 (A3, revisão 09/11): REPROVADA no Caixa NÃO gera crédito — reprovar marca caixaFinalizado=true
+      // e este ramo (ao contrário do venda_filho, v151) não conferia; a mãe reprovada entrava como crédito
+      // integral e o cliente podia consumir crédito inexistente. Vale inclusive sobre o grandfather.
+      if(o.caixaReprovado===true||o.caixaReprovado==='true') return;
       const grandfather = !!(o.d1 && o.d1 < '2026-01-01');
       if(!aprovado && !grandfather) return;
       (creditosCliente[o.clienteId]=creditosCliente[o.clienteId]||[]).push({id:'mc'+o.id,orderId:o.id,pedidoNum:o.num,tipo:'credito',valor:parseFloat(o.valor)||0,data:o.d1});
@@ -6478,7 +6581,7 @@ async function _carregarMetas(){
 // usuário salvar no modal agora PERSISTE. (Mantida como no-op p/ os 2 chamadores.)
 function _migrarControles(){ }
 const PROB_ETAPA={'Lead Novo':5,'Primeiro Contato':10,'Apresentação de Produtos':20,'Em Atendimento':30,'Aguardando Documentação':35,'Orçamento Enviado':50,'Follow-up':45,'Negociação':70,'Venda Fechada':100};  // {id, orderId, orderNum, orderCliente, diasAtraso, prazoAtual, prazoNovo, justificativa, solicitadoPor, solicitadoEm, status:'pendente'|'aprovada'|'recusada', decididoPor, decididoEm}
-var users=[{id:'admin',name:'Administrador',login:'admin',senha:'admin123',perfil:'admin',setores:SETOR_KEYS.slice()}];
+var users=[{id:'admin',name:'Administrador',login:'admin',perfil:'admin',setores:SETOR_KEYS.slice()}];
 var clients=[];
 var orders=[];
 var auditLog=[];
@@ -7238,10 +7341,17 @@ function renderPainelDesigner(){
 }
 
 // ═══════════════ DELETE ORDER ═══════════════
+// v263 (A4, revisão 09/11) — pedido com parcela de conta a receber JÁ BAIXADA não pode ser excluído
+// (a exclusão apagava recebimentos com carimbo de baixa — insumo da DRE/DFC — sem aviso; mesmo padrão
+// do deleteCompra): estorne as baixas no Financeiro antes de excluir.
+function _orderTemBaixa(oid){
+  return (contasReceber||[]).some(c=>c&&c.origem==='pedido'&&String(c.origemId)===String(oid)&&(c.parcelas||[]).some(p=>p&&(p.pago||p.baixa)));
+}
 function confirmDeleteOrder(){
   if(currentUser?.perfil!=='admin'){alert('Apenas o administrador pode excluir pedidos.');return;}
   if(!detailOrderId)return;
   const o=orders.find(x=>x.id===detailOrderId);if(!o)return;
+  if(_orderTemBaixa(o.id)){ alert('🔒 Este pedido tem parcela(s) de conta a receber JÁ BAIXADA(S).\n\nExcluir apagaria recebimentos registrados. Estorne a(s) baixa(s) no Financeiro primeiro.'); return; } // v263 (A4)
   document.getElementById('confirm-msg').textContent=`Excluir o pedido "${o.num} — ${o.cliente}"? Esta ação não pode ser desfeita.`;
   document.getElementById('confirm-btn').onclick=()=>{
     const _id=detailOrderId;
@@ -7251,6 +7361,9 @@ function confirmDeleteOrder(){
     contasReceber=contasReceber.filter(c=>!(c.origem==='pedido'&&String(c.origemId)===String(_id)));
     freteRealLanc=freteRealLanc.filter(x=>String(x.pedidoId)!==String(_id)); // v108 — sem o pedido/rastreio, o frete real lançado sai junto
     _removerCreditoOrderId(_id); // v110 (B1) — devolve/limpa o crédito (mãe e/ou débito de filho) p/ não deixar saldo órfão
+    // v263 (F6) — este caminho não tinha o DELETE explícito do v153 (caso 40213): a corrida resync×save
+    // podia ressuscitar o pedido excluído por aqui (sem as contas). Mesmo bloco do deleteOrderDirect.
+    try{ if(_sb) _sb.from('orders').delete().eq('id', _id).then(function(r){ if(r&&r.error) console.warn('delete pedido (server):', r.error.message); }); }catch(_e){}
     detailOrderId=null;
     document.getElementById('confirm-overlay').classList.remove('open');
     document.getElementById('detail-overlay').classList.remove('open');
@@ -7261,6 +7374,7 @@ function confirmDeleteOrder(){
 function deleteOrderDirect(oid){
   if(currentUser?.perfil!=='admin'){alert('Apenas o administrador pode excluir pedidos.');return;}
   const o=orders.find(x=>String(x.id)===String(oid));if(!o)return;
+  if(_orderTemBaixa(o.id)){ alert('🔒 Este pedido tem parcela(s) de conta a receber JÁ BAIXADA(S).\n\nExcluir apagaria recebimentos registrados. Estorne a(s) baixa(s) no Financeiro primeiro.'); return; } // v263 (A4)
   document.getElementById('confirm-msg').textContent=`Excluir o pedido "${o.num} — ${o.cliente}"? Esta ação não pode ser desfeita.`;
   document.getElementById('confirm-btn').onclick=()=>{
     orders=orders.filter(x=>x.id!==oid);
@@ -7746,7 +7860,15 @@ async function saveOrder(){
       if(_bloqMudou) alert('🔒 Pedido aprovado no Caixa: Valor, Frete, Valor Bruto, Tipo, Forma de pagamento, Nº e Data (D1) ficam BLOQUEADOS.\n\nPara alterar essas informações, estorne no Caixa (Finalizados). As demais alterações foram salvas.');
     }
     if(isMae){ f.freteCob=0; f.freteReal=0; } // v116 — venda mãe nunca tem frete (o frete vai nos filhos)
-    Object.entries(f).forEach(([k,v])=>{if(String(o[k])!==String(v)){addAudit(o,'geral',k,String(o[k]??''),String(v));o[k]=v;}});
+    // v263 (A5, revisão 09/11): a comparação por String() era CEGA para campos-objeto — customDeadlines e
+    // pgtosBlocos viram "[object Object],…" dos dois lados quando o tamanho não muda, e a edição era
+    // DESCARTADA em silêncio (pedido urgente re-datado ficava com a régua velha; parcela editada não
+    // persistia). Campos não-escalares comparam por JSON; o audit também registra o JSON (truncado).
+    // (verificação 09/11) comparação CANÔNICA: o jsonb reordena chaves a cada resync e o recálculo local
+    // usa a ordem do literal — JSON.stringify geraria audit falso de customDeadlines em TODO save de
+    // pedido urgente pós-resync. _canonStr ignora ordem de chaves (mesma régua do sync v221).
+    const _cmpTxt=(x)=>{ if(x!=null && typeof x==='object'){ try{ return (typeof _canonStr==='function')?_canonStr(x):JSON.stringify(x); }catch(_e){ return String(x); } } return String(x??''); };
+    Object.entries(f).forEach(([k,v])=>{ const _a=_cmpTxt(o[k]), _b=_cmpTxt(v); if(_a!==_b){addAudit(o,'geral',k,_a.slice(0,300),_b.slice(0,300));o[k]=v;}});
     // v110 (B2/B3) — re-sincroniza o crédito de Venda Mãe SEMPRE (cobre mudança de valor e de tipo), sem trava de admin
     _resyncCreditoVendaMae(o);
     savedOrder=o;
@@ -8235,7 +8357,13 @@ function openStatusModal(oid,setor){
       const _atualPed=(o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorId)||o.designerExecutorId||'';
       const atual=(_colabD&&!_livreD)?currentUser.id:(_atualPed||((!_colabD&&currentUser&&_ehSetorExec(currentUser,'designer'))?currentUser.id:''));
       if(lbl) lbl.textContent='🎨 Quem executou (designer)'+(_colabD?(_livreD?' — travado no responsável atual':' — você'):'');
-      sel.innerHTML='<option value="">— selecione —</option>'+execs.map(u=>'<option value="'+u.id+'"'+(String(u.id)===String(atual)?' selected':'')+'>'+escapeHtml(u.name||u.login||u.id)+'</option>').join('');
+      // v263 (C4, revisão 09/11): executor atual FORA do pool (desativado/legado) aparece no seletor
+      // rotulado — antes nenhuma option casava, o seletor caía em "— selecione —" e o Confirmar
+      // APAGAVA o vínculo em silêncio (o save abaixo também preserva o atual quando o DOM vem vazio).
+      var _foraPool=(atual && !execs.some(u=>String(u.id)===String(atual)))?(users.find(x=>String(x.id)===String(atual))||null):null;
+      sel.innerHTML='<option value="">— selecione —</option>'
+        +(_foraPool?('<option value="'+escapeHtml(String(atual))+'" selected>'+escapeHtml((_foraPool.name||String(atual))+' (desativado)')+'</option>'):'')
+        +execs.map(u=>'<option value="'+u.id+'"'+(String(u.id)===String(atual)?' selected':'')+'>'+escapeHtml(u.name||u.login||u.id)+'</option>').join('');
       sel.disabled=!!_colabD; sel.title=_colabD?(_livreD?'Autonomia de status: você ajusta qualquer degrau, mas o RESPONSÁVEL só muda pela coordenação/admin':'Colaborador: o executor é você — a coordenação pode corrigir depois, se preciso'):'';
       sel.style.display=''; if(btn)btn.style.display='none'; if(res)res.style.display='none';
       var _be0=document.getElementById('sm-env-btn'), _re0=document.getElementById('sm-env-resumo');
@@ -8485,21 +8613,27 @@ function confirmStatus(){
       const _mc=(o.statusDates.designer.marcos=o.statusDates.designer.marcos||{});
       _mc[selectedStatus]=Date.now();
     }
-    if(statusCtx.setor==='expedicao'&&['Enviado','Entregue'].includes(selectedStatus))
-      o.envioReal=new Date().toISOString().split('T')[0];
+    // v263 (C5, revisão 09/11): carimbo é PROVA — 'Entregue' não sobrescreve a data real do envio;
+    // e a data é LOCAL (today v148), não UTC (após as 21h BRT caía no dia seguinte).
+    if(statusCtx.setor==='expedicao'&&['Enviado','Entregue'].includes(selectedStatus)&&!o.envioReal)
+      o.envioReal=today();
   }
   // v118 — grava o EXECUTOR do DESIGNER (produtividade por rótulos). PRODUÇÃO é por produto (modal próprio: openProdRespModal).
   if(statusCtx.setor==='designer' && selectedStatus){
     const _ex=document.getElementById('sm-exec');
     // v256 — colaborador: o executor é SEMPRE ele (ignora o DOM; o seletor já vem travado nele)
     // v261 — autonomia (Kaiky): PRESERVA o responsável atual do pedido (ignora o DOM; nunca troca)
+    // v263 (C4): coordenação/admin confirmando com o seletor VAZIO (executor atual fora do pool, DOM
+    // mexido) PRESERVA o executor gravado — antes o vínculo era apagado em silêncio, sem auditoria.
+    const _atuEx=String((o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorId)||o.designerExecutorId||'');
     const _exid=_designerColabLivre()
-      ? String((o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorId)||o.designerExecutorId||'')
-      : (_designerColab()?String(currentUser.id):(_ex?_ex.value:''));
+      ? _atuEx
+      : (_designerColab()?String(currentUser.id):((_ex&&_ex.value)?_ex.value:_atuEx));
     const _u=_exid?users.find(x=>String(x.id)===String(_exid)):null;
-    o.designerExecutorId=_exid||''; o.designerExecutorNome=(_u&&_u.name)||'';
+    const _exNome=(_u&&_u.name)||((_exid&&_exid===_atuEx)?(o.designerExecutorNome||(o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorNome)||''):''); // v263 (C4) — nome legado preservado quando o id é o mesmo
+    o.designerExecutorId=_exid||''; o.designerExecutorNome=_exNome;
     if(!o.statusDates)o.statusDates={}; if(!o.statusDates.designer)o.statusDates.designer={};
-    o.statusDates.designer.executorId=_exid||''; o.statusDates.designer.executorNome=(_u&&_u.name)||'';
+    o.statusDates.designer.executorId=_exid||''; o.statusDates.designer.executorNome=_exNome;
   }
   closeStatusModal();refreshAll();saveData();
 }
@@ -8597,7 +8731,8 @@ function openClientModal(id){
   if(pjEl) pjEl.checked = (tp==='pj');
   if(pfEl) pfEl.checked = (tp==='pf');
   if(inEl) inEl.checked = (tp==='intermediario');
-  _cliVinc = (c && Array.isArray(c.pessoasVinculadas)) ? c.pessoasVinculadas.map(v=>({tipoPessoa:v.tipoPessoa||'pf',nome:v.nome||'',doc:v.doc||''})) : [];
+  _cliVinc = (c && Array.isArray(c.pessoasVinculadas)) ? c.pessoasVinculadas.map(v=>({tipoPessoa:v.tipoPessoa||'pf',nome:v.nome||'',doc:v.doc||'',padraoNF:!!v.padraoNF})) : [];
+  { let _umNF=false; _cliVinc.forEach(v=>{ if(v.padraoNF){ if(_umNF) v.padraoNF=false; _umNF=true; } }); } // no máximo UM padrão NF por card
   _cliAtend = (c && Array.isArray(c.atendidosIds)) ? c.atendidosIds.slice() : [];
   // v220 — ESPELHO NA ABERTURA (reporte do dono 26/08: card e cadastro exibiam contatos diferentes —
   // a união v176 só rodava ao SALVAR; contato que entra por outro caminho, como fusão ou ficha,
@@ -8880,7 +9015,7 @@ function saveClient(){
   const data={nome,doc,favorito:document.getElementById('c-favorito').checked,
     tipoPessoa,
     intermediaria:(tipoPessoa==='intermediario'),
-    pessoasVinculadas:(tipoPessoa==='intermediario'?[]:_cliVinc.map(v=>({tipoPessoa:v.tipoPessoa,nome:v.nome,doc:v.doc}))),
+    pessoasVinculadas:(tipoPessoa==='intermediario'?[]:_cliVinc.map(v=>({tipoPessoa:v.tipoPessoa,nome:v.nome,doc:v.doc,...(v.padraoNF?{padraoNF:true}:{})}))),
     atendidosIds:(tipoPessoa==='intermediario'?_cliAtend.slice():[]),
     contatos:_ctCarimbaEdicao(_cliContatos.map(c=>({nome:c.nome||'',cargo:c.cargo||'',telefone:c.telefone||c.whats||'',email:c.email||'',principal:!!c.principal,nomeEm:c.nomeEm})), _cliContatosSnap, (clients.find(x=>x.id===editingClientId)||{}).contatos), // v176 — ★ principal persiste; v230 — carimbo de edição (renomear vence cópia velha; snapshot da abertura é a régua)
     rtNome,
@@ -11017,7 +11152,7 @@ function _notifToast(n){
     var el=document.createElement('div');
     el.className='notif-toast';
     el.style.cssText='background:var(--bg-primary);border:.5px solid var(--border-md);border-left:4px solid var(--st-urg-tx,#c47f00);border-radius:var(--r-lg);box-shadow:0 8px 28px rgba(0,0,0,.22);padding:11px 14px;cursor:pointer;animation:notifIn .25s ease';
-    el.innerHTML='<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="font-size:12.5px;font-weight:700">'+escapeHtml(n.titulo||'Notificação')+'</div><button style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-tertiary);line-height:1;padding:0;flex-shrink:0">✕</button></div>'+(n.sub?'<div style="font-size:11.5px;color:var(--text-secondary);margin-top:3px">'+n.sub+'</div>':'');
+    el.innerHTML='<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="font-size:12.5px;font-weight:700">'+escapeHtml(n.titulo||'Notificação')+'</div><button style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--text-tertiary);line-height:1;padding:0;flex-shrink:0">✕</button></div>'+(n.sub?'<div style="font-size:11.5px;color:var(--text-secondary);margin-top:3px">'+escapeHtml(n.sub)+'</div>':''); // v263 (B3) — sub carrega texto livre de usuário: escapa no RENDER (XSS zero-click via toast)
     el.querySelector('button').onclick=function(ev){ ev.stopPropagation(); el.remove(); };
     el.onclick=function(){ el.remove(); if(n.id && notificacoes.some(function(x){return x.id===n.id;})) handleNotifClick(n.id); else toggleNotifPanel(); };
     c.appendChild(el);
@@ -11044,7 +11179,7 @@ function renderNotifList(){
       onclick="handleNotifClick('${n.id}')"
       >
       <div style="font-size:12px;font-weight:${n.lida?'400':'600'}">${escapeHtml(n.titulo)}</div>
-      <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${n.sub}</div>
+      <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${escapeHtml(n.sub||'')}</div>
       <div style="font-size:10px;color:var(--text-tertiary);margin-top:2px">${fmtTs(n.ts)}</div>
     </div>`).join('');
 }
@@ -11068,7 +11203,7 @@ function _notifModalRows(arr){
         <div style="font-size:12px;font-weight:${n.lida?'400':'600'}">${escapeHtml(n.titulo)}</div>
         <div style="font-size:10px;color:var(--text-tertiary);white-space:nowrap">${fmtTs(n.ts)}</div>
       </div>
-      <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${n.sub||''}</div>
+      <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px">${escapeHtml(n.sub||'')}</div>
     </div>`).join(''):'<div class="empty" style="padding:28px">Nenhuma notificação.</div>';
 }
 function abrirNotifModal(){
@@ -11273,7 +11408,7 @@ function savePendAlert(){
       id:'n'+Date.now()+Math.random(),
       tipo:'pendencia',
       titulo:`⚠ Pendência registrada — ${cfg.label}`,
-      sub:`${o?`Pedido ${escapeHtml(o.num)} — ${escapeHtml(o.cliente)}`:''} · Por: ${currentUser.name} · "${desc.substring(0,60)}${desc.length>60?'...':''}"`,
+      sub:`${o?`Pedido ${o.num} — ${o.cliente}`:''} · Por: ${currentUser.name} · "${desc.substring(0,60)}${desc.length>60?'...':''}"`, // v263 (B3) — sub é TEXTO; o escape vive no render
       eventoId:id,
       pendKey:key,
       ts:Date.now(),
@@ -11320,7 +11455,7 @@ function addPendComment(){
     if(!pend.mencionados) pend.mencionados=[];
     _pendCommentMentions.forEach(mm=>{
       if(!pend.mencionados.find(x=>x.id===mm.id)) pend.mencionados.push({id:mm.id,name:mm.name});
-      try{ addNotificacao({ id:'n'+Date.now()+Math.floor(Math.random()*1000), tipo:'pendencia', titulo:'💬 Você foi marcado num comentário de pendência', sub:`${o?`Pedido ${escapeHtml(o.num)} — ${escapeHtml(o.cliente)}`:''} · ${currentUser.name}: "${txt.slice(0,60)}${txt.length>60?'...':''}"`, eventoId:pend.id, pendKey:getPendKey(pendCtx.orderId,pendCtx.setor), ts:Date.now(), lida:false, paraUserId:mm.id }); }catch(_){}
+      try{ addNotificacao({ id:'n'+Date.now()+Math.floor(Math.random()*1000), tipo:'pendencia', titulo:'💬 Você foi marcado num comentário de pendência', sub:`${o?`Pedido ${o.num} — ${o.cliente}`:''} · ${currentUser.name}: "${txt.slice(0,60)}${txt.length>60?'...':''}"`, eventoId:pend.id, pendKey:getPendKey(pendCtx.orderId,pendCtx.setor), ts:Date.now(), lida:false, paraUserId:mm.id }); }catch(_){}
     });
   }
   _pendCommentMentions=[];
@@ -11478,7 +11613,7 @@ function checkCreditAlerts(){
       // v113 — id ESTÁVEL por cliente + dedup contra as existentes (não usa mais sessionStorage, que zerava no F5 e re-criava)
       const alertId=`alert6m_${c.id}`;
       if(!notificacoes.some(n=>n.id===alertId)){
-        addNotificacao({id:alertId,tipo:'credito',titulo:`⚠ Crédito parado há ${meses} meses — ${escapeHtml(c.nome)}`,sub:`Saldo: R$ ${saldo.toLocaleString('pt-BR',{minimumFractionDigits:2})} · Última movimentação: ${fmtDate(ultima)}`,eventoId:null,pendKey:null,ts:Date.now(),lida:false});
+        addNotificacao({id:alertId,tipo:'credito',titulo:`⚠ Crédito parado há ${meses} meses — ${c.nome}`,sub:`Saldo: R$ ${saldo.toLocaleString('pt-BR',{minimumFractionDigits:2})} · Última movimentação: ${fmtDate(ultima)}`,eventoId:null,pendKey:null,ts:Date.now(),lida:false}); // v263 (B3) — escape no render
       }
     }
   });
@@ -12468,8 +12603,8 @@ function deleteInsumo(id){
 // ═══════════ v187 — GRUPOS DE EMBALAGEM (pedido do dono 04/08) ═══════════
 // Problema: a MESMA embalagem vem completa na NF de um fornecedor e DESMEMBRADA (tampa+frasco+cânula,
 // cada um com valor) na de outro. O grupo vincula os componentes à embalagem completa: a entrada no
-// estoque é 1 embalagem, e o custo da embalagem é a SOMA dos componentes (cascata custo base > última
-// compra > médio de cada componente, via _cnCustoUnit).
+// estoque é 1 embalagem, e o custo da embalagem é a SOMA dos componentes (cascata v258: ÚLTIMA COMPRA >
+// custo base > histórico de cada componente, via _cnCustoUnit). // v263 — comentário corrigido à ordem real
 var _geEditId=null, _geComps=[];
 function _geEmbs(){ return (insumos||[]).filter(function(x){ return x && x.tipo==='embalagem' && x.ativo!==false; }); }
 function _geLabel(x){ return (x.codigo?x.codigo+' — ':'')+(x.nome||''); }
@@ -12671,8 +12806,8 @@ function _cnCustoUnit(x){
   if(x && x.custoUltimo>0) return {v:x.custoUltimo, fonte:'último'};
   if(x && x.custoBase!=null && x.custoBase>0) return {v:x.custoBase, fonte:'base'};
   var c=_custosItem(x&&x.id, x&&x.codigo);
-  if(c&&c.ultimo>0) return {v:c.ultimo, fonte:'último'};
-  if(c&&c.medio>0) return {v:c.medio, fonte:'médio'};
+  if(c&&c.ultimo>0) return {v:c.ultimo, fonte:c.deCotacao?'cotação':'último'}; // v263 (D4) — cotação não se apresenta como compra
+  if(c&&c.medio>0) return {v:c.medio, fonte:c.deCotacao?'cotação (média)':'médio'};
   return {v:0, fonte:'—'};
 }
 // custo por GRAMA do insumo (converte a unidade de compra; volume→massa pela densidade; sem densidade=1)
@@ -12680,7 +12815,11 @@ function _cnCustoPorG(x){
   var u=String((x&&x.unidade)||'UN').toLowerCase(), c=_cnCustoUnit(x), d=(x&&x.densidade>0)?x.densidade:1;
   var gPorUn = u==='g'?1 : u==='kg'?1000 : u==='mg'?0.001 : (u==='ml')?d : (u==='l')?1000*d : null;
   if(gPorUn===null) return null; // comprado por UN — não dá p/ custear por grama
-  return {porG:(gPorUn>0?c.v/gPorUn:0), fonte:c.fonte};
+  // v263 (C12, revisão 09/11): insumo pesável SEM custo entrava como custo 0 SILENCIOSO (objeto truthy,
+  // aviso vazio) — o vigia fingia margem verde e o personalizado saía subprecificado. Sem custo = null,
+  // igual ao caminho do comprado por UN: os chamadores emitem "sem custo/g" e o sugerido fica inválido.
+  if(!(c.v>0)) return null;
+  return {porG:c.v/gPorUn, fonte:c.fonte};
 }
 // dose → gramas (mcg/mg/g/UI; UI exige fatorUI do insumo = mg por UI)
 function _cnDoseG(dose, un, x){
@@ -12751,7 +12890,7 @@ function _cnCalcular(f, opts){
       var conc=(cp._x.concentracao>0?cp._x.concentracao:100);
       var pesada=teor/(conc/100); somaPes+=pesada;
       var g=pesada*(1+perdas/100), cpg=_cnCustoPorG(cp._x);
-      if(!cpg){ avisos.push('"'+cp._x.nome+'" é comprado por UN — não dá para custear por grama'); addLinha(cp._x.nome, g, 'g', 0, _cnMarkupInsumo(cp._x), '?', 'sem custo/g'); }
+      if(!cpg){ var _uCp=String(cp._x.unidade||'UN').toLowerCase(); avisos.push('"'+cp._x.nome+'" '+((['g','kg','mg','ml','l'].indexOf(_uCp)>=0)?'está SEM CUSTO cadastrado — o cálculo ficou incompleto':'é comprado por UN — não dá para custear por grama')); addLinha(cp._x.nome, g, 'g', 0, _cnMarkupInsumo(cp._x), '?', 'sem custo/g'); } // v263 (C12) — mensagem distingue sem-custo de comprado-por-UN
       else addLinha(cp._x.nome, g, 'g', g*cpg.porG, _cnMarkupInsumo(cp._x), cpg.fonte);
     });
     if(excip){
@@ -13229,6 +13368,11 @@ function _cnCfgSetCat(i,campo,val){
     }
   } else { c.categorias[i][campo]=parseFloat(val)||0; }
   _cnCfg=c;
+  // v263 (C13, revisão 09/11): o rename propagava nas FÓRMULAS e salvava o blob NA HORA, mas a config
+  // renomeada só persistia no botão "Salvar configuração" — fechar sem clicar deixava TODAS as fórmulas
+  // apontando um nome que a Configuração não tem (perdas/custo fixo sumiam do cálculo em silêncio).
+  // A config agora persiste junto da propagação (invariante v260: categorias produto × Configuração).
+  if(campo==='nome'){ try{ _cnCfgSalvar(); }catch(_e){} }
 }
 function _cnCfgAddCat(){ var c=_cnCfgGet(); c.categorias.push({nome:'',perdas:0,custoFixo:0,markupFixo:0}); _cnCfg=c; renderCnConfig(); }
 function _cnCfgRemCat(i){
@@ -16173,7 +16317,7 @@ function _healComercialPI(){
       var prev=o.statuses.comercial;
       o.statuses.comercial='Não iniciado';
       o.statusDates=o.statusDates||{};
-      o.statusDates.comercial={ts:Date.now(), by:'Sistema (derivação lógica)', from:prev, to:'Não iniciado'};
+      o.statusDates.comercial={ts:Date.now(), by:'Sistema (derivação lógica)', from:prev, to:'Não iniciado', regressao:true}; // v263 (C6) — regressão automática NUNCA ganha ✓ (o fallback do statusDates nos ✓ do modal só exclui regressao:true; recorrência do caso 103718 por esta via)
       try{ addAudit(o,'comercial','status',prev,'Não iniciado (retorno automático — carimbo "Produtos informados" sem nenhum produto no pedido)'); }catch(_e){} // v248 — redação na convenção v233 ("retorno automático"): regressão nunca ganha ✓
       mudou++;
     });
@@ -16189,6 +16333,26 @@ function _healComprasRecebFisico(){
     if(!currentUser || !(pedidosCompra||[]).length) return;
     if(Date.now()-_healRecFisUlt<300000) return; // no máx. 1 varredura/5min por sessão
     _healRecFisUlt=Date.now();
+    // v263 (caso 103573, diagnóstico 09/11): RECONSTRÓI o carimbo POR ITEM a partir de pc.recebFisico —
+    // a fonte da verdade que sobrevive. Um clobber na linha da LISTA comeu os carimbos recebFisicoEm dos
+    // 7 itens do PC-174 e o pedido nunca selava 'Produto entregue' (o healer reavaliava, mas lia só o
+    // carimbo por item perdido). Self-heal no padrão das lições anti-clobber: item comprado DESTE PC,
+    // sem carimbo e sem estado final, ganha de volta em/por/qtd do recebimento registrado no PC.
+    var _rec=0;
+    (pedidosCompra||[]).forEach(function(pc){
+      if(!pc || !pc.recebFisico || !Array.isArray(pc.recebFisico.itens)) return;
+      pc.recebFisico.itens.forEach(function(ri){
+        if(!ri || !(parseFloat(ri.qtd)>0)) return;
+        var l=(listasCompra||[]).find(function(x){ return x && x.id===ri.listaId; });
+        var it=l?_lcItemByRef(l, ri.ref):null;
+        var c=it&&it.compra; if(!c) return;
+        if(String(c.pedidoCompraId||'')!==String(pc.id)) return; // o carimbo pertence a ESTE PC
+        if(c.recebFisicoEm!=null || c.recebido || c.naoComprado) return; // já carimbado / estado final
+        c.recebFisicoQtd=parseFloat(ri.qtd)||0; c.recebFisicoEm=pc.recebFisico.em||Date.now(); c.recebFisicoPor=pc.recebFisico.por||'';
+        _rec++;
+      });
+    });
+    if(_rec){ console.log('[v263] heal receb-físico: '+_rec+' carimbo(s) por item reconstruído(s) do PC (anti-clobber)'); try{ saveData(); }catch(_e){} }
     var oids={};
     (pedidosCompra||[]).forEach(function(pc){
       if(!pc || !pc.recebFisico) return;
@@ -19942,6 +20106,17 @@ function updateParcBoleto(i,val){ if(_tempParcelas[i]) _tempParcelas[i].boleto=v
 function updateParcForma(i,val){ if(_tempParcelas[i]) _tempParcelas[i].forma=val; } // v124
 
 function saveCompra(){
+  // v263 (C2, revisão 09/11) — compra com a conta a pagar espelho JÁ APROVADA no Caixa (ou com parcela
+  // baixada) fica TRAVADA: editar aqui re-espelhava valor/parcelas numa conta que o Caixa já conferiu
+  // (bypass do bloqueio) e o merge por posição podia transferir a baixa p/ a parcela errada. Mesmo
+  // contrato do deleteCompra: estorne no Financeiro antes de editar.
+  if(editingCompraId){
+    const _cpT=(contasPagar||[]).find(p=>p&&p.origem==='compra'&&String(p.origemId)===String(editingCompraId));
+    if(_cpT && (_cpT.statusCaixa==='aprovada' || (_cpT.parcelas||[]).some(p=>p&&(p.pago||p.baixa)))){ // rejeitada continua editável (fluxo de re-solicitação)
+      alert('🔒 Esta compra tem a conta a pagar '+((_cpT.parcelas||[]).some(p=>p&&(p.pago||p.baixa))?'com parcela BAIXADA':'já APROVADA no Caixa')+'.\n\nPara alterar, estorne/reabra no Financeiro primeiro. Nada foi salvo.');
+      return;
+    }
+  }
   if(!selectedCompraFornecId){alert('Selecione um fornecedor.');return;}
   const planoId=document.getElementById('compra-plano').value;
   if(!planoId){alert('Selecione o plano de contas.');return;}
@@ -20211,10 +20386,10 @@ function openExpedicaoModal(id){
         <div class="form-group"><label>Data da expedição *</label><input type="date" id="ex-data" value="${e?e.data:today()}"></div>
         <div class="form-group"><label>Pedido vinculado</label>
           <div class="autocomplete-wrap">
-            <input type="text" id="ex-pedido-search" placeholder="Nº do pedido (opcional)" value="${e?e.pedidoNum||'':''}" oninput="searchExpPedido()" autocomplete="off">
+            <input type="text" id="ex-pedido-search" placeholder="Nº do pedido (opcional)" value="${escapeHtml(e?e.pedidoNum||'':'')}" oninput="searchExpPedido()" autocomplete="off">
             <div class="autocomplete-list" id="ex-pedido-ac"></div>
           </div>
-          <div id="ex-pedido-info" style="display:${e&&e.pedidoNum?'block':'none'};font-size:11px;color:var(--st-ok-tx);margin-top:3px;padding:3px 8px;background:var(--st-ok-bg);border-radius:var(--r-md)">${e&&e.pedidoNum?'✓ '+e.pedidoNum+' — '+(orders.find(o=>o.id===e.pedidoId)?.cliente||''):''}</div>
+          <div id="ex-pedido-info" style="display:${e&&e.pedidoNum?'block':'none'};font-size:11px;color:var(--st-ok-tx);margin-top:3px;padding:3px 8px;background:var(--st-ok-bg);border-radius:var(--r-md)">${e&&e.pedidoNum?escapeHtml('✓ '+e.pedidoNum+' — '+(orders.find(o=>o.id===e.pedidoId)?.cliente||'')):''}</div>
         </div>
       </div>
       <div class="form-row">
@@ -20899,8 +21074,14 @@ function sincronizarContasReceberDePedidos(orderId){
     }
     // Guarda as contas antigas do ALVO p/ preservar baixa/plano/data; remove as de TODAS as partes do par
     const antigas=contasReceber.filter(cr=>cr.origem==='pedido'&&String(cr.origemId)===String(_alvo.id));
+    // v263 (C3, revisão 09/11): a remoção vinha ANTES da checagem de blocos — pedido que perdesse/zerasse
+    // pgtosBlocos (clobber do blob/legado) tinha as contas (BAIXAS inclusive) apagadas no login de qualquer
+    // um. Sem blocos e COM contas existentes: PRESERVA e loga; o front não pode depender do trigger do banco.
+    if(!_blocos.length){
+      if(antigas.length) console.warn('sync contas a receber: pedido '+(_alvo.num||_alvo.id)+' sem pgtosBlocos — '+antigas.length+' conta(s) PRESERVADA(S) (nada removido).');
+      return;
+    }
     _partes.forEach(x=>{ contasReceber=contasReceber.filter(cr=>!(cr.origem==='pedido'&&String(cr.origemId)===String(x.id))); });
-    if(!_blocos.length) return;
     const c=_alvo.clienteId?clients.find(x=>x.id===_alvo.clienteId):null;
     const clienteNome=c?c.nome:_alvo.cliente;
     // statusCaixa derivado da aprovação do pedido no Caixa (reprovado NÃO entra no Financeiro)
@@ -21153,23 +21334,9 @@ function saveContaPagarManual(){
   closeContaPagarModal(); renderFinAPagar(); renderFinPainel(); try{renderCaixa&&renderCaixa();}catch(_){} try{typeof renderCompras==='function'&&renderCompras();}catch(_){} saveData();
 }
 
-function toggleParcPaga(contaId, tipo, parcIdx){
-  const lista = tipo==='pagar' ? contasPagar : contasReceber;
-  const c = lista.find(x=>x.id===contaId); if(!c) return;
-  const _p=c.parcelas[parcIdx];
-  _p.pago = !_p.pago;
-  if(_p.pago){ if(!_p.baixa) _p.baixa={ data:today(), por:(currentUser&&currentUser.name)||'—', ts:Date.now(), via:'marcacao' }; } // v110 — registra a data do recebimento/pagamento
-  else { delete _p.baixa; }
-  // Sincronizar de volta para compras se origem=compra
-  if(tipo==='pagar'&&c.origem==='compra'){
-    const comp = compras.find(x=>x.id===c.origemId);
-    if(comp&&comp.parcelas) comp.parcelas[parcIdx].pago = c.parcelas[parcIdx].pago;
-  }
-  if(tipo==='pagar') renderFinAPagar();
-  else renderFinAReceber();
-  renderFinPainel();
-  saveData();
-}
+// v263 (D11, revisão 09/11) — toggleParcPaga REMOVIDA: código morto (zero chamadores) que despagava
+// parcela SEM carimbo de estorno e SEM restrição de perfil — porta pronta para violar o invariante 5
+// se fosse religada. Baixa/estorno oficiais: confirmarBaixa / estornarBaixa (admin + carimbo).
 
 // Modal conta a receber manual — v139: recebimento no padrão dos BLOCOS (multi-forma, parcelas, boleto/NSU no lugar certo)
 var _crmanBlocos=[];
@@ -22299,7 +22466,7 @@ function renderFinAlertas(){
     const cor=a.sev==='danger'?'var(--st-bad-tx)':'#BA7517'; const bg=a.sev==='danger'?'var(--st-bad-bg)':'#FFF6E5';
     return `<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;margin-bottom:8px;border-radius:var(--r-md);background:${bg};border-left:3px solid ${cor}">
       <span style="font-size:16px">${a.sev==='danger'?'🔴':'🟠'}</span>
-      <div><div style="font-size:13px;font-weight:600;color:${cor}">${a.titulo}</div>
+      <div><div style="font-size:13px;font-weight:600;color:${cor}">${escapeHtml(a.titulo)}</div>
       <div style="font-size:12px;color:var(--text-secondary);margin-top:2px">${a.detalhe}</div></div>
     </div>`;
   }).join('')+'</div>';
@@ -23457,7 +23624,7 @@ function renderClients(){
     const _eqNomeCli=(function(){ const ids=[...new Set([c.carteiraLinha,c.carteiraAnest].filter(Boolean))]; return ids.map(id=>(typeof isSDREquipe==='function'&&isSDREquipe(id))?'🔷 SDR':(getEquipeNome(id)||'')).filter(Boolean).join(' · '); })();
     const favBadge=c.favorito?'<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#FAEEDA;color:#633806;border:.5px solid #EF9F27;font-weight:500;margin-left:6px">⭐ Favorito</span>':'';
     const incBadge=c.cadastroIncompleto?'<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:var(--st-mid-bg);color:var(--st-mid-tx);border:.5px solid var(--st-mid-bd);font-weight:500;margin-left:6px">⚠ Incompleto</span>':'';
-    return`<div class="card" style="${c.favorito?'border-color:rgba(186,117,23,.4)':''}"><div class="card-top"><div class="avatar" style="background:${col}22;color:${col}">${initials(c.nome)}</div><div><div class="card-name">${escapeHtml(c.nome)}${favBadge}${incBadge}</div><div class="card-sub">${c.doc||'Sem documento'}</div></div></div>${c.email?`<div class="info-row"><span class="info-label">E-mail</span><span>${escapeHtml(c.email)}</span></div>`:''} ${c.tel1?`<div class="info-row"><span class="info-label">Telefone</span><span>${c.tel1}</span></div>`:''} ${_eqNomeCli?`<div class="info-row"><span class="info-label">Equipe</span><span>${escapeHtml(_eqNomeCli)}</span></div>`:''} ${c.finContato?`<div class="info-row"><span class="info-label">Financeiro</span><span>${c.finContato}</span></div>`:''} ${addr?`<div class="info-row"><span class="info-label">Endereço</span><span>${addr}</span></div>`:''} ${c.conselhoTipo||c.conselhoNum?`<div class="info-row"><span class="info-label">Conselho</span><span>${[c.conselhoTipo,c.conselhoNum].filter(Boolean).join(' ')}</span></div>`:''}<div style="margin:8px 0 4px">
+    return`<div class="card" style="${c.favorito?'border-color:rgba(186,117,23,.4)':''}"><div class="card-top"><div class="avatar" style="background:${col}22;color:${col}">${initials(c.nome)}</div><div><div class="card-name">${escapeHtml(c.nome)}${favBadge}${incBadge}</div><div class="card-sub">${c.doc||'Sem documento'}</div></div></div>${c.email?`<div class="info-row"><span class="info-label">E-mail</span><span>${escapeHtml(c.email)}</span></div>`:''} ${c.tel1?`<div class="info-row"><span class="info-label">Telefone</span><span>${c.tel1}</span></div>`:''} ${_eqNomeCli?`<div class="info-row"><span class="info-label">Equipe</span><span>${escapeHtml(_eqNomeCli)}</span></div>`:''} ${c.finContato?`<div class="info-row"><span class="info-label">Financeiro</span><span>${escapeHtml(c.finContato)}</span></div>`:''} ${addr?`<div class="info-row"><span class="info-label">Endereço</span><span>${escapeHtml(addr)}</span></div>`:''} ${c.conselhoTipo||c.conselhoNum?`<div class="info-row"><span class="info-label">Conselho</span><span>${escapeHtml([c.conselhoTipo,c.conselhoNum].filter(Boolean).join(' '))}</span></div>`:''}<div style="margin:8px 0 4px">
       ${(()=>{const sit=getClienteSituacao(c);const ss=CLI_SITUACAO[sit]||CLI_SITUACAO.inativo;return`<span style="font-size:11px;padding:2px 9px;border-radius:20px;background:${ss.bg};color:${ss.color};font-weight:500">${ss.label}${c.situacaoOverride?.sit?' 🔒':''}</span>`})()}
     </div>
     <div class="card-actions">
@@ -24787,6 +24954,9 @@ function openPgtoViewModal(oid){
 }
 
 function savePgtoModal(){
+  // v263 (C1, revisão 09/11) — TOCTOU: a trava do Caixa era conferida só na ABERTURA do modal; outra tela
+  // pode aprovar o pedido no meio. Re-confere no salvar.
+  { const _oT=(pgtoContextOid!=null)?orders.find(x=>String(x.id)===String(pgtoContextOid)):null; if(_oT && _oT.caixaFinalizado && !_oT.caixaReprovado){ alert('🔒 Este pedido foi APROVADO no Caixa enquanto o editor estava aberto.\n\nPagamento pós-Caixa só muda por estorno (Finalizados). Nada foi salvo.'); try{ document.getElementById('pgto-overlay').classList.remove('open'); }catch(_e){} return; } }
   // pgtoBlocos é mantido em sincronia pelo editor _pe (mutação in-place) — usa o estado direto, sem raspar o DOM
   const blocos = pgtoBlocos.map(b=>({
     forma: b.forma,
@@ -27330,8 +27500,9 @@ function _applyStatusChange(){
       if(_sdPrev.executorId!==undefined){ _sdNovo.executorId=_sdPrev.executorId; _sdNovo.executorNome=_sdPrev.executorNome; }
       if(_sdPrev.marcos) _sdNovo.marcos=_sdPrev.marcos;
       o.statusDates[statusCtx.setor]=_sdNovo; }
-    if(selectedStatus==='Enviado'||selectedStatus==='Entregue')
-      o.envioReal=new Date().toISOString().split('T')[0];
+    // v263 (C5): carimbo é PROVA — não sobrescreve envioReal existente; data LOCAL (today v148), não UTC.
+    if((selectedStatus==='Enviado'||selectedStatus==='Entregue')&&!o.envioReal)
+      o.envioReal=today();
   }
   closeStatusModal(); refreshAll(); saveData();
 }
@@ -27794,7 +27965,7 @@ function renderInconsistencias(){
 async function _incConvHistLoad(){
   const box=document.getElementById('inc-conv-hist'); if(!box||!_sb) return;
   try{
-    const { data } = await _sb.from('wa_hist_importados').select('file_id,titulo,detalhe,telefone').eq('resultado','inconsistente').order('titulo');
+    const { data } = await _sb.from('wa_hist_importados').select('file_id,titulo,detalhe,telefone').eq('resultado','inconsistente').order('titulo').range(0,999); // v263 (D9) — lição do limite 1000: corte explícito, não silencioso
     const rows=data||[];
     if(!rows.length){ box.innerHTML='<div class="panel" style="font-size:14px">✅ Nenhum histórico de conversa aguardando cadastro.</div>'; return; }
     const esc=s=>(''+(s==null?'':s)).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
@@ -27846,7 +28017,7 @@ async function renderImportacoes(){
   // (o robô atualiza o status para 'inserido' quando o pedido finalmente entra).
   let pendAb=[];
   try{
-    const { data:pd } = await _sb.from('import_processados').select('file_id,file_name,num,motivo,criado_em').eq('status','pendencia').order('criado_em',{ascending:true});
+    const { data:pd } = await _sb.from('import_processados').select('file_id,file_name,num,motivo,criado_em').eq('status','pendencia').order('criado_em',{ascending:false}).range(0,999); // v263 (D9) — mais novas primeiro (o corte do PostgREST em 1000 descartava justamente as recentes)
     pendAb=pd||[];
   }catch(_e){}
   let html='<div class="panel" style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">';
@@ -29907,7 +30078,7 @@ function renderFrRows(){
             style="width:100%;font-size:13px;padding:6px 10px">
           <div class="autocomplete-list" id="fr-row-ped-ac-${i}"></div>
         </div>
-        <div id="fr-row-ped-hint-${i}" style="font-size:11px;color:var(--st-ok-tx);margin-top:2px">${row.pedidoId?(orders.find(o=>String(o.id)===String(row.pedidoId))?.cliente||''):''}</div>
+        <div id="fr-row-ped-hint-${i}" style="font-size:11px;color:var(--st-ok-tx);margin-top:2px">${row.pedidoId?escapeHtml(orders.find(o=>String(o.id)===String(row.pedidoId))?.cliente||''):''}</div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -31487,12 +31658,15 @@ async function _fichaEnviar(){
     var link='https://app.lecaremanipulados.com.br/ficha.html?t='+tok; // v216 — domínio próprio (CNAME→Pages)
     var txt='Para agilizar seu cadastro, preencha esta ficha rápida (leva 2 minutos): '+link;
     // envio pelo caminho CANÔNICO da conversa aberta: guard de dono no servidor, auto-assumir, Z-API e saveData
-    var cont=document.getElementById('conv-tela'); var inp=cont?cont.querySelector('.conv-input-field'):null;
+    // v263 (B1, verificação 09/11): o container é o que MOSTRA ESTA conversa (modal do card vence) —
+    // o 'conv-tela' fixo mandava a ficha para a conversa do PAINEL quando o modal estava aberto por cima.
+    var _cidF=(_convIdPorContainer['conv-modal-tela']===conv.id)?'conv-modal-tela':((_convIdPorContainer['conv-tela']===conv.id)?'conv-tela':null);
+    var cont=_cidF?document.getElementById(_cidF):null; var inp=cont?cont.querySelector('.conv-input-field'):null;
     if(!inp){ alert('Abra a conversa deste cliente para enviar a ficha.'); if(btn){ btn.disabled=false; btn.textContent='📨 Enviar ficha para o cliente'; } return; }
     var rascunho=inp.value; inp.value=txt;
     window._convEnviandoTrava=false; // o clique veio do modal, não do botão de enviar da conversa
-    await enviarMensagemConversa('conv-tela');
-    var c2=document.getElementById('conv-tela'); var inp2=c2?c2.querySelector('.conv-input-field'):null;
+    await enviarMensagemConversa(_cidF);
+    var c2=document.getElementById(_cidF); var inp2=c2?c2.querySelector('.conv-input-field'):null;
     if(inp2 && rascunho && !inp2.value.trim()){ inp2.value=rascunho; try{ _convDrafts[conv.id]=rascunho; }catch(_e){} } // devolve o rascunho que estava digitado
     document.getElementById('ficha-overlay')?.classList.remove('open');
   }catch(e){ alert('Erro ao enviar a ficha: '+((e&&e.message)||e)); }
@@ -32970,7 +33144,7 @@ function openCliPerfil(clienteId){
         <div style="font-size:12px;display:grid;gap:4px">
           ${c.favorito?`<div style="color:#BA7517;font-weight:600">⭐ Cliente favorito</div>`:''}
           ${c.tipoPessoa?`<div><span style="color:var(--text-tertiary)">Tipo:</span> ${_ehIntermediario(c)?'🏢 Intermediário':(c.tipoPessoa==='pf'?'Pessoa Física':'Pessoa Jurídica')}</div>`:''}
-          ${(c.pessoasVinculadas&&c.pessoasVinculadas.length)?`<div><span style="color:var(--text-tertiary)">Vinculados:</span> ${c.pessoasVinculadas.map(v=>escapeHtml((v.tipoPessoa==='pf'?'PF ':'PJ ')+v.nome)).join(' · ')}</div>`:''}
+          ${(c.pessoasVinculadas&&c.pessoasVinculadas.length)?`<div><span style="color:var(--text-tertiary)">Vinculados:</span> ${c.pessoasVinculadas.map(v=>(v.padraoNF?'🧾 ':'')+escapeHtml((v.tipoPessoa==='pf'?'PF ':'PJ ')+v.nome)+(v.padraoNF?' <span style="font-size:10px;font-weight:700;color:var(--text-info)" title="Padrão para emissão de nota / dados do sistema">(padrão NF)</span>':'')).join(' · ')}</div>`:''}
           ${(_ehIntermediario(c)&&c.atendidosIds&&c.atendidosIds.length)?`<div><span style="color:var(--text-tertiary)">Atende:</span> ${c.atendidosIds.map(id=>{const x=(clients||[]).find(y=>y.id===id);return x?escapeHtml(x.nome):'';}).filter(Boolean).join(' · ')}</div>`:''}
           ${c.doc?`<div><span style="color:var(--text-tertiary)">CNPJ/CPF:</span> ${escapeHtml(c.doc)}</div>`:''}
           ${c.rtNome?`<div><span style="color:var(--text-tertiary)">Resp. Técnico:</span> ${escapeHtml(c.rtNome)}${(c.conselhoTipo||c.conselhoNum)?' ('+escapeHtml(c.conselhoTipo||'')+' '+escapeHtml(c.conselhoNum||'')+')':''}</div>`:(c.conselhoTipo||c.conselhoNum)?`<div><span style="color:var(--text-tertiary)">Conselho:</span> ${escapeHtml(c.conselhoTipo||'')} ${escapeHtml(c.conselhoNum||'')}</div>`:''}
@@ -33892,6 +34066,9 @@ async function _aprovarCaixaPar(pedidos){
 }
 async function aprovarCaixa(orderId){
   const o=orders.find(x=>String(x.id)===String(orderId)); if(!o) return;
+  // v263 (D5, revisão 09/11) — idempotência multiusuário: tela defasada de outra aba podia re-aprovar
+  // o mesmo pedido (histórico/confirm duplicados). Já finalizado e não-reprovado = no-op com aviso.
+  if(o.caixaFinalizado && !o.caixaReprovado){ alert('Este pedido já foi aprovado no Caixa (por '+(o.caixaAprovadoPor||'outra tela')+').'); try{ renderCaixaAbertos(); }catch(_e){} return; }
   // v111 — pedido dividido (anestésico/linha): aprova os DOIS juntos numa confirmação só
   { const _sib=_splitSibling(o); if(_sib && typeof _pedidoAguardaCaixa==='function' && _pedidoAguardaCaixa(_sib) && _geraCaixa(o.tipo)) return _aprovarCaixaPar(_splitPar(o).filter(x=>_pedidoAguardaCaixa(x))); }
   // v105 — Venda Filho: aprovar = ABATER o crédito do cliente (sem conta a receber, sem plano de contas).
@@ -33959,7 +34136,7 @@ async function aprovarCaixa(orderId){
   o.historico.push({ts:Date.now(),por:currentUser?.name||'—',acao:`✅ Caixa aprovado por ${currentUser?.name}.`});
   // v112 — crédito da venda mãe entra AGORA (após o Caixa). Notificação movida da criação p/ cá.
   if((o.tipo||'venda')==='venda_mae'){
-    addNotificacao({id:'n'+Date.now(),tipo:'credito',titulo:`💰 Crédito gerado — ${escapeHtml(o.cliente)}`,sub:`R$ ${(parseFloat(o.valor)||0).toLocaleString('pt-BR',{minimumFractionDigits:2})} — Pedido ${escapeHtml(o.num)} (aprovado no Caixa)`,eventoId:null,ts:Date.now(),lida:false});
+    addNotificacao({id:'n'+Date.now(),tipo:'credito',titulo:`💰 Crédito gerado — ${o.cliente}`,sub:`R$ ${(parseFloat(o.valor)||0).toLocaleString('pt-BR',{minimumFractionDigits:2})} — Pedido ${o.num} (aprovado no Caixa)`,eventoId:null,ts:Date.now(),lida:false}); // v263 (B3) — escape no render
   }
 
   // v89 — libera as contas a receber deste pedido para o Financeiro (statusCaixa: pendente → aprovada)
@@ -33976,6 +34153,8 @@ async function aprovarCaixa(orderId){
 // ── Reprovar Caixa ────────────────────────────────────────
 function reprovarCaixa(orderId){
   const o=orders.find(x=>String(x.id)===String(orderId)); if(!o) return;
+  // v263 (D5) — idempotência: pedido já decidido no Caixa não se reprova de novo por tela defasada.
+  if(o.caixaFinalizado){ alert(o.caixaReprovado?'Este pedido já foi reprovado no Caixa.':'Este pedido já foi APROVADO no Caixa — para reverter, use o estorno (Finalizados).'); try{ renderCaixaAbertos(); }catch(_e){} return; }
   const motivo=prompt(`Motivo da reprovação do pedido ${o.num}:`);
   if(motivo===null) return;
 
@@ -34568,6 +34747,10 @@ function _cxTipoChange(novoTipo){
 }
 function _cxSalvar(){
   const o=orders.find(x=>String(x.id)===String(_cxOrderId)); if(!o) return;
+  // v263 (C1, revisão 09/11) — TOCTOU: o modal foi aberto com o pedido pendente, mas outra tela pode tê-lo
+  // APROVADO no meio (push ~1s). Re-confere a trava do Caixa no SALVAR (como o saveOrder faz) — pagamento
+  // pós-Caixa só muda por estorno.
+  if(o.caixaFinalizado && !o.caixaReprovado){ alert('🔒 Este pedido foi APROVADO no Caixa enquanto o editor estava aberto.\n\nPagamento pós-Caixa só muda por estorno (Finalizados). Nada foi salvo.'); try{ document.getElementById('cxpgto-overlay').classList.remove('open'); renderCaixaAbertos(); }catch(_e){} return; }
   // v138 — PAR DIVIDIDO: valida contra o TOTAL combinado e RATEIA os blocos entre as partes
   // (proporção do valor+frete de cada uma; arredondamento fecha na última parte — a soma bate exata).
   if(_cxParIds && _cxParIds.length>1){
@@ -35090,36 +35273,37 @@ try{
 // Admin master já declarado acima como 'admin' — substituir nome
 users[0].name='Murilo Verri';
 users[0].login='murilo';
-users[0].senha='123456';
+// v263 (revisão 09/11) — campo 'senha' dos seeds REMOVIDO: morto desde a v236 (login real = Supabase Auth);
+// só expunha a lista de logins com senhas-texto no fonte. O login limpa 'senha' residual do blob (7407).
 
 users.push(
   // ── Comercial ──────────────────────────────────────────────────
   // Tairine: Diretora Comercial + Coordenadora da Equipe 1
-  {id:'dc1',name:'Tairine Freitas',login:'tairine',senha:'123456',perfil:'diretor_comercial',setores:SETOR_KEYS.slice(),coordenadorId:null,verEquipe:true},
-  {id:'cc1',name:'Tairine Freitas',login:'tairine_coord',senha:'123456',perfil:'coordenador_comercial',setores:SETOR_KEYS.slice(),coordenadorId:null,verEquipe:true},
-  {id:'at1',name:'Sabrina',        login:'sabrina',       senha:'123456',perfil:'atendente',setores:SETOR_KEYS.slice(),coordenadorId:'cc1',verEquipe:false},
-  {id:'at2',name:'Karla',          login:'karla',         senha:'123456',perfil:'atendente',setores:SETOR_KEYS.slice(),coordenadorId:'cc1',verEquipe:false},
+  {id:'dc1',name:'Tairine Freitas',login:'tairine',perfil:'diretor_comercial',setores:SETOR_KEYS.slice(),coordenadorId:null,verEquipe:true},
+  {id:'cc1',name:'Tairine Freitas',login:'tairine_coord',perfil:'coordenador_comercial',setores:SETOR_KEYS.slice(),coordenadorId:null,verEquipe:true},
+  {id:'at1',name:'Sabrina',        login:'sabrina',       perfil:'atendente',setores:SETOR_KEYS.slice(),coordenadorId:'cc1',verEquipe:false},
+  {id:'at2',name:'Karla',          login:'karla',         perfil:'atendente',setores:SETOR_KEYS.slice(),coordenadorId:'cc1',verEquipe:false},
   // Emilayne: Coordenadora da Equipe 2
-  {id:'cc2',name:'Emilayne',       login:'emilayne',      senha:'123456',perfil:'coordenador_comercial',setores:SETOR_KEYS.slice(),coordenadorId:null,verEquipe:false},
+  {id:'cc2',name:'Emilayne',       login:'emilayne',      perfil:'coordenador_comercial',setores:SETOR_KEYS.slice(),coordenadorId:null,verEquipe:false},
   // ── Coordenadores de setor ──────────────────────────────────────
   // Eduardo: acesso a todos os setores EXCETO comercial
-  {id:'u_eduardo',name:'Eduardo Marioto',login:'eduardo',senha:'123456',perfil:'user',
+  {id:'u_eduardo',name:'Eduardo Marioto',login:'eduardo',perfil:'user',
    setores:['financeiro','estoque','compras','producao','designer','rotulos','expedicao'],
    coordSetores:['financeiro','estoque','compras','producao','designer','rotulos','expedicao']},
   // Rhuan: coordenador financeiro
-  {id:'u_rhuan',  name:'Rhuan',          login:'rhuan',   senha:'123456',perfil:'user',setores:['financeiro'],coordSetores:['financeiro']},
+  {id:'u_rhuan',  name:'Rhuan',          login:'rhuan',   perfil:'user',setores:['financeiro'],coordSetores:['financeiro']},
   // Everton: coordenador de expedição e rótulos
-  {id:'u_everton',name:'Everton',        login:'everton', senha:'123456',perfil:'user',setores:['expedicao','rotulos'],coordSetores:['expedicao','rotulos']},
+  {id:'u_everton',name:'Everton',        login:'everton', perfil:'user',setores:['expedicao','rotulos'],coordSetores:['expedicao','rotulos']},
   // Rafaela: coordenadora de designer
-  {id:'u_rafaela',name:'Rafaela',        login:'rafaela', senha:'123456',perfil:'user',setores:['designer'],coordSetores:['designer']},
+  {id:'u_rafaela',name:'Rafaela',        login:'rafaela', perfil:'user',setores:['designer'],coordSetores:['designer']},
   // Agnis: coordenadora de produção e estoque
-  {id:'u_agnis',  name:'Agnis Tavares',  login:'agnis',   senha:'123456',perfil:'user',setores:['producao','estoque'],coordSetores:['producao','estoque']},
+  {id:'u_agnis',  name:'Agnis Tavares',  login:'agnis',   perfil:'user',setores:['producao','estoque'],coordSetores:['producao','estoque']},
   // ── Usuários de setor ───────────────────────────────────────────
-  {id:'u_luiz',   name:'Luiz',           login:'luiz',    senha:'123456',perfil:'user',setores:['estoque'],   coordSetores:[]},
-  {id:'u_larissa',name:'Larissa',        login:'larissa', senha:'123456',perfil:'user',setores:['rotulos'],   coordSetores:[]},
-  {id:'u_simone', name:'Simone',         login:'simone',  senha:'123456',perfil:'user',setores:['expedicao'], coordSetores:[]},
-  {id:'u_kaiky',  name:'Kaiky',          login:'kaiky',   senha:'123456',perfil:'user',setores:['designer'],  coordSetores:[]},
-  {id:'u_michel', name:'Michel',         login:'michel',  senha:'123456',perfil:'user',setores:['designer'],  coordSetores:[]},
+  {id:'u_luiz',   name:'Luiz',           login:'luiz',    perfil:'user',setores:['estoque'],   coordSetores:[]},
+  {id:'u_larissa',name:'Larissa',        login:'larissa', perfil:'user',setores:['rotulos'],   coordSetores:[]},
+  {id:'u_simone', name:'Simone',         login:'simone',  perfil:'user',setores:['expedicao'], coordSetores:[]},
+  {id:'u_kaiky',  name:'Kaiky',          login:'kaiky',   perfil:'user',setores:['designer'],  coordSetores:[]},
+  {id:'u_michel', name:'Michel',         login:'michel',  perfil:'user',setores:['designer'],  coordSetores:[]},
 );
 clients.push(
   {id:'c1',nome:'Distribuidora Alpha Ltda',favorito:true,doc:'12.345.678/0001-90',email:'compras@alpha.com.br',tel1:'(11) 3333-4444',finContato:'João Financeiro',finEmail:'financeiro@alpha.com.br',finTel:'(11) 3333-4445',cep:'01310-100',uf:'SP',cidade:'São Paulo',bairro:'Bela Vista',rua:'Av. Paulista',numero:'1000',conselhoTipo:'CRF',conselhoNum:'CRF-SP 12345',obs:'',deliveryAddresses:[{label:'CD Principal',rua:'Rua das Indústrias',num:'200',bairro:'Lapa',cidade:'São Paulo / SP',cep:'05037-000'}]},
@@ -36178,17 +36362,31 @@ function _obAddItem(outro){
   var _qtdRef=caps?(parseInt((document.getElementById('ob-ncaps')||{}).value,10)||60):(parseFloat((document.getElementById('ob-qspv')||{}).value)||120);
   var _extraM=1+((parseFloat(f.margemExtra)||0)/100);
   var _pvU=parseFloat(f.precoVenda);
+  // v263 (B5, revisão 09/11): o preço fixo é POR UNIDADE DA FÓRMULA (f.qspUn); a volumetria do modal
+  // pode estar em OUTRA unidade (g↔mL). O CUSTO converte pela densidade do excipiente (motor; 1:1 sem
+  // densidade — decisão do dono), mas o preço fixo NÃO convertia: fórmula em g vendida em mL (d≠1)
+  // saía sub/sobre-cobrada. A quantidade usada no PREÇO agora é convertida p/ a unidade da fórmula.
+  var _qtdRefPreco=_qtdRef;
+  if(!caps){
+    var _unM=(opts.qspUn||'g'), _unF=(f.qspUn||'g');
+    if(_unM!==_unF){
+      var _excB5=(f.composicao||[]).filter(function(c){ return c.papel==='excipiente'; }).map(function(c){ return (insumos||[]).find(function(i){ return i.id===c.insumoId; }); }).filter(Boolean)[0];
+      var _dF=(_excB5&&_excB5.densidade>0)?_excB5.densidade:1;
+      if(_unF==='g' && _unM!=='g') _qtdRefPreco=_qtdRef*_dF;           // modal em mL → g
+      else if(_unF!=='g' && _unM==='g') _qtdRefPreco=_dF>0?(_qtdRef/_dF):_qtdRef; // modal em g → mL
+    }
+  }
   var _partePraticada; // parte do PRODUTO, já com a margem extra embutida
   if(_pvU>0 && personalizado){
     var _cOrig=_cnCalcular(f, {qspValor:opts.qspValor, qspUn:opts.qspUn, nCaps:opts.nCaps, capsTam:opts.capsTam, involucroId:opts.involucroId});
     if(_cOrig.custoProduto>0){
-      var _mkMed=(_pvU*_qtdRef*_extraM)/_cOrig.custoProduto; // markup médio praticado (extra incluso)
+      var _mkMed=(_pvU*_qtdRefPreco*_extraM)/_cOrig.custoProduto; // markup médio praticado (extra incluso) · v263 (B5): quantidade na unidade da fórmula
       _partePraticada=_mkMed*(calc.custoProduto||0);
     } else {
       _partePraticada=((calc.precoTotal||0)-(calc.embPreco||0))*_extraM; // custo original não fecha → sugerido
     }
   } else if(_pvU>0){
-    _partePraticada=_pvU*_qtdRef*_extraM;
+    _partePraticada=_pvU*_qtdRefPreco*_extraM; // v263 (B5): quantidade na unidade da fórmula
   } else {
     _partePraticada=((calc.precoTotal||0)-(calc.embPreco||0))*_extraM;
   }
@@ -36751,7 +36949,13 @@ function renderOrcamentosCrm(){
                : (tab==='perdido' ? `<td style="padding:8px 10px;font-size:11px">${dtMs(o.perdidoEm)}</td>` : '');
     const ehOpery = o.origem==='opery'; // v225 — importado da tela de vendas do Opery: só acompanhamento (sem editor/PDF; Vendido apenas marca)
     const btnAbrir = o.detalhado?`<button onclick="openOrcBuilder('${o.id}',true)" style="font-size:11px;padding:3px 8px" title="Ver o orçamento completo (somente leitura)">👁 Abrir</button> `:'';
-    const btnEditar = o.detalhado?`<button onclick="openOrcBuilder('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> `:(ehOpery?'':`<button onclick="abrirOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> `);
+    // v263 (D3, revisão 09/11): orçamento JÁ VENDIDO (virou pedido) não oferece Editar na lista — o editor
+    // já suprimia o botão (gate do pedidoNum), mas a lista deixava editar itens/total de um registro que
+    // deve espelhar o que foi vendido. Vendido = só 👁 Abrir (leitura) e PDF.
+    // (verificação 09/11) a supressão vale só p/ DETALHADO, que tem 👁 Abrir + PDF; o registro simples
+    // legado tem o Editar como ÚNICO visualizador — suprimi-lo deixaria a linha ganha sem botão algum.
+    const _vendido = (!!o.pedidoNum || tab==='ganho') && o.detalhado;
+    const btnEditar = _vendido ? '' : (o.detalhado?`<button onclick="openOrcBuilder('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> `:(ehOpery?'':`<button onclick="abrirOrcamentoCrm('${o.id}')" style="font-size:11px;padding:3px 8px">Editar</button> `));
     const btnPdf = o.detalhado?`<button onclick="_obPdfById('${o.id}')" style="font-size:11px;padding:3px 8px" title="Gerar o PDF do orçamento">📄</button> `:'';
     const _tipVend = o.detalhado?'Efetivar a venda — informa o nº do pedido no Opery e lança em Gestão a Vista (entra PENDENTE no Caixa)':'Marcar como vendido — só nesta tela (o pedido real entra pela importação do Drive, como sempre)'; // v225
     const btnEtapa = tab==='aberto'
@@ -37469,7 +37673,26 @@ async function initSupabase(){
   }
 }
 
-async function _loadFromSupabase(skipSep){
+// v263 (D8, revisão 09/11) — CARGA ÚNICA EM VOO: boot (initSupabase) e login (doLogin) disparavam duas
+// cargas completas CONCORRENTES sobre as mesmas entidades (egress/tempo em dobro, snapshots reconstruídos
+// no meio da outra). Chamada com a MESMA assinatura durante uma carga em voo reutiliza a promessa.
+var _loadInFlightP=null, _loadInFlightSig=null, _loadInFlightT0=0;
+function _loadFromSupabase(skipSep){
+  var _sig=skipSep?'skip':'full';
+  if(_loadInFlightP && _loadInFlightSig===_sig){
+    // (verificação 09/11) FRESCOR: só reutiliza chamada estritamente CONCORRENTE (<300ms do início) —
+    // gatilho que chegou DEPOIS (evento novo) encadeia uma carga fresca ao fim da atual, senão adotaria
+    // uma foto anterior ao próprio evento que o disparou.
+    if(Date.now()-_loadInFlightT0<300) return _loadInFlightP;
+    var _pAnt=_loadInFlightP;
+    return _pAnt.then(function(){ return _loadFromSupabase(skipSep); }, function(){ return _loadFromSupabase(skipSep); });
+  }
+  var p=_loadFromSupabaseMiolo(skipSep);
+  _loadInFlightP=p; _loadInFlightSig=_sig; _loadInFlightT0=Date.now();
+  p.finally(function(){ if(_loadInFlightP===p){ _loadInFlightP=null; _loadInFlightSig=null; } });
+  return p;
+}
+async function _loadFromSupabaseMiolo(skipSep){
   if(!_sb) return false;
   try{
     const { data, error } = await _sb
@@ -37606,9 +37829,16 @@ function _setupRealtime(){
   // nunca dependeu dele: o heartbeat de 20s lê 'kicked' do banco e encerra em até ~20s (_hbTick).
   // v102 (Fix D) — ao RECONECTAR (SUBSCRIBED após uma queda), o realtime não reenvia o que foi perdido →
   // reconcilia com o servidor. _rtWasConnected distingue a 1ª inscrição (boot já carrega) de uma reconexão.
+  // v263 — o serviço Realtime do Supabase reiniciou em SÉRIE em 09/11 (10:56, 18:06, 19:40 UTC): cada
+  // reconexão disparava _resyncFromServer (recarga + repintura TOTAL) e a tela "subia e descia" em
+  // tempestade. A reconciliação pós-reconexão agora respeita intervalo mínimo de 120s — o que cair no
+  // intervalo é coberto pelo poll de 10s das conversas, pelo ciclo delta e pela rede de 180s (Fix D v102).
+  var _rtResyncEm=0;
   _realtimeCh = ch.subscribe(function(status, err){
     if(status==='SUBSCRIBED'){
-      if(_rtWasConnected){ try{ _resyncFromServer(); }catch(_e){} }
+      // v263 (D12): o carimbo só avança quando o resync RODA de fato (ele pode desistir em silêncio —
+      // save em voo/trava); senão a reconexão "gastava" a janela de 120s sem reconciliar nada.
+      if(_rtWasConnected && (Date.now()-_rtResyncEm)>120000){ try{ if(_resyncFromServer()===true) _rtResyncEm=Date.now(); }catch(_e){} }
       _rtWasConnected=true;
     } else if(status==='CHANNEL_ERROR' || status==='TIMED_OUT'){
       console.warn('realtime (lecare-sync): '+status+(err?(' — '+(err.message||err)):'')); // v262 — falha de canal deixa rastro (incidente 09/11 foi silencioso)
@@ -37659,15 +37889,16 @@ var _hiddenSince=0, _focoReloadInFlight=false, _rtWasConnected=false, _focoReloa
 // Trava ligada há mais de 60s = carga morta → considera livre.
 function _resyncTravado(){ return _focoReloadInFlight && (Date.now()-_focoReloadStart)<60000; }
 function _resyncFromServer(){
-  if(!_sb || !_sbReady || !currentUser || _versionBlocked) return;
-  if(_resyncTravado()) return;
-  if(_saveInFlight || _saveDirty) return; // não clobbar gravação pendente — o próximo gatilho sincroniza
+  if(!_sb || !_sbReady || !currentUser || _versionBlocked) return false;
+  if(_resyncTravado()) return false;
+  if(_saveInFlight || _saveDirty) return false; // não clobbar gravação pendente — o próximo gatilho sincroniza
   _focoReloadInFlight=true; _focoReloadStart=Date.now();
   try{ _updateSbIndicator('⟳ Sincronizando…','var(--text-info)'); }catch(_e){}
   _loadFromSupabase()
     .then(function(){ try{ refreshAll(); }catch(_e){} })
     .catch(function(){})
     .finally(function(){ _focoReloadInFlight=false; try{ _updateSbIndicator('☁ Online','var(--st-ok-tx)'); }catch(_e){} });
+  return true; // v263 (D12) — o chamador sabe que a reconciliação de fato começou
 }
 // (A) ao reabrir a aba (depois de >15s oculta)
 document.addEventListener('visibilitychange', function(){
@@ -37735,7 +37966,10 @@ async function _pollConversas(){
         else if(typeof dbc.naoLidas==='number' && dbc.naoLidas>(conv.naoLidas||0)) conv.naoLidas=dbc.naoLidas; // badge p/ conversa não aberta
       }
     });
-    if(mudou){ try{ renderConversasLista(); }catch(_e){} if(typeof _updateConvBadge==='function') _updateConvBadge(); if(ativaMudou && conversaAtivaId){ try{ renderConversaMsgs(conversaAtivaId); }catch(_e){} } }
+    // v263 (C10): a conversa ATIVA que mudou pelo poll ganha render COMPLETO (como o handler do realtime
+    // faz na troca de atendente) — o parcial não reconstrói cabeçalho/cadeado, e uma transferência/
+    // encerramento vindos pelo poll deixavam o campo de resposta aberto.
+    if(mudou){ try{ renderConversasLista(); }catch(_e){} if(typeof _updateConvBadge==='function') _updateConvBadge(); if(ativaMudou && conversaAtivaId){ try{ renderConversaTela(conversaAtivaId); }catch(_e){} } }
     if(_convPollGuardPend) _convPollGuard=_convPollGuardPend; // v231 — ciclo completo sem erro → guarda vista
   }catch(_e){}
 }
@@ -39090,7 +39324,7 @@ function _waNumChipHtml(conv){
   return n?('<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:#e7f3ff;color:#0E8ADB;border:.5px solid #b8dcf5;white-space:nowrap">📱 '+escapeHtml(n.rotulo||n.id)+'</span>'):'';
 }
 function showPageConversasNum(numId){
-  _convNumAtivo=numId; conversaAtivaId=null; _convTelaUltimoId=null;
+  _convNumAtivo=numId; conversaAtivaId=null; _convTelaUltimoId=null; try{ delete _convIdPorContainer['conv-tela']; }catch(_e){} /* v263 (B2, verificação): fecha o residual do guard pós-await */
   // v141 : trocar de menu LIMPA o painel da conversa (senao ficava a conversa do OUTRO numero na tela)
   const _t=document.getElementById('conv-tela');
   if(_t) _t.innerHTML='<div class="empty" style="margin:auto;color:var(--text-tertiary);font-size:13px">Selecione uma conversa à esquerda</div>';
@@ -39402,7 +39636,7 @@ function _waAnexoHtml(a){
   // v95.1 — mídia (imagem/áudio/vídeo) ainda sem path/url → placeholder, não um card clicável que sempre falha
   if((isImg||isAud||isVid) && !ref) return `<div class="wa-doc" style="opacity:.65;cursor:default"><div class="wa-doc-ic">⏳</div><div class="wa-doc-info"><div class="wa-doc-nome">Mídia recebida</div><div class="wa-doc-sub">${escapeHtml(a.nome||a.kind||'arquivo')} · processando…</div></div></div>`;
   // documento / outro → CARD de documento (claro, fácil de notar)
-  const _doc=a.path?escapeHtml(a.path):''; const _durl=a.url?encodeURIComponent(a.url):'';
+  const _doc=a.path?escapeHtml(_escJs(a.path)):''; const _durl=a.url?encodeURIComponent(a.url):''; // v263 (D10) — padrão v236: _escJs + escapeHtml em valor dentro de string JS de handler
   return `<div onclick="abrirAnexoConversa('${_doc}','${_durl}')" class="wa-doc" title="Abrir / baixar">
     <div class="wa-doc-ic">📄</div>
     <div class="wa-doc-info"><div class="wa-doc-nome">${escapeHtml(a.nome||'arquivo')}</div><div class="wa-doc-sub">${a.tamanho?escapeHtml(a.tamanho)+' · ':''}toque para abrir</div></div>
@@ -39547,11 +39781,12 @@ function _convHidratar(conv){
   });
 }
 // v104 — ao anexar, abre um modal para escrever uma LEGENDA antes de enviar (texto vai junto com o arquivo)
-var _convAnexoFiles=null, _convAnexoCid=null;
+var _convAnexoFiles=null, _convAnexoCid=null, _convAnexoConvId=null; // v263 (D6) — destino FIXADO na captura (padrão da prévia de áudio v251)
 // v154 : miolo do preview de anexo extraído — usado pelo 📎 (handleConvAnexo) E pelo Ctrl+V de imagem.
-function _convAbrirAnexoPreview(files, containerId){
+function _convAbrirAnexoPreview(files, containerId, convId){
   if(!files || !files.length) return;
   _convAnexoFiles=files; _convAnexoCid=containerId||'conv-tela';
+  _convAnexoConvId=convId||_convIdPorContainer[_convAnexoCid]||conversaAtivaId; // v263 (D6) — trocar de conversa com a prévia aberta NÃO muda o destino
   let ov=document.getElementById('conv-anexo-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='conv-anexo-overlay'; ov.className='overlay'; ov.style.zIndex='4200'; document.body.appendChild(ov); }
   const _lista=files.map(f=>`<div style="font-size:12px;color:var(--text-secondary);padding:3px 0">📎 ${escapeHtml(f.name)} <span style="color:var(--text-tertiary)">(${f.size>1024*1024?(f.size/1024/1024).toFixed(1)+' MB':(f.size/1024).toFixed(0)+' KB'})</span></div>`).join('');
@@ -39565,13 +39800,14 @@ function _convAbrirAnexoPreview(files, containerId){
   setTimeout(()=>document.getElementById('conv-anexo-cap')?.focus(),0);
 }
 function handleConvAnexo(input, containerId){
-  const conv = conversas.find(c=>c.id===conversaAtivaId);
+  const _cidA=_convIdPorContainer[containerId||'conv-tela']||conversaAtivaId; // v263 (B1) — destino pelo container
+  const conv = conversas.find(c=>c.id===_cidA);
   if(!conv){ input.value=''; return; }
   if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de enviar anexos.\nUse "📥 Atribuir para mim".'); input.value=''; return; }
   if(!_sb || !_sbReady){ alert('Conexão com o servidor indisponível. Tente novamente em instantes.'); input.value=''; return; }
   const files=Array.from(input.files); input.value='';
   if(!files.length) return;
-  _convAbrirAnexoPreview(files, containerId);
+  _convAbrirAnexoPreview(files, containerId, conv.id);
 }
 // v154 : COLAR IMAGEM (Ctrl+V) no campo de mensagem (pedido do dono 14/07) — imagem da área de
 // transferência cai no MESMO fluxo do 📎 (preview + legenda + normalização EXIF + wa-send-media).
@@ -39585,7 +39821,10 @@ document.addEventListener('paste', function(e){
     for(let i=0;i<its.length;i++){ const it=its[i]; if(it.kind==='file'){ const f=it.getAsFile(); if(f && /^image\//.test(f.type||'')) imgs.push(f); } }
     if(!imgs.length) return; // sem imagem no clipboard → colar de texto segue normal
     e.preventDefault();
-    const conv=conversas.find(c=>c.id===conversaAtivaId); if(!conv) return;
+    // v263 (B1): descobre o container ANTES e resolve a conversa POR ELE (o ponteiro global podia apontar outra)
+    let cid0='conv-tela', el0=t.parentElement;
+    while(el0){ if(el0.id && el0.querySelector && el0.querySelector('.conv-msgs-field')){ cid0=el0.id; break; } el0=el0.parentElement; }
+    const conv=conversas.find(c=>c.id===(_convIdPorContainer[cid0]||conversaAtivaId)); if(!conv) return;
     if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de enviar anexos.\nUse "📥 Atribuir para mim".'); return; }
     if(!_sb || !_sbReady){ alert('Conexão com o servidor indisponível. Tente novamente em instantes.'); return; }
     // clipboard nomeia tudo "image.png" — dá um nome útil (foto_colada_HHMMSS)
@@ -39595,10 +39834,7 @@ document.addEventListener('paste', function(e){
       const generico=!f.name || /^image\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name);
       return generico ? new File([f], 'foto_colada_'+hh+(imgs.length>1?('_'+(i+1)):'')+'.'+ext, {type:f.type}) : f;
     });
-    // descobre o container da conversa (tela cheia OU modal do card): 1º ancestral com id que contém a lista de mensagens
-    let cid='conv-tela', el=t.parentElement;
-    while(el){ if(el.id && el.querySelector && el.querySelector('.conv-msgs-field')){ cid=el.id; break; } el=el.parentElement; }
-    _convAbrirAnexoPreview(nomeados, cid);
+    _convAbrirAnexoPreview(nomeados, cid0, conv.id); // v263 (B1/D6) — container e destino já resolvidos acima
   }catch(_e){ /* nunca atrapalha o colar de texto */ }
 });
 // v144 : normaliza JPEG p/ envio ao WhatsApp: aplica a orientacao EXIF nos PIXELS (o WhatsApp
@@ -39622,7 +39858,8 @@ async function _convEnviarAnexos(){
   const caption=(document.getElementById('conv-anexo-cap')?.value||'').trim();
   const files=_convAnexoFiles||[]; const containerId=_convAnexoCid;
   if(ov) ov.classList.remove('open');
-  const conv=conversas.find(c=>c.id===conversaAtivaId); if(!conv||!files.length){ _convAnexoFiles=null; return; }
+  // v263 (D6): o destino é o FIXADO na captura do preview — trocar de conversa/ponteiro no meio não muda o alvo
+  const conv=conversas.find(c=>c.id===(_convAnexoConvId||conversaAtivaId)); if(!conv||!files.length){ _convAnexoFiles=null; _convAnexoConvId=null; return; }
   // v173 — ANEXO EM GRUPO (caso 24/07: "cliente não tem telefone válido"): envio isolado como o TEXTO
   // v148 — NÃO passa por registrarMensagem (grupo não tem cliente; getOuCriarConversa retornava null e o
   // anexo nem entrava na conversa) nem pelo guard de dono (grupo não tem dono). RPC idempotente + flag grupo.
@@ -39651,8 +39888,9 @@ async function _convEnviarAnexos(){
         _env++;
       }catch(err){ alert('Erro ao enviar "'+file.name+'": '+err); }
     }
-    _convAnexoFiles=null;
-    if(_env>0){ try{ renderConversaTela(conv.id, containerId); renderConversasLista(); _updateConvBadge(); }catch(_e){} }
+    _convAnexoFiles=null; _convAnexoConvId=null;
+    // v263 (B2): render pós-await SÓ se o container ainda mostra esta conversa (senão sequestrava a tela)
+    if(_env>0){ try{ if(_convIdPorContainer[containerId||'conv-tela']===conv.id) renderConversaTela(conv.id, containerId); renderConversasLista(); _updateConvBadge(); }catch(_e){} }
     return;
   }
   if(!(await _convGuardDonoServidor(conv, containerId))){ _convAnexoFiles=null; return; } // v159 — mesmo guard de dono do texto
@@ -39667,16 +39905,17 @@ async function _convEnviarAnexos(){
       const up=await _sb.storage.from('anexos').upload(path, file, {upsert:false, contentType:file.type||undefined});
       if(up.error){ alert('Falha ao enviar "'+file.name+'": '+(up.error.message||up.error)); continue; }
       const sizeStr=file.size>1024*1024?(file.size/1024/1024).toFixed(1)+' MB':(file.size/1024).toFixed(0)+' KB';
-      registrarMensagem(conv.clienteId, _msgDeAtual, (fi===0?caption:''), { nome:file.name, tamanho:sizeStr, tipo:file.type, kind:_waKindFromMime(file.type), path:path }, conv.telefone); // legenda no 1º arquivo
+      registrarMensagem(conv.clienteId, _msgDeAtual, (fi===0?caption:''), { nome:file.name, tamanho:sizeStr, tipo:file.type, kind:_waKindFromMime(file.type), path:path }, conv.telefone, conv); // legenda no 1º arquivo · v263 (C8)
       const _msg=_ultimaMsgReg;
       if(_msg && conv.canal==='whatsapp' && _msgDeAtual==='atendente') _fila.push({msg:_msg, file, path});
       enviados++;
     }catch(err){ alert('Erro ao enviar "'+file.name+'": '+err); }
   }
-  _convAnexoFiles=null;
+  _convAnexoFiles=null; _convAnexoConvId=null;
   if(enviados>0){
     saveData();
-    renderConversaTela(conv.id, containerId);
+    // v263 (B2): render pós-await SÓ se o container ainda mostra esta conversa (senão sequestrava a tela)
+    try{ if(_convIdPorContainer[containerId||'conv-tela']===conv.id) renderConversaTela(conv.id, containerId); }catch(_e){}
     renderConversasLista();
     _updateConvBadge();
     if(_fila.length){ _waUpsertConversa(conv).then(()=>{ _fila.forEach(e=>_waEnviarAnexo(conv, e.msg, e.file, e.path)); }); }
@@ -39844,9 +40083,11 @@ async function _convEnviarAudio(conv, file, containerId){
     const up=await _sb.storage.from('anexos').upload(path, file, {upsert:false, contentType:file.type||undefined});
     if(up.error){ alert('Falha ao enviar o áudio: '+(up.error.message||up.error)); return; }
     const sizeStr=file.size>1024*1024?(file.size/1024/1024).toFixed(1)+' MB':(file.size/1024).toFixed(0)+' KB';
-    registrarMensagem(conv.clienteId, _msgDeAtual, '', { nome:file.name, tamanho:sizeStr, tipo:file.type, kind:_waKindFromMime(file.type)||'audio', path:path }, conv.telefone);
+    registrarMensagem(conv.clienteId, _msgDeAtual, '', { nome:file.name, tamanho:sizeStr, tipo:file.type, kind:_waKindFromMime(file.type)||'audio', path:path }, conv.telefone, conv); // v263 (C8)
     const _msg=_ultimaMsgReg;
-    saveData(); renderConversaTela(conv.id, containerId); renderConversasLista(); _updateConvBadge();
+    saveData();
+    try{ if(_convIdPorContainer[containerId||'conv-tela']===conv.id) renderConversaTela(conv.id, containerId); }catch(_e){} // v263 (B2) — render pós-await só se o container ainda mostra esta conversa
+    renderConversasLista(); _updateConvBadge();
     if(_msg && conv.canal==='whatsapp' && _msgDeAtual==='atendente'){ _waUpsertConversa(conv).then(function(){ _waEnviarAnexo(conv, _msg, file, path); }); }
   }catch(err){ alert('Erro ao enviar o áudio: '+err); }
 }
@@ -39863,9 +40104,13 @@ function _waTick(mine, m){
     default:         return '';
   }
 }
-function registrarMensagem(clienteId, de, texto, anexo, telefone){
+function registrarMensagem(clienteId, de, texto, anexo, telefone, convForcada){
   if((!texto || !texto.trim()) && !anexo) return null;
-  const conv = getOuCriarConversa(clienteId, telefone);
+  // v263 (C8, revisão 09/11): quando o chamador JÁ tem a conversa validada (guard de dono/permissão
+  // rodou sobre ela), a mensagem entra NELA — re-resolver por cliente+telefone podia devolver OUTRA
+  // cópia (duplicata legada/sem telefone): o guard valia para a conversa errada e a mensagem "sumia"
+  // da tela (era gravada na irmã), induzindo reenvio em dobro no WhatsApp.
+  const conv = convForcada || getOuCriarConversa(clienteId, telefone);
   if(!conv) return null;
   if(!Array.isArray(conv.mensagens)) conv.mensagens=[];
   const msg = {
@@ -39919,13 +40164,16 @@ function renderConversas(){
   if(conversaAtivaId){
     // v150 : usuário DIGITANDO na conversa aberta → NÃO reconstrói a tela (o rebuild do textarea engolia/
     // embaralhava teclas a cada evento realtime de QUALQUER tabela via refreshAll → _refreshActivePage).
-    // Atualiza só as mensagens (caminho parcial já existente); o campo fica intocado. Sem foco → completo.
-    // EXCEÇÃO: se a conversa deixou de ser respondível (transferida/encerrada), o render completo SEMPRE
-    // acontece — fecha o campo na hora mesmo com a pessoa digitando (senão o cadeado do pool não apareceria).
-    const _taAtv=document.querySelector('#conv-tela .conv-input-field');
+    // v263 : a régua passou de "digitando" para "a tela JÁ MOSTRA esta conversa" (reporte do dono 09/11:
+    // LENDO mensagens antigas, a repintura completa derrubava a leitura p/ a última mensagem). O caminho
+    // parcial (renderConversaMsgs) preserva rolagem e campo; o rebuild COMPLETO fica só p/ quando a
+    // conversa mudou, a tela ainda não montou, ou ela deixou de ser respondível (cadeado v150 intacto:
+    // transferida/encerrada SEMPRE reconstrói, fechando o campo na hora). Troca de atendente ao vivo já
+    // tem render completo dedicado no handler do realtime (_sepOnRealtime, ramo conversas).
     const _cvAtv=(conversas||[]).find(c=>c.id===conversaAtivaId);
     const _aindaMinha=_cvAtv && _cvAtv.status!=='encerrada' && (typeof _podeResponderConv!=='function' || _podeResponderConv(_cvAtv));
-    if(_taAtv && document.activeElement===_taAtv && _convTelaUltimoId===conversaAtivaId && _aindaMinha){
+    const _telaMontada=_convTelaUltimoId===conversaAtivaId && !!document.querySelector('#conv-tela .conv-msgs-field');
+    if(_telaMontada && _aindaMinha){
       try{ renderConversaMsgs(conversaAtivaId); }catch(_e){}
     } else {
       renderConversaTela(conversaAtivaId);
@@ -40015,9 +40263,23 @@ function setConvTab(t){ activeConvTab=t; if(typeof window!=='undefined') window.
 // v86 — sub-aba por atendente: '__todos__' | '__sem__' | <atendenteId>
 var activeConvAtend = (typeof window!=='undefined' && window.activeConvAtend) || '__todos__';
 function setConvAtend(id){ activeConvAtend=id; if(typeof window!=='undefined') window.activeConvAtend=id; renderConversasLista(); }
+var _convListaPintadaEm=0, _convListaAdiadaT=null; // v263 — tempestade de repintura (09/11)
 function renderConversasLista(){
   const el = document.getElementById('conv-lista');
   if(!el) return;
+  // v263 — reporte do dono 09/11 ("clica em outra conversa e o sistema abre a antiga"; "a tela fica
+  // subindo e descendo"): a lista REORDENAVA SOB O MOUSE (o eco da própria atividade sobe a conversa
+  // ao topo no instante do clique — o clique cai na linha errada). Com o ponteiro sobre a lista o
+  // re-render é ADIADO e coalescido (teto de 10s de defasagem); fora do hover pinta na hora. A
+  // ROLAGEM da lista também passa a ser preservada em todo re-render.
+  try{
+    if(el.matches && el.matches(':hover') && (Date.now()-_convListaPintadaEm)<10000){
+      clearTimeout(_convListaAdiadaT);
+      _convListaAdiadaT=setTimeout(function(){ try{ renderConversasLista(); }catch(_e){} }, 1200);
+      return;
+    }
+  }catch(_e){}
+  const _scrollAntes=el.scrollTop;
   _migrarConvTelefone(); // v106 — garante telefone nas conversas legadas (idempotente)
   // v229 — 📅 sinal de tarefa agendada (pedido do dono 18/09): mapa clienteId → data da próxima ação
   // PENDENTE da agenda (via card), montado UMA vez por render; a linha da conversa mostra o sinal.
@@ -40146,6 +40408,8 @@ function renderConversasLista(){
     html += lista.map(c=>_convItemHtml(c, sub==='__sem__')).join('');
   }
   el.innerHTML = html;
+  _convListaPintadaEm=Date.now();
+  if(_scrollAntes) el.scrollTop=_scrollAntes; // v263 — rolagem da lista sobrevive ao re-render
 }
 var _convAgMap={}; // v229 — clienteId → data da próxima ação pendente (montado no renderConversasLista)
 // v229 — sinais visuais da linha: 🔶 atenção marcada (com autor/hora no title) + 📅 tarefa agendada
@@ -40209,6 +40473,8 @@ function _nomeConversaCli(clienteId, _cliPre, _cardPre){
 // v103 — rascunho do textarea preservado entre re-renders (realtime não apaga o que está sendo digitado).
 var _convDrafts={};
 var _convTelaUltimoId=null; // v107 — qual conversa estava renderizada (p/ preservar texto+cursor+foco só no MESMO chat)
+var _convPonteiroAntesModal=null; // v263 (B1) — ponteiro do painel guardado enquanto o conv-modal está aberto
+var _convIdPorContainer={}; // v263 (B1) — container ('conv-tela'/'conv-modal-tela') → id da conversa DESENHADA nele; o envio resolve o destino pelo CONTAINER, nunca só pelo ponteiro global
 function _convInputKey(e,cid){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviarMensagemConversa(cid); } } // Shift+Enter = nova linha
 function _convGrow(ta){ if(!ta)return; ta.style.height='auto'; ta.style.height=Math.min(120,ta.scrollHeight)+'px'; }
 // v103 — emojis
@@ -40518,7 +40784,7 @@ function _convMarcarNaoLida(convId){
   const conv=(conversas||[]).find(c=>c.id===convId); if(!conv) return;
   conv.naoLidas = (conv.naoLidas&&conv.naoLidas>0) ? conv.naoLidas : 1;
   conv._naoLidaManual = true;
-  if(conversaAtivaId===convId){ conversaAtivaId=null; _convTelaUltimoId=null;
+  if(conversaAtivaId===convId){ conversaAtivaId=null; _convTelaUltimoId=null; try{ delete _convIdPorContainer['conv-tela']; }catch(_e){} /* v263 (B2, verificação): fecha o residual do guard pós-await */
     const _t=document.getElementById('conv-tela'); if(_t) _t.innerHTML='<div class="empty" style="margin:auto;color:var(--text-tertiary);font-size:13px">Selecione uma conversa à esquerda</div>'; }
   saveData(); renderConversasLista(); if(typeof _updateConvBadge==='function') _updateConvBadge();
 }
@@ -40635,10 +40901,10 @@ function _convMsgsHtml(conv){
       } else if(m.replyTo){ _q={ aut:(m.replyTo.mine?'Você':(nome||'Cliente')), txt:(m.replyTo.texto||''), mid:'' }; }
     }
     return _diaChip+`<div class="wa-row ${mine?'mine':''}">
-      <div class="wa-bubble ${mine?'out':'in'}" data-mid="${m.id||''}">
+      <div class="wa-bubble ${mine?'out':'in'}" data-mid="${escapeHtml(String(m.id||''))}">
         ${autor?`<div class="wa-author${mine?'':' in'}">${escapeHtml(autor)}</div>`:''}
         ${(m.apagada||m.apagadaPeloCliente)?`<div style="margin-bottom:2px"><span style="font-size:9px;font-weight:700;letter-spacing:.4px;background:#ececea;color:#77756f;border:.5px solid #d9d7d2;border-radius:8px;padding:1px 7px;text-transform:uppercase">${m.apagadaPeloCliente?'Excluída pelo cliente':'Excluída'}</span></div>`:''}
-        ${_q?`<div class="wa-quote" ${_q.mid?`onclick="_waScrollToMsg('${_q.mid}','${conv.id}')" style="cursor:pointer"`:(_q.ref?`onclick="_waQuoteBuscar('${conv.id}','${_q.ref}')" style="cursor:pointer" title="Localizar a mensagem citada (busca no servidor se preciso)"`:'')}>${_q.aut?`<div class="wa-quote-aut">${escapeHtml(_q.aut)}</div>`:''}<div class="wa-quote-txt">${escapeHtml((_q.txt||'📎 anexo').slice(0,120))}</div></div>`:''}
+        ${_q?`<div class="wa-quote" ${_q.mid?`onclick="_waScrollToMsg('${escapeHtml(_escJs(_q.mid))}','${escapeHtml(_escJs(conv.id))}')" style="cursor:pointer"`:(_q.ref?`onclick="_waQuoteBuscar('${escapeHtml(_escJs(conv.id))}','${escapeHtml(_escJs(_q.ref))}')" style="cursor:pointer" title="Localizar a mensagem citada (busca no servidor se preciso)"`:'')}>${_q.aut?`<div class="wa-quote-aut">${escapeHtml(_q.aut)}</div>`:''}<div class="wa-quote-txt">${escapeHtml((_q.txt||'📎 anexo').slice(0,120))}</div></div>`:''}
         ${m.texto?`<span class="wa-txt"${(m.apagada||m.apagadaPeloCliente)?' style="opacity:.55"':''}>${escapeHtml(m.texto)}</span>`:''}
         ${(m.apagada&&!m.texto&&!m.anexo)?`<span class="wa-txt" style="font-style:italic;color:#8696a0">🚫 mensagem apagada (conteúdo não preservado)</span>`:''}
         ${(m.apagada||m.apagadaPeloCliente)?(m.anexo?`<div style="opacity:.55">${_waAnexoHtml(m.anexo)}</div>`:''):_waAnexoHtml(m.anexo)}
@@ -40844,6 +41110,7 @@ function renderConversaTela(convId, containerId){
     if(_prevFoco){ try{ _ta.focus(); if(_prevSelS!=null) _ta.setSelectionRange(_prevSelS, _prevSelE); }catch(_e){} }
   }
   _convTelaUltimoId=convId;
+  _convIdPorContainer[containerId]=convId; // v263 (B1) — o envio resolve o destino pelo container
   // v252 — rolagem: conversa nova ou leitor perto do fim → vai ao fim; leitor no meio do histórico →
   // volta exatamente para onde estava (fim do "pula lá pra baixo" no refresh do realtime/poll)
   setTimeout(()=>{const m=el.querySelector('.conv-msgs-field');if(!m)return; if(_prevPerto||_prevScrollTop==null){m.scrollTop=m.scrollHeight;}else{m.scrollTop=_prevScrollTop;}},50);
@@ -40872,12 +41139,21 @@ function _setMsgDe(de, btn){
 
 async function enviarMensagemConversa(containerId){
   if(window._authExpirada){ alert('⚠ Sua sessão expirou — a mensagem NÃO foi enviada.\n\nRecarregue a página (F5) e entre novamente. O texto digitado fica guardado no rascunho.'); return; } // v151 : vigia de autenticação
-  if(window._convEnviandoTrava) return; // v145 : anti-duplo-clique (reenvio no impulso duplicava)
-  window._convEnviandoTrava=true; setTimeout(function(){ window._convEnviandoTrava=false; }, 1200);
+  // v263 (C11, revisão 09/11): a trava v145 era POR TEMPO (1,2s) e soltava antes de o guard de dono no
+  // servidor responder — em rede lenta, o 2º Enter reentraba com o MESMO texto e o cliente recebia em
+  // dobro. Agora a trava segura até a CONCLUSÃO (finally), com teto de 15s contra travamento de rede.
+  if(window._convEnviandoTrava && (Date.now()-window._convEnviandoTrava)<15000) return;
+  window._convEnviandoTrava=Date.now();
+  try{ await _enviarMensagemConversaMiolo(containerId); } finally { window._convEnviandoTrava=0; }
+}
+async function _enviarMensagemConversaMiolo(containerId){
   const cont = document.getElementById(containerId||'conv-tela');
   const inp = cont ? cont.querySelector('.conv-input-field') : null;
   if(!inp || !inp.value.trim()) return;
-  const conv = conversas.find(c=>c.id===conversaAtivaId);
+  // v263 (B1, revisão 09/11): o destino é a conversa DESENHADA NO CONTAINER do campo onde se digitou —
+  // o ponteiro global podia apontar outra conversa (fantasma pós-modal) e o texto saía p/ o cliente errado.
+  const _cidDest=_convIdPorContainer[containerId||'conv-tela']||conversaAtivaId;
+  const conv = conversas.find(c=>c.id===_cidDest);
   if(!conv) return;
   // v148 : GRUPO — envio isolado: monta a msg local, grava por RPC idempotente e envia com flag grupo.
   // NÃO passa por registrarMensagem (que procura/cria CLIENTE), nem por guarda de dono/auto-assumir (grupo não tem dono).
@@ -40899,7 +41175,9 @@ async function enviarMensagemConversa(containerId){
         if(!_eg && _dg && _dg.ok){ if(_dg.providerMsgId) _mg.providerMsgId=_dg.providerMsgId; if(_dg.zapiMessageId) _mg.zapiMessageId=_dg.zapiMessageId; if(_mg.status==='fila') _mg.status='enviada'; }
         else { _mg.status='falha'; }
       }catch(_e){ _mg.status='falha'; }
-      try{ renderConversaTela(conv.id, containerId); renderConversasLista(); }catch(_e){}
+      // v263 (B2): render pós-await SÓ se o container ainda mostra esta conversa (senão a tela era
+      // sequestrada de volta p/ a conversa antiga segundos depois do envio)
+      try{ if(_convIdPorContainer[containerId||'conv-tela']===conv.id) renderConversaTela(conv.id, containerId); renderConversasLista(); }catch(_e){}
     })();
     renderConversaTela(conv.id, containerId); renderConversasLista();
     return;
@@ -40910,7 +41188,7 @@ async function enviarMensagemConversa(containerId){
   if(!(await _convGuardDonoServidor(conv, containerId))) return;
   if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de responder.\nUse "📥 Atribuir para mim".'); return; }
   const _de = _msgDeAtual;
-  const _r = registrarMensagem(conv.clienteId, _de, inp.value, undefined, conv.telefone);
+  const _r = registrarMensagem(conv.clienteId, _de, inp.value, undefined, conv.telefone, conv); // v263 (C8) — a mensagem entra NA conversa validada
   const _sentMsg = _ultimaMsgReg;
   // v104 — responder: cita a original (reply real no WhatsApp) + guarda a citação local
   if(_convReplyTo && _convReplyTo.convId===conv.id && _sentMsg){
@@ -41001,17 +41279,22 @@ function _convUniaoMsgs(base, other){
     base.naoLidas=0; _nlMudou=false;
   } }catch(_e){}
   // v229 — sinal de ATENÇÃO (pedido do dono 18/09): carimbo mais novo vence, como atendente/status
-  if((other.atencaoEm||0) > (base.atencaoEm||0)){ base.atencao=!!other.atencao; base.atencaoEm=other.atencaoEm; if(other.atencaoPor!==undefined) base.atencaoPor=other.atencaoPor; }
+  let _estadoMudou=false; // v263 (C10, revisão 09/11)
+  if((other.atencaoEm||0) > (base.atencaoEm||0)){ base.atencao=!!other.atencao; base.atencaoEm=other.atencaoEm; if(other.atencaoPor!==undefined) base.atencaoPor=other.atencaoPor; _estadoMudou=true; }
   // v143 : atendente com carimbo mais novo vence (assumir/transferir de outra tela nao e desfeito)
-  if((other.atendEm||0) > (base.atendEm||0)){ base.atendenteId=other.atendenteId||null; base.atendEm=other.atendEm; if(other.equipeId) base.equipeId=other.equipeId; }
+  if((other.atendEm||0) > (base.atendEm||0)){ base.atendenteId=other.atendenteId||null; base.atendEm=other.atendEm; if(other.equipeId) base.equipeId=other.equipeId; _estadoMudou=true; }
   // v143 : STATUS (encerrada/ativa) idem: carimbo mais novo vence (aba velha 'ativa' nao desfaz um encerramento)
   if((other.statusEm||0) > (base.statusEm||0)){
     base.status=other.status||base.status; base.statusEm=other.statusEm;
     if(other.resultado!==undefined) base.resultado=other.resultado;
     if(other.encerradaEm!==undefined) base.encerradaEm=other.encerradaEm;
     if(other.encerradaPor!==undefined) base.encerradaPor=other.encerradaPor;
+    _estadoMudou=true;
   }
-  return added||_nlMudou; // v228 — contador adotado também repinta a lista (badge aparece na hora)
+  // v263 (C10): transferência/encerramento/atenção SEM mensagem nova agora SINALIZAM mudança — o poll
+  // de 10s (único caminho vivo quando o realtime cai) repinta lista e cadeado; antes o retorno false
+  // deixava o campo de resposta aberto por até ~3min numa conversa já transferida.
+  return added||_nlMudou||_estadoMudou; // v228 — contador adotado também repinta a lista (badge aparece na hora)
 }
 // v107 — grava a conversa SEM sobrescrever: lê o estado do banco e mescla antes de escrever (não apaga inbound que o app ainda não tem)
 // v145 : push ATÔMICO de assumir/transferir — atendente + msg de sistema por RPC (zero blob).
@@ -41131,7 +41414,9 @@ async function _waEnviarMsg(conv, msg){
       if(data.providerMsgId) msg.providerMsgId=data.providerMsgId;
       if(data.zapiMessageId) msg.zapiMessageId=data.zapiMessageId;
       if(msg.status==='fila') msg.status='enviada';
-      try{ renderConversaMsgs(conv.id); }catch(_e){}
+      // v263 (B2): SÓ repinta se a conversa ainda é a ativa — o wa-send resolve segundos depois e o
+      // fallback do renderConversaMsgs reconstruía a TELA INTEIRA com a conversa antiga (sequestro).
+      try{ if(conversaAtivaId===conv.id) renderConversaMsgs(conv.id); }catch(_e){}
     }
   }catch(e){ console.warn('wa-send falhou:', e); }
 }
@@ -41244,7 +41529,7 @@ function confirmarAtribuir(convId){
     // v143 : transferiu para OUTRA pessoa -> SAI da conversa (nao fica a tela aberta com campo de resposta)
     const _gestor=currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial');
     if(userId && currentUser && userId!==currentUser.id && !_gestor && conversaAtivaId===convId){
-      conversaAtivaId=null; _convTelaUltimoId=null;
+      conversaAtivaId=null; _convTelaUltimoId=null; try{ delete _convIdPorContainer['conv-tela']; }catch(_e){} /* v263 (B2, verificação): fecha o residual do guard pós-await */
       const _t=document.getElementById('conv-tela');
       if(_t) _t.innerHTML='<div class="empty" style="margin:auto;color:var(--text-tertiary);font-size:13px">Conversa transferida. Selecione outra à esquerda.</div>';
       document.getElementById('conv-modal-overlay')?.remove();
@@ -41451,6 +41736,10 @@ function abrirConversaDireta(convId){
 function _abrirConversaConvModal(conv){
   if(!conv) return;
   saveData();
+  // v263 (B1, revisão 09/11) — guarda o ponteiro do PAINEL antes de o modal sobrescrevê-lo: no fechar,
+  // com a página Conversas visível, o ponteiro é RESTAURADO (a premissa v159 "o ponteiro é dela e fica"
+  // era falsa — ficava apontando a conversa do MODAL e o Enter do painel enviava para o cliente errado).
+  _convPonteiroAntesModal = conversaAtivaId;
   conversaAtivaId = conv.id;
   conv.naoLidas = 0;
   try{ if(_sb) _sb.rpc('conv_zerar_nao_lidas', { p_conv_id: conv.id }).then(function(_r){}); }catch(_e){} // v151 — zera no servidor também · v179: .then() obrigatório (era código morto)
@@ -42557,7 +42846,7 @@ function _renderCliVinc(){
   } else {
     if(tit) tit.textContent='Pessoas vinculadas (mesmo cliente)';
     if(help) help.textContent='Vincule a PF/PJ do mesmo cliente para não duplicar cadastro — o histórico fica junto neste card.';
-    const linhas=_cliVinc.map((v,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border:.5px solid var(--border);border-radius:var(--r-md);margin-bottom:4px;font-size:12px"><span style="flex:1">${v.tipoPessoa==='pf'?'👤 PF':'🏢 PJ'} · <strong>${escapeHtml(v.nome)}</strong>${v.doc?` <span style="color:var(--text-tertiary)">· ${escapeHtml(v.doc)}</span>`:''}</span><button type="button" onclick="_delPessoaVinc(${i})" style="border:none;background:none;color:var(--st-bad-tx);cursor:pointer;font-size:15px">×</button></div>`).join('');
+    const linhas=_cliVinc.map((v,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 8px;border:.5px solid ${v.padraoNF?'var(--text-info)':'var(--border)'};border-radius:var(--r-md);margin-bottom:4px;font-size:12px"><span style="flex:1">${v.tipoPessoa==='pf'?'👤 PF':'🏢 PJ'} · <strong>${escapeHtml(v.nome)}</strong>${v.doc?` <span style="color:var(--text-tertiary)">· ${escapeHtml(v.doc)}</span>`:''}</span><label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;white-space:nowrap;cursor:pointer;${v.padraoNF?'font-weight:700;color:var(--text-info)':'color:var(--text-secondary)'}" title="Marca este nome/documento como o PADRÃO para emissão de nota e dados no sistema (um por cliente; desmarcado = vale o do próprio card)"><input type="checkbox" ${v.padraoNF?'checked':''} onchange="_setPadraoNF(${i}, this.checked)" style="width:auto;margin:0">🧾 padrão NF</label><button type="button" onclick="_delPessoaVinc(${i})" style="border:none;background:none;color:var(--st-bad-tx);cursor:pointer;font-size:15px">×</button></div>`).join('');
     box.innerHTML=(linhas||'')+
       `<div style="display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap">
         <select id="c-vinc-tipo" style="font-size:12px;padding:5px;width:auto"><option value="pf">PF</option><option value="pj">PJ</option></select>
@@ -42566,6 +42855,20 @@ function _renderCliVinc(){
         <button type="button" onclick="_addPessoaVinc()" style="font-size:12px;padding:5px 12px">+ Vincular</button>
       </div>`;
   }
+}
+// v262 — PADRÃO NF (pedido do dono 09/11): entre as pessoas vinculadas, UMA pode ser marcada como o
+// nome/documento que o sistema deve usar (emissão de nota / dados do sistema). Exclusivo por card:
+// marcar uma desmarca as outras; nenhuma marcada = vale o nome/doc do próprio card.
+function _setPadraoNF(i,on){
+  _cliVinc.forEach((v,j)=>{ v.padraoNF = on ? (j===i) : (j===i ? false : !!v.padraoNF); });
+  _renderCliVinc();
+}
+// Resolve o nome/doc de NF de um cliente: a vinculada marcada OU o próprio card.
+function _cliPadraoNF(c){
+  if(!c) return null;
+  const v=(c.pessoasVinculadas||[]).find(x=>x&&x.padraoNF);
+  if(v) return { nome:v.nome||'', doc:v.doc||'', tipoPessoa:v.tipoPessoa||'pf', vinculada:true };
+  return { nome:c.nome||'', doc:c.doc||'', tipoPessoa:c.tipoPessoa||'pf', vinculada:false };
 }
 function _addPessoaVinc(){
   const tipo=document.getElementById('c-vinc-tipo')?.value||'pf';

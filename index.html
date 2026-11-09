@@ -5348,7 +5348,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v261';
+var APP_VERSION = 'v262';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7112,12 +7112,12 @@ function _dsgAgrupar(pend, execs){
     if(!c){ c={id:'nome:'+r.nome.toLowerCase(), nome:r.nome||'(sem nome)', itens:[], legado:true}; cols.push(c); } // executor fora do pool atual (desativado/legado) não some
     c.itens.push(o);
   });
-  var esc=STATUS_SEQUENCE.designer||[];
-  cols.forEach(function(c){ c.itens.sort(function(a,b){
-    var ia=esc.indexOf((a.statuses&&a.statuses.designer)||''), ib=esc.indexOf((b.statuses&&b.statuses.designer)||'');
-    return (ia<0?99:ia)-(ib<0?99:ib) || String(a.d1||'').localeCompare(String(b.d1||''));
-  }); });
-  baixo.sort(function(a,b){ return String(a.d1||'').localeCompare(String(b.d1||'')); });
+  // ordem = PRAZO DE ENVIO do pedido (previsão de saída), do que sai mais cedo ao mais tarde
+  // (pedido do dono 09/11); sem previsão vai p/ o fim; desempate pelo D1 (mais antigo primeiro).
+  var kEnvio=function(o){ return String(o.previsao||'9999-12-31'); };
+  var porEnvio=function(a,b){ return kEnvio(a).localeCompare(kEnvio(b)) || String(a.d1||'').localeCompare(String(b.d1||'')); };
+  cols.forEach(function(c){ c.itens.sort(porEnvio); });
+  baixo.sort(porEnvio);
   return {cols:cols, baixo:baixo};
 }
 async function _dsgExecLoad(){
@@ -7169,17 +7169,26 @@ function setGestaoPainelDesigner(on){
   renderPainelDesigner();
   _dsgExecLoad(); // atualiza o "em execução" dos demais (re-pinta se mudou)
 }
+var _dsgBusca='';
+function _dsgBuscar(v){ _dsgBusca=String(v||''); renderPainelDesigner(); }
 function renderPainelDesigner(){
   var box=document.getElementById('gestao-painel-designer'); if(!box || !_gestaoPainelDsg) return;
+  // preserva o foco/cursor do campo de busca através do re-render (innerHTML recria o input)
+  var _bFoco=!!(document.activeElement && document.activeElement.id==='dsg-busca');
+  var _bCaret=0; try{ if(_bFoco) _bCaret=document.activeElement.selectionStart||0; }catch(_e){}
   var g=_dsgAgrupar(_dsgPendentes(), _setorExecutores('designer'));
-  var semExec=0, comPend=0;
+  var busca=String(_dsgBusca||'').trim().toLowerCase();
+  var casa=function(o){ return !busca || String(o.num||'').toLowerCase().indexOf(busca)>=0; };
+  var semExec=0, comPend=0, achados=0;
   var fmtD=function(s){ try{ return fmtDate(s); }catch(_e){ return s||'—'; } };
   var colsHtml=g.cols.map(function(c){
     var exec=_dsgExecMap[c.id];
+    // a cobrança do "em execução" é pela coluna INTEIRA — a busca só esconde cards, não muda o selo
     var execValida=!!(exec && exec.orderId && c.itens.some(function(o){ return String(o.id)===String(exec.orderId); }));
     if(c.itens.length){ comPend++; if(!execValida) semExec++; }
     var pode=_dsgPodeMarcar(c.id);
-    var cards=c.itens.map(function(o){
+    var vis=busca?c.itens.filter(casa):c.itens; achados+=busca?vis.length:0;
+    var cards=vis.map(function(o){
       var st=(o.statuses&&o.statuses.designer)||'Não iniciado';
       var sd=o.statusDates&&o.statusDates.designer;
       var emExec=execValida && String(exec.orderId)===String(o.id);
@@ -7192,7 +7201,7 @@ function renderPainelDesigner(){
         '<div style="font-size:10.5px;color:var(--text-secondary);margin:1px 0 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escapeHtml(o.cliente||'')+'">'+escapeHtml(o.cliente||'—')+'</div>'+
         '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
           '<span class="badge '+(st==='Não iniciado'?'b-nil':'b-mid')+'" style="font-size:10px">'+escapeHtml(st)+(sd&&sd.ts?' · '+new Date(sd.ts).toLocaleDateString('pt-BR'):'')+'</span>'+
-          '<span style="font-size:9.5px;color:var(--text-tertiary)">D1 '+fmtD(o.d1)+'</span>'+
+          '<span style="font-size:9.5px;color:var(--text-tertiary)" title="Data final de saída do pedido (ordena a coluna)">📦 Saída '+fmtD(o.previsao)+'</span>'+
           ((pode&&!emExec)?'<button onclick="_dsgExecMarcar(\''+c.id+'\','+JSON.stringify(String(o.id)).replace(/"/g,'&quot;')+')" style="margin-left:auto;font-size:10px;padding:2px 9px;border:.5px solid var(--st-ok-bd,var(--border-md));border-radius:10px;background:transparent;color:var(--st-ok-tx);cursor:pointer;font-family:inherit" title="Marcar como o pedido em execução AGORA (substitui o atual)">▶ Executar</button>':'')+
         '</div>'+
       '</div>';
@@ -7200,28 +7209,32 @@ function renderPainelDesigner(){
     return '<div style="min-width:235px;flex:1;border:.5px solid var(--border);border-radius:12px;padding:10px;background:var(--bg-secondary)">'+
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">'+
         '<span style="font-weight:700;font-size:12.5px">'+escapeHtml(c.nome)+'</span>'+
-        '<span style="font-size:10px;color:var(--text-tertiary)">'+c.itens.length+' pedido(s)</span>'+
+        '<span style="font-size:10px;color:var(--text-tertiary)">'+(busca?(vis.length+' de '+c.itens.length):(c.itens.length+' pedido(s)'))+'</span>'+
         (c.itens.length&&!execValida?'<span style="margin-left:auto;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--st-bad-bg);color:var(--st-bad-tx)" title="É obrigatório estar executando algo — marque um pedido">nenhum em execução</span>':'')+
         (!c.itens.length?'<span style="margin-left:auto;font-size:9.5px;color:var(--text-tertiary)">sem pedidos</span>':'')+
       '</div>'+
-      (cards||'<div style="font-size:11px;color:var(--text-tertiary);padding:6px 0">Nenhum pedido sob responsabilidade.</div>')+
+      (cards||'<div style="font-size:11px;color:var(--text-tertiary);padding:6px 0">'+(busca&&c.itens.length?'Nenhum pedido com esse número aqui.':'Nenhum pedido sob responsabilidade.')+'</div>')+
     '</div>';
   }).join('');
-  var baixoHtml=g.baixo.map(function(o){
+  var baixoVis=busca?g.baixo.filter(casa):g.baixo; achados+=busca?baixoVis.length:0;
+  var baixoHtml=baixoVis.map(function(o){
     var st=(o.statuses&&o.statuses.designer)||'Não iniciado';
     return '<span onclick="openDetailModal('+o.id+')" style="display:inline-flex;align-items:center;gap:6px;border:.5px solid var(--border);border-radius:10px;padding:4px 10px;font-size:11px;cursor:pointer;background:var(--bg-primary)" title="'+escapeHtml(o.cliente||'')+' — abrir (leitura)">'+
       '<b>'+escapeHtml(o.num||'—')+'</b>'+(o.urgente?' <span class="badge b-urg" style="font-size:8.5px">URG</span>':'')+
-      '<span style="color:var(--text-tertiary)">'+escapeHtml(st)+' · D1 '+fmtD(o.d1)+'</span></span>';
+      '<span style="color:var(--text-tertiary)">'+escapeHtml(st)+' · Saída '+fmtD(o.previsao)+'</span></span>';
   }).join(' ');
   box.innerHTML=
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">'+
       '<h2 style="font-size:15px;margin:0">🎨 Painel do Designer</h2>'+
       '<span style="font-size:11px;color:var(--text-secondary)">'+comPend+' colaborador(es) com pedidos'+(semExec?' · <b style="color:var(--st-bad-tx)">'+semExec+' sem execução marcada</b>':' · todos executando')+'</span>'+
-      '<button onclick="_dsgExecLoad()" style="margin-left:auto;font-size:11px;padding:4px 12px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit" title="Recarrega o que cada um está executando">↻ Atualizar</button>'+
+      '<input id="dsg-busca" type="text" value="'+escapeHtml(_dsgBusca)+'" oninput="_dsgBuscar(this.value)" placeholder="🔍 Nº do pedido" style="margin-left:auto;font-size:11.5px;padding:4px 10px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-primary);color:var(--text-primary);width:150px;font-family:inherit" title="Localiza o pedido pelo número em todas as colunas">'+
+      (busca?'<span style="font-size:10.5px;color:var(--text-secondary)">'+achados+' encontrado(s) <span onclick="_dsgBuscar(\'\')" style="cursor:pointer;text-decoration:underline">limpar</span></span>':'')+
+      '<button onclick="_dsgExecLoad()" style="font-size:11px;padding:4px 12px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit" title="Recarrega o que cada um está executando">↻ Atualizar</button>'+
     '</div>'+
     '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Acompanhamento — somente leitura. A única ação é marcar <b>▶ Executar</b> (um por colaborador; marcar outro substitui). Edições de status continuam no fluxo normal dos setores; a distribuição, pelo status "Distribuido" do modal do Designer. Concluídos (Conferido e liberado / Rótulo Interno) não aparecem.</div>'+
     '<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">'+colsHtml+'</div>'+
-    (g.baixo.length?('<div style="margin-top:14px;border-top:.5px dashed var(--border);padding-top:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-secondary);margin-bottom:6px">Não iniciados / sem responsável — a distribuir ('+g.baixo.length+')</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+baixoHtml+'</div></div>'):'');
+    (baixoVis.length?('<div style="margin-top:14px;border-top:.5px dashed var(--border);padding-top:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-secondary);margin-bottom:6px">Não iniciados / sem responsável — a distribuir ('+(busca?(baixoVis.length+' de '+g.baixo.length):g.baixo.length)+')</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+baixoHtml+'</div></div>'):'');
+  if(_bFoco){ var _bi=document.getElementById('dsg-busca'); if(_bi){ _bi.focus(); try{ _bi.setSelectionRange(_bCaret,_bCaret); }catch(_e){} } }
 }
 
 // ═══════════════ DELETE ORDER ═══════════════
@@ -37576,17 +37589,29 @@ function _setupRealtime(){
       // v89 — debounce: rajadas de eventos viram UMA atualização (perfil é garantido pelo trigger do banco)
       _scheduleAppDataReload();
     });
+  // v262 — INCIDENTE 09/11 (status demorando p/ outros usuários): o upgrade do Realtime do Supabase
+  // (2.153.x) passou a DERRUBAR EM SILÊNCIO o registro do canal INTEIRO quando QUALQUER binding aponta
+  // tabela fora da publication supabase_realtime — o cliente recebe SUBSCRIBED, mas realtime.subscription
+  // fica VAZIA e nenhum evento chega (provado com página-réplica: 7 tabelas publicadas = 7 inscrições;
+  // +1 não publicada = ZERO). Antes do upgrade o binding órfão era inócuo (só não entregava daquela tabela).
+  // Estas 4 estão FORA da publication por decisão (incidente de saturação 09/07; sincronizam pelo ciclo
+  // delta) — então NÃO entram no canal. Se uma tabela nova entrar no realtime um dia: publication PRIMEIRO.
+  var _RT_FORA={audit_log:1, contas_fixas:1, catalogo_novo:1, grupos_embalagem:1};
   SEP_ENTITIES.forEach(function(cfg){
+    if(_RT_FORA[cfg.table]) return;
     ch = ch.on('postgres_changes', { event:'*', schema:'public', table:cfg.table }, function(payload){ _sepOnRealtime(cfg,payload); });
   });
   ch = ch.on('postgres_changes', { event:'*', schema:'public', table:'app_config' }, function(){ _checkVersionGate(); _checkWaStatus(); try{ _sepCanonModo=null; _sepCanonLoad(); }catch(_e){} }); // v221 — troca da chave sep_canon via SQL vale em segundos, sem reload
-  ch = ch.on('postgres_changes', { event:'UPDATE', schema:'public', table:'sessions', filter:'tab_id=eq.'+_tabId }, function(payload){ if(payload.new && payload.new.kicked){ _doKickLogout(); } });
+  // v262 — o binding de 'sessions' SAIU (tabela fora da publication = veneno do canal, acima); o kick
+  // nunca dependeu dele: o heartbeat de 20s lê 'kicked' do banco e encerra em até ~20s (_hbTick).
   // v102 (Fix D) — ao RECONECTAR (SUBSCRIBED após uma queda), o realtime não reenvia o que foi perdido →
   // reconcilia com o servidor. _rtWasConnected distingue a 1ª inscrição (boot já carrega) de uma reconexão.
-  _realtimeCh = ch.subscribe(function(status){
+  _realtimeCh = ch.subscribe(function(status, err){
     if(status==='SUBSCRIBED'){
       if(_rtWasConnected){ try{ _resyncFromServer(); }catch(_e){} }
       _rtWasConnected=true;
+    } else if(status==='CHANNEL_ERROR' || status==='TIMED_OUT'){
+      console.warn('realtime (lecare-sync): '+status+(err?(' — '+(err.message||err)):'')); // v262 — falha de canal deixa rastro (incidente 09/11 foi silencioso)
     }
   });
 }

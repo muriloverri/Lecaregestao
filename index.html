@@ -4149,6 +4149,13 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
       </label>
       <div id="u-demitido-info" style="font-size:11px;color:var(--st-bad-tx);margin-top:4px"></div>
     </div>
+    <!-- v261 — AUTONOMIA DE STATUS no Designer (ordem do dono 09/11, caso Kaiky) -->
+    <div id="u-dsg-livre-wrap" style="background:var(--bg-info);border:.5px solid var(--border-info,var(--border));border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;display:none">
+      <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;margin:0">
+        <input type="checkbox" id="u-dsg-livre" style="width:14px;height:14px;margin-top:1px">
+        <span><b>🎨 Autonomia de status no Designer</b> — este colaborador ajusta QUALQUER degrau do setor Designer (como a coordenação), mas <b>não troca o responsável</b> do pedido (o seletor "quem executou" fica travado; distribuir segue com a coordenação/admin).</span>
+      </label>
+    </div>
     <div class="form-row"><div class="form-group"><label>Nome completo</label><input type="text" id="u-nome"></div><div class="form-group" id="u-login-wrap"><label>Usuário (login)</label><input type="text" id="u-login"></div></div>
     <div class="form-row" id="u-senha-row"><div class="form-group"><label>Senha</label><div style="position:relative"><input type="password" id="u-senha" placeholder="Mín. 12 — maiúsc., minúsc., número e símbolo" style="padding-right:38px;width:100%;box-sizing:border-box"><button type="button" title="Segure para ver" tabindex="-1" onmousedown="_pwHold('u-senha',1)" onmouseup="_pwHold('u-senha',0)" onmouseleave="_pwHold('u-senha',0)" ontouchstart="_pwHold('u-senha',1)" ontouchend="_pwHold('u-senha',0)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;padding:2px;line-height:1">👁</button></div></div><div class="form-group"><label>Confirmar Senha</label><div style="position:relative"><input type="password" id="u-senha2" style="padding-right:38px;width:100%;box-sizing:border-box"><button type="button" title="Segure para ver" tabindex="-1" onmousedown="_pwHold('u-senha2',1)" onmouseup="_pwHold('u-senha2',0)" onmouseleave="_pwHold('u-senha2',0)" ontouchstart="_pwHold('u-senha2',1)" ontouchend="_pwHold('u-senha2',0)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:15px;padding:2px;line-height:1">👁</button></div></div></div>
     <div class="form-row" id="u-perfil-row">
@@ -6856,6 +6863,14 @@ function _designerColab(){
   if(u.perfil==='admin') return false;
   return u.perfil==='user' && (u.setores||[]).includes('designer') && !((u.coordSetores||[]).includes('designer'));
 }
+// v261 — AUTONOMIA DE STATUS no Designer (ordem do dono 09/11, caso Kaiky): colaborador com o
+// marcador dsgStatusLivre no cadastro ajusta QUALQUER status do setor (como a coordenação) —
+// mas NÃO troca o responsável (seletor "quem executou" segue travado e o save preserva o atual;
+// consequência: não consegue marcar "Distribuido" em pedido sem responsável, pois distribuir É
+// definir o responsável).
+function _designerColabLivre(){
+  return _designerColab() && !!(currentUser && currentUser.dsgStatusLivre);
+}
 const _DES_COLAB_STATUS=['Em produção','Envio p/ aprovação','Montagem pranchas','Prancha finalizada'];
 function canEdit(setor){
   if(!currentUser)return false;
@@ -8134,7 +8149,7 @@ function openStatusModal(oid,setor){
     }
     // v256 — COLABORADOR do Designer (ordem do dono 03/11): só os degraus do próprio trabalho e
     // sempre avançando — Aprovado, regressões e os degraus pós-prancha são da coordenação/admin.
-    if(setor==='designer' && !locked && _designerColab()){
+    if(setor==='designer' && !locked && _designerColab() && !_designerColabLivre()){ // v261 — autonomia (Kaiky): sem restrição de degrau
       if(!_DES_COLAB_STATUS.includes(s)){ locked=true; lockReason='Degrau da coordenação do Designer'; }
       else if(si<curIdx){ locked=true; lockReason='Voltar status é com a coordenação/admin'; }
     }
@@ -8203,10 +8218,12 @@ function openStatusModal(oid,setor){
       // v256 — COLABORADOR: executor é ELE (automático, travado). Coordenação/admin: seletor livre
       // de sempre (pode indicar qualquer executor, inclusive a própria coordenadora) e corrige engano.
       const _colabD=_designerColab();
-      const atual=_colabD?currentUser.id:((o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorId)||o.designerExecutorId||((currentUser&&_ehSetorExec(currentUser,'designer'))?currentUser.id:''));
-      if(lbl) lbl.textContent='🎨 Quem executou (designer)'+(_colabD?' — você':'');
+      const _livreD=_designerColabLivre(); // v261 — autonomia (Kaiky): status livre, responsável INTOCÁVEL
+      const _atualPed=(o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorId)||o.designerExecutorId||'';
+      const atual=(_colabD&&!_livreD)?currentUser.id:(_atualPed||((!_colabD&&currentUser&&_ehSetorExec(currentUser,'designer'))?currentUser.id:''));
+      if(lbl) lbl.textContent='🎨 Quem executou (designer)'+(_colabD?(_livreD?' — travado no responsável atual':' — você'):'');
       sel.innerHTML='<option value="">— selecione —</option>'+execs.map(u=>'<option value="'+u.id+'"'+(String(u.id)===String(atual)?' selected':'')+'>'+escapeHtml(u.name||u.login||u.id)+'</option>').join('');
-      sel.disabled=!!_colabD; sel.title=_colabD?'Colaborador: o executor é você — a coordenação pode corrigir depois, se preciso':'';
+      sel.disabled=!!_colabD; sel.title=_colabD?(_livreD?'Autonomia de status: você ajusta qualquer degrau, mas o RESPONSÁVEL só muda pela coordenação/admin':'Colaborador: o executor é você — a coordenação pode corrigir depois, se preciso'):'';
       sel.style.display=''; if(btn)btn.style.display='none'; if(res)res.style.display='none';
       var _be0=document.getElementById('sm-env-btn'), _re0=document.getElementById('sm-env-resumo');
       if(_be0)_be0.style.display='none'; if(_re0)_re0.style.display='none';
@@ -8418,7 +8435,7 @@ function confirmStatus(){
 
   // v256 — CHOKEPOINT do papel no Designer (menu travado não é trava): colaborador só grava os
   // degraus permitidos e nunca regride — Aprovado, regressão e pós-prancha são da coordenação/admin.
-  if(statusCtx.setor==='designer' && selectedStatus && selectedStatus!==o.statuses.designer && _designerColab()){
+  if(statusCtx.setor==='designer' && selectedStatus && selectedStatus!==o.statuses.designer && _designerColab() && !_designerColabLivre()){ // v261 — autonomia (Kaiky)
     const _seqD=STATUS_SEQUENCE.designer;
     const _de=_seqD.indexOf(o.statuses.designer||'Não iniciado'), _para=_seqD.indexOf(selectedStatus);
     if(!_DES_COLAB_STATUS.includes(selectedStatus) || _para<_de){
@@ -8462,7 +8479,10 @@ function confirmStatus(){
   if(statusCtx.setor==='designer' && selectedStatus){
     const _ex=document.getElementById('sm-exec');
     // v256 — colaborador: o executor é SEMPRE ele (ignora o DOM; o seletor já vem travado nele)
-    const _exid=_designerColab()?String(currentUser.id):(_ex?_ex.value:'');
+    // v261 — autonomia (Kaiky): PRESERVA o responsável atual do pedido (ignora o DOM; nunca troca)
+    const _exid=_designerColabLivre()
+      ? String((o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorId)||o.designerExecutorId||'')
+      : (_designerColab()?String(currentUser.id):(_ex?_ex.value:''));
     const _u=_exid?users.find(x=>String(x.id)===String(_exid)):null;
     o.designerExecutorId=_exid||''; o.designerExecutorNome=(_u&&_u.name)||'';
     if(!o.statusDates)o.statusDates={}; if(!o.statusDates.designer)o.statusDates.designer={};
@@ -9384,6 +9404,9 @@ function openUserModal(id){
     const _dc=document.getElementById('u-demitido'); if(_dc) _dc.checked=!!(u&&u.demitido);
     const _di=document.getElementById('u-demitido-info');
     if(_di) _di.textContent=(u&&u.demitido)?('Desligamento registrado'+(u.demitidoEm?' em '+fmtDate(u.demitidoEm):'')+(u.demitidoPor?' por '+u.demitidoPor:'')+'.'):''; }
+  // v261 — autonomia de status no Designer (caso Kaiky): visível p/ usuário COM login
+  { const _dw2=document.getElementById('u-dsg-livre-wrap'); if(_dw2) _dw2.style.display=(u && !u.semAcesso)?'':'none';
+    const _dc2=document.getElementById('u-dsg-livre'); if(_dc2) _dc2.checked=!!(u&&u.dsgStatusLivre); }
   togglePerfilUI();
   toggleSemAcessoUI();
   document.getElementById('user-overlay').classList.add('open');
@@ -9503,6 +9526,7 @@ async function saveUser(){
         if(r.error||!r.data?.ok){ return _fail('Não foi possível criar o acesso: '+(await _edgeReason(r))); }
         uAtual.name=nome;uAtual.login=login;uAtual.perfil=perfil;
         uAtual.setores=effSetores;uAtual.coordSetores=effCoordSetores;uAtual.coordenadorId=effCoordenadorId;uAtual.verEquipe=effVerEquipe;
+        uAtual.dsgStatusLivre=!!document.getElementById('u-dsg-livre')?.checked; // v261 — autonomia Designer
         delete uAtual.semAcesso;
         _syncAtendenteEquipe(uAtual.id); // v217
       } else {
@@ -9515,6 +9539,7 @@ async function saveUser(){
       const u=uAtual;
       u.name=nome;u.login=login;u.perfil=perfil;
       u.setores=effSetores;u.coordSetores=effCoordSetores;u.coordenadorId=effCoordenadorId;u.verEquipe=effVerEquipe;
+      u.dsgStatusLivre=!!document.getElementById('u-dsg-livre')?.checked; // v261 — autonomia Designer (caso Kaiky)
       _syncAtendenteEquipe(u.id); // v217
       // v255 — DEMITIDO(A) (ordem do dono 29/10): marca o desligamento (carimbo + autor), bloqueia o
       // login, tira dos fluxos ativos (ativo=false — a régua ativo/semAcesso já rege equipes, pool e

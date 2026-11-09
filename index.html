@@ -29387,6 +29387,11 @@ function renderTranspFechamento(){
 var _prejSub='personalizada'; // v109 — sub-aba: 'personalizada' | 'anestesico'
 function setPrejSub(s){ _prejSub=s; renderPrejuizoFrete(); }
 function _prejEhAnes(o){ return (o.linha||'personalizada')==='anestesico'; }
+// v261 — tipos SEM COBRANÇA de frete (ordem do dono 09/11): avaria, amostra e bonificação não
+// cobram nada do cliente — mesmo com valor de frete no cadastro, o "Frete Cobrado" do Prejuízo
+// de Frete é ZERO (o prejuízo real é o custo inteiro).
+const _PREJ_TIPOS_SEM_COBRANCA=['avaria','amostra','bonificacao'];
+function _prejFreteCobrado(o){ return _PREJ_TIPOS_SEM_COBRANCA.includes(o.tipo||'venda') ? 0 : (parseFloat(o.freteCob)||0); }
 function _prejFrIntPed(o){
   return pagamentos.filter(p=>p.tipo==='frete_pedidos'&&p.rateios?.some(r=>String(r.pedidoId)===String(o.id)))
     .reduce((s,p)=>{ const r=p.rateios.find(r=>String(r.pedidoId)===String(o.id)); return s+(r?.valor||0); },0);
@@ -29420,18 +29425,19 @@ function renderPrejuizoFrete(){
     const frReal=getFreteRealPedido(o.id);
     const frIntPed=_prejFrIntPed(o);
     const custFrete=frReal+frIntPed;
-    const resultado=parseFloat(o.freteCob||0)-custFrete;
+    const freteCobrado=_prejFreteCobrado(o); // v261 — avaria/amostra/bonificação: cobrado = 0
+    const resultado=freteCobrado-custFrete;
     const temFR=frReal>0;                       // frete real lançado
     const semDados=frReal===0&&frIntPed===0;
-    return{o,frReal,frIntPed,custFrete,resultado,temFR,semDados};
+    return{o,frReal,frIntPed,custFrete,freteCobrado,resultado,temFR,semDados};
   }).sort((a,b)=>a.resultado-b.resultado);
   // Subtotal = só os pedidos COM frete real lançado (resultado real, sem o delay de lançamento)
   const comFR=rows.filter(r=>r.temFR);
-  const subCob=comFR.reduce((s,r)=>s+parseFloat(r.o.freteCob||0),0);
+  const subCob=comFR.reduce((s,r)=>s+r.freteCobrado,0);
   const subCusto=comFR.reduce((s,r)=>s+r.custFrete,0);
   const subRes=subCob-subCusto;
   // Total = todos os pedidos do mês (inclui os aguardando lançamento de frete real)
-  const totFreteCob=rows.reduce((s,r)=>s+parseFloat(r.o.freteCob||0),0);
+  const totFreteCob=rows.reduce((s,r)=>s+r.freteCobrado,0);
   const totCusto=rows.reduce((s,r)=>s+r.custFrete,0);
   const totRes=totFreteCob-totCusto;
   const _ft='padding:9px 12px;text-align:right';
@@ -29447,7 +29453,7 @@ function renderPrejuizoFrete(){
       <th style="${th};text-align:right">Custo Total Frete</th>
       <th style="${th};text-align:right;font-weight:600;color:var(--text-primary)">Resultado</th>
     </tr></thead>
-    <tbody>${rows.map(({o,frReal,frIntPed,custFrete,resultado,semDados})=>{
+    <tbody>${rows.map(({o,frReal,frIntPed,custFrete,freteCobrado,resultado,semDados})=>{
       const cor=semDados?'var(--text-tertiary)':resultado>=0?'var(--st-ok-tx)':'var(--st-bad-tx)';
       const bg=semDados?'':resultado>=0?'var(--st-ok-bg)':'var(--st-bad-bg)';
       return`<tr>
@@ -29455,7 +29461,7 @@ function renderPrejuizoFrete(){
         <td style="${td}">${tipoBadgeHtml(o.tipo||'venda')}</td>
         <td style="${td};color:var(--text-secondary)">${escapeHtml(o.cliente)}</td>
         <td style="${td};text-align:center;font-weight:500">${_ufDestino(o)||'<span style="color:var(--text-tertiary)">—</span>'}</td>
-        <td style="${td};text-align:right">${fmtMoney(o.freteCob||0)}</td>
+        <td style="${td};text-align:right" ${(freteCobrado===0&&parseFloat(o.freteCob)>0)?`title="Tipo ${escapeHtml(o.tipo)}: nada é cobrado do cliente — o frete registrado no pedido (${fmtMoney(o.freteCob)}) não conta como receita"`:''}>${fmtMoney(freteCobrado)}</td>
         <td style="${td};text-align:right">${frReal>0?fmtMoney(frReal):'—'}</td>
         <td style="${td};text-align:right">${frIntPed>0?fmtMoney(frIntPed):'—'}</td>
         <td style="${td};text-align:right;font-weight:500">${custFrete>0?fmtMoney(custFrete):'<span style="color:var(--text-tertiary);font-size:11px">sem dados</span>'}</td>

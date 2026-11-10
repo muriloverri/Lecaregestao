@@ -5338,7 +5338,7 @@ function _sepOnRealtime(cfg,payload){
     var idx=arr.findIndex(function(o){ return String(cfg.id(o))===rid; });
     if(idx>=0){
       // v107 — conversa: NÃO substitui cego (derrubaria msg local não persistida). DB é base (traz ticks/edição) + preserva o que é só local.
-      if(cfg.key==='conversas' && typeof _convUniaoMsgs==='function'){ var _atAntesRT=arr[idx]?arr[idx].atendenteId:null; _convUniaoMsgs(row.data, arr[idx]); arr[idx]=row.data; if(conversaAtivaId===rid && String(arr[idx].atendenteId||'')!==String(_atAntesRT||'')){ try{ renderConversaTela(conversaAtivaId); }catch(_e){} } }
+      if(cfg.key==='conversas' && typeof _convUniaoMsgs==='function'){ var _atAntesRT=arr[idx]?arr[idx].atendenteId:null; var _stAntesRT=arr[idx]?arr[idx].status:null; _convUniaoMsgs(row.data, arr[idx]); arr[idx]=row.data; if(conversaAtivaId===rid && (String(arr[idx].atendenteId||'')!==String(_atAntesRT||'') || String(arr[idx].status||'')!==String(_stAntesRT||''))){ try{ renderConversaTela(conversaAtivaId); }catch(_e){} } } // v265 (R2): encerrar/reabrir ao vivo também força o rebuild completo (o rodapé muda; antes só a troca de atendente forçava)
       else {
         // v134 — ANTI-CORRIDA (porta do realtime): se a linha LOCAL tem edição AINDA NÃO GRAVADA (difere do
         // snapshot), NÃO substitui — a edição seria perdida em silêncio. Mantém a local e NÃO avança o snapshot
@@ -5412,7 +5412,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v263';
+var APP_VERSION = 'v265';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5490,7 +5490,14 @@ function _fecharModalX(btn){
       // saíam para o cliente ERRADO (além de zerar não-lidas de A para todos e pintar tela híbrida).
       try{
         var _pgc=document.getElementById('pg-conversas');
-        if(!(_pgc && _pgc.style.display!=='none')){ conversaAtivaId=null; }
+        if(!(_pgc && _pgc.style.display!=='none')){
+          // v265 (achado R1 da revisão 10/11): o ramo "página Conversas OCULTA" também limpa a
+          // fotografia da tela e o mapa do container — sem isso, voltar ao painel e clicar na MESMA
+          // conversa do modal fazia o render achar "_mesmaConv" e capturar rascunho/rolagem da tela
+          // VELHA do painel (conversa A) para dentro de B: um Enter mandava o texto de A para o
+          // cliente B (mesma família do incidente B1/v263).
+          conversaAtivaId=null; _convTelaUltimoId=null; try{ delete _convIdPorContainer['conv-modal-tela']; }catch(_e4){}
+        }
         else {
           conversaAtivaId=(typeof _convPonteiroAntesModal!=='undefined')?_convPonteiroAntesModal:null;
           _convTelaUltimoId=null; delete _convIdPorContainer['conv-modal-tela'];
@@ -13575,7 +13582,7 @@ function renderSolMenos(){
     if(comAcoes){
       acoes='<button class="btn-primary" onclick="_rmIncluirProxima(\''+l.id+'\',\''+escapeHtml(String(it.itemId||''))+'\')" title="O faltante dos pedidos descobertos vira solicitação pendente e entra na próxima lista de compra (ou num Complementar)" style="font-size:11px;padding:4px 10px;white-space:nowrap">↪ Incluir na próxima lista</button> '+
             '<button onclick="_rmIncluirNoPc(\''+l.id+'\',\''+escapeHtml(String(it.itemId||''))+'\')" title="O fornecedor vai mandar o faltante na entrega de OUTRO pedido de compra (aberto ou fechado): anexa a ele — na conferência de recebimento daquele pedido a chegada confirma e completa este recebimento" style="font-size:11px;padding:4px 10px;white-space:nowrap">📦 Incluir no pedido</button> '+ // v257
-            '<button onclick="_rmSemRecompra(\''+l.id+'\',\''+escapeHtml(String(it.itemId||''))+'\')" title="Registrar que o faltante NÃO será recomprado (fica auditado)" style="font-size:11px;padding:4px 10px;white-space:nowrap">✕ Sem recompra</button>';
+            '<button onclick="_rmSemRecompra(\''+l.id+'\',\''+escapeHtml(String(it.itemId||''))+'\')" title="O faltante não gera compra nova: escolher entre Resolvido (não será recomprado) ou Recebido o restante (o fornecedor entregou o que faltava sem pedido novo)" style="font-size:11px;padding:4px 10px;white-space:nowrap">✕ Sem recompra</button>'; // v264 — abre a escolha
     } else {
       var r=x.res;
       acoes = r.acao==='recompra'
@@ -13584,6 +13591,8 @@ function renderSolMenos(){
         ? '<span style="font-size:11px;color:var(--st-inf-tx);font-weight:600">📦 aguarda no '+escapeHtml(r.pcNumero||'PC')+'</span>'+
           ((r.chegadas||[]).length?'<br><span style="font-size:10px;color:var(--st-ok-tx);font-weight:600">✔ chegou '+((r.chegadas||[]).reduce(function(a2,x2){ return a2+(parseFloat(x2.qtd)||0); },0)).toLocaleString('pt-BR')+' '+escapeHtml(un)+'</span>':'')+
           '<br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.por||'')+' · '+(r.em?fmtDate(_gstDataDe(r.em)):'')+'</span>'
+        : r.acao==='restante_recebido' // v264 — fornecedor entregou o que faltava, sem PC novo
+        ? '<span style="font-size:11px;color:var(--st-ok-tx);font-weight:600">📦 restante recebido</span><br><span style="font-size:10px;color:var(--text-tertiary)">recebimento completo na qtd original</span><br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.por||'')+' · '+(r.em?fmtDate(_gstDataDe(r.em)):'')+'</span>'
         : '<span style="font-size:11px;color:var(--text-secondary);font-weight:600">✕ sem recompra</span>'+(r.motivo?'<br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.motivo)+'</span>':'')+'<br><span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(r.por||'')+' · '+(r.em?fmtDate(_gstDataDe(r.em)):'')+'</span>';
     }
     var _pcRef=_rmPcDoItem(c); // v209 — pedido de compra de onde o item veio a menos
@@ -13657,20 +13666,89 @@ function _rmIncluirProxima(listaId, itemId){
   alert('✓ Faltante re-solicitado para '+(aloc.length-_blqRm.length)+' pedido(s) — entra na próxima lista de compra de '+(l.tipo==='ativo'?'ativos':'embalagens')+'.'
     +(_blqRm.length?'\n\n⛔ NÃO re-solicitado p/ '+_blqRm.length+' pedido(s) já produzido(s) e enviado(s) ('+_blqRm.join(', ')+') — se precisar do insumo, use compra AVULSA p/ estoque.':''));
 }
+// v264 — pedido do dono 10/11 (caso do fornecedor que mandou o restante depois, sem pedido novo; o
+// estoque marcou "sem recompra" por falta de opção melhor): o "✕ Sem recompra" agora abre a ESCOLHA —
+// "Resolvido (sem recompra)" (semântica antiga, com motivo) ou "📦 Recebido o restante" (o fornecedor
+// entregou o que faltava SEM novo pedido de compra: completa a quantidade física até o total ORIGINAL
+// da compra, cobre o rateio dos pedidos descobertos, dá entrada no estoque e audita — mesma mecânica
+// da chegada de faltante anexado v257, só que integral e sem PC intermediário).
+var _rmSrCtx=null;
 function _rmSemRecompra(listaId, itemId){
   var b=_rmItemBusca(listaId, itemId); if(!b){ alert('Item não encontrado (a lista mudou em outra tela).'); return; }
   var it=b.it, c=it.compra, f=c&&c.recebFaltante;
   if(!f){ alert('Este item não tem faltante registrado.'); return; }
   if(c.recebFaltanteRes){ renderSolMenos(); return; }
-  var motivo=prompt('✕ SEM RECOMPRA — o faltante de '+(parseFloat(f.qtd)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' de "'+(it.nome||'')+'" NÃO será recomprado.\n\nMotivo (opcional):');
-  if(motivo===null) return; // cancelou
-  c.recebFaltanteRes={ acao:'sem_recompra', motivo:(motivo||'').trim(), em:Date.now(), por:(currentUser&&currentUser.name)||'' };
+  _rmSrCtx={ listaId:listaId, itemId:itemId };
+  var qtd=(parseFloat(f.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'');
+  var ov=document.getElementById('rm-sr-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='rm-sr-overlay'; ov.className='overlay'; ov.style.zIndex='480'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:540px;max-width:94vw">'+
+    '<h2 style="font-size:16px;margin:0 0 4px">✕ Sem recompra — como foi resolvido?</h2>'+
+    '<div style="font-size:12.5px;margin-bottom:10px"><b>'+(it.codigo?escapeHtml(it.codigo)+' — ':'')+escapeHtml(it.nome||'')+'</b> · faltante de <b>'+qtd+'</b></div>'+
+    '<div style="border:.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px">'+
+      '<div style="font-size:12.5px;font-weight:600;margin-bottom:2px">📦 Recebido o restante</div>'+
+      '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px">O fornecedor entregou o que faltava, sem pedido de compra novo. O recebimento é completado até a quantidade ORIGINAL da compra, os pedidos descobertos são cobertos e o restante entra no estoque.</div>'+
+      '<button class="btn-primary" style="font-size:12px;padding:5px 14px" onclick="_rmRestanteRecebido()">📦 Recebido o restante</button>'+
+    '</div>'+
+    '<div style="border:.5px solid var(--border);border-radius:8px;padding:10px 12px">'+
+      '<div style="font-size:12.5px;font-weight:600;margin-bottom:2px">✓ Resolvido (sem recompra)</div>'+
+      '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px">O faltante NÃO será recomprado nem vai chegar — fica registrado e auditado.</div>'+
+      '<input type="text" id="rm-sr-motivo" placeholder="Motivo (opcional)" style="width:100%;font-size:12px;padding:5px 8px;margin-bottom:8px">'+
+      '<button style="font-size:12px;padding:5px 14px" onclick="_rmSemRecompraResolvido()">✓ Resolvido (sem recompra)</button>'+
+    '</div>'+
+    '<div class="modal-footer" style="margin-top:12px"><button onclick="document.getElementById(\'rm-sr-overlay\').classList.remove(\'open\')">Cancelar</button></div>'+
+  '</div>';
+  ov.classList.add('open');
+}
+function _rmSemRecompraResolvido(){
+  if(!_rmSrCtx) return;
+  var b=_rmItemBusca(_rmSrCtx.listaId, _rmSrCtx.itemId);
+  var ov=document.getElementById('rm-sr-overlay');
+  if(!b){ alert('Item não encontrado (a lista mudou em outra tela).'); if(ov) ov.classList.remove('open'); return; }
+  var it=b.it, c=it.compra, f=c&&c.recebFaltante;
+  if(!f || c.recebFaltanteRes){ if(ov) ov.classList.remove('open'); renderSolMenos(); return; }
+  var motivo=(document.getElementById('rm-sr-motivo')?.value||'').trim();
+  c.recebFaltanteRes={ acao:'sem_recompra', motivo:motivo, em:Date.now(), por:(currentUser&&currentUser.name)||'' };
   _rmFaltCache.map=null;
   (f.aloc||[]).forEach(function(og){
     var o=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
-    if(o){ try{ addAudit(o,'compras','faltante sem recompra','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': faltante de '+(parseFloat(og.qtd)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' NÃO será recomprado'+((motivo||'').trim()?' — '+motivo.trim():'')); }catch(_e){} }
+    if(o){ try{ addAudit(o,'compras','faltante sem recompra','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': faltante de '+(parseFloat(og.qtd)||0).toLocaleString('pt-BR')+' '+(it.unidade||'')+' NÃO será recomprado'+(motivo?' — '+motivo:'')); }catch(_e){} }
   });
+  _rmSrCtx=null; if(ov) ov.classList.remove('open');
   renderSolMenos(); saveData();
+}
+// v264 — 📦 RECEBIDO O RESTANTE: completa a quantidade física até o TOTAL ORIGINAL da compra
+// ("em recebido o restante considera como recebido o valor total original" — dono 10/11), zera o
+// faltante e o rateio (pedidos cobertos + reavaliação do setor), entra no estoque e audita.
+// O carimbo recebFisicoEm ORIGINAL é preservado (prova do 1º recebimento); o complemento fica
+// registrado na resolução (qtd/quem/quando).
+function _rmRestanteRecebido(){
+  if(!_rmSrCtx) return;
+  var b=_rmItemBusca(_rmSrCtx.listaId, _rmSrCtx.itemId);
+  var ov=document.getElementById('rm-sr-overlay');
+  if(!b){ alert('Item não encontrado (a lista mudou em outra tela).'); if(ov) ov.classList.remove('open'); return; }
+  var it=b.it, c=it.compra, f=c&&c.recebFaltante;
+  if(!f || c.recebFaltanteRes){ if(ov) ov.classList.remove('open'); renderSolMenos(); return; }
+  var q=parseFloat(f.qtd)||0;
+  if(!(q>0)){ alert('Este item não tem faltante em aberto.'); if(ov) ov.classList.remove('open'); renderSolMenos(); return; }
+  if(!confirm('📦 RECEBIDO O RESTANTE — '+(it.nome||'')+'\n\nO fornecedor entregou os '+q.toLocaleString('pt-BR')+' '+(it.unidade||'')+' que faltavam (sem pedido de compra novo).\nO recebimento fica COMPLETO na quantidade original da compra e o restante entra no estoque. Confirmar?')) return;
+  var now=Date.now();
+  c.recebFisicoQtd=(parseFloat(c.recebFisicoQtd)||0)+q;
+  if(c.recebFisicoEm==null){ c.recebFisicoEm=now; c.recebFisicoPor=(currentUser&&currentUser.name)||''; }
+  c.recebFaltanteRes={ acao:'restante_recebido', qtd:q, em:now, por:(currentUser&&currentUser.name)||'' };
+  _rmFaltCache.map=null;
+  (f.aloc||[]).forEach(function(og){
+    var oq=parseFloat(og.qtd)||0; if(oq<=0) return;
+    og.qtd=0;
+    var o2=(orders||[]).find(function(x){ return String(x.id)===String(og.orderId); });
+    if(o2){ try{ addAudit(o2,'compras','restante recebido','', (it.codigo?it.codigo+' ':'')+(it.nome||'')+': o fornecedor entregou os '+oq.toLocaleString('pt-BR')+' '+(it.unidade||'')+' que faltavam (sem novo pedido de compra) — recebimento completo'); }catch(_e){} }
+    try{ _reavaliarComprasPedido(og.orderId); }catch(_e){}
+  });
+  f.estoqueQtd=0; f.qtd=0;
+  try{ if(it.itemId!=null) _rcbEstoqueEntrada([{ itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:q }]); }catch(_e){}
+  _rmSrCtx=null; if(ov) ov.classList.remove('open');
+  renderSolMenos(); saveData();
+  alert('✓ Restante recebido — o recebimento deste item ficou completo na quantidade original e o estoque foi atualizado.');
 }
 // v257 — 📦 INCLUIR NO PEDIDO (ordem do dono 03/11): o fornecedor não mandou o faltante nesta
 // entrega e vai mandar na de OUTRO pedido de compra (aberto ou fechado — só não os já recebidos).
@@ -14171,7 +14249,7 @@ function _solItemLinhaInfo(s, it, lst, _prof){
     colReceb='<span style="color:var(--st-ok-tx);font-weight:600;white-space:nowrap">✔ recebido</span>'+
       (c.recebidoEm?'<br><span style="'+sub+'">'+fmtDate(_gstDataDe(c.recebidoEm))+'</span>':'')+
       (_rf?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="A entrega veio menor que a compra — faltaram '+(parseFloat(_rf.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'">📉 a menos ('+(parseFloat(_rf.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+')</span>'+
-        (_rfr?'<br><span style="'+sub+'">'+(_rfr.acao==='recompra'?'↪ re-solicitado':_rfr.acao==='incluir_pc'?('📦 aguarda no '+escapeHtml(_rfr.pcNumero||'PC')):'✕ sem recompra')+'</span>':'<br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>'):'')+
+        (_rfr?'<br><span style="'+sub+'">'+(_rfr.acao==='recompra'?'↪ re-solicitado':_rfr.acao==='incluir_pc'?('📦 aguarda no '+escapeHtml(_rfr.pcNumero||'PC')):_rfr.acao==='restante_recebido'?'📦 restante recebido':'✕ sem recompra')+'</span>':'<br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>'):'')+
       (c.recebidoDivergente&&!_rf?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="Quantidade ou preço recebidos diferentes do que foi comprado">⚠ divergente</span>':'');
     // v210 — quinhão DESTE pedido no rateio (caso 102798/válvula 14/08): "recebido" no geral, mas o
     // rateio por D1 deixou este pedido descoberto — destaca a falta específica dele
@@ -14220,7 +14298,7 @@ function _solItemLinhaInfo(s, it, lst, _prof){
       var _rfB=c.recebFaltante, _rfrB=c.recebFaltanteRes;
       if(_rfB){
         _avisos+='<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="A entrega veio menor que a compra">📉 a menos ('+(parseFloat(_rfB.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+')</span>'+
-          (_rfrB?'<br><span style="'+sub+'">'+(_rfrB.acao==='recompra'?'↪ re-solicitado':'✕ sem recompra')+'</span>':'<br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>');
+          (_rfrB?'<br><span style="'+sub+'">'+(_rfrB.acao==='recompra'?'↪ re-solicitado':_rfrB.acao==='restante_recebido'?'📦 restante recebido':'✕ sem recompra')+'</span>':'<br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>');
         var _mineB=s&&(_rfB.aloc||[]).find(function(x){ return String(x.orderId)===String(s.orderId); });
         if(_mineB) _avisos+='<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:700">⚠ faltaram '+(parseFloat(_mineB.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+' DESTE pedido</span>';
       }
@@ -14730,6 +14808,7 @@ function saveSolicitacao(){
   }
   if(o && o.compraNaoNec && o.compraNaoNec[_solTab]) delete o.compraNaoNec[_solTab]; // v155 — solicitar desfaz o "não necessário" do tipo
   if(_solTab==='embalagem' && o) _autoEstoqueSolicitado(o); // v130 — embalagem solicitada → estoque 'Solicitado compra'
+  if(o) _comprasRegrideSeSolicAberta(o, 'nova solicitação de '+(_solTab==='ativo'?'ativos':'embalagem')); // v264 — ordem do dono 10/11: com solicitação aberta, Compras não pode constar 'Produto entregue'
   closeSolicitarModal(); renderSolCompra(_solTab); saveData();
 }
 // auto-status: AVANÇA a partir de 'Não iniciado' e, desde a v233 (regra do dono 22/09), REGRIDE
@@ -14794,6 +14873,53 @@ function _healComprasPedidoEnviado(){
       o.statusDates.compras={ts:Date.now(),by:'Sistema',from:prev,to:'Produto entregue'};
       try{ addAudit(o,'compras','status',prev,'Produto entregue (automático — pedido enviado; atendido com o material disponível; compra pendente na lista vira reposição de estoque)'); }catch(_e){}
     });
+  }catch(_e){}
+}
+// v264 — ORDEM DO DONO 10/11 (casos 103940/103999/104198, PC-180): "se ainda tem solicitação de
+// compra para esses pedidos então o setor de compras não pode estar com produto entregue". Espelho
+// EXATO da regressão de ESTOQUE v233 (_autoEstoqueSolicitado): pendência REAL — julgada pelo MESMO
+// motor da trava (_ladoComprasEstado) — regride SÓ O STATUS, por 'Sistema', com regressao:true e os
+// carimbos intactos (regra 22/09: carimbo é prova). Os SELOS de lado (comprasLados) FICAM — regra
+// do dono 15/07 (complementar não apaga o selo) — e quando a compra nova for RECEBIDA o motor
+// (_reavaliarComprasPedido, chamado no recebimento/heal físico) re-sela 'Produto entregue' sozinho,
+// a mesma volta automática que o estoque já faz. FORA do alcance: pedido que já SAIU fisicamente
+// (_expSaiu) — a regra de 11/09 manda o envio selar o setor (_healComprasPedidoEnviado); regredir
+// esses criaria briga de heals em loop (lição v233/v234). Alvo honesto por lado pendente:
+// só embalagem pendente → 'Compra ativo finalizado'; só ativo → 'Compra embalagem finalizado';
+// os dois → 'Orçamento feito'.
+function _comprasRegrideSeSolicAberta(o, motivo){
+  try{
+    if(!o || (o.linha||'personalizada')!=='personalizada') return false;
+    if(typeof _geraProducao==='function' && !_geraProducao(o.tipo)) return false;
+    if(typeof _pedidoNovoCompras==='function' && !_pedidoNovoCompras(o)) return false; // motor antigo intacto
+    if(typeof _expSaiu==='function' && _expSaiu(o)) return false; // já saiu: vale a regra do envio (11/09)
+    if(((o.statuses&&o.statuses.compras)||'')!=='Produto entregue') return false;
+    var eA=_ladoComprasEstado(o,'ativo'), eE=_ladoComprasEstado(o,'embalagem');
+    var pA=!(eA.definido&&eA.recebidoOk), pE=!(eE.definido&&eE.recebidoOk);
+    if(!pA && !pE) return false; // estado consistente com o selo: nada a regredir
+    var alvo=(pA&&pE)?'Orçamento feito':(pE?'Compra ativo finalizado':'Compra embalagem finalizado');
+    var cur=o.statuses.compras;
+    o.statuses.compras=alvo;
+    if(!o.statusDates) o.statusDates={};
+    o.statusDates.compras={ts:Date.now(),by:'Sistema',from:cur,to:alvo,regressao:true};
+    try{ addAudit(o,'compras','status',cur,alvo+' (retorno automático — '+(motivo||'solicitação de compra em aberto')+'; carimbos preservados; re-sela sozinho no recebimento)'); }catch(_e){}
+    return true;
+  }catch(_e){ return false; }
+}
+// v264 — varredura idempotente no refreshAll (mesmo padrão dos heals v168/v225): pega os pedidos que
+// JÁ estavam presos antes desta versão (13 pedidos do PC-180 em 10/11) e qualquer caminho de criação
+// de solicitação que não passe pelo hook direto (autocura v225, devolução de saldo, troca de embalagem).
+// Não é loop destrutivo: só age com 'Produto entregue' + pendência real, e a volta é feita pelo motor
+// no recebimento — cada transição corresponde a uma mudança de estado física.
+var _healCompSolUlt=0;
+function _healComprasSolicAberta(){
+  try{
+    if(!currentUser || !(orders||[]).length) return;
+    if(Date.now()-_healCompSolUlt<300000) return; // no máx. 1 varredura/5min por sessão
+    _healCompSolUlt=Date.now();
+    var n=0;
+    (orders||[]).forEach(function(o){ if(_comprasRegrideSeSolicAberta(o,'solicitação de compra em aberto')) n++; });
+    if(n){ try{ saveData(); }catch(_e){} console.log('[v264] heal compras-solic-aberta: '+n+' regressão(ões) de status (pendência real de compra)'); }
   }catch(_e){}
 }
 // v225 — ITEM DE LISTA CUJOS PEDIDOS DE ORIGEM JÁ SAÍRAM (ordem do dono 11/09, caso BASE GEL
@@ -22907,6 +23033,7 @@ function refreshAll(){
   if(typeof _healComercialPI==='function') _healComercialPI(); // v208 — "Produtos informados" sem produtos = reversão lógica (ordem do dono 11/08, caso 102926)
   if(typeof _healCadastroCompleto==='function') _healCadastroCompleto(); // v208 — completude do cadastro = derivação nome+doc+contato (ordem do dono 11/08)
   if(typeof _healComprasRecebFisico==='function') _healComprasRecebFisico(); // v213 — físico conta como recebido: destrava "Produto entregue" retroativo
+  if(typeof _healComprasSolicAberta==='function') _healComprasSolicAberta(); // v264 — solicitação aberta regride 'Produto entregue' (ordem do dono 10/11; roda DEPOIS do heal físico: o estado reconstruído decide)
   if(typeof _healAtendentesEquipes==='function') _healAtendentesEquipes(); // v219 — re-inscreve atendentes nas equipes pelo vínculo do cadastro (caso Aline: clobber concorrente)
   if(typeof _updateConvBadge==='function') _updateConvBadge();
   if(typeof renderNotifBadge==='function') renderNotifBadge(); // v102 — badge do sino acende em realtime (chega notificação → refreshAll → badge)
@@ -37963,7 +38090,8 @@ async function _pollConversas(){
       if(_convUniaoMsgs(conv, dbc)){
         mudou=true;
         if(row.id===conversaAtivaId) ativaMudou=true;
-        else if(typeof dbc.naoLidas==='number' && dbc.naoLidas>(conv.naoLidas||0)) conv.naoLidas=dbc.naoLidas; // badge p/ conversa não aberta
+        else if(typeof dbc.naoLidas==='number' && dbc.naoLidas>(conv.naoLidas||0)
+          && (conv._naoLidaManual || _convUltimaMsgCliEm(dbc) > (Number(conv.lidaAteEm)||0) || !(Number(conv.lidaAteEm)||0))) conv.naoLidas=dbc.naoLidas; // badge p/ conversa não aberta — v264: SÓ com mensagem além da marca-d'água; v265 (D3): régua pela msg de CLIENTE (em do provedor) + legado sem marca segue v228 puro
       }
     });
     // v263 (C10): a conversa ATIVA que mudou pelo poll ganha render COMPLETO (como o handler do realtime
@@ -39061,10 +39189,23 @@ function _telKey(p){ const d=String(p||'').replace(/\D/g,''); return d.length>=8
 // v142 : corte seguro de texto: nunca termina em metade de emoji (surrogate alto sem o par),
 // que vira JSON inválido e trava o salvamento da conversa (mensagem presa na fila).
 function _txCut(t,n){ let o=String(t||'').slice(0,n); const c=o.charCodeAt(o.length-1); if(c>=0xD800&&c<=0xDBFF) o=o.slice(0,-1); return o; }
+// v264 — ÍNDICES POR RENDER da lista de conversas (reporte do dono 10/11: troca de conversa/sub-aba
+// levando 2-3s): cada linha fazia até 6 varreduras lineares (clients.find ×2, crmLeads.find ×2,
+// users.find, contatos) — 200+ linhas × milhares de cadastros por repintura. O renderConversasLista
+// monta os mapas UMA vez e estas funções os usam quando presentes; fora do render, comportamento
+// idêntico ao antigo (find linear) — nenhum chamador muda de contrato.
+var _convRenderIdx=null;
+// Validade curta (2s): o render é síncrono (ms) — se uma exceção impedir a limpeza, o índice vazado
+// EXPIRA sozinho e os usos fora do render voltam ao find linear (um cliente recém-criado nunca fica
+// "invisível" por causa de um mapa velho).
+function _convIdxVivo(){ if(!_convRenderIdx) return false; if((Date.now()-(_convRenderIdx.em||0))>2000){ _convRenderIdx=null; return false; } return true; }
+function _convIdxCli(id){ if(_convIdxVivo()&&_convRenderIdx.cli){ var h=_convRenderIdx.cli[id]; return (h&&h.id===id)?h:null; } return (clients||[]).find(x=>x&&x.id===id)||null; } // confirmação estrita: a chave de objeto coage número/string, o find original não
+function _convIdxCard(cid){ if(_convIdxVivo()&&_convRenderIdx.card){ var h=_convRenderIdx.card[cid]; return (h&&h.clienteId===cid)?h:null; } return (crmLeads||[]).find(l=>l&&l.clienteId===cid)||null; }
+function _convIdxUser(id){ if(_convIdxVivo()&&_convRenderIdx.user){ var h=_convRenderIdx.user[id]; return (h&&h.id===id)?h:null; } return (users||[]).find(u=>u&&u.id===id)||null; }
 function _contatoPorTelefone(clienteId, telefone){
   const tk=_telKey(telefone); if(!tk) return '';
-  const cli=(clients||[]).find(x=>x.id===clienteId);
-  const lead=(crmLeads||[]).find(l=>l.clienteId===clienteId);
+  const cli=_convIdxCli(clienteId);
+  const lead=_convIdxCard(clienteId);
   for(const arr of [(cli&&cli.contatos)||[], (lead&&lead.contatos)||[]]){
     const hit=arr.find(c=>_telKey(c.telefone||c.whats)===tk);
     if(hit && hit.nome && String(hit.nome).trim()) return String(hit.nome).trim();
@@ -39076,8 +39217,8 @@ function _tituloConversa(conv){
   if(!conv) return 'Cliente';
   if(conv.grupo) return conv.nome||'Grupo'; // v148 : grupo usa o nome do grupo (sem cliente)
   if(!conv.clienteId && conv.contatoAvulso){ const _ca=conv.contatoAvulso; return String(_ca.nome||'').trim()||('Contato '+_telExib(_ca.telefone||conv.telefone||'')); } // v239 — desvinculada: identifica pelo acervo (nome+número)
-  const cli=(clients||[]).find(x=>x.id===conv.clienteId);
-  const card=(crmLeads||[]).find(l=>l.clienteId===conv.clienteId);
+  const cli=_convIdxCli(conv.clienteId); // v264 — índice por render (find linear fora do render)
+  const card=_convIdxCard(conv.clienteId);
   const empresa=(cli&&cli.nome&&String(cli.nome).trim())||(card&&card.empresa)||'Cliente';
   let contato=_contatoPorTelefone(conv.clienteId, conv.telefone);
   if(!contato){ contato=(card&&card.contato&&String(card.contato).trim())||''; }
@@ -39513,7 +39654,9 @@ function confirmarEncerrarConversa(convId){
   conv.statusEm=Date.now(); // v143 : carimbo do status (encerrada/ativa): o mais novo vence no merge entre telas
   // v143 : (modo dois numeros) encerrou -> LIBERA o atendente: a conversa vai pro Historico SEM dono
   // e, se o cliente voltar a falar, reabre no POOL para qualquer atendente do numero assumir.
-  if(typeof _waModoDois==='function' && _waModoDois()){ _convSetAtendente(conv, null); }
+  // v264 — liberar vale SEMPRE (vigia 10/11: 30 conversas encerradas com dono preso; parte era do
+  // modo 1 número, onde esta linha não rodava): encerrada não tem dono em nenhum modo.
+  _convSetAtendente(conv, null);
   try{ if(typeof _waUpsertConversa==='function') _waUpsertConversa(conv); }catch(_e){} // v143 : grava JA
   if(!Array.isArray(conv.mensagens)) conv.mensagens=[];
   conv.mensagens.push({ id:'m'+Date.now()+Math.floor(Math.random()*1000), de:'sistema', texto:`✔ Atendimento encerrado — ${resultado}${escapeHtml(obs?' ('+obs+')':'')} · por ${currentUser?.name||'Sistema'}`, em:Date.now(), autorId:null, status:'sistema' });
@@ -39623,7 +39766,15 @@ function _waAnexoHtml(a){
   const isVid = kind==='video'||tipo.includes('video');
   const ref = a.path ? `data-anexo-path="${escapeHtml(a.path)}"` : (a.url?`data-anexo-url="${escapeHtml(a.url)}"`:'');
   const _ehSticker = kind==='sticker'||tipo.includes('sticker'); // v143 : figurinha menor na tela
-  if(isImg && ref) return `<div class="wa-media"><img ${ref} alt="imagem" class="wa-img${_ehSticker?' wa-sticker':''}" onclick="_waAbrirMedia(this)"></div>`;
+  if(isImg && ref){
+    // v264 — ALTURA ESTÁVEL (vídeo do dono 10/11): a <img> nasce sem src e colapsava a cada repintura,
+    // puxando a rolagem. A dimensão RENDERIZADA é memorizada no 1º load (_waMediaDim) e reservada via
+    // aspect-ratio nas repinturas seguintes — a tela não pula quando a imagem decoda.
+    const _dk=a.path||a.url||'';
+    const _dm=_dk?_waMediaDim[_dk]:null;
+    const _st=_dm?` style="aspect-ratio:${_dm.w}/${_dm.h};width:${_dm.w}px;max-width:100%;height:auto"`:'';
+    return `<div class="wa-media"><img ${ref}${_st} alt="imagem" class="wa-img${_ehSticker?' wa-sticker':''}" onclick="_waAbrirMedia(this)"></div>`;
+  }
   if(isAud && ref){
     // v136 — transcrição automática (Whisper via wa-transcribe) exibida abaixo do player
     // v192 — botão de VELOCIDADE próprio (reporte do dono 05/08): a opção nativa do navegador (menu ⋮)
@@ -39733,16 +39884,26 @@ function _waAbrirMedia(node){ if(node && node.src) window.open(node.src,'_blank'
 // v145 : cache de links assinados — o MESMO link entre re-renders faz o navegador reaproveitar a
 // imagem/documento do cache (fim do "carregando/recarregando" a cada novidade na conversa).
 var _waSignedCache={};
+// v264 — memória da dimensão RENDERIZADA das imagens do chat (chave = path/url do anexo): registrada
+// no 1º load e usada pelo _waAnexoHtml para reservar o espaço (aspect-ratio) nas repinturas — as
+// alturas não colapsam mais a cada innerHTML e a rolagem para de pular (vídeo do dono 10/11).
+var _waMediaDim={};
+function _waMediaMemoriza(node, chave){
+  if(!node || node.tagName!=='IMG' || !chave || _waMediaDim[chave]) return;
+  node.addEventListener('load', function(){ try{ var w=node.clientWidth, h=node.clientHeight; if(w>0&&h>0) _waMediaDim[chave]={w:w,h:h}; }catch(_e){} }, { once:true });
+}
 async function _waLoadMedia(el){
   if(!el) return;
   // v199 — áudio OGG em navegador sem suporte (Safari/Mac): converte no clique em vez de src direto
   const _ehOggSemSuporte=(node,ref)=>node.tagName==='AUDIO' && !_waPodeOgg() && /\.(ogg|oga)(\?|$)/i.test(ref||'');
   el.querySelectorAll('[data-anexo-url]').forEach(node=>{ const u=node.getAttribute('data-anexo-url'); if(!u || u==='null') return;
     if(_ehOggSemSuporte(node,u)){ _waAudSafariPrep(node,u,u); return; }
+    _waMediaMemoriza(node,u);
     if(node.src!==u) node.src=u; });
   const nodes=[...el.querySelectorAll('[data-anexo-path]')];
   for(const node of nodes){
     const p=node.getAttribute('data-anexo-path'); if(!p||!_sb) continue;
+    _waMediaMemoriza(node,p);
     const c=_waSignedCache[p];
     if(c && c.exp>Date.now()){ if(_ehOggSemSuporte(node,p)) _waAudSafariPrep(node,p,c.url); else if(node.src!==c.url) node.src=c.url; continue; }
     try{ const {data}=await _sb.storage.from('anexos').createSignedUrl(p, 3600); if(data && data.signedUrl){ _waSignedCache[p]={url:data.signedUrl, exp:Date.now()+50*60000}; if(_ehOggSemSuporte(node,p)) _waAudSafariPrep(node,p,data.signedUrl); else node.src=data.signedUrl; } }catch(_){}
@@ -39946,7 +40107,7 @@ async function _convGuardDonoServidor(conv, containerId){
       }
     }catch(_e){ /* sem conexão: segue o fluxo local */ }
   }
-  if(_waModoDois() && !conv.atendenteId && currentUser && _waAtendAutorizadoNum(currentUser.id, conv)){
+  if(_waModoDois() && !conv.atendenteId && conv.status!=='encerrada' && currentUser && _waAtendAutorizadoNum(currentUser.id, conv)){ // v264 — encerrada não ganha dono por resposta: quem reabre é o registrarMensagem (que então assume no fluxo normal)
     _convSetAtendente(conv, currentUser.id);
     _convMsgSistemaLocal(conv, '👤 '+((currentUser&&currentUser.name)||'?')+' assumiu o atendimento (ao responder)');
   }
@@ -40170,10 +40331,18 @@ function renderConversas(){
     // conversa mudou, a tela ainda não montou, ou ela deixou de ser respondível (cadeado v150 intacto:
     // transferida/encerrada SEMPRE reconstrói, fechando o campo na hora). Troca de atendente ao vivo já
     // tem render completo dedicado no handler do realtime (_sepOnRealtime, ramo conversas).
+    // v265 (achado R3 da revisão 10/11): (a) a montagem é testada no CONTAINER ATIVO (o modal, quando
+    // aberto) — antes testava sempre #conv-tela e o modal aberto por cima da Agenda/CRM sofria render
+    // COMPLETO a cada evento (áudio em reprodução reiniciava, painel de emoji fechava); (b) a régua
+    // virou TRANSIÇÃO DE ESTADO: parcial enquanto o estado do rodapé pintado (responder/cadeado/
+    // encerrada) é o MESMO do atual — espectador em regime permanente ganha o caminho parcial; mudou
+    // o estado (transferida, encerrada, reaberta) → rebuild completo na hora (cadeado v150 intacto).
     const _cvAtv=(conversas||[]).find(c=>c.id===conversaAtivaId);
-    const _aindaMinha=_cvAtv && _cvAtv.status!=='encerrada' && (typeof _podeResponderConv!=='function' || _podeResponderConv(_cvAtv));
-    const _telaMontada=_convTelaUltimoId===conversaAtivaId && !!document.querySelector('#conv-tela .conv-msgs-field');
-    if(_telaMontada && _aindaMinha){
+    const _cidAtv=_convContainerAtivo();
+    const _elAtv=document.getElementById(_cidAtv);
+    const _telaMontada=_convTelaUltimoId===conversaAtivaId && !!(_elAtv&&_elAtv.querySelector('.conv-msgs-field'));
+    const _estadoAtual=_cvAtv?((_cvAtv.status==='encerrada'&&!_cvAtv.grupo)?'enc':((typeof _podeResponderConv!=='function'||_podeResponderConv(_cvAtv))?'resp':'view')):null;
+    if(_telaMontada && _estadoAtual && _elAtv && _elAtv._waEstadoConv===_estadoAtual){
       try{ renderConversaMsgs(conversaAtivaId); }catch(_e){}
     } else {
       renderConversaTela(conversaAtivaId);
@@ -40280,6 +40449,15 @@ function renderConversasLista(){
     }
   }catch(_e){}
   const _scrollAntes=el.scrollTop;
+  // v264 — índices por render (reporte do dono 10/11: troca de sub-aba levava 2-3s): cli/card/user
+  // por id montados UMA vez; _tituloConversa/_contatoPorTelefone/_convItemHtml usam os mapas.
+  // Limpos em TODOS os caminhos de saída abaixo (dedupe e fim).
+  _convRenderIdx={em:Date.now(),cli:{},card:{},user:{}};
+  try{
+    (clients||[]).forEach(function(x){ if(x&&x.id!=null) _convRenderIdx.cli[x.id]=x; });
+    (crmLeads||[]).forEach(function(l){ if(l&&l.clienteId!=null&&!_convRenderIdx.card[l.clienteId]) _convRenderIdx.card[l.clienteId]=l; });
+    (users||[]).forEach(function(u){ if(u&&u.id!=null) _convRenderIdx.user[u.id]=u; });
+  }catch(_e){ _convRenderIdx=null; }
   _migrarConvTelefone(); // v106 — garante telefone nas conversas legadas (idempotente)
   // v229 — 📅 sinal de tarefa agendada (pedido do dono 18/09): mapa clienteId → data da próxima ação
   // PENDENTE da agenda (via card), montado UMA vez por render; a linha da conversa mostra o sinal.
@@ -40407,6 +40585,12 @@ function renderConversasLista(){
   } else {
     html += lista.map(c=>_convItemHtml(c, sub==='__sem__')).join('');
   }
+  // v264 — NADA MUDOU → NÃO REPINTA (vídeo do dono 10/11: "os nomes dos contatos ficam se movimentando
+  // sozinhos"): a lista era reconstruída a cada evento de realtime/poll de QUALQUER tabela mesmo sem
+  // mudança visível — HTML idêntico agora deixa DOM, hover e rolagem intocados.
+  _convRenderIdx=null; // v264 — índices valem SÓ dentro deste render
+  if(el._waHtml===html){ _convListaPintadaEm=Date.now(); return; }
+  el._waHtml=html;
   el.innerHTML = html;
   _convListaPintadaEm=Date.now();
   if(_scrollAntes) el.scrollTop=_scrollAntes; // v263 — rolagem da lista sobrevive ao re-render
@@ -40434,10 +40618,10 @@ function _convItemHtml(conv, semDono){
       +'<span style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+_convSinaisHtml(conv)+(conv.naoLidas?('<span style="background:#25D366;color:#fff;border-radius:20px;font-size:10px;font-weight:700;padding:1px 7px">'+conv.naoLidas+'</span>'):'')+'<span style="font-size:10px;color:var(--text-tertiary)">'+escapeHtml(hora)+'</span></span></div>'
       +'<div style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:3px">'+escapeHtml(conv.ultimaMsg||'')+'</div></div>';
   }
-  const cli = clients.find(x=>x.id===conv.clienteId);
+  const cli = _convIdxCli(conv.clienteId); // v264 — índice por render
   const nome = _tituloConversa(conv);
   const ativa = conv.id===conversaAtivaId;
-  const atendente = conv.atendenteId ? users.find(u=>u.id===conv.atendenteId) : null;
+  const atendente = conv.atendenteId ? _convIdxUser(conv.atendenteId) : null;
   const _eqId = conv.equipeId||'';
   const equipeNome = _eqId ? ((typeof isSDREquipe==='function'&&isSDREquipe(_eqId))?'SDR':(getEquipeNome(_eqId)||'')) : '';
   const hora = conv.ultimaMsgEm ? fmtTs(conv.ultimaMsgEm) : '';
@@ -40752,16 +40936,62 @@ async function _convForwardEnviar(destClienteId){
     ? '⚠ O encaminhamento para '+(cli.nome||'contato')+' não foi confirmado pelo WhatsApp — abra a conversa dele e reenvie.'
     : '✓ '+(anexo?'Mídia encaminhada':'Mensagem encaminhada')+' para '+(cli.nome||'contato')+'.');
 }
+// v264 — CARIMBO DE LEITURA (pedido do dono 10/11: "a bolinha vermelha só para o que ainda não foi
+// lido (aberto) ou remarcado como não lido por um colaborador"): o contador naoLidas não tinha
+// carimbo — a união v228 ("maior vence") readotava contador VELHO de cópia defasada e a conversa
+// RELIDA voltava a acusar não-lida. A leitura agora grava lidaAteEm (marca-d'água no TEMPO DAS
+// MENSAGENS — mensagem compara com mensagem, imune a relógio de máquina) + lidaDecEm (carimbo da
+// decisão, mais-novo-vence entre abas, mesma classe do atendEm/statusEm v143). A união adota o
+// estado de leitura mais novo e NORMALIZA: sem marca manual e sem mensagem além da marca-d'água,
+// o contador é zero — venha a cópia velha de onde vier. Mensagem NOVA do cliente avança o
+// ultimaMsgEm além da marca-d'água e a bolinha volta a acender normalmente.
+// v265 (achado D3 da revisão 10/11) — a marca-d'água é a última mensagem DE CLIENTE: o ultimaMsgEm
+// inclui mensagens do ATENDENTE carimbadas com Date.now() local — relógio adiantado empurrava a
+// marca-d'água para o futuro e a resposta real do cliente chegava "já lida" em todas as abas.
+// Mensagem de cliente tem em do provedor/servidor — domínio de relógio consistente entre si.
+function _convUltimaMsgCliEm(conv){
+  try{
+    var ms=(conv&&conv.mensagens)||[]; var mx=0;
+    for(var i=0;i<ms.length;i++){ var m=ms[i]; if(m && m.de==='cliente'){ var e=Number(m.em)||0; if(e>mx) mx=e; } }
+    return mx;
+  }catch(_e){ return 0; }
+}
+function _convMarcaLida(conv){
+  if(!conv) return;
+  conv.naoLidas=0;
+  conv.lidaAteEm=Math.max(Number(conv.lidaAteEm)||0, _convUltimaMsgCliEm(conv) || (Number(conv.ultimaMsgEm)||0)); // v265 — régua pela msg de CLIENTE (fallback: conversa sem msg de cliente)
+  conv.lidaDecEm=Date.now();
+  delete conv._naoLidaManual;
+}
+// v265 (achado D2) — zera no SERVIDOR com os carimbos QUE O CLIENTE MEDIU (um único domínio de relógio
+// por decisão; o carimbo do banco vencia uma remarcação manual recém-feita e a desfazia em silêncio).
+// Janela de migração: se a RPC nova (3 argumentos) ainda não existir no banco, cai na assinatura antiga.
+function _convZerarSrv(conv){
+  try{
+    if(!_sb || !conv || !conv.id) return;
+    _sb.rpc('conv_zerar_nao_lidas', { p_conv_id: conv.id, p_dec_em: Number(conv.lidaDecEm)||Date.now(), p_ate_em: Number(conv.lidaAteEm)||0 }).then(function(_r){
+      if(_r && _r.error){ try{ _sb.rpc('conv_zerar_nao_lidas', { p_conv_id: conv.id }).then(function(){}); }catch(_e){} }
+    });
+  }catch(_e){}
+}
 function abrirConversa(convId){
   conversaAtivaId = convId;
   const conv = conversas.find(c=>c.id===convId);
-  if(conv){ conv.naoLidas=0; delete conv._naoLidaManual; saveData();
+  if(conv){ _convMarcaLida(conv); // v264 — leitura carimbada (marca-d'água + decisão)
     // v151 — zera TAMBÉM no servidor (atômico): o realtime trazia o contador antigo de volta ("respondi e segue não lida")
     // v179 — .then() OBRIGATÓRIO (builder do Supabase só envia quando aguardado; era código morto)
-    try{ if(_sb) _sb.rpc('conv_zerar_nao_lidas', { p_conv_id: convId }).then(function(_r){}); }catch(_e){}
+    // v265 (achado D2) — o servidor grava os carimbos QUE O CLIENTE MEDIU (um único domínio de relógio
+    // por decisão): o carimbo do banco, gravado na chegada da requisição, vencia uma remarcação manual
+    // feita logo após a leitura e a desfazia em silêncio.
+    _convZerarSrv(conv);
   }
   renderConversasLista();
   renderConversaTela(convId);
+  // v264 — COMMIT FORA DO CAMINHO DO CLIQUE (reporte do dono 10/11: trocar de conversa levava 2-3s):
+  // o saveData rodava SÍNCRONO antes de pintar — _collectData + varredura com JSON.stringify de todas
+  // as entidades na thread principal. A tela agora pinta primeiro; o commit sai logo após (mesma
+  // semântica, um frame depois) e a leitura já foi persistida ATOMICAMENTE pela RPC acima.
+  if(conv){ setTimeout(function(){ try{ saveData(); }catch(_e){} }, 80); }
 }
 // v229 — SINAL DE ATENÇÃO na conversa (pedido do dono 18/09, caso Naruna: "ficamos de dar um
 // retorno... um sinal visual para saber que aquela conversa merece atenção específica"). Toggle
@@ -40784,6 +41014,7 @@ function _convMarcarNaoLida(convId){
   const conv=(conversas||[]).find(c=>c.id===convId); if(!conv) return;
   conv.naoLidas = (conv.naoLidas&&conv.naoLidas>0) ? conv.naoLidas : 1;
   conv._naoLidaManual = true;
+  conv.lidaDecEm = Date.now(); // v264 — decisão carimbada: a remarcação manual vence leituras ANTERIORES nas outras abas (e a normalização respeita a marca)
   if(conversaAtivaId===convId){ conversaAtivaId=null; _convTelaUltimoId=null; try{ delete _convIdPorContainer['conv-tela']; }catch(_e){} /* v263 (B2, verificação): fecha o residual do guard pós-await */
     const _t=document.getElementById('conv-tela'); if(_t) _t.innerHTML='<div class="empty" style="margin:auto;color:var(--text-tertiary);font-size:13px">Selecione uma conversa à esquerda</div>'; }
   saveData(); renderConversasLista(); if(typeof _updateConvBadge==='function') _updateConvBadge();
@@ -40925,16 +41156,48 @@ function _convContainerAtivo(containerId){
   if(containerId) return containerId;
   return document.getElementById('conv-modal-tela') ? 'conv-modal-tela' : 'conv-tela';
 }
+// v264 — ÂNCORA DE ROLAGEM DO CHAT (vídeo do dono 10/11: "a tela volta para 4 meses atrás", "cada
+// imagem carregada puxa a tela"): aplica o alvo AGORA e RE-APLICA depois que as mídias assinam/decodam
+// (as <img> nascem sem src — toda repintura colapsava as alturas e a posição clampava p/ cima).
+// Desiste assim que o usuário rolar por conta própria (a posição atual difere da última aplicada).
+function _convScrollFix(field, alvoFn, mediasP){
+  if(!field) return;
+  var seq=(field._waScrollSeq=(field._waScrollSeq||0)+1); // âncora NOVA invalida os re-fixes da anterior
+  var aplicar=function(){ try{ field.scrollTop=alvoFn(); field._waScrollEsperado=field.scrollTop; }catch(_e){} };
+  aplicar();
+  var refix=function(){ if(field._waScrollSeq!==seq) return; if(Math.abs(field.scrollTop-(field._waScrollEsperado||0))>4) return; aplicar(); };
+  try{ if(mediasP && mediasP.then) mediasP.then(function(){ refix(); setTimeout(refix,120); }); }catch(_e){}
+  setTimeout(refix,350); setTimeout(refix,1000);
+}
 function renderConversaMsgs(convId, containerId){
   containerId=_convContainerAtivo(containerId);
   const el=document.getElementById(containerId); if(!el) return;
   const field=el.querySelector('.conv-msgs-field');
   if(!field || _convTelaUltimoId!==convId){ renderConversaTela(convId, containerId); return; } // tela ainda não montou esta conversa → render completo
   const conv=conversas.find(c=>c.id===convId); if(!conv) return;
+  const novo=_convMsgsHtml(conv);
+  // v264 — NADA MUDOU → NÃO REPINTA (vídeo do dono 10/11): este caminho roda a cada evento de realtime/
+  // poll de qualquer tabela via refreshAll; repintar sem mudança colapsava as mídias e jogava a rolagem
+  // para o topo do histórico. HTML idêntico = DOM e rolagem intocados (só garante srcs, barato e idempotente).
+  if(field._waHtml===novo){ try{ _waLoadMedia(el); }catch(_e){} return; }
   const _perto = (field.scrollHeight - field.scrollTop - field.clientHeight) < 80; // só puxa p/ baixo se já estava perto do fim
-  field.innerHTML=_convMsgsHtml(conv);
-  if(_perto) field.scrollTop=field.scrollHeight;
-  try{ _waLoadMedia(el); }catch(_e){}
+  const _topo = field.scrollTop; // v264 — leitor no meio do histórico fica ONDE ESTÁ (antes: sem restauração, clampava p/ cima)
+  // v265 (achado R4 da revisão 10/11) — âncora POR MENSAGEM: com conteúdo INSERIDO ACIMA ("Ver
+  // mensagens anteriores", hidratação), o px absoluto apontava ~N mensagens acima da leitura. A âncora
+  // guarda a 1ª bolha visível (data-mid) e devolve a tela para ELA; sem a bolha no novo HTML, cai no px.
+  let _ancMid=null,_ancOff=0;
+  if(!_perto){ try{
+    const _fTop=field.getBoundingClientRect().top;
+    const _bs=field.querySelectorAll('.wa-bubble[data-mid]');
+    for(const _b of _bs){ const _abs=_b.getBoundingClientRect().top-_fTop+field.scrollTop; if(_abs+_b.getBoundingClientRect().height>_topo){ _ancMid=_b.getAttribute('data-mid'); _ancOff=_abs-_topo; break; } }
+  }catch(_e){} }
+  field._waHtml=novo;
+  field.innerHTML=novo;
+  let _pm=null; try{ _pm=_waLoadMedia(el); }catch(_e){}
+  _convScrollFix(field, _perto?function(){ return field.scrollHeight; }:function(){
+    if(_ancMid){ try{ const _b2=field.querySelector('.wa-bubble[data-mid="'+String(_ancMid).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"]'); if(_b2){ const _a2=_b2.getBoundingClientRect().top-field.getBoundingClientRect().top+field.scrollTop; return Math.max(0,_a2-_ancOff); } }catch(_e){} }
+    return _topo;
+  }, _pm);
 }
 function renderConversaTela(convId, containerId){
   containerId=_convContainerAtivo(containerId); // v246 — modal aberto vence (ver _convContainerAtivo)
@@ -41079,7 +41342,15 @@ function renderConversaTela(convId, containerId){
     </div>
     <div class="conv-msgs-field wa-chat">${msgs}</div>
     <div class="wa-inputbar">
-      ${_podeResponder ? `
+      ${(_encerrada && !conv.grupo) ? `
+      <!-- v264 — reporte do dono 10/11 (modal pela Agenda/CRM): conversa ENCERRADA não mostra campo de
+           resposta (nem para admin) e não mostra "Atribuir para mim" solto — atribuir conversa encerrada
+           era DESFEITO em silêncio pelo invariante "encerrada = sem dono" (trigger de 10/11). O caminho
+           único é REABRIR E ASSUMIR numa ação só; o Reabrir do cabeçalho segue reabrindo sem dono (pool). -->
+      <div style="text-align:center;padding:6px 0">
+        <div style="font-size:12px;color:#54656f;margin-bottom:8px">Conversa encerrada${conv.resultado?' — '+escapeHtml(conv.resultado):''}. Para responder, reabra e assuma o atendimento.</div>
+        <button onclick="_assumirConversaParaMim('${conv.id}')" style="font-size:13px;font-weight:600;padding:9px 18px;border-radius:21px;background:#00a884;color:#fff;border:none;cursor:pointer">📥 Reabrir e assumir</button>
+      </div>` : _podeResponder ? `
       ${_cobrindoPausa?`<div style="text-align:center;font-size:11px;font-weight:600;color:#946200;background:#FFF4D6;border:.5px solid #EAD9A8;border-radius:8px;padding:5px 10px;margin-bottom:6px">⏸ Cobrindo a pausa de ${escapeHtml(_nomeDe(conv.atendenteId))} — a conversa continua com ele(a); sua resposta sai assinada com o seu nome.</div>`:''}
       <div class="wa-de-toggle">
         <button onclick="_setMsgDe('cliente',this)" class="msgde-btn" data-de="cliente" style="font-size:11px;padding:3px 10px;border-radius:20px;border:.5px solid #d1d7db;background:#fff;color:#54656f;cursor:pointer">Mensagem do cliente</button>
@@ -41111,10 +41382,17 @@ function renderConversaTela(convId, containerId){
   }
   _convTelaUltimoId=convId;
   _convIdPorContainer[containerId]=convId; // v263 (B1) — o envio resolve o destino pelo container
+  el._waEstadoConv=(_encerrada&&!conv.grupo)?'enc':(_podeResponder?'resp':'view'); // v265 (R3) — estado do rodapé pintado: a régua parcial×completo compara com o atual (transição = rebuild)
   // v252 — rolagem: conversa nova ou leitor perto do fim → vai ao fim; leitor no meio do histórico →
   // volta exatamente para onde estava (fim do "pula lá pra baixo" no refresh do realtime/poll)
-  setTimeout(()=>{const m=el.querySelector('.conv-msgs-field');if(!m)return; if(_prevPerto||_prevScrollTop==null){m.scrollTop=m.scrollHeight;}else{m.scrollTop=_prevScrollTop;}},50);
-  _waLoadMedia(el); // v93 — preenche imagens/áudios/vídeos (URL assinada)
+  // v264 — a âncora agora RE-APLICA após as mídias carregarem (vídeo do dono 10/11: abrir a conversa
+  // pinava o fim aos 50ms, as imagens decodavam DEPOIS e a tela ficava no meio do histórico) e o
+  // dedupe do caminho parcial ganha a fotografia do HTML pintado (_waHtml).
+  let _pmT=null; try{ _pmT=_waLoadMedia(el); }catch(_e){} // v93 — preenche imagens/áudios/vídeos (URL assinada)
+  setTimeout(()=>{const m=el.querySelector('.conv-msgs-field');if(!m)return;
+    if(m._waHtml!==undefined && m._waHtml!==msgs) return; // v265 (R5) — um parcial já repintou nesta janela de 50ms: não rasura a fotografia nem re-ancora por cima da âncora mais nova
+    m._waHtml=msgs;
+    _convScrollFix(m, (_prevPerto||_prevScrollTop==null)?function(){ return m.scrollHeight; }:function(){ return _prevScrollTop; }, _pmT);},50);
   // v95.1 — preserva a escolha do toggle DENTRO da mesma conversa (reset só ao TROCAR de conversa).
   // Antes resetava a cada render → após registrar uma fala do cliente, a próxima ia como "atendente"
   // e era ENVIADA ao WhatsApp por engano.
@@ -41185,6 +41463,14 @@ async function _enviarMensagemConversaMiolo(containerId){
   // v143 : no pool do numero, confere o DONO no SERVIDOR antes de enviar (tela desatualizada nao atropela
   // uma transferencia feita em outra tela) e AUTO-ASSUME ao responder conversa sem atendente (\u00a78.4 do plano).
   // v159 : extra\u00eddo p/ _convGuardDonoServidor \u2014 anexo/\u00e1udio/Ctrl+V passam pelo MESMO guard (antes s\u00f3 o texto).
+  // v265 (achado R2 da revisão 10/11): o envio CHECA o status — uma tela defasada (realtime parcial em
+  // conversa do pool encerrada por outro usuário) ainda mostrava o campo e o envio reabria a conversa
+  // em silêncio pelo registrarMensagem, contornando o caminho único "Reabrir e assumir" da v264.
+  if(conv.status==='encerrada' && !conv.grupo){
+    alert('Esta conversa foi ENCERRADA'+(conv.resultado?' ('+conv.resultado+')':'')+' em outra tela.\n\nUse "📥 Reabrir e assumir" para responder.');
+    try{ renderConversaTela(conv.id, containerId); }catch(_e){}
+    return;
+  }
   if(!(await _convGuardDonoServidor(conv, containerId))) return;
   if(!_podeResponderConv(conv)){ alert('Atribua esta conversa para você antes de responder.\nUse "📥 Atribuir para mim".'); return; }
   const _de = _msgDeAtual;
@@ -41269,15 +41555,38 @@ function _convUniaoMsgs(base, other){
   // nunca adotava o contador do servidor. Regra: o MAIOR contador vence; aberta E visível, o guard
   // abaixo zera (está sendo lida agora).
   let _nlMudou=false;
+  // v264 — ESTADO DE LEITURA com carimbo (pedido do dono 10/11): a marca-d'água lidaAteEm é monotônica
+  // (quem leu mais, leu — máximo sempre vale) e a DECISÃO (ler × remarcar não-lida) segue o carimbo
+  // mais novo, como atendente/status v143. Isso propaga a leitura para as outras abas (o badge delas
+  // morre na normalização abaixo) e protege a remarcação manual feita depois da leitura.
+  if((Number(other.lidaAteEm)||0) > (Number(base.lidaAteEm)||0)){ base.lidaAteEm=Number(other.lidaAteEm)||0; }
+  if((other.lidaDecEm||0) > (base.lidaDecEm||0)){
+    base.lidaDecEm=other.lidaDecEm;
+    if(other._naoLidaManual){ base._naoLidaManual=true; _nlMudou=true; }
+    else if(base._naoLidaManual){ delete base._naoLidaManual; _nlMudou=true; }
+  }
   if(typeof other.naoLidas==='number' && (other.naoLidas||0)>(base.naoLidas||0)){ base.naoLidas=other.naoLidas; _nlMudou=true; }
   // v151 — conversa ABERTA nesta tela é lida por definição: o realtime não ressuscita o badge dela.
   // v159 — "aberta" agora exige estar DE FATO visível (página Conversas ou modal do card, aba em foco):
   // o ponteiro fantasma pós-fechar-modal zerava não-lidas de mensagem nova para todos.
-  try{ if(typeof conversaAtivaId!=='undefined' && conversaAtivaId===base.id && _convVisivelEmTela()){
+  try{ if(typeof conversaAtivaId!=='undefined' && conversaAtivaId===base.id && _convVisivelEmTela() && !base._naoLidaManual){
     // v228 — lendo AGORA: zera TAMBÉM no servidor (senão o contador ficava lá e o badge voltava depois)
-    if((base.naoLidas||0)>0){ try{ if(_sb) _sb.rpc('conv_zerar_nao_lidas', { p_conv_id: base.id }).then(function(_r){}); }catch(_e2){} }
-    base.naoLidas=0; _nlMudou=false;
+    // v265 (achado D1 da revisão 10/11): a tela PARADA sobre a conversa NÃO consome mais uma marca
+    // DELIBERADA (remarcação manual/transferência v144) — o admin com a conversa aberta transferia e a
+    // guarda apagava a não-lida do novo atendente antes de ele vê-la. Quem consome a marca é o ATO de
+    // abrir/clicar a conversa (abrirConversa/modal), não a presença passiva.
+    var _tinhaCont=(base.naoLidas||0)>0;
+    if(typeof _convMarcaLida==='function') _convMarcaLida(base); else base.naoLidas=0; // v264 — leitura carimbada
+    if(_tinhaCont){ try{ _convZerarSrv(base); }catch(_e2){} } // v265 (D2): manda os carimbos que o cliente mediu
+    _nlMudou=false;
   } }catch(_e){}
+  // v264 — NORMALIZAÇÃO: contador ressuscitado por cópia velha morre aqui — COM leitura carimbada
+  // (marca-d'água > 0), sem marca manual e sem MENSAGEM DE CLIENTE mais nova que a marca-d'água, NÃO
+  // há não-lidas (a bolinha fica só para o nunca-aberto e para o remarcado). Sem marca-d'água (legado
+  // pré-carimbo) o contrato v228 vale puro. v265 (achado D3): a régua é a última mensagem DE CLIENTE —
+  // o ultimaMsgEm inclui envio do atendente carimbado com relógio LOCAL (adiantado, mascarava a
+  // resposta real do cliente dentro da janela de skew).
+  if((base.naoLidas||0)>0 && !base._naoLidaManual && (Number(base.lidaAteEm)||0)>0 && _convUltimaMsgCliEm(base) <= (Number(base.lidaAteEm)||0)){ base.naoLidas=0; _nlMudou=true; }
   // v229 — sinal de ATENÇÃO (pedido do dono 18/09): carimbo mais novo vence, como atendente/status
   let _estadoMudou=false; // v263 (C10, revisão 09/11)
   if((other.atencaoEm||0) > (base.atencaoEm||0)){ base.atencao=!!other.atencao; base.atencaoEm=other.atencaoEm; if(other.atencaoPor!==undefined) base.atencaoPor=other.atencaoPor; _estadoMudou=true; }
@@ -41291,6 +41600,14 @@ function _convUniaoMsgs(base, other){
     if(other.encerradaPor!==undefined) base.encerradaPor=other.encerradaPor;
     _estadoMudou=true;
   }
+  // v264 — INVARIANTE "encerrada = sem dono" (vigia 10/11: 30 conversas presas; caso das 08:19 de
+  // hoje — envio de aba defasada re-assumiu POR CARIMBO uma conversa recém-encerrada: o atendEm 3s
+  // mais novo vencia a união enquanto o statusEm mantinha 'encerrada', e o dono ficava preso). Os
+  // dois carimbos são INDEPENDENTES por desenho; a união decide cada um e DEPOIS aplica a regra de
+  // negócio: conversa encerrada não tem dono (encerrar libera; reabertura passa pelo pool — v143).
+  // Reaberta (status ativa) fica intacta. O mesmo invariante vive no banco (trigger 10/11), que
+  // cobre as abas ainda na v263.
+  if(base.status==='encerrada' && base.atendenteId){ base.atendenteId=null; _estadoMudou=true; }
   // v263 (C10): transferência/encerramento/atenção SEM mensagem nova agora SINALIZAM mudança — o poll
   // de 10s (único caminho vivo quando o realtime cai) repinta lista e cadeado; antes o retorno false
   // deixava o campo de resposta aberto por até ~3min numa conversa já transferida.
@@ -41529,10 +41846,21 @@ function confirmarAtribuir(convId){
     // v143 : transferiu para OUTRA pessoa -> SAI da conversa (nao fica a tela aberta com campo de resposta)
     const _gestor=currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial');
     if(userId && currentUser && userId!==currentUser.id && !_gestor && conversaAtivaId===convId){
-      conversaAtivaId=null; _convTelaUltimoId=null; try{ delete _convIdPorContainer['conv-tela']; }catch(_e){} /* v263 (B2, verificação): fecha o residual do guard pós-await */
-      const _t=document.getElementById('conv-tela');
-      if(_t) _t.innerHTML='<div class="empty" style="margin:auto;color:var(--text-tertiary);font-size:13px">Conversa transferida. Selecione outra à esquerda.</div>';
-      document.getElementById('conv-modal-overlay')?.remove();
+      // v265 (achado R6 da revisão 10/11): transferência feita DE DENTRO DO MODAL fecha o modal
+      // restaurando o ponteiro do painel — antes apagava o #conv-tela do PAINEL (que mostrava OUTRA
+      // conversa) e deixava órfão o mapa do container do modal.
+      const _ovM=document.getElementById('conv-modal-overlay');
+      if(_ovM){
+        _ovM.remove(); _convTelaUltimoId=null; try{ delete _convIdPorContainer['conv-modal-tela']; }catch(_e){}
+        const _pgcT=document.getElementById('pg-conversas');
+        conversaAtivaId=(_pgcT && _pgcT.style.display!=='none')?((typeof _convPonteiroAntesModal!=='undefined'?_convPonteiroAntesModal:null)||null):null;
+        _convPonteiroAntesModal=null;
+        if(conversaAtivaId){ try{ renderConversaTela(conversaAtivaId,'conv-tela'); }catch(_e){} }
+      } else {
+        conversaAtivaId=null; _convTelaUltimoId=null; try{ delete _convIdPorContainer['conv-tela']; }catch(_e){} /* v263 (B2, verificação): fecha o residual do guard pós-await */
+        const _t=document.getElementById('conv-tela');
+        if(_t) _t.innerHTML='<div class="empty" style="margin:auto;color:var(--text-tertiary);font-size:13px">Conversa transferida. Selecione outra à esquerda.</div>';
+      }
       renderConversasLista();
       return;
     }
@@ -41561,6 +41889,18 @@ function _aplicarAtribuicaoConversa(convId, eqId, userId){
     if(!equipes.some(e=>e.coordenadorId===currentUser.id && e.id===eqAtual)){ return; }
     eqId = eqAtual; // ignora qualquer tentativa de trocar a equipe
   }
+  // v264 — ATRIBUIR COM ATENDENTE IMPLICA REABRIR (mesma classe do _assumirConversaParaMim: atribuir
+  // alguém a conversa ENCERRADA era desfeito em silêncio pelo invariante "encerrada = sem dono").
+  // Reabre com carimbo+registro; "sem atendente (pool)" em encerrada NÃO reabre (só devolve ao pool).
+  // v265 (achado D5): o bloco roda DEPOIS do guard da coordenadora — o return acima não deixa mais
+  // reabertura fantasma no objeto local.
+  let _reabriuAtr=false;
+  if(userId && conv.status==='encerrada'){
+    conv.status='ativa'; conv.statusEm=Date.now(); conv.reabertaEm=Date.now();
+    if(!Array.isArray(conv.mensagens)) conv.mensagens=[];
+    conv.mensagens.push({ id:'m'+Date.now()+Math.floor(Math.random()*1000), de:'sistema', texto:'🔄 Atendimento reaberto por '+((currentUser&&currentUser.name)||'Sistema')+' (ao atribuir)', em:Date.now(), autorId:null, status:'sistema' });
+    _reabriuAtr=true;
+  }
   const ehSDR=isSDREquipe(eqId);
   // v140 : modo DOIS NUMEROS: transferir a CONVERSA nao mexe na CARTEIRA do cliente
   // (regra do dono: cliente da Tairine continua da Tairine; a conversa e do NUMERO, nao da carteira)
@@ -41579,13 +41919,19 @@ function _aplicarAtribuicaoConversa(convId, eqId, userId){
     _convMsgSistemaLocal(conv, '\uD83D\uDD01 Atendimento: '+_nn(_atendAntes)+' \u2192 '+_nn(conv.atendenteId)+' (por '+((currentUser&&currentUser.name)||'?')+')');
   }
   // v144 : transferida para OUTRA pessoa chega como NAO LIDA para o novo atendente
-  if(_waModoDois() && conv.atendenteId && conv.atendenteId!==_atendAntes && conv.atendenteId!==(currentUser&&currentUser.id)){ conv.naoLidas=Math.max(1, conv.naoLidas||0); }
+  // v264 — a transferência é uma REMARCAÇÃO deliberada (classe "remarcado por colaborador"): sem a
+  // marca+carimbo, a normalização da união apagaria o badge que a transferência acabou de acender.
+  // A marca some quando o novo atendente ABRE a conversa (mesmo ciclo da remarcação manual).
+  if(_waModoDois() && conv.atendenteId && conv.atendenteId!==_atendAntes && conv.atendenteId!==(currentUser&&currentUser.id)){ conv.naoLidas=Math.max(1, conv.naoLidas||0); conv._naoLidaManual=true; conv.lidaDecEm=Date.now(); }
   if(cli){
     if(typeof _sincronizarCardComCarteira==='function' && !_waModoDois()) _sincronizarCardComCarteira(cli.id);
     const card=crmLeads.find(l=>l.clienteId===cli.id);
     if(card && userId){ card.responsavelId=userId; card.responsavel=users.find(u=>u.id===userId)?.name||''; }
   }
-  try{ _convPushAtendente(conv); }catch(_e){} // v145 : atômico (v143 era blob com união)
+  // v265 (achado D4): reabriu ao atribuir = gravação ÚNICA da linha inteira (status ativo + atendente
+  // juntos; sem corrida push×upsert com o trigger "encerrada = sem dono"). Sem reabertura: push v145.
+  if(_reabriuAtr){ try{ if(typeof _waUpsertConversa==='function') _waUpsertConversa(conv); }catch(_e){} }
+  else { try{ _convPushAtendente(conv); }catch(_e){} } // v145 : atômico (v143 era blob com união)
   saveData();
 }
 // v98 — equipe principal do usuário (prefere vendas; senão SDR)
@@ -41621,12 +41967,17 @@ function _podeResponderConv(conv){
 // (assim o atendente "gruda" e o sync de carteira não o remove).
 async function _assumirConversaParaMim(convId){
   const conv=conversas.find(c=>c.id===convId); if(!conv||!currentUser) return;
-  if(conv.atendenteId===currentUser.id) return; // v144 : ja e o atendente — nada a fazer (sem msg repetida)
+  if(conv.atendenteId===currentUser.id && conv.status!=='encerrada') return; // v144 : ja e o atendente — nada a fazer (sem msg repetida); v264 — encerrada segue p/ reabrir
   // v169 — ⏸ pausado não assume conversa do pool (viraria dono sem poder responder)
   if(_pausaAtiva(currentUser.id)){ alert('⏸ Você está em PAUSA — não dá para assumir atendimentos.\nPeça ao admin/diretora para despausar.'); return; }
-  if(_waModoDois() && conv.atendenteId && !['admin','diretor_comercial'].includes(currentUser.perfil)){
-    alert('Esta conversa est\u00e1 em atendimento por outra pessoa \u2014 somente admin/diretora podem assumi-la.'); return; // v144
+  if(_waModoDois() && conv.atendenteId && conv.status!=='encerrada' && !['admin','diretor_comercial'].includes(currentUser.perfil)){
+    alert('Esta conversa est\u00e1 em atendimento por outra pessoa \u2014 somente admin/diretora podem assumi-la.'); return; // v144 (v264: encerrada n\u00e3o tem dono por invariante \u2014 residual local n\u00e3o bloqueia o reabrir-e-assumir)
   }
+  // v264 \u2014 ASSUMIR IMPLICA REABRIR (reporte do dono 10/11, modal pela Agenda/CRM: "tenta atribuir, a
+  // janela fecha e n\u00e3o atribui"): atribuir conversa ENCERRADA era desfeito EM SIL\u00caNCIO pelo invariante
+  // "encerrada = sem dono" (trigger de 10/11) \u2014 o conv_set_atendente gravava e o banco removia na mesma
+  // escrita. Reabre com carimbo+registro ANTES de assumir; a grava\u00e7\u00e3o final leva status ativo +
+  // atendente JUNTOS e passa pelo trigger. O "Reabrir" do cabe\u00e7alho segue reabrindo SEM dono (pool).
   const cli=clients.find(x=>x.id===conv.clienteId);
   // v140 : guarda de corrida no pool compartilhado: confere no SERVIDOR se outra pessoa acabou de assumir
   if(_waModoDois() && _sb){
@@ -41641,6 +41992,16 @@ async function _assumirConversaParaMim(convId){
       }
     }catch(_e){ /* sem conexao: segue o fluxo local */ }
   }
+  // v265 (revis\u00e3o 10/11, achado D5): a reabertura muta a conversa S\u00d3 DEPOIS de todos os guards \u2014 antes
+  // ela rodava antes da guarda de corrida e um return deixava reabertura fantasma + msg de sistema
+  // esp\u00faria no objeto local (subia ao servidor no pr\u00f3ximo commit).
+  let _reabriu=false;
+  if(conv.status==='encerrada'){
+    conv.status='ativa'; conv.statusEm=Date.now(); conv.reabertaEm=Date.now();
+    if(!Array.isArray(conv.mensagens)) conv.mensagens=[];
+    conv.mensagens.push({ id:'m'+Date.now()+Math.floor(Math.random()*1000), de:'sistema', texto:'\ud83d\udd04 Atendimento reaberto por '+((currentUser&&currentUser.name)||'Sistema')+' (ao assumir)', em:Date.now(), autorId:null, status:'sistema' });
+    _reabriu=true;
+  }
   let eq=conv.equipeId;
   if(!_usuarioPertenceEquipe(currentUser.id, eq)){
     // v140 : no modo dois, assumir NAO muda a equipe/carteira da conversa (pool do numero); fora dele, regra de sempre
@@ -41653,7 +42014,13 @@ async function _assumirConversaParaMim(convId){
   const card=crmLeads.find(l=>l.clienteId===conv.clienteId);
   if(card){ if(!_waModoDois()) card.equipeId=eq; card.responsavelId=currentUser.id; card.responsavel=currentUser.name||''; }
   if(cli && typeof _sincronizarCardComCarteira==='function' && !_waModoDois()){ try{ _sincronizarCardComCarteira(cli.id); }catch(e){} }
-  try{ _convPushAtendente(conv); }catch(_e){} // v145 : atômico (v143 era blob com união)
+  // v265 (revisão 10/11, achado D4): no ramo REABRIU a gravação é UMA SÓ — a linha inteira, AGUARDADA
+  // (status ativo + atendente juntos passam pelo trigger "encerrada = sem dono" em qualquer cenário).
+  // Antes, push RPC e upsert corriam em paralelo: a RPC podia chegar com a linha ainda encerrada
+  // (trigger anulava o dono mas carimbava atendEm novo) e a leitura do upsert adotava o nulo —
+  // estado final "ativa sem dono" com a tela dizendo "assumida". Sem reabertura: push atômico v145.
+  if(_reabriu){ try{ if(typeof _waUpsertConversa==='function') await _waUpsertConversa(conv); }catch(_e){} }
+  else { try{ _convPushAtendente(conv); }catch(_e){} } // v145 : atômico (v143 era blob com união)
   saveData();
   if(typeof renderConversas==='function') renderConversas();
   renderConversaTela(convId);
@@ -41735,14 +42102,14 @@ function abrirConversaDireta(convId){
 // v192 — abre a CONVERSA JÁ ESCOLHIDA no modal (miolo comum do abrirConversaCliente e do seletor de número)
 function _abrirConversaConvModal(conv){
   if(!conv) return;
-  saveData();
+  setTimeout(function(){ try{ saveData(); }catch(_e){} }, 80); // v264 — commit fora do caminho do clique (pinta primeiro; a RPC abaixo persiste a leitura atômica)
   // v263 (B1, revisão 09/11) — guarda o ponteiro do PAINEL antes de o modal sobrescrevê-lo: no fechar,
   // com a página Conversas visível, o ponteiro é RESTAURADO (a premissa v159 "o ponteiro é dela e fica"
   // era falsa — ficava apontando a conversa do MODAL e o Enter do painel enviava para o cliente errado).
   _convPonteiroAntesModal = conversaAtivaId;
   conversaAtivaId = conv.id;
-  conv.naoLidas = 0;
-  try{ if(_sb) _sb.rpc('conv_zerar_nao_lidas', { p_conv_id: conv.id }).then(function(_r){}); }catch(_e){} // v151 — zera no servidor também · v179: .then() obrigatório (era código morto)
+  _convMarcaLida(conv); // v264 — leitura carimbada (marca-d'água + decisão)
+  _convZerarSrv(conv); // v151 — zera no servidor também · v265 (D2): carimbos do CLIENTE (um domínio de relógio; fallback p/ assinatura antiga na janela de migração)
   // Monta um modal que reusa a tela de conversa
   let overlay = document.getElementById('conv-modal-overlay');
   if(overlay) overlay.remove();

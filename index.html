@@ -5435,7 +5435,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v267';
+var APP_VERSION = 'v268';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -39367,14 +39367,18 @@ function _tituloConversa(conv){
   if(!contato){ contato=(card&&card.contato&&String(card.contato).trim())||''; }
   return (contato && contato!==empresa) ? (empresa+' · '+contato) : empresa;
 }
-function getOuCriarConversa(clienteId, telefone){
+function getOuCriarConversa(clienteId, telefone, numForcado){
   if(!clienteId) return null;
   const cli = clients.find(c=>c.id===clienteId);
   const tel = telefone || (cli?_waFoneCliente(cli):'') || (cli&&cli.tel1) || '';
   const tk = _telKey(tel);
   // v140 : modo dois numeros: conversa iniciada pelo atendente SAI pelo numero da pessoa (regra do dono);
   // o lookup tambem filtra pelo numero : o mesmo cliente pode ter 1 conversa POR numero.
-  const _numOut = _waModoDois() ? _waNumOutbound() : null;
+  // v268 — numForcado: número escolhido explicitamente pelo chamador (abertura fora do menu).
+  const _numOut = _waModoDois() ? (numForcado || _waNumOutbound()) : null;
+  // v268 — REGRA DO DONO 11/11 (caso Natalia Ferreira: a Emilayne enviou pelo número da Tairine):
+  // números SEPARADOS — nunca se abre nem se cria conversa num número que o usuário não acessa.
+  if(_waModoDois() && !_waNumsDoUsuario().includes(_numOut)) return null;
   const _doNum = c => !_numOut || _waNumDaConv(c)===_numOut;
   let conv = tk ? conversas.find(c=>c.clienteId===clienteId && _telKey(c.telefone)===tk && _doNum(c)) : null;
   if(!conv && tk){ // legado: conversa sem telefone → adota SÓ se este for o número principal (tel1) do cliente
@@ -39389,30 +39393,11 @@ function getOuCriarConversa(clienteId, telefone){
   // previsível, o upsert converge para a MESMA linha e a união entre abas junta tudo sozinha.
   // Sem telefone (raro): mantém o id aleatório antigo.
   const _numConv=(_numOut||_waNumPadrao()||'E');
-  // v255 — GUARDA DO NÚMERO NA CRIAÇÃO (incidente J.m. Odontologia 20-27/10, ordem do dono "arrume
-  // imediatamente e definitivamente"): gestora com os DOIS números no menu E abriu cliente atendido
-  // no T → o front criava um fio E silencioso e o envio saía FISICAMENTE pelo número da Emilayne;
-  // a cliente passou a receber de dois números e respondeu ao errado. Regra: criar fio novo num
-  // número quando o MESMO contato (telefone) já tem conversa REAL em OUTRO número é BLOQUEADO —
-  // o atendimento segue no fio existente; só gestor cria deliberadamente, com confirmação explícita.
-  // Reabertura no MESMO número nunca passa por aqui (o lookup acima acha o fio). Modo 1 número intacto.
-  if(_waModoDois()){
-    const _outros=(conversas||[]).filter(c=>c && !c.grupo && c.clienteId===clienteId
-      && Array.isArray(c.mensagens) && c.mensagens.length>0
-      && _waNumDaConv(c)!==_numConv
-      && (!tk || !_telKey(c.telefone) || _telKey(c.telefone)===tk));
-    if(_outros.length){
-      const _ex=_outros.sort((a,b)=>(b.ultimaMsgEm||0)-(a.ultimaMsgEm||0))[0];
-      const _rotN=function(n){ const i=(typeof _waNumInfo==='function')?_waNumInfo(n):null; return (i&&i.rotulo)||n; };
-      const _gestor=currentUser&&(currentUser.perfil==='admin'||currentUser.perfil==='diretor_comercial');
-      const _criaMesmoAssim=_gestor && confirm('⚠ Este contato já é atendido pelo número '+_rotN(_waNumDaConv(_ex))+'.\n\nCriar uma conversa NOVA pelo número '+_rotN(_numConv)+' fará o cliente receber mensagens de DOIS números da Lecare (foi assim que a cliente J.m. passou a responder ao número errado).\n\nOK = criar mesmo assim (deliberado)\nCancelar = continuar no fio existente do número '+_rotN(_waNumDaConv(_ex)));
-      if(!_criaMesmoAssim){
-        if(!_gestor){ try{ alert('Este contato é atendido pelo número '+_rotN(_waNumDaConv(_ex))+' — abrindo a conversa existente de lá.'); }catch(_e){} }
-        _sincronizarDonoConversa(_ex);
-        return _ex;
-      }
-    }
-  }
+  // v268 — o desvio da v255 (abrir o fio EXISTENTE de OUTRO número quando o contato já era atendido
+  // lá) foi REMOVIDO por ordem do dono 11/11: os números são separados. Quem acessa só um número abre
+  // e cria SEMPRE no próprio número; quem acessa os dois (admin/diretora) escolhe o número no modal
+  // de abertura (_abrirSeletorNumeroAbertura), que mostra em qual número já existe conversa. O desvio
+  // levava a atendente para um número que ela não acessa — foi o vetor do caso Natalia Ferreira (10/11).
   const _idDet = tk ? ('conv_'+String(clienteId).replace(/\W/g,'')+'_'+tk+'_'+String(_numConv).replace(/\W/g,'')) : ('conv_'+Date.now()+Math.floor(Math.random()*1000));
   conv = { id:_idDet, clienteId, telefone:tel||'', atendenteId:dono.atendenteId, equipeId:dono.equipeId, canal:'whatsapp', ultimaMsg:'', ultimaMsgEm:null, naoLidas:0, mensagens:[], status:'ativa', criadaEm:Date.now(), numeroLecare:(_numOut||_waNumPadrao()) };
   conversas.push(conv);
@@ -39878,6 +39863,7 @@ function _convImportarHistorico(convId){
 }
 function reabrirConversa(convId){
   const conv=conversas.find(c=>c.id===convId); if(!conv) return;
+  if(_waModoDois() && !conv.grupo && currentUser && !_waAtendAutorizadoNum(currentUser.id, conv)){ alert('Esta conversa é de um número que você não acessa.'); return; } // v268 — números separados
   conv.status='ativa';
   conv.statusEm=Date.now(); // v143 — carimbo do status
   conv.reabertaEm=Date.now();
@@ -42089,6 +42075,7 @@ function _equipeDoUsuario(userId){
 function _podeResponderConv(conv){
   if(!currentUser) return false;
   if(conv && conv.grupo){ return _waModoDois() ? (_waNumsDoUsuario().length>0) : true; } // v148; v245 — fio único por grupo: responde quem tem acesso a QUALQUER número (o envio sai pelo número do fio, com o prefixo *Nome:* v149 identificando o autor)
+  if(_waModoDois() && conv && !_waAtendAutorizadoNum(currentUser.id, conv)) return false; // v268 — números separados: sem acesso ao número, não responde
   // v169 — ⏸ PAUSA: o pausado NÃO responde as próprias conversas; quem cobre responde SEM transferir
   // (a conversa continua do dono, autoria da msg registra quem escreveu — padrão v142)
   if(conv && conv.atendenteId){
@@ -42113,6 +42100,7 @@ async function _assumirConversaParaMim(convId){
   if(conv.atendenteId===currentUser.id && conv.status!=='encerrada') return; // v144 : ja e o atendente — nada a fazer (sem msg repetida); v264 — encerrada segue p/ reabrir
   // v169 — ⏸ pausado não assume conversa do pool (viraria dono sem poder responder)
   if(_pausaAtiva(currentUser.id)){ alert('⏸ Você está em PAUSA — não dá para assumir atendimentos.\nPeça ao admin/diretora para despausar.'); return; }
+  if(_waModoDois() && !conv.grupo && !_waAtendAutorizadoNum(currentUser.id, conv)){ alert('Esta conversa é de um número que você não acessa.'); return; } // v268 — números separados
   if(_waModoDois() && conv.atendenteId && conv.status!=='encerrada' && !['admin','diretor_comercial'].includes(currentUser.perfil)){
     alert('Esta conversa est\u00e1 em atendimento por outra pessoa \u2014 somente admin/diretora podem assumi-la.'); return; // v144 (v264: encerrada n\u00e3o tem dono por invariante \u2014 residual local n\u00e3o bloqueia o reabrir-e-assumir)
   }
@@ -42199,40 +42187,78 @@ function abrirConversaCliente(clienteId, telefone){
     telefone = opts.length?opts[0].tel:'';
     } // fim do else (sem ★ principal — coleta/seletor)
   }
-  // v142 : modo dois numeros: se o cliente JA tem conversa COM MENSAGENS em algum numero autorizado,
-  // abre ELA — v192 (regra do dono 05/08): se houver conversa em MAIS DE UM número que o usuário
-  // acessa, PERGUNTA qual abrir (quem acessa um número só abre direto a dele).
-  let conv=null;
+  // v268 — REGRA DO DONO 11/11 (números SEPARADOS; abertura pela Agenda, CRM, cartão, ficha e demais
+  // canais fora dos menus "Conversas <número>"): quem acessa SÓ UM número abre a conversa DESSE
+  // número (cria se não houver); quem acessa os DOIS (admin e diretora comercial) escolhe o número
+  // num modal; quem não acessa nenhum não abre. Nunca se abre conversa de número que o usuário não
+  // acessa (caso Natalia Ferreira, 10/11). Substitui a escolha por "conversa com mensagens" da v142/v192.
   if(_waModoDois()){
     const meus=_waNumsDoUsuario();
-    const tk0=_telKey(telefone||'');
-    let cands=(conversas||[]).filter(c=>c.clienteId===clienteId
-      && meus.includes(_waNumDaConv(c))
-      && (c.mensagens||[]).length>0);
-    // v192 — CUIDADO REDOBRADO (ordem do dono 05/08 — "não abrir conversa errada"): com telefone
-    // definido, só entra no páreo a conversa DAQUELE telefone; conversa legada SEM telefone só é
-    // adotada se o telefone pedido for o PRINCIPAL (tel1) do cliente — mesma regra estrita do
-    // getOuCriarConversa. Nunca se abre o fio de outro contato do mesmo cliente.
-    if(tk0){
-      const _exatas=cands.filter(c=>_telKey(c.telefone)===tk0);
-      if(_exatas.length) cands=_exatas;
-      else {
-        const _cli0=(clients||[]).find(c=>c.id===clienteId);
-        const _tk1=_cli0?_telKey((_cli0.tel1||'')||(typeof _waFoneCliente==='function'?_waFoneCliente(_cli0):'')):'';
-        cands=(_tk1 && tk0===_tk1)?cands.filter(c=>!_telKey(c.telefone)):[];
-      }
-    }
-    if(cands.length){
-      const porNum={};
-      cands.forEach(c=>{ const n=_waNumDaConv(c); if(!porNum[n] || (c.ultimaMsgEm||0)>(porNum[n].ultimaMsgEm||0)) porNum[n]=c; });
-      const nums=Object.keys(porNum);
-      if(nums.length>1){ _abrirSeletorNumeroConversa(clienteId, nums.map(n=>porNum[n])); return; }
-      conv=cands.sort((a,b)=>(b.ultimaMsgEm||0)-(a.ultimaMsgEm||0))[0];
-    }
+    if(!meus.length){ alert('Você não tem acesso a nenhum número de WhatsApp da Lecare.'); return; }
+    if(meus.length>1){ _abrirSeletorNumeroAbertura(clienteId, telefone, meus); return; }
+    _abrirConversaNoNumero(clienteId, telefone, meus[0]);
+    return;
   }
-  if(!conv) conv = getOuCriarConversa(clienteId, telefone);
+  const conv = getOuCriarConversa(clienteId, telefone);
   if(!conv) return;
   _abrirConversaConvModal(conv);
+}
+// v268 — conversa EXISTENTE do cliente NUM número específico. Mesma regra estrita da v192 ("não abrir
+// conversa errada"): com telefone definido, só a conversa DAQUELE telefone; legada sem telefone só se o
+// pedido for o telefone PRINCIPAL do cliente. Nunca devolve conversa de outro número.
+function _convDoClienteNoNumero(clienteId, telefone, num){
+  const tk0=_telKey(telefone||'');
+  let cands=(conversas||[]).filter(c=>c && !c.grupo && c.clienteId===clienteId && _waNumDaConv(c)===num);
+  if(tk0){
+    const _exatas=cands.filter(c=>_telKey(c.telefone)===tk0);
+    if(_exatas.length) cands=_exatas;
+    else {
+      const _cli0=(clients||[]).find(c=>c.id===clienteId);
+      const _tk1=_cli0?_telKey((_cli0.tel1||'')||(typeof _waFoneCliente==='function'?_waFoneCliente(_cli0):'')):'';
+      cands=(_tk1 && tk0===_tk1)?cands.filter(c=>!_telKey(c.telefone)):[];
+    }
+  }
+  if(!cands.length) return null;
+  return cands.sort((a,b)=>(b.ultimaMsgEm||0)-(a.ultimaMsgEm||0))[0];
+}
+// v268 — abre (ou cria) a conversa do cliente no número indicado, só se o usuário acessa esse número.
+function _abrirConversaNoNumero(clienteId, telefone, num){
+  if(_waModoDois() && !_waNumsDoUsuario().includes(num)){ alert('Você não tem acesso a este número de WhatsApp.'); return; }
+  const conv=_convDoClienteNoNumero(clienteId, telefone, num) || getOuCriarConversa(clienteId, telefone, num);
+  if(!conv){ alert('Não foi possível abrir a conversa deste cliente neste número.'); return; }
+  _abrirConversaConvModal(conv);
+}
+// v268 — MODAL DE ESCOLHA DO NÚMERO (quem acessa os dois números: admin e diretora comercial). Mostra,
+// por número, se já existe conversa (mensagens e última) ou se ela será iniciada ali.
+var _selNumAbertura=null;
+function _abrirSeletorNumeroAbertura(clienteId, telefone, nums){
+  let ov=document.getElementById('selnum-conv-overlay'); if(ov) ov.remove();
+  _selNumAbertura={ clienteId:clienteId, telefone:telefone };
+  const nomeCli=(typeof _nomeConversaCli==='function'?_nomeConversaCli(clienteId):'')||'Cliente';
+  const linhas=nums.map(function(nid){
+    const ni=_waNumInfo(nid); const rot=(ni&&(ni.rotulo||ni.id))||nid;
+    const cv=_convDoClienteNoNumero(clienteId, telefone, nid);
+    const nMsg=cv?(cv.mensagens||[]).length:0;
+    const ult=(cv&&cv.ultimaMsgEm)?new Date(cv.ultimaMsgEm).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+    const info=(cv&&nMsg)?(nMsg+' mensagem(ns) · última '+ult):'Sem conversa neste número — será iniciada aqui';
+    return '<button data-num="'+escapeHtml(String(nid))+'" onclick="_selNumAberturaEscolher(this.getAttribute(\'data-num\'))" style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;text-align:left;padding:11px 14px;border:.5px solid var(--border);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;margin-bottom:6px;font-family:inherit">'
+      +'<span style="font-size:13px;font-weight:600">Número '+escapeHtml(rot)+'</span>'
+      +'<span style="font-size:11px;color:var(--text-secondary);white-space:nowrap">'+escapeHtml(info)+'</span></button>';
+  }).join('');
+  const html='<div class="overlay open" id="selnum-conv-overlay" data-dyn="1" style="z-index:4400">'
+    +'<div class="modal" style="width:440px;max-width:92vw">'
+    +'<h2 style="font-size:15px;margin-bottom:4px">Qual número deseja abrir?</h2>'
+    +'<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">'+escapeHtml(nomeCli)+' — escolha por qual número da Lecare a conversa será aberta.</div>'
+    +linhas
+    +'<div class="modal-footer"><button onclick="document.getElementById(\'selnum-conv-overlay\').remove()">Cancelar</button></div>'
+    +'</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+function _selNumAberturaEscolher(num){
+  const s=_selNumAbertura; _selNumAbertura=null;
+  const ov=document.getElementById('selnum-conv-overlay'); if(ov) ov.remove();
+  if(!s) return;
+  _abrirConversaNoNumero(s.clienteId, s.telefone, num);
 }
 // v203 — abre a CONVERSA ESPECÍFICA por id (ordem do dono 10/08: nos quadros "Sem resposta"/
 // "Aguardando resposta" o vínculo é com a CONVERSA que está pendente, não com o cliente geral —
@@ -42240,6 +42266,12 @@ function abrirConversaCliente(clienteId, telefone){
 function abrirConversaDireta(convId){
   const conv=(conversas||[]).find(c=>String(c.id)===String(convId));
   if(!conv){ alert('Conversa não encontrada (pode ter sido removida). Atualize a página.'); return; }
+  // v268 — números separados: conversa de número que o usuário não acessa não abre (painéis/quadros)
+  if(_waModoDois() && !conv.grupo && !_waNumsDoUsuario().includes(_waNumDaConv(conv))){
+    const _ni=_waNumInfo(_waNumDaConv(conv));
+    alert('Esta conversa é do número '+((_ni&&(_ni.rotulo||_ni.id))||_waNumDaConv(conv))+', que você não acessa.');
+    return;
+  }
   _abrirConversaConvModal(conv);
 }
 // v192 — abre a CONVERSA JÁ ESCOLHIDA no modal (miolo comum do abrirConversaCliente e do seletor de número)

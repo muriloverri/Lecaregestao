@@ -4961,6 +4961,7 @@ async function _sepSyncOne(cfg){
       }
       changed=_okOrd;
     }
+    var _sentJson={}; // v267 — fotografia do envio (texto exato gravado, por id)
     if(changed.length){
       // v205 — DEDUPE DO LOTE (erro real 10/08, tela do dono: "notificacoes: ON CONFLICT DO UPDATE
       // command cannot affect row a second time" — o array local tinha o MESMO id 2x, e upsert com
@@ -4971,7 +4972,12 @@ async function _sepSyncOne(cfg){
           if(_vist[_cid]){ console.warn('[dedupe] '+cfg.table+': id repetido no lote — '+_cid+' · descartada a cópia mais antiga · tipos: '+(typeof cfg.id(changed[_ci]))+' · titulo: '+String((changed[_ci]&&(changed[_ci].titulo||changed[_ci].nome))||'').slice(0,80)); continue; }
           _vist[_cid]=1; _unicos.unshift(changed[_ci]); }
         changed=_unicos; }
-      const { error:upErr }=await _sb.from(cfg.table).upsert(changed.map(cfg.row),{onConflict:'id'});
+      // v267 — FOTOGRAFIA DO ENVIO (corrida da edição em voo, casos 104198/104314/104081): o texto de
+      // cada linha é congelado AGORA, no mesmo tick da montagem do payload — é contra ELE que o
+      // snapshot e o dirty serão acertados após a confirmação, nunca contra a memória de depois.
+      var _rows=changed.map(cfg.row);
+      for(var _si=0;_si<changed.length;_si++){ var _so=changed[_si]; if(_so!=null) _sentJson[String(cfg.id(_so))]=JSON.stringify(_so); }
+      const { error:upErr }=await _sb.from(cfg.table).upsert(_rows,{onConflict:'id'});
       if(upErr){ console.warn(cfg.table+' upsert:', upErr.message); return {ok:false, table:cfg.table, error:upErr.message}; }
     }
     if(removed.length){
@@ -4979,8 +4985,25 @@ async function _sepSyncOne(cfg){
       const { error:delErr }=await _sb.from(cfg.table).delete().in('id',delIds);
       if(delErr){ console.warn(cfg.table+' delete:', delErr.message); return {ok:false, table:cfg.table, error:delErr.message}; }
     }
-    _sepClearDirty(cfg, changed); // v119 — upsert confirmado no servidor → libera a proteção dirty
-    _sepBuildSnap(cfg);
+    // v267 — CORRIDA DA EDIÇÃO EM VOO (incidente produção 09-11/11, casos 104198/104314/104081: status
+    // "salvo e voltou"): o snapshot pós-upsert era reconstruído da MEMÓRIA ATUAL (_sepBuildSnap) — a
+    // edição feita DURANTE a viagem do upsert (janela alargada pelas releituras do merge, 1 await por
+    // pedido do lote) nascia carimbada como "já sincronizada" e NUNCA era gravada; o resync seguinte
+    // trazia o valor velho do servidor de volta ("volta para o status anterior", sem auditoria).
+    // Regra nova: snapshot do que FOI ENVIADO = a fotografia do envio; linha removida sai do snapshot;
+    // o RESTO fica como estava (linha que mudou em voo segue ≠ snapshot → vai no próximo ciclo).
+    // O dirty (v119) só é liberado se a linha NÃO mudou em voo — senão a proteção fica de pé até a regravação.
+    { var _snF=_sepSnap[cfg.key]||(_sepSnap[cfg.key]={});
+      var _dmF=_sepDirty[cfg.key];
+      for(var _fi=0;_fi<changed.length;_fi++){ var _fo=changed[_fi]; if(_fo==null) continue;
+        var _fid=String(cfg.id(_fo));
+        if(_sentJson[_fid]===undefined) continue;
+        _snF[_fid]=_sentJson[_fid];
+        if(JSON.stringify(_fo)===_sentJson[_fid]){ if(_dmF) delete _dmF[_fid]; }
+        else { console.warn(cfg.table+': edição em voo preservada — '+_fid+' regrava no próximo ciclo'); }
+      }
+      for(var _ri2=0;_ri2<removed.length;_ri2++) delete _snF[String(removed[_ri2])];
+    }
     // v263 (C9) — linha adiada (releitura falhou) volta com o snapshot ANTIGO: continua "mudada" e
     // re-tenta no próximo ciclo (sem isto o rebuild acima a daria por sincronizada e a edição sumiria).
     if(_c9Fora.length){ var _snC9=_sepSnap[cfg.key]||{}; _c9Fora.forEach(function(_idf){ if(Object.prototype.hasOwnProperty.call(snap,_idf)) _snC9[_idf]=snap[_idf]; else delete _snC9[_idf]; }); }
@@ -5412,7 +5435,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v266';
+var APP_VERSION = 'v267';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -14708,10 +14731,16 @@ function _solPedidoUsoChk(){
   else { inp.style.borderColor=''; ok.innerHTML=numTx?'<span style="color:var(--text-tertiary)">nenhum pedido vinculado ainda — clique numa sugestão ou digite o número exato</span>':''; }
 }
 // v138/v168 — botões sem pedido: SEMPRE abrem um lançamento novo (zerado)
+// v218 — ordem do dono 26/08: solicitação AVULSA de EMBALAGEM era exclusiva do administrador.
+// v267 — ordem do dono 11/11: liberada TAMBÉM para o setor de COMPRAS (colaborador ou coordenação
+// do setor); demais perfis seguem bloqueados. Avulsa de ativos/matéria-prima segue liberada.
+function _podeAvulsaEmb(){
+  if(!currentUser) return false;
+  if(currentUser.perfil==='admin') return true;
+  return ((currentUser.setores||[]).indexOf('compras')>=0) || ((currentUser.coordSetores||[]).indexOf('compras')>=0);
+}
 function openSolicitarAvulsa(){
-  // v218 — ordem do dono 26/08: solicitação AVULSA de EMBALAGEM é exclusiva do administrador
-  // (avulsa de ativos/matéria-prima segue liberada).
-  if(_solTab==='embalagem' && currentUser?.perfil!=='admin'){ alert('Solicitação avulsa de EMBALAGEM: somente o administrador.\n\nSe precisa de embalagem para estoque, avise o administrador.'); return; }
+  if(_solTab==='embalagem' && !_podeAvulsaEmb()){ alert('Solicitação avulsa de EMBALAGEM: somente o administrador ou o setor de Compras.\n\nSe precisa de embalagem para estoque, avise um deles.'); return; }
   openSolicitarModal('__geral__');
 }
 function openSolicitarAnestesico(){ openSolicitarModal('__anestesico__'); }
@@ -14770,8 +14799,8 @@ function saveSolicitacao(){
   var itens=_solRows.filter(function(r){ return r.itemId && (parseFloat(r.qtd)||0)>0; });
   if(!itens.length){ alert('Adicione ao menos um item com quantidade.'); return; }
   var ehPseudo=_solEhPseudo(_solOrderId); // v168 — avulsa/anestésico
-  // v218 — trava no SALVAR também (defesa em profundidade da regra do botão): avulsa de embalagem só admin
-  if(String(_solOrderId)==='__geral__' && _solTab==='embalagem' && currentUser?.perfil!=='admin'){ alert('Solicitação avulsa de EMBALAGEM: somente o administrador.'); return; }
+  // v218 — trava no SALVAR também (defesa em profundidade da regra do botão); v267 — Compras liberado
+  if(String(_solOrderId)==='__geral__' && _solTab==='embalagem' && !_podeAvulsaEmb()){ alert('Solicitação avulsa de EMBALAGEM: somente o administrador ou o setor de Compras.'); return; }
   // v225 — regra do dono 11/09: avulsa de EMBALAGEM só com destino indicado; v242 — o destino agora
   // pode ser ESTOQUE (uso e consumo) em vez de um pedido (pedido do dono 30/09).
   var _pedidoUso=null, _destEstoque=false, _limCompra='';
@@ -14980,8 +15009,22 @@ function _healListaPedidosEnviados(){
 // com item SEM parte correspondente na lista (defesa v218: vale a lista que a contém) e DEVOLVE o
 // item à fila como solicitação própria 'solicitado' (mesmo padrão de divisão v190). Idempotente;
 // roda no refreshAll e persiste no próximo save.
+var _healSolOrfUlt=0; // v267 — throttle da autocura (incidente 10-11/11: duplicatas em rajada)
 function _healSolicOrfas(){
   try{
+    // v267 — INCIDENTE AN-41/AN-43 (10/11, reportado 11/11): a autocura criava um id ALEATÓRIO a cada
+    // execução e rodava sem freio — na corrida resync×save (a remoção local ainda não salva, o resync
+    // devolvia os itens ao original), a MESMA devolução virou 7 solicitações fantasmas (500un → 3.500un
+    // se o comprador complementasse tudo). Blindagem na classe, três camadas:
+    // (1) só roda com a CARGA CONFIRMADA de solicitações E listas (não cura sobre cache/carga parcial);
+    // (2) throttle de 5 min por sessão (padrão dos heals);
+    // (3) devolução IDEMPOTENTE: primeiro soma na solicitação 'solicitado' ABERTA do mesmo pedido+tipo
+    //     (mesmo destino do faltante/saldo parcial), sem duplicar item; só cria linha nova sem alvo, com
+    //     id DETERMINÍSTICO derivado do original (abas concorrentes convergem na MESMA linha) e com
+    //     guarda "já devolvido" (linha com o mesmo recuperadoDe presente = não recria).
+    if(typeof _sepCarregadaOk!=='undefined' && !(_sepCarregadaOk.solicitacoesCompra && _sepCarregadaOk.listasCompra)) return false;
+    if(Date.now()-_healSolOrfUlt<300000) return false;
+    _healSolOrfUlt=Date.now();
     var mudou=false, now=Date.now();
     (solicitacoesCompra||[]).slice().forEach(function(s){
       if(!s || s.status!=='em_lista' || !(s.itens||[]).length) return;
@@ -14993,15 +15036,34 @@ function _healSolicOrfas(){
       if(!l) return; // sem lista localizável: fora do escopo desta cura (status efetivo já degrada sozinho)
       var presos=(s.itens||[]).filter(function(it){ return it && it.itemId!=null && !_lcPartesDoItem(l, it.itemId).length; });
       if(!presos.length) return;
+      // v267 (3) — guarda "já devolvido": existe linha desta MESMA devolução? então só remove do original
+      var _idDet='solc'+String(s.id).replace(/^solc/,'')+'hl';
+      var _jaDev=(solicitacoesCompra||[]).some(function(x){ return x && x!==s && (x.id===_idDet || String(x.recuperadoDe||'').indexOf(s.id+' ')===0); });
       s.itens=(s.itens||[]).filter(function(it){ return presos.indexOf(it)<0; });
       s.atualizadoEm=now;
+      if(_jaDev){ mudou=true; try{ console.warn('autocura v225/v267: devolução de '+(s.orderNum||s.id)+' já existia — itens só removidos do original (sem duplicar)'); }catch(_e4){} return; }
       var _pseudoH=_solEhPseudo(s.orderId);
       if(_pseudoH) _healSolNumSA();
       var _saH=_pseudoH?_solProxSA(s.orderId):0;
       var _piH=_pseudoH?_solPseudoInfo(s.orderId):null;
       // v248 — autocura não ressuscita ativo de pedido produzido+enviado completo (ordem do dono 13/10)
       if(s.tipo==='ativo' && typeof _solAtivoBloqueado==='function' && _solAtivoBloqueado(s.orderId)){ s.atualizadoEm=now; mudou=true; try{ console.warn('autocura v225: itens presos de '+(s.orderNum||s.id)+' NÃO devolvidos — pedido já produzido e enviado (regra v248)'); }catch(_e3){} return; }
-      var novo={ id:'solc'+now+'hl'+Math.floor(Math.random()*1000), orderId:s.orderId,
+      // v267 (3) — ALVO EXISTENTE primeiro: soma na solicitação aberta do mesmo pedido+tipo (padrão dos
+      // demais caminhos de devolução), sem duplicar item (item igual soma a quantidade)
+      var alvo=(solicitacoesCompra||[]).find(function(x){ return x && String(x.orderId)===String(s.orderId) && x.tipo===s.tipo && x.status==='solicitado'; });
+      if(alvo){
+        presos.forEach(function(it){
+          var ex=(alvo.itens||[]).find(function(x){ return String(x.itemId)===String(it.itemId); });
+          if(ex) ex.qtd=(parseFloat(ex.qtd)||0)+(parseFloat(it.qtd)||0);
+          else (alvo.itens=alvo.itens||[]).push(it);
+        });
+        alvo.atualizadoEm=now;
+        mudou=true;
+        if(s.tipo==='embalagem') _autoEstoqueSolicitadoPorOrderId(s.orderId,'autocura devolveu itens à fila'); // v233
+        try{ console.warn('autocura v225/v267: '+presos.length+' item(ns) de '+(s.orderNum||s.id)+' somado(s) à solicitação aberta '+alvo.id); }catch(_e5){}
+        return;
+      }
+      var novo={ id:_idDet, orderId:s.orderId,
         orderNum:_pseudoH?(_piH.num+' '+_piH.sigla+'-'+_saH):(s.orderNum||''), cliente:s.cliente||'',
         tipo:s.tipo, itens:presos, status:'solicitado', listaId:null,
         criadoPor:s.criadoPor||'', criadoEm:s.criadoEm||now, atualizadoEm:now,

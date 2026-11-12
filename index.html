@@ -64,6 +64,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;f
 .nav-section{padding:12px 16px 4px;font-size:10px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.07em}
 .nav-item{display:flex;align-items:center;gap:9px;padding:9px 16px;cursor:pointer;color:var(--text-secondary);font-size:13px;transition:background .15s}
 .nav-item:hover{background:var(--bg-secondary);color:var(--text-primary)}
+.nav-item:active{background:var(--bg-info);color:var(--text-info)}/* v270 — retorno visual imediato do clique */
 .nav-item.active{background:var(--bg-info);color:var(--text-info);font-weight:500}
 .nav-item.hidden{display:none}
 .nav-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
@@ -3883,6 +3884,8 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
     <div class="status-options" id="sm-options"></div>
     <!-- Parallel info -->
     <div id="sm-parallel-info" style="display:none;margin-top:10px;background:var(--bg-info);border:.5px solid var(--border-info);border-radius:var(--r-md);padding:8px 12px;font-size:12px;color:var(--text-info)"></div>
+    <!-- v271 — gráficas do pedido (setor Designer): para quais foi enviado e de quais já chegou -->
+    <div id="sm-graf-info" style="display:none;margin-top:10px;background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md);padding:8px 12px;font-size:12px;color:var(--text-secondary)"></div>
     <!-- Pendency button separator -->
     <div style="margin-top:12px;padding-top:12px;border-top:.5px solid var(--border)">
       <button id="sm-pend-btn" onclick="openPendFromStatus()" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:var(--r-md);border:.5px solid var(--st-bad-bd);background:var(--st-bad-bg);color:var(--st-bad-tx);font-size:13px;font-family:inherit;cursor:pointer;transition:opacity .15s">
@@ -4153,7 +4156,14 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
     <div id="u-dsg-livre-wrap" style="background:var(--bg-info);border:.5px solid var(--border-info,var(--border));border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;display:none">
       <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;margin:0">
         <input type="checkbox" id="u-dsg-livre" style="width:14px;height:14px;margin-top:1px">
-        <span><b>🎨 Autonomia de status no Designer</b> — este colaborador ajusta QUALQUER degrau do setor Designer (como a coordenação), mas <b>não troca o responsável</b> do pedido (o seletor "quem executou" fica travado; distribuir segue com a coordenação/admin).</span>
+        <span><b>🎨 Autonomia de status no Designer</b> — este colaborador ajusta QUALQUER degrau do setor Designer (como a coordenação), mas <b>não troca o responsável</b> do pedido (o seletor "quem executou" fica travado; distribuir segue com a coordenação/admin — salvo se a opção abaixo estiver marcada).</span>
+      </label>
+    </div>
+    <!-- v271 — autonomia de distribuição no Designer (caso Kaiky) -->
+    <div id="u-dsg-resp-wrap" style="background:var(--bg-info);border:.5px solid var(--border-info,var(--border));border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;display:none">
+      <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer;margin:0">
+        <input type="checkbox" id="u-dsg-resp" style="width:14px;height:14px;margin-top:1px">
+        <span><b>Autonomia de distribuição no Designer</b> — este colaborador <b>distribui pedidos</b> (Painel do Designer, faixa "a distribuir") e <b>troca o responsável</b> do pedido (seletor "quem executou" na Gestão a Vista), como a coordenação.</span>
       </label>
     </div>
     <div class="form-row"><div class="form-group"><label>Nome completo</label><input type="text" id="u-nome"></div><div class="form-group" id="u-login-wrap"><label>Usuário (login)</label><input type="text" id="u-login"></div></div>
@@ -4516,7 +4526,10 @@ function saveData(){
   // 1) cache local (melhor-esforço) — DEBOUNCED: serializar ~2MB (2078 pedidos + histórico) a cada ação
   //    travava a thread principal. Agora coalesce em no máx. 1 gravação a cada 3s (é só backup).
   if(_lsCacheT) clearTimeout(_lsCacheT);
-  _lsCacheT=setTimeout(function(){
+  // v270 — chave 'backup': a gravação abaixo serializa TODOS os dados (~95 MB) e FALHA SEMPRE por cota do
+  // navegador (~5 MB) — 0,4 s+ de tela travada sem benefício. Ligada, a tentativa deixa de existir. O que
+  // de fato fica no cache local é o bloco pequeno gravado na carga (_loadFromSupabaseMiolo), intocado.
+  if(_perfOn('backup')){ _lsCacheT=null; } else _lsCacheT=setTimeout(function(){
     _lsCacheT=null;
     try{ localStorage.setItem(LECARE_STORAGE_KEY, JSON.stringify(_collectData())); }
     catch(e){ console.warn('localStorage indisponível (cache):', e.message); }
@@ -4740,10 +4753,76 @@ function _canonStr(v){
   for(var ki=0;ki<ks.length;ki++){ var val=v[ks[ki]]; if(val===undefined) continue; out.push(JSON.stringify(ks[ki])+':'+_canonStr(val)); }
   return '{'+out.join(',')+'}';
 }
+// ═══════════ v270 — PACOTE DE DESEMPENHO (plano de 12/11/2026, PLANO_DESEMPENHO.md) ═══════════
+// Queixa do dono: troca de menu ~3 s, clique que "não funciona", abertura ~2 min. Diagnóstico medido:
+// cada aba carrega ~83 MB/95 mil registros; a repintura geral dispara em TODAS as abas a ~1,4 evento/s;
+// cada salvar varre tudo de uma vez; o backup local serializa 95 MB e falha sempre por cota; Clientes
+// desenha 130 mil elementos. REGRA DE OURO DO PACOTE (ordem do dono: "o principal é não perdermos
+// informação nenhuma"): NADA aqui muda O QUE é gravado nem QUANDO um dado é considerado salvo — só
+// quando e quanto a tela recalcula e redesenha. Cada melhoria tem CHAVE REMOTA própria em
+// app_config 'perf_flags' (JSON; valores off | admin | all). Sem a chave = TUDO DESLIGADO = v269.
+//   medir     — medição de travamentos e tempos no batimento (sessions.diag.perf); zero requisição nova
+//   backup    — não tenta mais o backup local completo (falha 100% por cota desde que os dados cresceram)
+//   oculta    — aba em 2º plano não repinta por evento; a repintura fica pendente e roda ao voltar
+//   evento    — repintura vinda de evento de OUTRO usuário: intervalo mínimo, espera o usuário parar de
+//               clicar/digitar (com teto), e evento só de conversa não redesenha tela que não usa conversa
+//   salvar    — o salvar devolve o controle à tela ENTRE uma tabela e outra (mesma gravação, sem congelar)
+//   telas     — Clientes desenha por janela; Dashboard/Gestão não reescrevem HTML idêntico; alertas
+//               calculados uma vez por repintura
+//   login     — o login reaproveita a carga da abertura quando foi feita com a MESMA sessão
+//   batimento — batimento de sessão em 1 requisição (era 2)
+var _PERF_CHAVES=['medir','backup','oculta','evento','salvar','telas','login','batimento'];
+var _perfFlags=(function(){ try{ return JSON.parse(localStorage.getItem('lecare_perf_flags')||'null')||{}; }catch(_e){ return {}; } })();
+var _perfConfirmado=false; // v271 — vira true na 1ª leitura do servidor que deu certo nesta abertura da página
+function _perfOn(nome){
+  if(!_perfConfirmado) return false;
+  try{ var v=_perfFlags&&_perfFlags[nome]; if(v==='all') return true; if(v==='admin') return !!(typeof currentUser!=='undefined' && currentUser && currentUser.perfil==='admin'); return false; }catch(_e){ return false; }
+}
+// adota o valor lido do servidor (texto JSON). Chave ausente/ilegível = tudo desligado (fail-safe = v269).
+function _perfAdotar(valor){
+  var f={};
+  try{ var o=valor?(typeof valor==='string'?JSON.parse(valor):valor):{}; _PERF_CHAVES.forEach(function(k){ var v=String((o&&o[k])||'off'); f[k]=(v==='all'||v==='admin')?v:'off'; }); }
+  catch(_e){ f={}; _PERF_CHAVES.forEach(function(k){ f[k]='off'; }); }
+  var a=''; try{ a=JSON.stringify(_perfFlags||{}); }catch(_e){}
+  var d=JSON.stringify(f);
+  _perfFlags=f; _perfConfirmado=true;
+  if(a!==d){ try{ localStorage.setItem('lecare_perf_flags', d); }catch(_e){} try{ _perfZera(); }catch(_e){} }
+}
+// ── medição (só contadores em memória; sai no batimento quando 'medir' está ligado)
+var _perfM={desde:Date.now(), lt:{n:0,ms:0,max:0}, op:{}};
+function _perfZera(){ _perfM={desde:Date.now(), lt:{n:0,ms:0,max:0}, op:{}}; }
+function _perfOp(nome, ms){ try{ var o=_perfM.op[nome]||(_perfM.op[nome]={n:0,ms:0,max:0}); o.n++; o.ms+=(ms||0); if((ms||0)>o.max) o.max=ms; }catch(_e){} }
+function _perfResumo(){
+  var r={ d:_perfM.desde, f:_perfFlags, lt:[_perfM.lt.n, Math.round(_perfM.lt.ms), Math.round(_perfM.lt.max)], op:{} };
+  try{ Object.keys(_perfM.op).forEach(function(k){ var o=_perfM.op[k]; r.op[k]=[o.n, Math.round(o.ms), Math.round(o.max)]; }); }catch(_e){}
+  try{ if(typeof performance!=='undefined' && performance.memory) r.mem=Math.round(performance.memory.usedJSHeapSize/1048576); }catch(_e){}
+  return r;
+}
+try{ if(typeof PerformanceObserver!=='undefined'){ new PerformanceObserver(function(l){ try{ l.getEntries().forEach(function(e){ var d=e.duration||0; _perfM.lt.n++; _perfM.lt.ms+=d; if(d>_perfM.lt.max) _perfM.lt.max=d; }); }catch(_e){} }).observe({entryTypes:['longtask']}); } }catch(_e){}
+var _cedeUlt=0; function _perfAgora(){ try{ return performance.now(); }catch(_e){ return Date.now(); } }
+// cede o controle à tela (macrotarefa sem o piso de 4 ms do setTimeout)
+function _perfCede(){
+  return new Promise(function(res){
+    try{ if(typeof MessageChannel!=='undefined'){ var ch=new MessageChannel(); ch.port1.onmessage=function(){ try{ ch.port1.close(); }catch(_e){} res(); }; ch.port2.postMessage(0); setTimeout(res,50); /* v271 — saída garantida */ return; } }catch(_e){}
+    setTimeout(res,0);
+  });
+}
+// escreve HTML só quando mudou (chave 'telas'): evita reconstruir milhares de elementos idênticos e
+// preserva rolagem/hover. O elemento-alvo SÓ pode ser escrito por aqui (auditado: alert-list,
+// gestao-tbody e dc-atraso-resp têm um único escritor); a contagem de filhos é guarda extra.
+function _perfSetHtml(el, html){
+  if(!el) return;
+  var lig=false; try{ lig=_perfOn('telas'); }catch(_e){}
+  try{ if(lig && el._pfHtml===html && el._pfN===el.childNodes.length) return; }catch(_e){}
+  el.innerHTML=html;
+  try{ if(lig){ el._pfHtml=html; el._pfN=el.childNodes.length; } else { el._pfHtml=null; } }catch(_e){}
+}
+function _pfH(el){ return { set html(v){ _perfSetHtml(el, v); } }; }
 async function _sepCanonLoad(){
   if(_sepCanonLendo || !_sb) return; _sepCanonLendo=true;
   try{
-    const { data }=await _sb.from('app_config').select('key,value').in('key',['sep_canon','sep_diag','sep_delta']);
+    const { data, error:_pfErr }=await _sb.from('app_config').select('key,value').in('key',['sep_canon','sep_diag','sep_delta','perf_flags']);
+    try{ if(!_pfErr && Array.isArray(data)){ var _pfRow=data.find(function(r){ return r && r.key==='perf_flags'; }); _perfAdotar(_pfRow?_pfRow.value:null); } }catch(_e){} // v270 — chaves do pacote de desempenho (mesma leitura, zero requisição nova)
     var m='shadow', d='on', dl='off';
     (data||[]).forEach(function(r){ if(r.key==='sep_canon') m=String(r.value||'').trim()||'shadow'; if(r.key==='sep_diag') d=String(r.value||'').trim()||'on'; if(r.key==='sep_delta') dl=String(r.value||'').trim()||'off'; });
     if(m==='admin'){ m=(currentUser && currentUser.perfil==='admin')?'all':'shadow'; } // v221 — piloto: skip só na sessão do admin, demais seguem medindo
@@ -4776,6 +4855,8 @@ function _orderMerge3(local, base, server){
   var keys={};
   Object.keys(local).forEach(function(k){keys[k]=1;}); Object.keys(server).forEach(function(k){keys[k]=1;}); Object.keys(base).forEach(function(k){keys[k]=1;});
   Object.keys(keys).forEach(function(k){
+    // v271 — gráficas: mescla POR ENTRADA (id) e por campo — recebimento marcado por um não apaga o marcado por outro
+    if(k==='graficas' && typeof _grafMerge3==='function'){ var _gm=_grafMerge3(local.graficas, base.graficas, server.graficas); if(_gm===undefined) delete local.graficas; else local.graficas=_gm; return; }
     if(nested[k]){ local[k]=_merge3Obj(local[k], base[k], server[k]); return; }
     var euMexi = JSON.stringify(local[k]) !== JSON.stringify(base[k]);
     if(!euMexi){ if(k in server) local[k]=server[k]; else delete local[k]; } // não mexi → servidor
@@ -4787,15 +4868,117 @@ function _sepBuildSnap(cfg){
   var m={}; (cfg.get()||[]).forEach(function(o){ var id=cfg.id(o); if(id!=null) m[String(id)]=JSON.stringify(o); });
   _sepSnap[cfg.key]=m;
 }
-function _sepScheduleRefresh(){
-  if(_sepRefreshT) clearTimeout(_sepRefreshT);
-  _sepRefreshT=setTimeout(function(){
-    _sepRefreshT=null;
-    try{ refreshAll(); }catch(e){}
-    _updateSbIndicator('⟳ Atualizado','var(--text-info)');
-    setTimeout(function(){ _updateSbIndicator('☁ Online','var(--st-ok-tx)'); },2000);
-  },300);
+// v270 — REPINTURA POR EVENTO SOB CONTROLE. Só o caminho disparado por EVENTO DE OUTRO USUÁRIO (realtime)
+// passa por aqui; a repintura pedida por AÇÃO DO PRÓPRIO USUÁRIO (refreshAll direto) segue imediata e
+// completa. Com as chaves desligadas o comportamento é o de sempre: espera 300 ms e roda refreshAll.
+//   'evento': (a) intervalo mínimo de 3 s entre repinturas por evento (teto de 6 s — nunca fica sem
+//   repintar); (b) usuário clicando/digitando/rolando há menos de 0,7 s → espera a brecha (mesmo teto);
+//   (c) lote só com conversa/notificação em tela que NÃO mostra conversa → só os contadores (a lista e as
+//   mensagens já são atualizadas pelo próprio tratador do evento); (d) refreshAll recebe as tabelas que
+//   mudaram e pula as autocorreções de pedido/compra quando o lote é só conversa/notificação/agenda.
+//   'oculta': aba em 2º plano não repinta; fica pendente e roda uma vez ao voltar (contadores seguem).
+// TELA DE CONVERSAS (prioridade do dono 12/11: "o principal menu em velocidade é o de conversas"):
+//   (e) evento só de conversa NÃO dispara repintura geral nem ali — o tratador do evento já atualiza a
+//   lista, as mensagens e os contadores; fica só o redesenho leve da própria tela de Conversas;
+//   (f) evento de pedido/compra/financeiro não repinta a tela de Conversas: o desenho dela lê apenas
+//   conversas, clientes, cards, agenda, usuários e equipes (auditado por análise do código — 33 funções);
+//   para o menu lateral não ficar parado, a repintura geral ainda roda ao menos 1 vez a cada 30 s.
+var _evPend={}, _evUlt=0, _evPrimeiro=0, _evOcultoPend=false, _evInteracaoEm=0, _refreshEvKeys=null, _evUltCompleto=0;
+var _EV_MIN=3000, _EV_TETO=6000, _EV_BRECHA=700, _EV_COMPLETO_MAX=30000;
+// (g) CADÊNCIA PROPORCIONAL AO CUSTO: a repintura geral por evento espera 8× o tempo que a última levou
+// (mínimo 3 s, máximo 20 s) — em qualquer computador ela ocupa no máximo ~1/8 do tempo da aba;
+// (h) por evento, a contagem do menu lateral é refeita no máximo a cada 30 s e as autocorreções a cada 15 s.
+var _EV_FATOR=8, _EV_GERAL_MAX=20000, _evCustoGeral=0, _navBadgeUlt=0, _healEvUlt=0;
+var _EV_LEVES={conversas:1, notificacoes:1};
+var _EV_SEM_HEAL={conversas:1, notificacoes:1, agendaEventos:1};
+// telas cujo PRÓPRIO desenho lê dados de conversa (repintam como sempre em evento de conversa)
+var _EV_PAG_LE_CONVERSA={crm:1, inconsistencias:1, clientes:1, 'analise-gerencial':1, 'dashboard-comercial':1}; // v271 (revisão) — Clientes (aba Contatos) e análises também leem conversa
+// tabelas de que a tela de Conversas depende ('*' = evento sem tabela identificada)
+var _EV_DEPS_CONVERSAS={conversas:1, clients:1, crmLeads:1, agendaEventos:1, notificacoes:1, '*':1};
+function _evSoLeve(keys){
+  var n=0, soConv=true, tocaDeps=false;
+  for(var k in keys){ n++; if(!_EV_LEVES[k]) soConv=false; if(_EV_DEPS_CONVERSAS[k]) tocaDeps=true; }
+  if(!n) return false;
+  var pg=null; try{ pg=(typeof _currentPage!=='undefined')?_currentPage:null; }catch(_e){ return false; }
+  if(soConv) return !_EV_PAG_LE_CONVERSA[pg];
+  // lote com outras tabelas: só a tela de Conversas fica no modo leve, e só se NENHUMA tabela de que ela
+  // depende mudou e a última repintura geral tem menos de 30 s
+  if(pg==='conversas' && !tocaDeps && (Date.now()-_evUltCompleto)<_EV_COMPLETO_MAX) return true;
+  return false;
 }
+function _evLeve(){
+  try{ if(typeof _updateConvBadge==='function') _updateConvBadge(); }catch(_e){}
+  try{ if(typeof renderNotifBadge==='function') renderNotifBadge(); }catch(_e){}
+  // na tela de Conversas, o redesenho leve dela mesma (lista + régua de estado da conversa aberta)
+  try{ if(typeof _currentPage!=='undefined' && _currentPage==='conversas' && typeof renderConversas==='function' && !(typeof document!=='undefined' && document.hidden)) renderConversas(); }catch(_e){}
+}
+// lista de conversas por evento: várias mensagens chegando juntas viram UM redesenho (120 ms); com a
+// tela de Conversas fechada a lista nem é desenhada (é montada ao entrar na tela, como sempre)
+var _convListaEvT=null;
+function _convListaPorEvento(){
+  var lig=false; try{ lig=_perfOn('evento'); }catch(_e){}
+  if(!lig){ renderConversasLista(); return; }
+  try{ var pg=document.getElementById('pg-conversas'); if(pg && pg.style && pg.style.display==='none') return; }catch(_e){}
+  try{ if(_perfOn('oculta') && document.hidden){ _evOcultoPend=true; return; } }catch(_e){}
+  if(_convListaEvT) return;
+  _convListaEvT=setTimeout(function(){ _convListaEvT=null; try{ renderConversasLista(); }catch(_e){} }, 120);
+}
+// v271 (revisão) — (i) o SALDO DE CRÉDITO é derivado dos pedidos dentro da repintura geral; com a cadência ele
+// ficaria até 20 s defasado no Caixa. Agora é recalculado assim que o lote de pedidos é atendido, mesmo sem
+// repintura. (ii) ARREMATE: lote que a tela de Conversas dispensou, autocorreção ou contagem do menu adiadas
+// → uma repintura geral é garantida depois, mesmo que não chegue mais nenhum evento.
+var _evCredSujo=false, _evTrailT=null;
+function _evCredito(){ if(!_evCredSujo) return; _evCredSujo=false; try{ _rebuildCreditosFromOrders(); }catch(_e){} }
+function _evTrailing(ms){ if(_evTrailT) return; _evTrailT=setTimeout(function(){ _evTrailT=null; try{ _sepScheduleRefresh('*'); }catch(_e){} }, ms); }
+function _sepScheduleRefresh(chave){
+  _evPend[chave||'*']=1; if(!chave || chave==='orders' || chave==='*') _evCredSujo=true;
+  if(!_evPrimeiro) _evPrimeiro=Date.now();
+  var lig=false; try{ lig=_perfOn('evento'); }catch(_e){}
+  if(lig){
+    // horário de disparo FIXO: com a repintura já agendada o lote só acumula — uma rajada contínua de
+    // eventos não adia a repintura para sempre (sai a cada _EV_MIN, nunca a cada evento)
+    if(_sepRefreshT) return;
+    var agora=Date.now(), esp=300;
+    if(agora-_evUlt<_EV_MIN) esp=Math.max(esp, _EV_MIN-(agora-_evUlt));
+    _sepRefreshT=setTimeout(_evDispara, esp);
+    return;
+  }
+  if(_sepRefreshT) clearTimeout(_sepRefreshT); // chaves desligadas: espera de 300 ms reiniciada a cada evento, como sempre
+  _sepRefreshT=setTimeout(_evDispara, 300);
+}
+function _evDispara(){
+  _sepRefreshT=null;
+  var perfEv=false, agora=Date.now();
+  try{ perfEv=_perfOn('evento'); }catch(_e){}
+  if(perfEv && (agora-_evInteracaoEm)<_EV_BRECHA && (agora-_evPrimeiro)<_EV_TETO){ try{ _perfOp('ev_adiado',0); }catch(_e){} _sepRefreshT=setTimeout(_evDispara, 350); return; }
+  var oculta=false; try{ oculta=_perfOn('oculta') && typeof document!=='undefined' && document.hidden===true; }catch(_e){}
+  if(oculta){ _evOcultoPend=true; _evCredito(); _evLeve(); try{ _perfOp('ev_oculta',0); }catch(_e){} return; }
+  var leve=false; try{ leve=perfEv && _evSoLeve(_evPend); }catch(_e){ leve=false; }
+  if(perfEv && !leve){
+    var minG=Math.min(_EV_GERAL_MAX, Math.max(_EV_MIN, _evCustoGeral*_EV_FATOR));
+    var falta=minG-(agora-_evUltCompleto);
+    if(falta>50 && (agora-_evPrimeiro)<_EV_GERAL_MAX){ _evCredito(); _evLeve(); try{ _perfOp('ev_cadencia',0); }catch(_e){} _sepRefreshT=setTimeout(_evDispara, Math.min(falta, 4000)); return; }
+  }
+  var keys=_evPend; _evPend={}; _evPrimeiro=0; _evUlt=agora;
+  try{
+    if(leve){
+      _evCredito(); _evLeve(); try{ _perfOp('ev_leve',0); }catch(_e){}
+      // lote com tabela que NÃO é de conversa, dispensado pela tela de Conversas: arremate ao completar os 30 s
+      var _temResto=false; try{ for(var _kr in keys){ if(!_EV_LEVES[_kr]){ _temResto=true; break; } } }catch(_e){}
+      if(_temResto) _evTrailing(Math.max(500, _EV_COMPLETO_MAX-(agora-_evUltCompleto)+100));
+    }
+    else {
+      _evCredSujo=false;
+      _refreshEvKeys=perfEv?keys:null;
+      var _t0g=0; try{ _t0g=performance.now(); }catch(_e){}
+      try{ refreshAll(); } finally { _refreshEvKeys=null; try{ if(perfEv) _evCustoGeral=Math.max(0, performance.now()-_t0g); }catch(_e){} }
+    }
+  }catch(e){}
+  _updateSbIndicator('⟳ Atualizado','var(--text-info)');
+  setTimeout(function(){ _updateSbIndicator('☁ Online','var(--st-ok-tx)'); },2000);
+}
+try{ document.addEventListener('visibilitychange', function(){ try{ if(!document.hidden && _evOcultoPend){ _evOcultoPend=false; if(_sepRefreshT) clearTimeout(_sepRefreshT); _sepRefreshT=setTimeout(_evDispara, 60); } }catch(_e){} }); }catch(_e){}
+try{ ['pointerdown','keydown','wheel','touchstart'].forEach(function(ev){ document.addEventListener(ev, function(){ _evInteracaoEm=Date.now(); }, {capture:true, passive:true}); }); }catch(_e){}
 // v89 — debounce do recarregamento do bloco app_data (antes: cada evento = reload+refresh completo;
 // rajadas de salvamentos de outros usuários travavam a tela). Agrupa em uma única atualização.
 var _appDataReloadT=null;
@@ -5353,7 +5536,7 @@ function _sepOnRealtime(cfg,payload){
       var did=payload.old&&payload.old.id; if(did==null) return; did=String(did);
       cfg.set(arr.filter(function(o){ return String(cfg.id(o))!==did; }));
       if(_sepSnap[cfg.key]) delete _sepSnap[cfg.key][did];
-      _sepScheduleRefresh(); return;
+      _sepScheduleRefresh(cfg.key); return;
     }
     var row=payload.new; if(!row || !row.data) return;
     var rid=String(row.id); var inc=JSON.stringify(row.data);
@@ -5375,7 +5558,7 @@ function _sepOnRealtime(cfg,payload){
           // cosmética → adota o servidor; edição REAL → guard v134 intacto (nada local se perde).
           var _soOrdem=false;
           try{ if(typeof _canonStr==='function') _soOrdem=(_canonStr(arr[idx])===_canonStr(JSON.parse(_snapJ))); }catch(_e2){}
-          if(!_soOrdem){ _sepScheduleRefresh(); return; }
+          if(!_soOrdem){ _sepScheduleRefresh(cfg.key); return; }
         }
         arr[idx]=row.data;
       }
@@ -5384,10 +5567,10 @@ function _sepOnRealtime(cfg,payload){
     if(!_sepSnap[cfg.key]) _sepSnap[cfg.key]={};
     _sepSnap[cfg.key][rid]=inc;
     // v104 — conversa muda no realtime → re-ordena a lista NA HORA (a conversa com msg nova sobe ao topo)
-    if(cfg.key==='conversas'){ try{ if(document.getElementById('conv-lista')) renderConversasLista(); if(conversaAtivaId===rid && document.getElementById('conv-tela')) renderConversaMsgs(conversaAtivaId); if(typeof _updateConvBadge==='function') _updateConvBadge(); }catch(_e){} }
+    if(cfg.key==='conversas'){ try{ if(document.getElementById('conv-lista')) _convListaPorEvento(); /* v270 — coalescido */ if(conversaAtivaId===rid && document.getElementById('conv-tela')) renderConversaMsgs(conversaAtivaId); if(typeof _updateConvBadge==='function') _updateConvBadge(); }catch(_e){} }
     // v149 — notificação NOVA direcionada a MIM chegando ao vivo → toast visível (o badge sozinho passava batido)
     if(cfg.key==='notificacoes' && idx<0){ try{ var _tn=row.data; if(_tn && currentUser && _tn.paraUserId===currentUser.id && !_tn.lida && typeof _notifToast==='function' && getMyNotifs().some(function(x){return x.id===_tn.id;})) _notifToast(_tn); }catch(_e){} }
-    _sepScheduleRefresh();
+    _sepScheduleRefresh(cfg.key);
   }catch(e){ console.warn('sep realtime '+cfg.key+':', e.message); }
 }
 // v101 — INSTRUMENTAÇÃO: surfa quando um SEP foi PULADO com dados pendentes (antes: silencioso → parecia salvo).
@@ -5422,7 +5605,7 @@ function _settleSave(ok, err){
 function _onceNextSettle(){ return new Promise(function(res){ _saveWaiters.push(res); }); }
 // Grava no cache e devolve uma promise que resolve quando o commit terminar (p/ botões "Salvando…")
 function commitAndWait(){
-  try{ localStorage.setItem(LECARE_STORAGE_KEY, JSON.stringify(_collectData())); }catch(e){}
+  if(!_perfOn('backup')){ try{ localStorage.setItem(LECARE_STORAGE_KEY, JSON.stringify(_collectData())); }catch(e){} } // v270 — idem saveData
   var p=_onceNextSettle(); _commitToDb(); return p;
 }
 // Para botões de modal: aguarda a confirmação do servidor, mas com teto de tempo
@@ -5435,7 +5618,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v268';
+var APP_VERSION = 'v271';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5495,13 +5678,24 @@ function _trazerModalFrente(el){
       var z=parseInt(ovs[k].style.zIndex,10); if(!z) z=base;
       if(z+1>top) top=z+1;
     }
-    if(parseInt(el.style.zIndex,10)!==top) el.style.zIndex=top;
+    // v271 — DISJUNTOR (achado no teste em tela, risco latente desde a v96): dois modais que recebem evento
+    // no MESMO instante se revezavam para sempre (cada troca de z-index gera novo evento → o outro sobe →
+    // novo evento…) e travavam a aba. Abertura normal mexe 1–2 vezes; acima de 8 trocas do MESMO modal em
+    // 1 segundo é o revezamento — para de trocar (a ordem fica como está) em vez de travar.
+    if(parseInt(el.style.zIndex,10)!==top){
+      var _zAg=Date.now(); if(!el._zJan || _zAg-el._zJan>1000){ el._zJan=_zAg; el._zN=0; }
+      if(++el._zN>8) return;
+      el.style.zIndex=top;
+    }
   }catch(e){}
 }
 // v104: fecha o modal pelo ✕ — esconde (estático) ou remove do DOM (dinâmico, marcado data-dyn)
 function _fecharModalX(btn){
   try{ var ov=btn && btn.closest ? btn.closest('.overlay') : null; if(!ov) return;
     ov.classList.remove('open');
+    // v271 — ✕ dos modais novos = Cancelar (limpa o estado e devolve a seleção do modal de status)
+    if(ov.id==='graf-overlay'){ try{ _grafCancelar(); }catch(_e){} return; }
+    if(ov.id==='dsgdist-overlay'){ try{ _dsgDistFechar(); }catch(_e){} return; }
     // v159 — fechar o modal de conversa do card LIMPA o ponteiro da conversa ativa (fantasma zerava
     // não-lidas de mensagem nova p/ todos via guard v151); se a página Conversas estiver visível
     // atrás, o ponteiro é dela e fica.
@@ -5636,8 +5830,13 @@ async function _sessionHeartbeat(){
     try{ _hbDiag={ canon:{ modo:(_sepCanonModo||'shadow'), iguais:_sepCanonDiag.iguais, reais:_sepCanonDiag.reais, tab:_sepCanonDiag.porTabela, reaisTab:_sepCanonDiag.reaisTab },
                    dirty:{ ciclos:_sepDirtyDiag.ciclos, tab:_sepDirtyDiag.porTabela, campos:_sepDirtyDiag.campos, am:_sepDirtyDiag.amostras },
                    delta:{ modo:(_sepDeltaModo||'off'), ativo:(typeof _deltaAtivo==='function'&&_deltaAtivo()), ciclos:_sepDeltaDiag.ciclos, ciclosReal:_sepDeltaDiag.ciclosReal, seguradas:_sepDeltaDiag.seguradas, teria:_sepDeltaDiag.teria, reais:_sepDeltaDiag.reais, perdidas:_sepDeltaDiag.perdidas, am:_sepDeltaDiag.am, vigia:{ dia:(function(){ try{ return localStorage.getItem('lecare_delta_vigia_dia')||''; }catch(_e){ return ''; } })(), miss:_deltaVigiaMiss, am:_deltaVigiaAm } } }; }catch(_e){ _hbDiag=null; } // v222 — fase A; v231 — sombra; v241 — delta real + vigia diário
-    await _sb.from('sessions').upsert({ tab_id:_tabId, user_id:currentUser.id, user_name:currentUser.name, version:APP_VERSION, last_seen:new Date().toISOString(), updated_at:new Date().toISOString(), diag:_hbDiag }, { onConflict:'tab_id' });
-    const r = await _sb.from('sessions').select('kicked').eq('tab_id',_tabId).limit(1);
+    try{ if(_hbDiag && _perfOn('medir')) _hbDiag.perf=_perfResumo(); }catch(_e){} // v270 — medição de desempenho (só contadores)
+    const _hbRow={ tab_id:_tabId, user_id:currentUser.id, user_name:currentUser.name, version:APP_VERSION, last_seen:new Date().toISOString(), updated_at:new Date().toISOString(), diag:_hbDiag };
+    let r=null;
+    // v270 — chave 'batimento': a gravação já devolve o campo 'kicked' (1 requisição em vez de 2 a cada 20 s por aba)
+    if(_perfOn('batimento')){ r = await _sb.from('sessions').upsert(_hbRow, { onConflict:'tab_id' }).select('kicked'); if(r && r.error) r=null; }
+    if(r===null && _perfOn('batimento')){ await _sb.from('sessions').upsert(_hbRow, { onConflict:'tab_id' }); r = await _sb.from('sessions').select('kicked').eq('tab_id',_tabId).limit(1); } // v271 (revisão) — erro na leitura conjunta: caminho de sempre
+    else if(!_perfOn('batimento')) { await _sb.from('sessions').upsert(_hbRow, { onConflict:'tab_id' }); r = await _sb.from('sessions').select('kicked').eq('tab_id',_tabId).limit(1); }
     if(r && r.data && r.data[0] && r.data[0].kicked){ _doKickLogout(); }
   }catch(e){ /* silencioso */ }
 }
@@ -5805,6 +6004,13 @@ async function _commitToDb(){
   }catch(e){ ok=false; firstErr=firstErr||('bloco principal: '+e.message); console.warn('app_data falhou:', e.message); }
   var _skipPend=[];
   for(var i=0;i<SEP_ENTITIES.length;i++){
+    // v270 — chave 'salvar': entre uma tabela e outra o controle volta à tela (clique e rolagem respondem).
+    // NÃO cria cenário novo de concorrência: essa pausa já existe hoje sempre que a tabela anterior teve
+    // algo a gravar (await de rede). A varredura DENTRO de cada tabela continua atômica, como sempre, e
+    // a fotografia do envio (v267) segue valendo. Aba em 2º plano não cede (ninguém para travar).
+    // v271 (revisão) — só cede quando já há ~40 ms de trabalho acumulado desde a última pausa: salvamento
+    // pequeno segue direto (o pedido de gravação sai no mesmo instante do clique, como sempre).
+    if(i>0){ var _cedeOn=false; try{ _cedeOn=_perfOn('salvar') && !(typeof document!=='undefined' && document.hidden) && (_perfAgora()-_cedeUlt)>40; }catch(_e){} if(_cedeOn){ try{ await _perfCede(); }catch(_e){} _cedeUlt=_perfAgora(); } } else { _cedeUlt=_perfAgora(); }
     var r=await _sepSyncOne(SEP_ENTITIES[i]);
     if(r && r.ok===false){ ok=false; firstErr=firstErr||(SEP_ENTITIES[i].table+': '+(r.error||'erro')); }
     if(r && r.skipped && r.pendente){ _skipPend.push(r); }
@@ -6006,6 +6212,7 @@ const STATUS_DEADLINES = [
   { linha:'personalizada', setor:'designer', status:'Rótulos recebidos',    limitDay:9,  level:'crit', desc:'Rótulos chegaram na Lecare' },
   { linha:'personalizada', setor:'designer', status:'Conferido e liberado', limitDay:9,  level:'crit', desc:'Rótulos conferidos e liberados' },
   // Produção (ordered by prazo — D4,D5,D5,D6,D7,D9,D9)
+  { linha:'personalizada', setor:'producao', status:'Verificado',             limitDay:4,  level:'warn', desc:'Verificação do pedido pela Produção' }, // v271 — ordem do dono 12/11: degrau novo, MESMA data limite da Conferência inicial
   { linha:'personalizada', setor:'producao', status:'Conferência inicial',    limitDay:4,  level:'warn', desc:'Conferência inicial de ativos' },
   { linha:'personalizada', setor:'producao', status:'Liberado produção',      limitDay:5,  level:'warn', desc:'Liberação para produção' },
   { linha:'personalizada', setor:'producao', status:'Checagem ativos',        limitDay:5,  level:'warn', desc:'Checagem de ativos' },
@@ -6080,7 +6287,7 @@ const SETORES = {
     statuses:['Não iniciado','Distribuido','Em produção','Envio p/ aprovação','Solicitado alteração','Aprovado',
               'Montagem pranchas','Prancha finalizada','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno']},
   producao:  {label:'Produção',  color:'#533AB7',
-    statuses:['Não iniciado','Conferência inicial','Liberado produção','Checagem ativos',
+    statuses:['Não iniciado','Verificado','Conferência inicial','Liberado produção','Checagem ativos', // v271 — 'Verificado'
               'Checagem embalagens','Em produção','Finalizado e conf.','Enviado para expedição']},
   rotulos:   {label:'Rótulos',   color:'#993C1D',
     statuses:['Não iniciado','Em andamento','Finalizado']},
@@ -6781,7 +6988,7 @@ const STATUS_SEQUENCE = {
   estoque:    ['Não iniciado','Solicitado compra','Separação completa'],
   compras:    ['Não iniciado','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Compra finalizada','Produto entregue'], // v156 — novos rótulos por lado
   designer:   ['Não iniciado','Distribuido','Em produção','Envio p/ aprovação','Solicitado alteração','Aprovado','Montagem pranchas','Prancha finalizada','Enviado p/ gráfica','Rótulos recebidos','Conferido e liberado','Rótulo Interno'], // v256; v261 — Distribuido + Solicitado alteração
-  producao:   ['Não iniciado','Conferência inicial','Liberado produção','Checagem ativos','Checagem embalagens','Em produção','Finalizado e conf.','Enviado para expedição'],
+  producao:   ['Não iniciado','Verificado','Conferência inicial','Liberado produção','Checagem ativos','Checagem embalagens','Em produção','Finalizado e conf.','Enviado para expedição'], // v271 — 'Verificado'
   rotulos:    ['Não iniciado','Em andamento','Finalizado'],
   expedicao:  ['Não iniciado','Distribuido tarefas','Em expedição','Concluído','Envio Parcial','Enviado','Entregue Parcial','Entregue'],
   // Linha anestésico — casa com SETORES_ANES
@@ -6807,6 +7014,12 @@ function statusIndex(setor, status, isAnes){
 function ruleIsSatisfied(rule, order){
   const st = order.statuses[rule.setor];
   const isAnes = (order.linha||'personalizada') === 'anestesico';
+
+  // v271 — DESIGNER: 'Rótulos recebidos' com gráfica ainda aguardando (recebimento PARCIAL) NÃO cumpre o
+  // prazo "Rótulos chegaram na Lecare" — a cobrança segue até chegar de todas as gráficas.
+  // (revisão 12/11) vale também para 'Conferido e liberado' com gráfica aguardando — estado que só nasce de edição
+  // simultânea em duas abas; em vez de passar despercebido, o prazo segue cobrando até alguém acertar.
+  if(rule.setor==='designer' && (rule.targetStatus==='Rótulos recebidos'||rule.targetStatus==='Conferido e liberado') && (st==='Rótulos recebidos'||st==='Conferido e liberado') && typeof _grafPendentes==='function' && _grafPendentes(order).length) return false;
 
   // v101 — financeiro: emitir a NF é o ÚLTIMO passo. Se já emitiu (com ou sem NF),
   // TODAS as regras de financeiro estão satisfeitas → verde, sem alerta, em qualquer linha.
@@ -6868,6 +7081,7 @@ function _rmFaltMap(){
     (listasCompra||[]).forEach(function(l){ (l.itens||[]).forEach(function(it){
       var f=it.compra&&it.compra.recebFaltante;
       if(!f || it.compra.recebFaltanteRes) return;
+      if(_rmSoDifNota(it.compra)) return; // v269 — físico completo: diferença só de nota, sem alerta
       (f.aloc||[]).forEach(function(a){
         (m[String(a.orderId)]=m[String(a.orderId)]||[]).push({nome:it.nome||'', codigo:it.codigo||'', qtd:parseFloat(a.qtd)||0, un:it.unidade||'', tipo:l.tipo});
       });
@@ -6876,7 +7090,12 @@ function _rmFaltMap(){
   _rmFaltCache={t:Date.now(), map:m};
   return m;
 }
+var _alertMemo=null; // v270 — memo de alertas por pedido, vivo SÓ dentro de uma passada do refreshAll
 function getAlerts(order){
+  if(_alertMemo){ var _am=_alertMemo.get(order); if(_am===undefined){ _am=_getAlertsCalc(order); _alertMemo.set(order,_am); } return _am; }
+  return _getAlertsCalc(order);
+}
+function _getAlertsCalc(order){
   const prazoConfig=getTipoPrazoConfig(order.tipo||'venda');
   if(prazoConfig==='none') return []; // venda mãe — sem prazos
   const d=calcDay(order.d1),rules=getOrderRules(order),list=[];
@@ -6929,7 +7148,7 @@ function badgeClass(st,alertLevel){
   if(st==='Entregue Parcial')return'b-inf'; // v131 — entrega parcial de volumes (azul, distinto de Enviado/Entregue)
   const ok=['Concluído','Concluído (caixa)','Finalizado','Entregue','Enviado','Fechamento concluído','Produtos informados','Separação completa','Produto entregue','Compra finalizada','Aprovado','Emitido NF','Emitido s/ NF','Emitido sem NF','Rótulos recebidos','Separação concluída','Finalizado e conferido','Conferido e liberado','Enviado para expedição','Finalizado e conf.','Rótulo Interno'];
   if(ok.includes(st))return'b-ok';
-  const mid=['Em produção','Em separação','Em andamento','Em expedição','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Montagem pranchas','Prancha finalizada','Envio p/ aprovação','Enviado p/ gráfica','Conferência inicial','Checagem ativos','Checagem embalagens','Solicitado compra','Liberado produção','Distribuido tarefas','Distribuido','Solicitado alteração','Rotulando'];
+  const mid=['Em produção','Em separação','Em andamento','Em expedição','Orçamento feito','Compra ativo finalizado','Compra embalagem finalizado','Montagem pranchas','Prancha finalizada','Envio p/ aprovação','Enviado p/ gráfica','Verificado','Conferência inicial','Checagem ativos','Checagem embalagens','Solicitado compra','Liberado produção','Distribuido tarefas','Distribuido','Solicitado alteração','Rotulando'];
   if(mid.includes(st))return'b-mid';
   return'b-inf';
 }
@@ -7003,6 +7222,12 @@ function _designerColab(){
 // definir o responsável).
 function _designerColabLivre(){
   return _designerColab() && !!(currentUser && currentUser.dsgStatusLivre);
+}
+// v271 — AUTONOMIA DE DISTRIBUIÇÃO (ordem do dono 12/11, caso Kaiky): colaborador com o marcador
+// dsgRespLivre no cadastro DISTRIBUI pedidos (painel do Designer) e TROCA o responsável (seletor
+// "quem executou" do modal do setor), como a coordenação. É independente da autonomia de status.
+function _designerRespLivre(){
+  return _designerColab() && !!(currentUser && currentUser.dsgRespLivre);
 }
 const _DES_COLAB_STATUS=['Em produção','Envio p/ aprovação','Montagem pranchas','Prancha finalizada'];
 function canEdit(setor){
@@ -7224,6 +7449,7 @@ function _dsgPendentes(){
     if((o.tipo||'venda')==='venda_mae') return false;
     if((o.linha||'personalizada')==='anestesico') return false;
     var st=(o.statuses&&o.statuses.designer)||'Não iniciado';
+    if(st==='Conferido e liberado' && typeof _grafPendentes==='function' && _grafPendentes(o).length) return true; // v271 — liberado com gráfica aguardando continua à vista
     return st!=='Conferido e liberado' && st!=='Rótulo Interno';
   });
 }
@@ -7333,7 +7559,7 @@ function renderPainelDesigner(){
         '</div>'+
         '<div style="font-size:10.5px;color:var(--text-secondary);margin:1px 0 3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escapeHtml(o.cliente||'')+'">'+escapeHtml(o.cliente||'—')+'</div>'+
         '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-          '<span class="badge '+(st==='Não iniciado'?'b-nil':'b-mid')+'" style="font-size:10px">'+escapeHtml(st)+(sd&&sd.ts?' · '+new Date(sd.ts).toLocaleDateString('pt-BR'):'')+'</span>'+
+          '<span class="badge '+(st==='Não iniciado'?'b-nil':'b-mid')+'" style="font-size:10px">'+escapeHtml(st)+(sd&&sd.ts?' · '+new Date(sd.ts).toLocaleDateString('pt-BR'):'')+'</span>'+_grafSeloHtml(o)+
           '<span style="font-size:9.5px;color:var(--text-tertiary)" title="Data final de saída do pedido (ordena a coluna)">📦 Saída '+fmtD(o.previsao)+'</span>'+
           ((pode&&!emExec)?'<button onclick="_dsgExecMarcar(\''+c.id+'\','+JSON.stringify(String(o.id)).replace(/"/g,'&quot;')+')" style="margin-left:auto;font-size:10px;padding:2px 9px;border:.5px solid var(--st-ok-bd,var(--border-md));border-radius:10px;background:transparent;color:var(--st-ok-tx);cursor:pointer;font-family:inherit" title="Marcar como o pedido em execução AGORA (substitui o atual)">▶ Executar</button>':'')+
         '</div>'+
@@ -7352,7 +7578,7 @@ function renderPainelDesigner(){
   var baixoVis=busca?g.baixo.filter(casa):g.baixo; achados+=busca?baixoVis.length:0;
   var baixoHtml=baixoVis.map(function(o){
     var st=(o.statuses&&o.statuses.designer)||'Não iniciado';
-    return '<span onclick="openDetailModal('+o.id+')" style="display:inline-flex;align-items:center;gap:6px;border:.5px solid var(--border);border-radius:10px;padding:4px 10px;font-size:11px;cursor:pointer;background:var(--bg-primary)" title="'+escapeHtml(o.cliente||'')+' — abrir (leitura)">'+
+    return '<span onclick="_dsgCliqueBaixo('+o.id+')" style="display:inline-flex;align-items:center;gap:6px;border:.5px solid var(--border);border-radius:10px;padding:4px 10px;font-size:11px;cursor:pointer;background:var(--bg-primary)" title="'+escapeHtml(o.cliente||'')+' — '+(_dsgPodeDistribuir()?'clique para distribuir':'abrir (leitura)')+'">'+ // v271 — distribuição pelo painel
       '<b>'+escapeHtml(o.num||'—')+'</b>'+(o.urgente?' <span class="badge b-urg" style="font-size:8.5px">URG</span>':'')+
       '<span style="color:var(--text-tertiary)">'+escapeHtml(st)+' · Saída '+fmtD(o.previsao)+'</span></span>';
   }).join(' ');
@@ -7364,7 +7590,7 @@ function renderPainelDesigner(){
       (busca?'<span style="font-size:10.5px;color:var(--text-secondary)">'+achados+' encontrado(s) <span onclick="_dsgBuscar(\'\')" style="cursor:pointer;text-decoration:underline">limpar</span></span>':'')+
       '<button onclick="_dsgExecLoad()" style="font-size:11px;padding:4px 12px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit" title="Recarrega o que cada um está executando">↻ Atualizar</button>'+
     '</div>'+
-    '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Acompanhamento — somente leitura. A única ação é marcar <b>▶ Executar</b> (um por colaborador; marcar outro substitui). Edições de status continuam no fluxo normal dos setores; a distribuição, pelo status "Distribuido" do modal do Designer. Concluídos (Conferido e liberado / Rótulo Interno) não aparecem.</div>'+
+    '<div style="font-size:11px;color:var(--text-tertiary);margin-bottom:10px">Acompanhamento. Ações: marcar <b>▶ Executar</b> (um por colaborador; marcar outro substitui) e, para o administrador e a coordenação, <b>distribuir</b> — clique no pedido da faixa "a distribuir" e indique o colaborador. As demais edições de status continuam no fluxo normal dos setores. Concluídos (Conferido e liberado / Rótulo Interno) não aparecem.</div>'+
     '<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap">'+colsHtml+'</div>'+
     (baixoVis.length?('<div style="margin-top:14px;border-top:.5px dashed var(--border);padding-top:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-secondary);margin-bottom:6px">Não iniciados / sem responsável — a distribuir ('+(busca?(baixoVis.length+' de '+g.baixo.length):g.baixo.length)+')</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+baixoHtml+'</div></div>'):'');
   if(_bFoco){ var _bi=document.getElementById('dsg-busca'); if(_bi){ _bi.focus(); try{ _bi.setSelectionRange(_bCaret,_bCaret); }catch(_e){} } }
@@ -7451,6 +7677,7 @@ async function _reconciliarPerfis(){
   }catch(e){ console.warn('reconciliar perfis:', e.message); }
 }
 async function doLogin(){
+  const _lgT0=(typeof performance!=='undefined')?performance.now():0; // v270 — medição do tempo de entrada
   const lg=document.getElementById('login-user').value.trim(),pw=document.getElementById('login-pass').value;
   const _errEl=document.getElementById('login-err');
   const _btn=document.getElementById('login-btn'), _ld=document.getElementById('login-loading');
@@ -7476,7 +7703,9 @@ async function doLogin(){
   }
 
   // Sessão ativa → carrega os dados já autenticado (essencial quando a RLS exige login)
-  try{ await _loadFromSupabase(); }catch(e){ console.warn('Falha ao carregar dados pós-login:', e); }
+  let _reusouCarga=false; // v270 — chave 'login' (regras no _loginReusaCarga; na dúvida, carga completa)
+  try{ _reusouCarga=(await _loginReusaCarga(lg))===true; }catch(_e){ _reusouCarga=false; }
+  if(!_reusouCarga){ try{ await _loadFromSupabase(); }catch(e){ console.warn('Falha ao carregar dados pós-login:', e); } }
 
   // Localiza o cadastro do usuário (perfil/permissões) na base já carregada
   const uCandidate = users.find(x=>x.login===lg);
@@ -7562,9 +7791,11 @@ async function doLogin(){
   document.getElementById('btn-new-client').style.display=(isAdmin||isComercial)?'':'none';
   const sbClear=document.getElementById('sb-clear-data');if(sbClear)sbClear.style.display=isAdmin?'block':'none';
   activeMonth=null;sincronizarContasReceberDePedidos();refreshAll();startNotifTimer();checkNotificacoes();checkCreditAlerts();showPage('dashboard');saveData();
+  try{ _perfOp('login', performance.now()-_lgT0); }catch(_e){}
   _startSession();
 }
 async function doLogout(){
+  try{ _cargaUid=null; _cargaOkEm=0; }catch(_e){} // v271 (revisão) — nada da sessão encerrada é reaproveitado no próximo login
   await _stopSession();
   try{ if(_sb&&_sb.auth&&_sb.auth.signOut) await _sb.auth.signOut(); }catch(e){ console.warn('signOut:',e); } // v248 — window._sb nunca existiu (let); o signOut do logout também era código morto
   // v236 — LGPD (avaliação externa 23/09, item S5): o cache local da base (clientes, pedidos,
@@ -8180,6 +8411,8 @@ function openStatusModal(oid,setor){
     parallelBanner.style.display='block';
     parallelBanner.textContent=`Status paralelos: selecionar qualquer um de "${parallelGroup.join('" ou "')}" cumpre o prazo do D${statusDlMap[parallelGroup[0]]?.limitDay||'?'}.`;
   } else {parallelBanner.style.display='none';}
+  // v271 — gráficas do pedido (só Designer, linha personalizada)
+  try{ const _gi=document.getElementById('sm-graf-info'); if(_gi){ const _gh=(setor==='designer' && _grafAplica(o))?_grafInfoHtml(o):''; _gi.innerHTML=_gh; _gi.style.display=_gh?'block':'none'; } }catch(_e){}
   // Build sequential index: index of current status in setor list
   let statuses=setorCfg.statuses;
   // v156 — COMPRAS: escada por pedido. Novos (pós-virada 15/07/26): sem 'Compra finalizada' (legado);
@@ -8318,6 +8551,11 @@ function openStatusModal(oid,setor){
       if(!_DES_COLAB_STATUS.includes(s)){ locked=true; lockReason='Degrau da coordenação do Designer'; }
       else if(si<curIdx){ locked=true; lockReason='Voltar status é com a coordenação/admin'; }
     }
+    // v271 — 'Conferido e liberado' SÓ com os rótulos recebidos de TODAS as gráficas (ordem do dono 12/11)
+    if(setor==='designer' && s==='Conferido e liberado' && !locked && _grafAplica(o) && s!==o.statuses.designer){
+      const _pgs=_grafPendentes(o);
+      if(_pgs.length){ locked=true; lockReason='Aguardando rótulos de: '+_pgs.map(g=>g.nome).join(', '); }
+    }
 
     const lockStyle = locked
       ? 'opacity:0.55;cursor:not-allowed;pointer-events:none;'
@@ -8385,8 +8623,9 @@ function openStatusModal(oid,setor){
       const _colabD=_designerColab();
       const _livreD=_designerColabLivre(); // v261 — autonomia (Kaiky): status livre, responsável INTOCÁVEL
       const _atualPed=(o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorId)||o.designerExecutorId||'';
-      const atual=(_colabD&&!_livreD)?currentUser.id:(_atualPed||((!_colabD&&currentUser&&_ehSetorExec(currentUser,'designer'))?currentUser.id:''));
-      if(lbl) lbl.textContent='🎨 Quem executou (designer)'+(_colabD?(_livreD?' — travado no responsável atual':' — você'):'');
+      const _respD=_designerRespLivre(); // v271 — autonomia de distribuição (Kaiky): seletor LIVRE, como a coordenação
+      const atual=(_colabD&&!_livreD&&!_respD)?currentUser.id:(_atualPed||(((!_colabD||(_respD&&!_livreD))&&currentUser&&_ehSetorExec(currentUser,'designer'))?currentUser.id:''));
+      if(lbl) lbl.textContent='🎨 Quem executou (designer)'+((_colabD&&!_respD)?(_livreD?' — travado no responsável atual':' — você'):'');
       // v263 (C4, revisão 09/11): executor atual FORA do pool (desativado/legado) aparece no seletor
       // rotulado — antes nenhuma option casava, o seletor caía em "— selecione —" e o Confirmar
       // APAGAVA o vínculo em silêncio (o save abaixo também preserva o atual quando o DOM vem vazio).
@@ -8394,7 +8633,7 @@ function openStatusModal(oid,setor){
       sel.innerHTML='<option value="">— selecione —</option>'
         +(_foraPool?('<option value="'+escapeHtml(String(atual))+'" selected>'+escapeHtml((_foraPool.name||String(atual))+' (desativado)')+'</option>'):'')
         +execs.map(u=>'<option value="'+u.id+'"'+(String(u.id)===String(atual)?' selected':'')+'>'+escapeHtml(u.name||u.login||u.id)+'</option>').join('');
-      sel.disabled=!!_colabD; sel.title=_colabD?(_livreD?'Autonomia de status: você ajusta qualquer degrau, mas o RESPONSÁVEL só muda pela coordenação/admin':'Colaborador: o executor é você — a coordenação pode corrigir depois, se preciso'):'';
+      sel.disabled=(!!_colabD && !_respD); sel.title=(_colabD&&!_respD)?(_livreD?'Autonomia de status: você ajusta qualquer degrau, mas o RESPONSÁVEL só muda pela coordenação/admin':'Colaborador: o executor é você — a coordenação pode corrigir depois, se preciso'):'';
       sel.style.display=''; if(btn)btn.style.display='none'; if(res)res.style.display='none';
       var _be0=document.getElementById('sm-env-btn'), _re0=document.getElementById('sm-env-resumo');
       if(_be0)_be0.style.display='none'; if(_re0)_re0.style.display='none';
@@ -8439,8 +8678,16 @@ function openStatusModal(oid,setor){
 function pickStatus(s){
   selectedStatus=s;
   document.querySelectorAll('.status-opt').forEach(el=>{el.classList.toggle('selected',el.getAttribute('onclick')===`pickStatus('${s}')`)});
+  // v271 — DESIGNER: os dois degraus da gráfica abrem o modal próprio (para quais foi enviado / de quais chegou)
+  _grafPend=null;
+  try{
+    if(statusCtx && statusCtx.setor==='designer' && !statusCtx.ro && (s==='Enviado p/ gráfica'||s==='Rótulos recebidos')){
+      const _og=orders.find(x=>String(x.id)===String(statusCtx.oid));
+      if(_og && _grafAplica(_og)) _grafAbrir(_og, s==='Enviado p/ gráfica'?'envio':'receb');
+    }
+  }catch(_e){}
 }
-function closeStatusModal(){document.getElementById('status-overlay').classList.remove('open');statusCtx=null;selectedStatus=null;}
+function closeStatusModal(){document.getElementById('status-overlay').classList.remove('open');statusCtx=null;selectedStatus=null;try{ _grafPend=null; }catch(_e){}}
 function confirmStatus(){
   if(!statusCtx)return; // v95.1 — NÃO exige status selecionado aqui: a observação tem que salvar mesmo sem mudar status
   if(statusCtx.ro){ closeStatusModal(); return; } // v238 — modo leitura (estoque no compras) nunca grava
@@ -8623,6 +8870,26 @@ function confirmStatus(){
       return;
     }
   }
+  // v271 — GRÁFICAS (ordem do dono 12/11): 'Enviado p/ gráfica' e 'Rótulos recebidos' só se gravam passando pelo
+  // modal de gráficas (a decisão chega em _grafPend, válida apenas para ESTE pedido e ESTE status-alvo);
+  // 'Conferido e liberado' só com o recebimento de TODAS as gráficas registradas.
+  var _gp271=null;
+  if(statusCtx.setor==='designer' && _grafAplica(o)){
+    if(_grafPend && String(_grafPend.oid)===String(o.id) && _grafPend.alvo===selectedStatus) _gp271=_grafPend;
+    _grafPend=null;
+    const _stD=o.statuses.designer||'Não iniciado';
+    if(!_gp271 && selectedStatus!==_stD && (selectedStatus==='Enviado p/ gráfica'||selectedStatus==='Rótulos recebidos')){
+      _grafAbrir(o, selectedStatus==='Enviado p/ gráfica'?'envio':'receb');
+      return;
+    }
+    if(selectedStatus==='Conferido e liberado' && selectedStatus!==_stD){
+      const _pgC=_grafPendentes(o);
+      if(_pgC.length){
+        alert('"Conferido e liberado" só após o recebimento dos rótulos de TODAS as gráficas.\n\nAguardando: '+_pgC.map(g=>g.nome).join(', ')+'\n\nMarque o recebimento em "Rótulos recebidos".');
+        return;
+      }
+    }
+  }
   // ── DEFAULT FLOW (all other sectors) ─────────────────
   const prev=o.statuses[statusCtx.setor];
   if(prev!==selectedStatus){
@@ -8648,6 +8915,7 @@ function confirmStatus(){
     if(statusCtx.setor==='expedicao'&&['Enviado','Entregue'].includes(selectedStatus)&&!o.envioReal)
       o.envioReal=today();
   }
+  if(_gp271) _grafAplicar(o,_gp271); // v271 — lista de gráficas gravada junto com o status (mesmo saveData)
   // v118 — grava o EXECUTOR do DESIGNER (produtividade por rótulos). PRODUÇÃO é por produto (modal próprio: openProdRespModal).
   if(statusCtx.setor==='designer' && selectedStatus){
     const _ex=document.getElementById('sm-exec');
@@ -8656,9 +8924,12 @@ function confirmStatus(){
     // v263 (C4): coordenação/admin confirmando com o seletor VAZIO (executor atual fora do pool, DOM
     // mexido) PRESERVA o executor gravado — antes o vínculo era apagado em silêncio, sem auditoria.
     const _atuEx=String((o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorId)||o.designerExecutorId||'');
-    const _exid=_designerColabLivre()
+    // v271 — autonomia de distribuição (Kaiky): vale o seletor, como na coordenação (vazio PRESERVA o atual)
+    const _exid=_designerRespLivre()
+      ? ((_ex&&_ex.value)?_ex.value:_atuEx)
+      : (_designerColabLivre()
       ? _atuEx
-      : (_designerColab()?String(currentUser.id):((_ex&&_ex.value)?_ex.value:_atuEx));
+      : (_designerColab()?String(currentUser.id):((_ex&&_ex.value)?_ex.value:_atuEx)));
     const _u=_exid?users.find(x=>String(x.id)===String(_exid)):null;
     const _exNome=(_u&&_u.name)||((_exid&&_exid===_atuEx)?(o.designerExecutorNome||(o.statusDates&&o.statusDates.designer&&o.statusDates.designer.executorNome)||''):''); // v263 (C4) — nome legado preservado quando o id é o mesmo
     o.designerExecutorId=_exid||''; o.designerExecutorNome=_exNome;
@@ -8666,6 +8937,342 @@ function confirmStatus(){
     o.statusDates.designer.executorId=_exid||''; o.statusDates.designer.executorNome=_exNome;
   }
   closeStatusModal();refreshAll();saveData();
+}
+
+// ═══════════════ v271 — GRÁFICAS DO PEDIDO + DISTRIBUIÇÃO PELO PAINEL (ordem do dono 12/11/2026) ═══════════════
+// GRÁFICAS: ao clicar "Enviado p/ gráfica" o Designer informa PARA QUAL(IS) gráfica(s) o pedido foi
+// enviado; ao clicar "Rótulos recebidos" marca DE QUAIS já chegou. "Conferido e liberado" só libera
+// com o recebimento de TODAS. Recebimento de parte = status "Rótulos recebidos" com o selo "parcial"
+// (e o prazo "Rótulos chegaram na Lecare" segue cobrando até chegar tudo).
+// Dado: o.graficas = [{id, nome, envEm, envPor, recEm, recPor}] — vive no próprio pedido (vai no
+// JSON da linha; carimbos de envio/recebimento nunca são reescritos, só criados ou removidos por
+// ação explícita, sempre com auditoria). Pedido anterior à v271 não tem a lista: segue a regra antiga
+// até alguém clicar num dos dois degraus (aí o modal pede a gráfica).
+function _grafAplica(o){ return !!o && (o.linha||'personalizada')!=='anestesico'; }
+function _grafLista(o){ return (o && Array.isArray(o.graficas)) ? o.graficas.filter(function(g){ return g && String(g.nome||'').trim() && /^[\w-]{1,60}$/.test(String(g.id==null?'':g.id)); }) : []; }
+function _grafPendentes(o){ return _grafLista(o).filter(function(g){ return !g.recEm; }); }
+function _grafRecebidas(o){ return _grafLista(o).filter(function(g){ return !!g.recEm; }); }
+function _grafParcial(o){ return !!(o && o.statuses && (o.statuses.designer==='Rótulos recebidos'||o.statuses.designer==='Conferido e liberado') && _grafPendentes(o).length); }
+// merge de 3 vias da lista de gráficas (chamado pelo _orderMerge3): POR ENTRADA (id) e, dentro dela, por campo —
+// o que EU mexi fica o meu; o que não mexi fica o do servidor. Entrada que eu removi não volta; entrada que
+// outro incluiu entra; entrada que outro removeu só permanece se eu mexi nela (recebimento é prova).
+function _grafMerge3(l, b, s){
+  var L=Array.isArray(l)?l:null, B=Array.isArray(b)?b:[], S=Array.isArray(s)?s:null;
+  if(!L && !S) return undefined;
+  if(!S) return L;
+  if(!L) return S.slice();
+  var idx=function(a){ var m=Object.create(null); a.forEach(function(g){ if(g && g.id!=null) m[String(g.id)]=g; }); return m; };
+  var mL=idx(L), mB=idx(B), out=[], visto=Object.create(null);
+  S.forEach(function(gs){
+    if(!gs || gs.id==null) return;
+    var id=String(gs.id); visto[id]=1; var gl=mL[id], gb=mB[id];
+    if(!gl){ if(!gb) out.push(gs); return; }           // sem o meu: outro incluiu (entra) ou eu removi (não volta)
+    out.push(gb ? _merge3Obj(gl, gb, gs) : gl);
+  });
+  L.forEach(function(gl){
+    if(!gl || gl.id==null) return;
+    var id=String(gl.id); if(visto[id]) return; var gb=mB[id];
+    if(!gb){ out.push(gl); return; }                    // eu incluí
+    if(JSON.stringify(gl)!==JSON.stringify(gb)) out.push(gl); // outro removeu, mas eu mexi nela: fica
+  });
+  return out;
+}
+function _grafKey(n){ var s=String(n||'').toLowerCase(); try{ s=s.normalize('NFD').replace(/[̀-ͯ]/g,''); }catch(_e){} return s.replace(/\s+/g,' ').trim(); }
+function _grafLimpa(n){ return String(n||'').replace(/\s+/g,' ').trim().slice(0,80); }
+function _grafDia(ts){ try{ return ts?new Date(ts).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):''; }catch(_e){ return ''; } }
+function _grafResumo(o){
+  var r=_grafRecebidas(o).map(function(g){ return g.nome; }), p=_grafPendentes(o).map(function(g){ return g.nome; });
+  return (r.length?('Recebido: '+r.join(', ')):'')+(r.length&&p.length?' · ':'')+(p.length?('Aguardando: '+p.join(', ')):'');
+}
+// selo discreto "parcial" (célula do Designer na Gestão a Vista e card do Painel do Designer)
+function _grafSeloHtml(o){
+  if(!_grafParcial(o)) return '';
+  return '<span style="font-size:9px;white-space:nowrap;color:var(--st-mid-tx);border:.5px solid var(--st-mid-bd);border-radius:8px;padding:0 5px;line-height:14px" title="'+escapeHtml('Recebimento parcial — '+_grafResumo(o))+'">parcial</span>';
+}
+// linha informativa do modal de status (setor Designer)
+function _grafInfoHtml(o){
+  var l=_grafLista(o); if(!l.length) return '';
+  return '<b>Gráficas:</b> '+l.map(function(g){ return escapeHtml(g.nome)+' — '+(g.recEm?('recebido '+_grafDia(g.recEm)):'aguardando'); }).join(' · ');
+}
+// quem corrige um recebimento já marcado (desmarcar): administrador e coordenação do Designer
+function _grafPodeCorrigir(){ return !!(currentUser && (currentUser.perfil==='admin' || ((currentUser.coordSetores||[]).includes('designer')))); }
+// sugestões: grafias já usadas nos pedidos (a mais frequente de cada gráfica), para o mesmo nome não
+// nascer escrito de duas formas
+function _grafSugestoes(){
+  var m=Object.create(null);
+  try{
+    (orders||[]).forEach(function(o){ _grafLista(o).forEach(function(g){
+      var k=_grafKey(g.nome); if(!k) return;
+      var e=(m[k]=m[k]||{n:0, formas:Object.create(null)}); e.n++; e.formas[g.nome]=(e.formas[g.nome]||0)+1;
+    }); });
+  }catch(_e){}
+  return Object.keys(m).map(function(k){
+    var f=m[k].formas, melhor=Object.keys(f).sort(function(a,b){ return f[b]-f[a] || a.localeCompare(b); })[0];
+    return {k:k, nome:melhor, n:m[k].n};
+  }).sort(function(a,b){ return b.n-a.n || a.nome.localeCompare(b.nome); });
+}
+function _grafCanon(nome, sugs){
+  var k=_grafKey(nome); var s=(sugs||[]).find(function(x){ return x.k===k; });
+  return s?s.nome:_grafLimpa(nome);
+}
+
+var _grafCtx=null;   // estado do modal aberto
+var _grafPend=null;  // decisão confirmada no modal, consumida pelo confirmStatus (só vale p/ o pedido e o status-alvo dela)
+function _grafOverlay(){
+  var ov=document.getElementById('graf-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='graf-overlay'; ov.className='overlay'; document.body.appendChild(ov); }
+  return ov;
+}
+function _grafAbrir(o, modo){
+  _grafPend=null;
+  _grafCtx={ oid:o.id, modo:modo, novas:[], rec:Object.create(null), rec0:Object.create(null), rem:Object.create(null), sugs:_grafSugestoes() };
+  _grafSinc(_grafCtx, o);
+  _grafRender('');
+  _grafOverlay().classList.add('open');
+  try{ var i=document.getElementById('graf-nome'); if(i) i.focus(); }catch(_e){}
+}
+function _grafPedido(){ return _grafCtx ? orders.find(function(x){ return String(x.id)===String(_grafCtx.oid); }) : null; }
+// alinha o estado do modal com o pedido: entrada nova entra como está; recebimento que chegou de OUTRA pessoa
+// enquanto o modal estava aberto passa a valer (rec0 = como EU vi a entrada; só desmarco o que vi marcado)
+function _grafSinc(c, o){
+  _grafLista(o).forEach(function(g){
+    if(!(g.id in c.rec0)){ c.rec0[g.id]=!!g.recEm; c.rec[g.id]=!!g.recEm; }
+    else if(g.recEm && !c.rec0[g.id]){ c.rec0[g.id]=true; c.rec[g.id]=true; }
+  });
+}
+function _grafRender(valorInput){
+  var c=_grafCtx, o=_grafPedido(); if(!c||!o) return;
+  _grafSinc(c, o);
+  var ov=_grafOverlay(), lista=_grafLista(o), envio=(c.modo==='envio'), corrige=_grafPodeCorrigir();
+  var h='<div class="modal" style="width:470px">';
+  h+='<h2>'+(envio?'Envio para gráfica':'Recebimento dos rótulos')+'</h2>';
+  h+='<div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">Pedido '+escapeHtml(o.num||'—')+' — '+escapeHtml(o.cliente||'—')+'</div>';
+  if(envio){
+    if(lista.length){
+      h+='<div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Já registradas</div>';
+      h+=lista.map(function(g){
+        var rem=!!c.rem[g.id];
+        return '<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 10px;border:.5px solid var(--border);border-radius:var(--r-md);margin-bottom:5px;'+(rem?'opacity:.5;text-decoration:line-through':'')+'">'+
+          '<span style="flex:1;min-width:0">'+escapeHtml(g.nome)+'</span>'+
+          '<span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap">enviado '+_grafDia(g.envEm)+(g.recEm?(' · recebido '+_grafDia(g.recEm)):' · aguardando')+'</span>'+
+          (g.recEm?'':'<button type="button" onclick="_grafRemover(\''+g.id+'\')" style="font-size:11px;padding:2px 8px" title="'+(rem?'Manter esta gráfica':'Remover — registrada por engano')+'">'+(rem?'Manter':'Remover')+'</button>')+
+        '</div>';
+      }).join('');
+    }
+    h+='<div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 6px">Gráfica(s) deste envio</div>';
+    h+=c.novas.map(function(n,i){
+      return '<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 10px;border:.5px solid var(--border-info,var(--border));background:var(--bg-info,var(--bg-secondary));border-radius:var(--r-md);margin-bottom:5px">'+
+        '<span style="flex:1;min-width:0">'+escapeHtml(n.nome)+'</span>'+
+        '<button type="button" onclick="_grafTirarNova('+i+')" style="font-size:11px;padding:2px 8px">Remover</button></div>';
+    }).join('');
+  } else {
+    if(!lista.length && !c.novas.length){
+      h+='<div style="font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md);padding:9px 12px;margin-bottom:10px">Este pedido foi enviado antes do registro de gráficas. Informe abaixo de qual(is) gráfica(s) os rótulos vieram.</div>';
+    } else {
+      h+='<div style="font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Marque de quais gráficas os rótulos já chegaram</div>';
+    }
+    h+=lista.map(function(g){
+      var marcado=!!c.rec[g.id], travado=(!!g.recEm && !corrige);
+      return '<label style="display:flex;align-items:center;gap:9px;font-size:13px;padding:7px 10px;border:.5px solid var(--border);border-radius:var(--r-md);margin-bottom:5px;cursor:'+(travado?'default':'pointer')+'">'+
+        '<input type="checkbox" '+(marcado?'checked ':'')+(travado?'disabled ':'')+'onchange="_grafMarcar(\''+g.id+'\',this.checked)" style="width:16px;height:16px;flex-shrink:0">'+
+        '<span style="flex:1;min-width:0">'+escapeHtml(g.nome)+'</span>'+
+        '<span style="font-size:11px;color:var(--text-tertiary);white-space:nowrap">enviado '+_grafDia(g.envEm)+(g.recEm?(' · recebido '+_grafDia(g.recEm)+(g.recPor?(' ('+escapeHtml(g.recPor)+')'):'')):'')+'</span>'+
+      '</label>';
+    }).join('');
+    h+=c.novas.map(function(n,i){
+      return '<label style="display:flex;align-items:center;gap:9px;font-size:13px;padding:7px 10px;border:.5px solid var(--border-info,var(--border));background:var(--bg-info,var(--bg-secondary));border-radius:var(--r-md);margin-bottom:5px;cursor:pointer">'+
+        '<input type="checkbox" '+(n.rec?'checked ':'')+'onchange="_grafMarcarNova('+i+',this.checked)" style="width:16px;height:16px;flex-shrink:0">'+
+        '<span style="flex:1;min-width:0">'+escapeHtml(n.nome)+'</span>'+
+        '<button type="button" onclick="event.preventDefault();_grafTirarNova('+i+')" style="font-size:11px;padding:2px 8px">Remover</button></label>';
+    }).join('');
+    if(lista.length||c.novas.length) h+='<div style="font-size:11px;color:var(--text-tertiary);margin:10px 0 4px">Foi enviado também para outra gráfica? Inclua aqui:</div>';
+  }
+  h+='<div style="display:flex;gap:8px;align-items:center">'+
+    '<input type="text" id="graf-nome" list="graf-sug" maxlength="80" autocomplete="off" placeholder="Nome da gráfica" value="'+escapeHtml(valorInput||'')+'" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_grafInserir();}" style="flex:1;font-size:13px;padding:8px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);font-family:inherit;background:var(--bg-primary);color:var(--text-primary)">'+
+    '<button type="button" onclick="_grafInserir()" style="white-space:nowrap">'+(envio?'Inserir outra':'Adicionar')+'</button></div>'+
+    '<datalist id="graf-sug">'+c.sugs.slice(0,40).map(function(s){ return '<option value="'+escapeHtml(s.nome)+'">'; }).join('')+'</datalist>';
+  if(!envio){
+    var tot=lista.length+c.novas.length, nRec=lista.filter(function(g){ return !!c.rec[g.id]; }).length+c.novas.filter(function(n){ return n.rec; }).length;
+    if(tot) h+='<div style="font-size:12px;margin-top:12px;color:'+(nRec===tot?'var(--st-ok-tx)':'var(--st-mid-tx)')+'">'+nRec+' de '+tot+' gráfica(s) com rótulos recebidos'+(nRec===tot?' — recebimento completo.':(nRec?' — o status ficará "Rótulos recebidos" com o selo "parcial"; "Conferido e liberado" só libera com todas.':'.'))+'</div>';
+  } else {
+    h+='<div style="font-size:11px;color:var(--text-tertiary);margin-top:10px">Digite o nome e clique em OK. Para mais de uma gráfica, use "Inserir outra" a cada nome.</div>';
+  }
+  h+='<div class="modal-footer"><button type="button" onclick="_grafCancelar()">Cancelar</button><button type="button" class="btn-primary" onclick="_grafOk()">OK</button></div></div>';
+  ov.innerHTML=h;
+  try{ if(ov.classList.contains('open') && typeof _trazerModalFrente==='function') _trazerModalFrente(ov); }catch(_e){} // repõe o ✕ após redesenhar
+}
+function _grafValorInput(){ var i=document.getElementById('graf-nome'); return i?i.value:''; }
+function _grafRemover(id){ if(!_grafCtx) return; var v=_grafValorInput(); if(_grafCtx.rem[id]) delete _grafCtx.rem[id]; else _grafCtx.rem[id]=true; _grafRender(v); }
+function _grafTirarNova(i){ if(!_grafCtx) return; var v=_grafValorInput(); _grafCtx.novas.splice(i,1); _grafRender(v); }
+function _grafMarcar(id, on){ if(!_grafCtx) return; var v=_grafValorInput(); _grafCtx.rec[id]=!!on; _grafRender(v); }
+function _grafMarcarNova(i, on){ if(!_grafCtx||!_grafCtx.novas[i]) return; var v=_grafValorInput(); _grafCtx.novas[i].rec=!!on; _grafRender(v); }
+// inclui o nome digitado na lista "deste envio"; devolve true se incluiu (ou se o campo estava vazio e isso é aceitável)
+function _grafInserir(silencioso){
+  var c=_grafCtx, o=_grafPedido(); if(!c||!o) return false;
+  var bruto=_grafLimpa(_grafValorInput());
+  if(!bruto){ if(!silencioso){ alert('Digite o nome da gráfica.'); try{ document.getElementById('graf-nome').focus(); }catch(_e){} } return !!silencioso; }
+  var nome=_grafCanon(bruto, c.sugs), k=_grafKey(nome);
+  var jaAguardando=_grafLista(o).some(function(g){ return !g.recEm && !c.rem[g.id] && _grafKey(g.nome)===k; });
+  var jaNova=c.novas.some(function(n){ return _grafKey(n.nome)===k; });
+  if(jaAguardando||jaNova){ alert('A gráfica "'+nome+'" já está na lista'+(jaAguardando?' aguardando recebimento.':'.')); return false; }
+  // no recebimento, a gráfica informada em pedido SEM lista (anterior ao registro) já nasce marcada como recebida
+  var semLista=(c.modo==='receb' && !_grafLista(o).length);
+  c.novas.push({ nome:nome, rec:semLista });
+  _grafRender('');
+  try{ document.getElementById('graf-nome').focus(); }catch(_e){}
+  return true;
+}
+function _grafFechar(){ var ov=document.getElementById('graf-overlay'); if(ov){ ov.classList.remove('open'); ov.innerHTML=''; } _grafCtx=null; }
+function _grafMarcaSelecao(s){
+  try{ document.querySelectorAll('#sm-options .status-opt').forEach(function(el){ el.classList.toggle('selected', el.getAttribute('onclick')===("pickStatus('"+s+"')")); }); }catch(_e){}
+}
+function _grafCancelar(){
+  var o=_grafPedido();
+  _grafFechar(); _grafPend=null;
+  // volta a seleção do modal de status para o status atual do pedido (nada foi alterado)
+  if(statusCtx && statusCtx.setor==='designer' && o){ selectedStatus=o.statuses.designer; _grafMarcaSelecao(selectedStatus); }
+}
+function _grafOk(){
+  var c=_grafCtx, o=_grafPedido(); if(!c||!o) return;
+  if(!_grafInserir(true)) return; // nome digitado e ainda não incluído entra junto (se inválido, a mensagem já saiu)
+  c=_grafCtx; if(!c) return;
+  _grafSinc(c, o);
+  var lista=_grafLista(o), stAtual=(o.statuses&&o.statuses.designer)||'Não iniciado';
+  var pend={ oid:o.id, alvo:null, add:[], rem:[], rec:[], unrec:[] };
+  if(c.modo==='envio'){
+    var aguardando=lista.filter(function(g){ return !g.recEm && !c.rem[g.id]; }).length + c.novas.length;
+    var _removeu=lista.some(function(g){ return !g.recEm && c.rem[g.id]; }), _jaReceb=lista.some(function(g){ return !!g.recEm; });
+    var _iAt=STATUS_SEQUENCE.designer.indexOf(stAtual), _iEnv=STATUS_SEQUENCE.designer.indexOf('Enviado p/ gráfica');
+    if(!aguardando && _removeu && _jaReceb && _iAt>=_iEnv && stAtual!=='Rótulo Interno'){
+      // removeu a que foi registrada por engano e tudo o que resta já foi recebido → recebimento completo
+      pend.alvo=(stAtual==='Conferido e liberado')?'Conferido e liberado':'Rótulos recebidos';
+      pend.rem=lista.filter(function(g){ return !g.recEm && c.rem[g.id]; }).map(function(g){ return g.id; });
+      _grafFechar();
+      if(!statusCtx || String(statusCtx.oid)!==String(o.id) || statusCtx.setor!=='designer'){ alert('O modal de status foi fechado — abra o status do Designer e repita a operação.'); return; }
+      _grafPend=pend; selectedStatus=pend.alvo; _grafMarcaSelecao(selectedStatus); confirmStatus(); return;
+    }
+    if(!aguardando){
+      alert(lista.length
+        ? 'Para ficar em "Enviado p/ gráfica" é preciso haver ao menos uma gráfica aguardando recebimento.\n\nInforme a gráfica deste envio. Se o recebimento foi marcado por engano, corrija em "Rótulos recebidos".'
+        : 'Informe para qual gráfica o pedido foi enviado.');
+      return;
+    }
+    pend.alvo='Enviado p/ gráfica';
+    pend.add=c.novas.map(function(n){ return { nome:n.nome, rec:false }; });
+    pend.rem=lista.filter(function(g){ return !g.recEm && c.rem[g.id]; }).map(function(g){ return g.id; });
+  } else {
+    var tot=lista.length+c.novas.length;
+    if(!tot){ alert('Informe de qual gráfica os rótulos vieram.'); return; }
+    var nRec=lista.filter(function(g){ return !!c.rec[g.id]; }).length + c.novas.filter(function(n){ return n.rec; }).length;
+    pend.add=c.novas.map(function(n){ return { nome:n.nome, rec:!!n.rec }; });
+    pend.rec=lista.filter(function(g){ return !g.recEm && c.rec[g.id]; }).map(function(g){ return g.id; });
+    pend.unrec=lista.filter(function(g){ return !!g.recEm && !c.rec[g.id]; }).map(function(g){ return g.id; });
+    if(pend.unrec.length && !_grafPodeCorrigir()){ alert('Desmarcar um recebimento já registrado: somente o administrador ou a coordenação do Designer.'); return; }
+    if(nRec===0){
+      var idxAt=STATUS_SEQUENCE.designer.indexOf(stAtual), idxRec=STATUS_SEQUENCE.designer.indexOf('Rótulos recebidos');
+      if(idxAt>=idxRec && stAtual!=='Rótulo Interno'){
+        if(!confirm('Nenhuma gráfica ficará marcada como recebida.\n\nO status do Designer voltará para "Enviado p/ gráfica". Confirmar a correção?')) return;
+        pend.alvo='Enviado p/ gráfica';
+      } else { alert('Marque ao menos uma gráfica de onde os rótulos já chegaram.'); return; }
+    } else pend.alvo='Rótulos recebidos';
+  }
+  _grafFechar();
+  if(!statusCtx || String(statusCtx.oid)!==String(o.id) || statusCtx.setor!=='designer'){ alert('O modal de status foi fechado — abra o status do Designer e repita a operação.'); return; }
+  _grafPend=pend;
+  selectedStatus=pend.alvo; _grafMarcaSelecao(selectedStatus);
+  confirmStatus(); // aplica o status (com todas as travas de sempre) e a lista de gráficas, na mesma gravação
+}
+// aplica no pedido a decisão confirmada no modal (chamado SÓ pelo confirmStatus, depois de todas as travas)
+function _grafAplicar(o, gp){
+  var agora=Date.now(), por=(currentUser&&currentUser.name)||'—';
+  var lista=Array.isArray(o.graficas)?o.graficas.slice():[];
+  var nRem=[], nRec=[], nUn=[], nAdd=[], nAddRec=[];
+  if(gp.rem&&gp.rem.length) lista=lista.filter(function(g){ if(g && gp.rem.indexOf(g.id)>=0 && !g.recEm){ nRem.push(g.nome); return false; } return true; });
+  lista.forEach(function(g){
+    if(!g) return;
+    if(gp.rec&&gp.rec.indexOf(g.id)>=0 && !g.recEm){ g.recEm=agora; g.recPor=por; nRec.push(g.nome); }
+    else if(gp.unrec&&gp.unrec.indexOf(g.id)>=0 && g.recEm){ g.recEm=null; g.recPor=''; nUn.push(g.nome); }
+  });
+  (gp.add||[]).forEach(function(a,i){
+    var nome=_grafLimpa(a.nome); if(!nome) return;
+    lista.push({ id:'g'+agora.toString(36)+'_'+i+'_'+Math.random().toString(36).slice(2,7), nome:nome, envEm:agora, envPor:por, recEm:(a.rec?agora:null), recPor:(a.rec?por:'') });
+    nAdd.push(nome); if(a.rec) nAddRec.push(nome);
+  });
+  o.graficas=lista;
+  try{
+    if(nRem.length)    addAudit(o,'designer','grafica','Enviado para: '+nRem.join(', '),'Removida: '+nRem.join(', '));
+    if(nAdd.length)    addAudit(o,'designer','grafica','','Enviado para: '+nAdd.join(', '));
+    if(nRec.length||nAddRec.length) addAudit(o,'designer','grafica','Aguardando: '+nRec.concat(nAddRec).join(', '),'Recebido de: '+nRec.concat(nAddRec).join(', '));
+    if(nUn.length)     addAudit(o,'designer','grafica','Recebido de: '+nUn.join(', '),'Recebimento desmarcado: '+nUn.join(', '));
+  }catch(_e){}
+}
+
+// ── DISTRIBUIÇÃO PELO PAINEL DO DESIGNER (faixa "Não iniciados / sem responsável — a distribuir") ──
+// Clicar no pedido abre o modal "para quem distribuir". "Não iniciado" → recebe o responsável e vira
+// "Distribuido" (mesma regra do modal do setor: distribuir É definir o responsável). Pedido que já
+// avançou e está só sem responsável → recebe o responsável e MANTÉM o status. Quem distribui: o
+// administrador, a coordenação do Designer e o colaborador com a autonomia de distribuição marcada
+// no cadastro (caso Kaiky); os demais continuam abrindo o pedido para leitura.
+function _dsgPodeDistribuir(){
+  if(!currentUser) return false;
+  if(currentUser.perfil==='admin' || ((currentUser.coordSetores||[]).includes('designer'))) return true;
+  try{ return !!(typeof _designerRespLivre==='function' && _designerRespLivre()); }catch(_e){ return false; } // autonomia de distribuição (caso Kaiky)
+}
+var _dsgDistOid=null;
+function _dsgCliqueBaixo(oid){ if(_dsgPodeDistribuir()) _dsgDistAbrir(oid); else openDetailModal(oid); }
+function _dsgDistOverlay(){
+  var ov=document.getElementById('dsgdist-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='dsgdist-overlay'; ov.className='overlay'; document.body.appendChild(ov); }
+  return ov;
+}
+function _dsgDistAbrir(oid){
+  var o=orders.find(function(x){ return String(x.id)===String(oid); }); if(!o) return;
+  if(!_dsgPodeDistribuir()){ openDetailModal(oid); return; }
+  _dsgDistOid=o.id;
+  var st=(o.statuses&&o.statuses.designer)||'Não iniciado', r=_dsgRespDe(o), execs=_setorExecutores('designer');
+  var h='<div class="modal" style="width:440px"><h2>Distribuir pedido</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px">Pedido '+escapeHtml(o.num||'—')+' — '+escapeHtml(o.cliente||'—')+'  ·  Saída '+escapeHtml(fmtDate(o.previsao))+'  ·  Designer: '+escapeHtml(st)+'</div>'+
+    '<label style="display:block;font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Para quem distribuir</label>'+
+    '<select id="dsgdist-sel" style="width:100%;font-size:13px;padding:8px 10px;border-radius:var(--r-md);border:.5px solid var(--border-md);font-family:inherit;background:var(--bg-primary);color:var(--text-primary)">'+
+      '<option value="">— selecione o colaborador —</option>'+
+      execs.map(function(u){ return '<option value="'+escapeHtml(String(u.id))+'"'+(r.id&&String(u.id)===r.id?' selected':'')+'>'+escapeHtml(u.name||u.login||String(u.id))+'</option>'; }).join('')+
+    '</select>'+
+    (execs.length?'':'<div style="font-size:12px;color:var(--st-bad-tx);margin-top:8px">Não há colaborador ativo no setor Designer para receber o pedido.</div>')+
+    '<div style="font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);border:.5px solid var(--border);border-radius:var(--r-md);padding:9px 12px;margin-top:12px">'+
+      (st==='Não iniciado'
+        ? 'Ao confirmar, o status do Designer passa a <b>Distribuido</b> e o pedido entra na coluna do colaborador.'
+        : 'O status atual (<b>'+escapeHtml(st)+'</b>) será mantido — o pedido apenas passa a ter responsável e entra na coluna do colaborador.')+
+      (r.nome?('<br>Responsável atual: '+escapeHtml(r.nome)+'.'):'')+
+    '</div>'+
+    '<div class="modal-footer"><button type="button" onclick="_dsgDistVerPedido()" style="margin-right:auto">Abrir pedido</button><button type="button" onclick="_dsgDistFechar()">Cancelar</button><button type="button" class="btn-primary" onclick="_dsgDistConfirmar()">Distribuir</button></div></div>';
+  var ov=_dsgDistOverlay(); ov.innerHTML=h; ov.classList.add('open');
+}
+function _dsgDistFechar(){ var ov=document.getElementById('dsgdist-overlay'); if(ov){ ov.classList.remove('open'); ov.innerHTML=''; } _dsgDistOid=null; }
+function _dsgDistVerPedido(){ var id=_dsgDistOid; _dsgDistFechar(); if(id!=null) openDetailModal(id); }
+function _dsgDistConfirmar(){
+  if(!_dsgPodeDistribuir()){ alert('Distribuir pedidos do Designer: somente o administrador, a coordenação do setor ou colaborador com autonomia de distribuição.'); return; }
+  var o=orders.find(function(x){ return String(x.id)===String(_dsgDistOid); }); if(!o){ _dsgDistFechar(); return; }
+  var sel=document.getElementById('dsgdist-sel'), uid=sel?sel.value:'';
+  var u=uid?_setorExecutores('designer').find(function(x){ return String(x.id)===String(uid); }):null;
+  if(!u){ alert('Selecione para quem o pedido será distribuído.'); return; }
+  if(!o.statuses) o.statuses={};
+  var st=o.statuses.designer||'Não iniciado', ant=_dsgRespDe(o), agora=Date.now();
+  if(!o.statusDates) o.statusDates={};
+  if(st==='Não iniciado'){
+    addAudit(o,'designer','status',st,'Distribuido');
+    o.statuses.designer='Distribuido';
+    var sdPrev=o.statusDates.designer||{};
+    var sdN={ ts:agora, by:currentUser.name, from:st, to:'Distribuido' };
+    sdN.marcos=sdPrev.marcos||{}; sdN.marcos['Distribuido']=agora; // marco de medição, como no modal do setor
+    o.statusDates.designer=sdN;
+  }
+  o.designerExecutorId=String(u.id); o.designerExecutorNome=u.name||'';
+  // o registro do setor só recebe o responsável quando já existe (com carimbo de data); sem ele, vale o campo do pedido
+  if(o.statusDates.designer){ o.statusDates.designer.executorId=String(u.id); o.statusDates.designer.executorNome=u.name||''; }
+  if(String(ant.id||'')!==String(u.id)) { try{ addAudit(o,'designer','responsavel',ant.nome||'',u.name||''); }catch(_e){} }
+  _dsgDistFechar();
+  refreshAll(); saveData();
+  try{ renderPainelDesigner(); }catch(_e){}
 }
 
 // ═══════════════ CLIENTES ═══════════════
@@ -9585,6 +10192,9 @@ function openUserModal(id){
   // v261 — autonomia de status no Designer (caso Kaiky): visível p/ usuário COM login
   { const _dw2=document.getElementById('u-dsg-livre-wrap'); if(_dw2) _dw2.style.display=(u && !u.semAcesso)?'':'none';
     const _dc2=document.getElementById('u-dsg-livre'); if(_dc2) _dc2.checked=!!(u&&u.dsgStatusLivre); }
+  // v271 — autonomia de distribuição no Designer (caso Kaiky): mesma visibilidade da autonomia de status
+  { const _dw3=document.getElementById('u-dsg-resp-wrap'); if(_dw3) _dw3.style.display=(u && !u.semAcesso)?'':'none';
+    const _dc3=document.getElementById('u-dsg-resp'); if(_dc3) _dc3.checked=!!(u&&u.dsgRespLivre); }
   togglePerfilUI();
   toggleSemAcessoUI();
   document.getElementById('user-overlay').classList.add('open');
@@ -9705,6 +10315,7 @@ async function saveUser(){
         uAtual.name=nome;uAtual.login=login;uAtual.perfil=perfil;
         uAtual.setores=effSetores;uAtual.coordSetores=effCoordSetores;uAtual.coordenadorId=effCoordenadorId;uAtual.verEquipe=effVerEquipe;
         uAtual.dsgStatusLivre=!!document.getElementById('u-dsg-livre')?.checked; // v261 — autonomia Designer
+        uAtual.dsgRespLivre=!!document.getElementById('u-dsg-resp')?.checked; // v271 — autonomia de distribuição
         delete uAtual.semAcesso;
         _syncAtendenteEquipe(uAtual.id); // v217
       } else {
@@ -9718,6 +10329,7 @@ async function saveUser(){
       u.name=nome;u.login=login;u.perfil=perfil;
       u.setores=effSetores;u.coordSetores=effCoordSetores;u.coordenadorId=effCoordenadorId;u.verEquipe=effVerEquipe;
       u.dsgStatusLivre=!!document.getElementById('u-dsg-livre')?.checked; // v261 — autonomia Designer (caso Kaiky)
+      u.dsgRespLivre=!!document.getElementById('u-dsg-resp')?.checked; // v271 — autonomia de distribuição (caso Kaiky)
       _syncAtendenteEquipe(u.id); // v217
       // v255 — DEMITIDO(A) (ordem do dono 29/10): marca o desligamento (carimbo + autor), bloqueia o
       // login, tira dos fluxos ativos (ativo=false — a régua ativo/semAcesso já rege equipes, pool e
@@ -9911,6 +10523,9 @@ function getDocStuckLeads(){
   return crmLeads.filter(l=>l.funil===1&&l.etapa==='Aguardando Documentação'&&l.entradaEtapa&&diffDays(l.entradaEtapa,today())>4);
 }
 function renderCrmKanban(){
+  // v270 — chave 'telas': índice cliente→conversa montado UMA vez por desenho (antes: uma busca na lista inteira de
+  // conversas para cada card — milhões de comparações). Mesma regra do find: vale a PRIMEIRA conversa do cliente.
+  let _cvIdxK=null; try{ if(_perfOn('telas')){ _cvIdxK=new Map(); for(let _ci=0;_ci<conversas.length;_ci++){ const _cx=conversas[_ci]; if(_cx && !_cvIdxK.has(_cx.clienteId)) _cvIdxK.set(_cx.clienteId, _cx); } } }catch(_e){ _cvIdxK=null; }
   const funil=getActiveFunis()[activeFunil]||CRM_FUNIS[activeFunil];
   const visibleLeads=getVisibleLeads();
   const leads=visibleLeads.filter(l=>l.funil===activeFunil);
@@ -9963,7 +10578,7 @@ function renderCrmKanban(){
               <div style="min-width:0">
                 <div class="kc-contato">${escapeHtml(contato)}</div>
                 ${(()=>{
-                  const _cv = l.clienteId ? conversas.find(x=>x.clienteId===l.clienteId) : null;
+                  const _cv = l.clienteId ? (_cvIdxK ? _cvIdxK.get(l.clienteId) : conversas.find(x=>x.clienteId===l.clienteId)) : null;
                   const _atId = (_cv && _cv.status!=='encerrada') ? _cv.atendenteId : null;
                   const _at = _atId ? users.find(u=>u.id===_atId) : null;
                   if(_at) return `<div style="margin-top:5px;display:flex;align-items:center;gap:5px;padding:4px 8px;background:var(--bg-secondary);border-radius:var(--r-md);border:.5px solid var(--border)"><span style="font-size:11px">\ud83d\udc64</span><span style="font-size:12px;font-weight:600;color:var(--text-primary);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(_at.name)}</span><span style="font-size:9px;color:var(--st-ok-tx)">atendendo</span></div>`;
@@ -13581,10 +14196,40 @@ function setSolCompraTab(tab){
 // ══ v195 — SUB-ABA "RECEBIDOS A MENOS" (pedido do dono 05/08) ═════════════════════════════════
 // Derivada 100% das listas de compra (it.compra.recebFaltante / recebFaltanteRes) — nenhuma tabela
 // nova, nenhum estado paralelo: o registro nasce no recebimento e a resolução grava no MESMO item.
+// v269 — ORDEM DO DONO 12/11 (caso TRICOXIN LA-024: comprou 1.000 g, chegaram 250 g e a tela dizia
+// "recebido 0 g"): "Recebidos a menos" é baseado na CONFERÊNCIA FÍSICA — o que de fato chegou. A
+// coluna lia só o recebidoQtd da conciliação financeira (no fluxo v212 ela vem depois, e só grava
+// quando a nota diverge). Sem conferência física (legado pré-v212): conciliação → recebido sem
+// divergência = a quantidade comprada. Diferença só de NOTA (físico completo) não é recebido a menos.
+function _rmTemFisico(c){ return !!c && c.recebFisicoQtd!=null && c.recebFisicoQtd!==''; }
+function _rmQtdRecebida(c){
+  if(!c) return 0;
+  if(_rmTemFisico(c)) return parseFloat(c.recebFisicoQtd)||0;
+  if(c.recebidoQtd!=null) return parseFloat(c.recebidoQtd)||0;
+  return c.recebido ? (parseFloat(c.qtdComprada)||0) : 0;
+}
+function _rmQtdFaltante(c){
+  if(!c) return 0;
+  if(_rmTemFisico(c)){ var _f=(parseFloat(c.qtdComprada)||0)-(parseFloat(c.recebFisicoQtd)||0); return _f>0.001?+_f.toFixed(4):0; }
+  return parseFloat(c.recebFaltante&&c.recebFaltante.qtd)||0;
+}
+// quantidade-base do registro do faltante: a FÍSICA quando existe (a conciliação não sobrescreve mais
+// o rateio com a quantidade da nota); sem físico, a quantidade conciliada, como antes.
+// v269 (revisão 12/11) — "SÓ DIFERENÇA DE NOTA": físico completo E o registro não foi resolvido por
+// gente. Item cujo físico ficou completo DEPOIS — por "Recebido o restante" (v264) ou pela chegada em
+// outro pedido de compra ("Incluir no pedido", v257), fluxos que somam no recebFisicoQtd — e toda
+// decisão humana PERMANECEM em Resolvidos (são o histórico da decisão); só o registro sem decisão ou
+// com a decisão automática do Sistema, nascido da quantidade da nota, sai da sub-aba e dos selos.
+function _rmSoDifNota(c){
+  if(!(_rmTemFisico(c) && _rmQtdFaltante(c)<=0)) return false;
+  var r=c.recebFaltanteRes;
+  return !r || r.por==='Sistema';
+}
+function _rmBaseFaltante(it, qtdConciliada){ var c=it&&it.compra; return _rmTemFisico(c) ? (parseFloat(c.recebFisicoQtd)||0) : qtdConciliada; }
 function _rmPendentes(){
   var out=[];
   (listasCompra||[]).forEach(function(l){ (l.itens||[]).forEach(function(it){
-    if(it.compra && it.compra.recebFaltante) out.push({l:l, it:it, res:it.compra.recebFaltanteRes||null});
+    if(it.compra && it.compra.recebFaltante && !_rmSoDifNota(it.compra)) out.push({l:l, it:it, res:it.compra.recebFaltanteRes||null}); // v269 — só diferença de nota fica fora
   }); });
   return out;
 }
@@ -13640,9 +14285,9 @@ function renderSolMenos(){
       '<td style="'+td+'">'+(it.codigo?'<span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(it.codigo)+'</span> ':'')+escapeHtml(it.nome||'—')+
         '<br><span style="font-size:10.5px;color:var(--text-tertiary)">lista '+escapeHtml(_lcCodigo(l))+(_pcRef&&_pcRef.numero?' · <b style="color:var(--text-secondary)">'+escapeHtml(_pcRef.numero)+'</b>'+(_pcRef.nf?' <span style="font-family:monospace">(NF '+escapeHtml(_pcRef.nf)+')</span>':''):'')+(c.fornecedorNome?' · '+escapeHtml(c.fornecedorNome):'')+'</span></td>'+
       '<td style="'+td+';text-align:right;white-space:nowrap">'+(parseFloat(c.qtdComprada)||0).toLocaleString('pt-BR')+' '+escapeHtml(un)+'</td>'+
-      '<td style="'+td+';text-align:right;white-space:nowrap">'+(parseFloat(c.recebidoQtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(un)+
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+_rmQtdRecebida(c).toLocaleString('pt-BR')+' '+escapeHtml(un)+
         (f.em?'<br><span style="font-size:10px;color:var(--text-tertiary)">'+fmtDate(_gstDataDe(f.em))+'</span>':'')+'</td>'+
-      '<td style="'+td+';text-align:right;white-space:nowrap;color:var(--st-bad-tx);font-weight:600">'+(parseFloat(f.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(un)+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap;color:var(--st-bad-tx);font-weight:600">'+_rmQtdFaltante(c).toLocaleString('pt-BR')+' '+escapeHtml(un)+'</td>'+
       '<td style="'+td+'">'+vinc+'</td>'+
       '<td style="'+td+';text-align:right;white-space:nowrap">'+acoes+'</td></tr>';
   };
@@ -13770,6 +14415,8 @@ function _rmRestanteRecebido(){
   var it=b.it, c=it.compra, f=c&&c.recebFaltante;
   if(!f || c.recebFaltanteRes){ if(ov) ov.classList.remove('open'); renderSolMenos(); return; }
   var q=parseFloat(f.qtd)||0;
+  // v271 — registro nascido da quantidade da NOTA (antes da v269): o restante é o que falta no FÍSICO, nunca mais
+  try{ if(_rmTemFisico(c)){ var _qFis=_rmQtdFaltante(c); if(_qFis>0 && _qFis<q) q=_qFis; } }catch(_e){}
   if(!(q>0)){ alert('Este item não tem faltante em aberto.'); if(ov) ov.classList.remove('open'); renderSolMenos(); return; }
   if(!confirm('📦 RECEBIDO O RESTANTE — '+(it.nome||'')+'\n\nO fornecedor entregou os '+q.toLocaleString('pt-BR')+' '+(it.unidade||'')+' que faltavam (sem pedido de compra novo).\nO recebimento fica COMPLETO na quantidade original da compra e o restante entra no estoque. Confirmar?')) return;
   var now=Date.now();
@@ -14285,7 +14932,7 @@ function _solItemLinhaInfo(s, it, lst, _prof){
     : '<span style="color:var(--text-tertiary)">—</span>';
   var colReceb;
   if(c && c.recebido){
-    var _rf=c.recebFaltante, _rfr=c.recebFaltanteRes;
+    var _rf=_rmSoDifNota(c)?null:c.recebFaltante, _rfr=c.recebFaltanteRes; // v269 — só diferença de nota = "divergente", não "a menos"
     colReceb='<span style="color:var(--st-ok-tx);font-weight:600;white-space:nowrap">✔ recebido</span>'+
       (c.recebidoEm?'<br><span style="'+sub+'">'+fmtDate(_gstDataDe(c.recebidoEm))+'</span>':'')+
       (_rf?'<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="A entrega veio menor que a compra — faltaram '+(parseFloat(_rf.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+'">📉 a menos ('+(parseFloat(_rf.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+')</span>'+
@@ -14335,7 +14982,7 @@ function _solItemLinhaInfo(s, it, lst, _prof){
     var _nfSub = inf.nf ? '<br><span style="'+sub+'">NF '+escapeHtml(inf.nf)+'</span>' : '';
     var _avisos='';
     if(c.recebido){
-      var _rfB=c.recebFaltante, _rfrB=c.recebFaltanteRes;
+      var _rfB=_rmSoDifNota(c)?null:c.recebFaltante, _rfrB=c.recebFaltanteRes; // v269
       if(_rfB){
         _avisos+='<br><span style="color:var(--st-bad-tx);font-size:10.5px;font-weight:600" title="A entrega veio menor que a compra">📉 a menos ('+(parseFloat(_rfB.qtd)||0).toLocaleString('pt-BR')+' '+escapeHtml(it.unidade||'')+')</span>'+
           (_rfrB?'<br><span style="'+sub+'">'+(_rfrB.acao==='recompra'?'↪ re-solicitado':_rfrB.acao==='restante_recebido'?'📦 restante recebido':'✕ sem recompra')+'</span>':'<br><span style="color:var(--st-mid-tx);font-size:10px">decidir em Recebidos a menos</span>');
@@ -16183,7 +16830,7 @@ function _acompStatusItem(s, it){
     // dizia "faltam 10" ao mesmo tempo. Agora o status cruza com o rateio: quinhão descoberto =
     // "Recebido a menos", com a quantidade e o estado da decisão.
     var _mine=null;
-    parts.some(function(p){ var f=p.compra&&p.compra.recebFaltante; var a=f&&(f.aloc||[]).find(function(x){ return String(x.orderId)===String(s.orderId) && (parseFloat(x.qtd)||0)>0; }); if(a){ _mine={qtd:(parseFloat(a.qtd)||0), res:p.compra.recebFaltanteRes||null}; return true; } return false; }); // v257 — quinhão já coberto (chegou em outro PC) não reaparece como "a menos"
+    parts.some(function(p){ if(typeof _rmSoDifNota==='function' && _rmSoDifNota(p.compra)) return false; /* v271 — físico completo: só diferença de nota */ var f=p.compra&&p.compra.recebFaltante; var a=f&&(f.aloc||[]).find(function(x){ return String(x.orderId)===String(s.orderId) && (parseFloat(x.qtd)||0)>0; }); if(a){ _mine={qtd:(parseFloat(a.qtd)||0), res:p.compra.recebFaltanteRes||null}; return true; } return false; }); // v257 — quinhão já coberto (chegou em outro PC) não reaparece como "a menos"
     if(_mine) return {st:'Recebido a menos', li:li, falt:_mine};
     return {st:'Recebido', li:li};
   }
@@ -17126,7 +17773,7 @@ async function _gpReceberConfirmar(){
       // conferência FÍSICA não alimentava "Recebidos a menos" — o registro só rodava na conciliação,
       // que no fluxo v212 vem depois (às vezes dias). Registra JÁ no físico (rateio por D1 + alerta
       // + decisão de recompra); a conciliação posterior re-registra sem apagar decisão já tomada.
-      if(it) try{ _rcbRegistrarFaltante(l, it, r.qtd, now); }catch(_e){}
+      if(it) try{ _rcbRegistrarFaltante(l, it, _rmBaseFaltante(it, r.qtd), now); }catch(_e){}
       if(r.qtd>0 && it && it.itemId!=null) _evts.push({ itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:r.qtd });
       if(it) (it.origem||[]).forEach(function(og){ _oidsFis[og.orderId]=1; }); // v213 — pedidos atendidos por este físico
     }catch(_e){}
@@ -18967,7 +19614,7 @@ function _pcConciliarSemConta(levaIn, nDiv){
     it.compra.custoUnitReal=+((r.preco+(r.qtd>0?_exLinha/r.qtd:0))).toFixed(4);
     if(_exLinha>0){ it.compra.custoIPI=+(parseFloat(r.ipi)||0).toFixed(4); it.compra.custoFrete=+(parseFloat(r.frete)||0).toFixed(4); it.compra.custoOutros=+(parseFloat(r.outros)||0).toFixed(4); }
     if(r.conv && r.conv.tem) it.compra.conversaoNF={ fator:r.conv.fator, unNF:r.conv.unNF, qtdNF:r.conv.qtdNF, unitNF:r.conv.unitNF, por:r.conv.verificadaPor||'', em:r.conv.verificadaEm||now };
-    try{ _rcbRegistrarFaltante(l, it, r.qtd, now); }catch(_e){}
+    try{ _rcbRegistrarFaltante(l, it, _rmBaseFaltante(it, r.qtd), now); }catch(_e){}
     _afx.push(it); _evx.push({itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:r.qtd, _doPedido:true});
     (it.origem||[]).forEach(function(og){ orderIds[og.orderId]=1; });
   });
@@ -19072,7 +19719,7 @@ function saveRecebimento(){
       it.compra.custoUnitReal=+((r.preco+(r.qtd>0?_exI/r.qtd:0))).toFixed(4);
       if(_exLinha>0){ it.compra.custoIPI=+(parseFloat(r.ipi)||0).toFixed(4); it.compra.custoFrete=+(parseFloat(r.frete)||0).toFixed(4); it.compra.custoOutros=+(parseFloat(r.outros)||0).toFixed(4); }
       if(r.conv && r.conv.tem) it.compra.conversaoNF={ fator:r.conv.fator, unNF:r.conv.unNF, qtdNF:r.conv.qtdNF, unitNF:r.conv.unitNF, por:r.conv.verificadaPor||'', em:r.conv.verificadaEm||now }; // v194 — auditoria da conversão
-      try{ _rcbRegistrarFaltante(l, it, r.qtd, now); }catch(_e){} // v195 — chegou a menos: rateia por D1 e registra
+      try{ _rcbRegistrarFaltante(l, it, _rmBaseFaltante(it, r.qtd), now); }catch(_e){} // v195 — chegou a menos: rateia por D1 e registra
       _afx.push(it); _evx.push({itemId:it.itemId, splitDe:it.splitDe, codigo:it.codigo, qtd:r.qtd, _doPedido:true}); // v209 — marcado p/ não re-entrar estoque quando o físico já entrou
       (it.origem||[]).forEach(function(og){ orderIds[og.orderId]=1; });
     });
@@ -23104,6 +23751,11 @@ function _renderDFC(mk){
 // ═══════════════ RENDER ═══════════════
 function refreshAll(){
   _rebuildCreditosFromOrders(); // v112 — crédito SEMPRE derivado dos pedidos (mata o clobber do blob)
+  // v270 — chave 'evento': repintura vinda de evento SÓ de conversa/notificação/agenda não roda as autocorreções
+  // de pedido/compra (nenhum dado que elas vigiam mudou). Chamada direta (ação do usuário) roda tudo, como sempre.
+  _evUltCompleto=Date.now(); // v270 — carimbo da última repintura geral (regra dos 30 s da tela de Conversas)
+  var _pulaHeal=false; try{ if(_refreshEvKeys){ var _hkN=0; _pulaHeal=true; for(var _hk in _refreshEvKeys){ _hkN++; if(!_EV_SEM_HEAL[_hk]){ _pulaHeal=false; break; } } if(!_hkN) _pulaHeal=false; if(!_pulaHeal){ if((Date.now()-_healEvUlt)<15000){ _pulaHeal=true; try{ _evTrailing(31000); }catch(_e){} } else _healEvUlt=Date.now(); } } }catch(_e){ _pulaHeal=false; }
+  if(!_pulaHeal){
   if(typeof _healEstoqueNaoNec==='function') _healEstoqueNaoNec(); // v168 — embalagem "não necessário" = estoque 'Solicitado compra' (auto-corrige antigos)
   if(typeof _healSolicOrfas==='function') _healSolicOrfas(); // v225 — item preso em_lista sem constar na lista volta à fila (caso CALMALINE)
   if(typeof _healComprasPedidoEnviado==='function') _healComprasPedidoEnviado(); // v225 — pedido enviado fecha o setor Compras (caso 103151)
@@ -23114,19 +23766,29 @@ function refreshAll(){
   if(typeof _healComprasRecebFisico==='function') _healComprasRecebFisico(); // v213 — físico conta como recebido: destrava "Produto entregue" retroativo
   if(typeof _healComprasSolicAberta==='function') _healComprasSolicAberta(); // v264 — solicitação aberta regride 'Produto entregue' (ordem do dono 10/11; roda DEPOIS do heal físico: o estado reconstruído decide)
   if(typeof _healAtendentesEquipes==='function') _healAtendentesEquipes(); // v219 — re-inscreve atendentes nas equipes pelo vínculo do cadastro (caso Aline: clobber concorrente)
+  } // fim do if(!_pulaHeal)
   if(typeof _updateConvBadge==='function') _updateConvBadge();
   if(typeof renderNotifBadge==='function') renderNotifBadge(); // v102 — badge do sino acende em realtime (chega notificação → refreshAll → badge)
   // v89 — só re-renderiza as telas pesadas que estão VISÍVEIS (showPage já as re-renderiza ao navegar).
   // Antes, todo refresh renderizava Dashboard + Gestão + CRM mesmo escondidos → custo desperdiçado.
+  // v270 — chave 'telas': os alertas de cada pedido são calculados UMA vez por repintura (antes: 3 a 4 vezes —
+  // contador do menu, cartões do Dashboard, painel por responsável, linhas da Gestão). O memo vale só
+  // durante esta passada síncrona e é sempre descartado no finally.
+  _alertMemo=_perfOn('telas')?new Map():null;
+  try{
   const _vis=id=>{var e=document.getElementById(id);return e&&e.style.display!=='none';};
   if(_vis('pg-dashboard')) renderDashboard();
   if(_vis('pg-gestao'))    renderGestao();
-  renderMonthTabs();updateNavBadge();updateReportMonthSelect();
+  if(!(_alertMemo && _vis('pg-gestao'))) renderMonthTabs(); // v270 — com a Gestão visível, o renderGestao acima já redesenhou as abas de mês
+  if(!(_refreshEvKeys && (Date.now()-_navBadgeUlt)<30000)){ updateNavBadge(); _navBadgeUlt=Date.now(); } // v270 — por evento: no máx. a cada 30 s
+  else { try{ _evTrailing(31000); }catch(_e){} } // v271 (revisão) — contagem adiada ganha arremate
+  updateReportMonthSelect();
   if(_vis('pg-auditoria')) renderAudit();
   if(_vis('pg-crm'))       renderCrm();
   if(_vis('pg-venda-prog'))renderVendaProg();
   checkCreditAlerts();
   try{ _refreshActivePage(); }catch(_e){}
+  } finally { _alertMemo=null; }
 }
 
 // v77 — repinta a tela ATIVA quando chega realtime, p/ telas não cobertas pelo refreshAll base.
@@ -23168,9 +23830,31 @@ function updateNavBadge(){
 
 // ═══════════════ ABA ATRASOS (etapas concluídas com atraso) ═══════════════
 let _atrasoRows=null;
+// v269 — ordem do dono 12/11 (painel "Por responsável" mostrava a Rafaela, desligada em 03/11, como
+// responsável do Designer): o responsável de um setor é o PRIMEIRO COORDENADOR ATIVO — colaborador
+// desligado (demitido, v255) nunca responde por setor. O cadastro dele NÃO é alterado (o histórico
+// segue no nome dele); só deixa de ser escolhido. Sem coordenador ativo, cada tela usa o fallback de sempre.
+function _coordAtivoDoSetor(setor){
+  return (users||[]).find(function(x){ return x && !x.demitido && Array.isArray(x.coordSetores) && x.coordSetores.includes(setor); })||null;
+}
+// v269 — ordem do dono 12/11: setor cuja coordenação ficou SEM NINGUÉM ATIVO por DESLIGAMENTO (todos os
+// coordenadores cadastrados estão demitidos — caso do Designer: Rafaela e Priscila) responde no nome do
+// ADMINISTRADOR, e isso vale sozinho para qualquer desligamento futuro. Setor que NUNCA teve coordenador
+// (ex.: Compras) segue o fallback de sempre de cada tela (gerente geral no painel; "—" nos Atrasos).
+function _respAdminNome(){
+  var a=(users||[]).find(function(x){ return x && x.perfil==='admin' && !x.demitido; });
+  return (a&&a.name)||'Administrador';
+}
+function _setorSoComCoordDesligado(setor){
+  return !_coordAtivoDoSetor(setor) && (users||[]).some(function(x){ return x && x.demitido && Array.isArray(x.coordSetores) && x.coordSetores.includes(setor); });
+}
+function _respSetorNome(setor, fallbackSemCoord){
+  var u=_coordAtivoDoSetor(setor); if(u) return u.name;
+  if(_setorSoComCoordDesligado(setor)) return _respAdminNome();
+  return fallbackSemCoord;
+}
 function _respDoSetor(setor){
-  const u=(users||[]).find(x=>x.coordSetores&&x.coordSetores.includes(setor));
-  return u?u.name:'—';
+  return _respSetorNome(setor, '—');
 }
 function _computeAtrasoConcluido(){
   // Para cada transição de status no auditLog, se o status-alvo tem prazo (STATUS_DEADLINES)
@@ -23292,7 +23976,7 @@ function renderDashboard(){
   document.getElementById('alert-count').textContent=alertsByOrder.length?`${alertsByOrder.length} pedido${alertsByOrder.length>1?'s':''} com alerta`:'';
   const al=document.getElementById('alert-list');
   if(!alertsByOrder.length){
-    al.innerHTML='<div class="empty">Nenhum alerta no momento.</div>';
+    _pfH(al).html='<div class="empty">Nenhum alerta no momento.</div>'; // v270
   } else {
     // monta o card de um pedido
     const cardHtml=(o,oa)=>{
@@ -23326,7 +24010,7 @@ function renderDashboard(){
     // v89 — agrupa por mês (data do pedido) p/ facilitar localizar/resolver; crítico primeiro dentro do mês
     const porMes={};
     alertsByOrder.forEach(item=>{ const mk=monthKey(item.order.d1)||'—'; (porMes[mk]=porMes[mk]||[]).push(item); });
-    al.innerHTML=Object.keys(porMes).sort().reverse().map(mk=>{
+    _pfH(al).html=Object.keys(porMes).sort().reverse().map(mk=>{ // v270 — só reescreve se mudou
       const itens=porMes[mk];
       const nCrit=itens.filter(i=>i.alerts.some(a=>a.level==='crit')).length;
       return `<div style="position:sticky;top:0;z-index:1;background:var(--bg-secondary);padding:6px 14px;font-size:11px;font-weight:600;color:var(--text-secondary);border-bottom:.5px solid var(--border);display:flex;justify-content:space-between">
@@ -23497,8 +24181,8 @@ function renderGestao(){
   const isAnes=activeLinha==='anestesico';const colKeys=isAnes?SETOR_KEYS_ANES:SETOR_KEYS;const colSetores=isAnes?SETORES_ANES:SETORES;const colspan=6+colKeys.length+4;
   document.getElementById('gestao-header-row').innerHTML=`<th>Pedido</th><th>Tipo</th><th>Cliente</th><th>Data inclusão</th><th>Prev. Saída</th><th>Valor</th>${colKeys.map(k=>`<th>${colSetores[k].label}</th>`).join('')}<th>Envio Real</th><th>Transportadora</th><th>Rastreio</th><th>Ações</th>`;
   document.getElementById('gestao-title').textContent=(isAnes?'Anestésico':'Linha Personalizada')+(activeMonth?` — ${filtered.length} pedido${filtered.length!==1?'s':''} em ${monthLabel(activeMonth)}`:'');
-  if(!filtered.length){tbody.innerHTML=`<tr><td colspan="${colspan}" class="empty">Nenhum pedido${activeMonth?' neste mês para esta linha':''}.</td></tr>`;return;}
-  tbody.innerHTML=filtered.map(o=>{
+  if(!filtered.length){_pfH(tbody).html=`<tr><td colspan="${colspan}" class="empty">Nenhum pedido${activeMonth?' neste mês para esta linha':''}.</td></tr>`;return;}
+  _pfH(tbody).html=filtered.map(o=>{ // v270 — só reescreve se mudou
     const{setores}=getLinhaConfig(o);
     const oa=getAlerts(o),hasCrit=oa.some(a=>a.level==='crit'),hasWarn=oa.some(a=>a.level==='warn');
     // v119 — pedido já ENVIADO/ENTREGUE não fica mais vermelho/rosa: urgência e atraso já encerraram (saiu da casa)
@@ -23512,14 +24196,14 @@ function renderGestao(){
       const lv=getCellLevel(o,k);const rule=getCellDeadline(o,k);const sd=o.statusDates&&o.statusDates[k];const last=getLastAudit(o.id,k);
       const activePend=getActivePend(o.id,k);
       const dlStr=rule?`Prazo: D${rule.limitDay} — ${fmtDate(deadlineDate(o.d1,rule.limitDay))}`:' ';
-      const tip=`<div class="audit-tip"><div style="font-weight:600;margin-bottom:4px">${dlStr}</div>${sd?`<div>Atualizado: ${fmtTs(sd.ts)}</div><div>Por: <strong>${sd.by}</strong></div><div>${sd.from} → ${sd.to}</div>`:last?`<div>Atualizado: ${fmtTs(last.ts)}</div><div>Por: ${last.userName}</div>`:'<div>Sem atualização registrada</div>'}${activePend?`<div style="margin-top:6px;padding-top:6px;border-top:.5px solid var(--border);color:var(--st-bad-tx)"><strong>⚠ Pendência ativa:</strong> ${activePend.desc}</div>`:''}</div>`;
+      const tip=`<div class="audit-tip"><div style="font-weight:600;margin-bottom:4px">${dlStr}</div>${(sd&&sd.ts)?`<div>Atualizado: ${fmtTs(sd.ts)}</div><div>Por: <strong>${sd.by}</strong></div><div>${sd.from} → ${sd.to}</div>`:last?`<div>Atualizado: ${fmtTs(last.ts)}</div><div>Por: ${last.userName}</div>`:'<div>Sem atualização registrada</div>'}${activePend?`<div style="margin-top:6px;padding-top:6px;border-top:.5px solid var(--border);color:var(--st-bad-tx)"><strong>⚠ Pendência ativa:</strong> ${activePend.desc}</div>`:''}</div>`;
       const edit=canEdit(k);const bc=lv?'b-bad':badgeClass(o.statuses[k],null);const st=o.statuses[k]||'Não iniciado';
       // v244 — caso Luiz (3ª cobrança do dono, 05/10): a PORTA DE ENTRADA era o buraco — o portão de
       // leitura v238/v243 vive DENTRO do openStatusModal, mas a célula só ganhava onclick com canEdit.
       // Quem tem estoque/expedição SEM compras agora clica a célula de Compras e cai no modo leitura.
       const roCell = !edit && k==='compras' && typeof _temSetorEstoque==='function' && (_temSetorEstoque()||_temSetorExpedicao());
       const clicavel = edit || roCell;
-      const dateStr=sd?`<span class="badge-date">${new Date(sd.ts).toLocaleDateString('pt-BR')}</span>`:'';
+      const dateStr=(sd&&sd.ts)?`<span class="badge-date">${new Date(sd.ts).toLocaleDateString('pt-BR')}</span>`:'';
       // v261 — coluna DESIGNER mostra pequeno o responsável (para quem foi distribuído / quem produz)
       const execStr=(k==='designer' && (((sd&&sd.executorNome)||o.designerExecutorNome||'').trim()))?`<span class="badge-date" title="Responsável (designer) — para quem foi distribuído">👤 ${escapeHtml(((sd&&sd.executorNome)||o.designerExecutorNome||'').trim())}</span>`:'';
       const pendBadge=activePend?`<span class="pend-alert-badge" onclick="event.stopPropagation();openPendAlertModal(${o.id},'${k}')" title="Pendência ativa — clique para ver">⚠ Pendência</span>`:'';
@@ -23529,7 +24213,7 @@ function renderGestao(){
       if(k==='compras' && typeof _pedidoNovoCompras==='function' && _pedidoNovoCompras(o) && o.comprasLados && (o.comprasLados.ativo||o.comprasLados.embalagem)){
         ladosSelo=`<span style="font-size:9px;white-space:nowrap;color:var(--st-ok-tx)" title="Lados finalizados (comprado ou não necessário)">${o.comprasLados.ativo?'A✓':''}${o.comprasLados.ativo&&o.comprasLados.embalagem?' ':''}${o.comprasLados.embalagem?'E✓':''}</span>`;
       }
-      return`<td class="audit-cell"><div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap"><span class="badge ${bc} ${clicavel?'clickable':''}" style="flex-direction:column;align-items:flex-start;gap:0" ${roCell?'title="Somente visualização (estoque/expedição)"':''} ${clicavel?`onclick="openStatusModal(${o.id},'${k}')"` :''}>${st}${dateStr}${execStr}</span>${ladosSelo}${obsIcon}${pendBadge}</div>${tip}</td>`;
+      return`<td class="audit-cell"><div style="display:flex;align-items:center;gap:3px;flex-wrap:wrap"><span class="badge ${bc} ${clicavel?'clickable':''}" style="flex-direction:column;align-items:flex-start;gap:0" ${roCell?'title="Somente visualização (estoque/expedição)"':''} ${clicavel?`onclick="openStatusModal(${o.id},'${k}')"` :''}>${st}${dateStr}${execStr}</span>${ladosSelo}${k==='designer'?_grafSeloHtml(o):''}${obsIcon}${pendBadge}</div>${tip}</td>`;
     }).join('');
     return`<tr class="${rc}"><td style="font-weight:500">${escapeHtml(o.num)}${tag}</td><td>${tipoBadgeHtml(o.tipo||'venda')}</td><td>${escapeHtml(o.cliente)}</td><td style="color:var(--text-secondary);font-size:12px;white-space:nowrap">${fmtDate(_dataInclusao(o))}</td><td>${fmtDate(o.previsao)}</td><td>${fmtMoney(o.valor)}</td>${cells}<td style="color:var(--text-secondary);font-size:12px">${(()=>{const hist=o.enviosHistorico||[];if(hist.length<=1)return fmtDate(o.envioReal)||'—';const datas=[...new Set(hist.map(e=>e.data).filter(Boolean))];return datas.length===1?fmtDate(datas[0]):datas.map(d=>fmtDate(d)).join('<br>');})()}</td><td style="font-size:12px">${transpCellHtml(o)}</td><td style="font-size:12px">${rastreiosCellHtml(o)}</td><td style="white-space:nowrap"><button onclick="openDetailModal(${o.id})" class="btn-primary" style="padding:3px 12px;font-size:11px">Abrir</button> <button onclick="openEnvioModal(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px;background:var(--bg-info);color:var(--text-info);border-color:var(--text-info)">📮 Envio</button> ${canEditOrder()?`<button onclick="openOrderModal(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px">Editar</button>`:''} ${currentUser?.perfil==='admin'?`<button onclick="deleteOrderDirect(${o.id})" style="padding:3px 10px;font-size:11px;margin-left:4px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">Excluir</button>`:''}</td></tr>`;
   }).join('');
@@ -23803,6 +24487,23 @@ function setClientesTab(tab){
   document.getElementById('cli-tab-contatos')?.classList.toggle('active', tab==='contatos'); // v239
   renderClients();
 }
+// v270 — chave 'telas': CLIENTES POR JANELA. A tela desenhava os ~5.400 cartões de uma vez (130 mil
+// elementos; 5,5 s medidos). Desenha os primeiros 120 e acrescenta mais 240 quando o fim da lista se
+// aproxima (ou no botão). A BUSCA continua valendo sobre a base inteira; trocar de aba/busca volta ao início.
+var _CLI_JANELA_INI=120, _CLI_JANELA_PASSO=240, _cliJanela=120, _cliJanelaSig='', _cliObs=null;
+function _cliMaisHtml(resto, total){
+  return '<div id="cli-mais" style="grid-column:1/-1;text-align:center;padding:14px 0"><button onclick="_cliMais()" style="font-size:12px;padding:7px 16px">Mostrar mais clientes ('+resto.toLocaleString('pt-BR')+' de '+total.toLocaleString('pt-BR')+' ainda não exibidos)</button></div>';
+}
+function _cliMais(){ _cliJanela+=_CLI_JANELA_PASSO; renderClients(); }
+function _cliObservaMais(){
+  try{
+    if(_cliObs){ try{ _cliObs.disconnect(); }catch(_e){} _cliObs=null; }
+    if(typeof IntersectionObserver==='undefined') return;
+    var el=document.getElementById('cli-mais'); if(!el) return;
+    _cliObs=new IntersectionObserver(function(es){ try{ if(es.some(function(e){ return e.isIntersecting; })){ try{ _cliObs.disconnect(); }catch(_e){} _cliObs=null; _cliMais(); } }catch(_e){} }, {rootMargin:'500px'});
+    _cliObs.observe(el);
+  }catch(_e){}
+}
 function renderClients(){
   const q=(document.getElementById('client-search')?.value||'').toLowerCase();
   const _incompletos = clients.filter(c=>c.cadastroIncompleto);
@@ -23825,7 +24526,10 @@ function renderClients(){
   if(!f.length){grid.innerHTML='';empty.style.display='';empty.textContent=activeClientesTab==='incompletos'?'Nenhum cadastro incompleto.':'Nenhum cliente encontrado.';return;}
   empty.style.display='none';
   const colors=['#378ADD','#1D9E75','#BA7517','#D4537E','#533AB7','#0F6E56','#993C1D','#3B6D11'];
-  grid.innerHTML=f.map((c,i)=>{
+  const _cliSig=String(activeClientesTab||'')+'|'+q; if(_cliSig!==_cliJanelaSig){ _cliJanelaSig=_cliSig; _cliJanela=_CLI_JANELA_INI; } // v270 — nova busca/aba volta ao início
+  const _cliLim=_perfOn('telas')?_cliJanela:f.length;
+  const _cliResto=Math.max(0, f.length-_cliLim);
+  grid.innerHTML=(_cliResto?f.slice(0,_cliLim):f).map((c,i)=>{
     const col=colors[i%colors.length],addr=[c.rua,c.numero,c.bairro,c.cidade,c.uf].filter(Boolean).join(', ');
     const _eqNomeCli=(function(){ const ids=[...new Set([c.carteiraLinha,c.carteiraAnest].filter(Boolean))]; return ids.map(id=>(typeof isSDREquipe==='function'&&isSDREquipe(id))?'🔷 SDR':(getEquipeNome(id)||'')).filter(Boolean).join(' · '); })();
     const favBadge=c.favorito?'<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#FAEEDA;color:#633806;border:.5px solid #EF9F27;font-weight:500;margin-left:6px">⭐ Favorito</span>':'';
@@ -23838,7 +24542,8 @@ function renderClients(){
       <button onclick="openClientModal('${c.id}')" style="font-size:12px;padding:5px 12px">Editar</button>
       <button onclick="confirmDel('client','${c.id}','${escapeAttrJs(c.nome)}')" style="font-size:12px;padding:5px 12px;color:var(--st-bad-tx);border-color:var(--st-bad-bd)">Excluir</button>
     </div></div>`;
-  }).join('');
+  }).join('')+(_cliResto?_cliMaisHtml(_cliResto, f.length):'');
+  if(_cliResto) _cliObservaMais(); // v270 — acrescenta a próxima janela ao chegar perto do fim
 }
 
 // ═══════════════ DASHBOARD COMERCIAL ═══════════════
@@ -26643,23 +27348,24 @@ function renderDashboardMelhorias(){
   const arEl = document.getElementById('dc-atraso-resp');
   if(arEl){
     const coordMap={
-      designer:users.find(u=>u.coordSetores?.includes('designer'))?.name,
-      producao:users.find(u=>u.coordSetores?.includes('producao'))?.name,
-      estoque:users.find(u=>u.coordSetores?.includes('estoque'))?.name,
-      compras:users.find(u=>u.coordSetores?.includes('compras'))?.name,
-      financeiro:users.find(u=>u.coordSetores?.includes('financeiro'))?.name,
-      rotulos:users.find(u=>u.coordSetores?.includes('rotulos'))?.name,
-      expedicao:users.find(u=>u.coordSetores?.includes('expedicao'))?.name,
+      designer:_respSetorNome('designer', null), // v269 — coordenador ativo; coordenação toda desligada = administrador
+      producao:_respSetorNome('producao', null), // v269 — coordenador ativo; coordenação toda desligada = administrador
+      estoque:_respSetorNome('estoque', null), // v269 — coordenador ativo; coordenação toda desligada = administrador
+      compras:_respSetorNome('compras', null), // v269 — coordenador ativo; coordenação toda desligada = administrador
+      financeiro:_respSetorNome('financeiro', null), // v269 — coordenador ativo; coordenação toda desligada = administrador
+      rotulos:_respSetorNome('rotulos', null), // v269 — coordenador ativo; coordenação toda desligada = administrador
+      expedicao:_respSetorNome('expedicao', null), // v269 — coordenador ativo; coordenação toda desligada = administrador
     };
     // v98 — setor sem responsável cai no GERENTE GERAL; comercial é dividido por EQUIPE (coordenador de cada uma)
-    const _gerenteGeral = (users.find(u=>u.perfil==='gerente_geral')||{}).name || 'Gerência Geral';
-    const _diretorComercial = (users.find(u=>u.perfil==='diretor_comercial')||{}).name || _gerenteGeral;
+    const _gerenteGeral = (users.find(u=>u.perfil==='gerente_geral' && !u.demitido)||{}).name || 'Gerência Geral'; // v269 — nunca desligado
+    const _diretorComercial = (users.find(u=>u.perfil==='diretor_comercial' && !u.demitido)||{}).name || (users.some(u=>u.perfil==='diretor_comercial' && u.demitido) ? _respAdminNome() : _gerenteGeral); // v269 — diretora desligada = administrador
     const _respComercial = (o)=>{
       const eqId=o.equipeId;
       if(eqId){
         const coordId = (typeof getCoordenadorDaCarteira==='function') ? getCoordenadorDaCarteira(eqId) : ((getEquipe(eqId)||{}).coordenadorId);
         const u = coordId ? users.find(x=>x.id===coordId) : null;
-        if(u) return u.name;
+        if(u && !u.demitido) return u.name;
+        if(u && u.demitido) return _respAdminNome(); // v269 — coordenador da equipe desligado = administrador
         const e = getEquipe(eqId); if(e) return isSDREquipe(eqId)?'SDR':e.nome;
       }
       return _diretorComercial; // comercial SEM equipe → diretora comercial (não o gerente geral)
@@ -26685,9 +27391,9 @@ function renderDashboardMelhorias(){
     });
     const sorted=Object.values(respStats).sort((a,b)=>b.criticos-a.criticos||b.ativos-a.ativos);
     if(!sorted.length){
-      arEl.innerHTML='<div style="font-size:12px;color:var(--st-ok-tx);padding:8px 0">✓ Nenhum alerta ativo no momento.</div>';
+      _pfH(arEl).html='<div style="font-size:12px;color:var(--st-ok-tx);padding:8px 0">✓ Nenhum alerta ativo no momento.</div>';
     } else {
-      arEl.innerHTML=sorted.map(r=>{
+      _pfH(arEl).html=sorted.map(r=>{ // v270 — só reescreve se mudou
         const _itemCard=it=>`<div onclick="openDetailModal(${it.oid})" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:.5px dashed var(--border);cursor:pointer">
              <div style="min-width:0">
                <div style="font-size:11px"><span style="font-weight:500">${escapeHtml(it.num||'—')}</span> <span style="color:var(--text-secondary)">— ${escapeHtml(it.cliente||'—')}</span></div>
@@ -37946,6 +38652,46 @@ async function initSupabase(){
 // v263 (D8, revisão 09/11) — CARGA ÚNICA EM VOO: boot (initSupabase) e login (doLogin) disparavam duas
 // cargas completas CONCORRENTES sobre as mesmas entidades (egress/tempo em dobro, snapshots reconstruídos
 // no meio da outra). Chamada com a MESMA assinatura durante uma carga em voo reutiliza a promessa.
+// v270 — chave 'login': o login baixava TUDO de novo mesmo quando a carga da abertura da página já
+// tinha rodado (ou estava rodando) com a MESMA sessão — 48 s repetidos no login medido em 11/11.
+// Reaproveita SOMENTE se: (1) a carga foi feita com o mesmo usuário autenticado que está entrando;
+// (2) terminou com sucesso (carga sem sessão/RLS vazia devolve false e nunca qualifica); (3) terminou há
+// menos de 3 min, ou ainda está em andamento (o login espera ela acabar); (4) pedidos e clientes têm
+// carga confirmada e o cadastro de quem entra está na memória. Qualquer dúvida → carga completa, como
+// sempre. Depois de abrir, uma reconciliação com o servidor roda em seguida (modo delta: leve).
+var _cargaUid=null, _cargaOkEm=0, _CARGA_VALE_MS=180000;
+async function _loginReusaCarga(login){
+  // v271 — chave ainda não confirmada pelo servidor nesta abertura da página: lê agora (a sessão acabou de ser
+  // autenticada; é a mesma leitura leve de sempre). Sem confirmação → carga completa.
+  if(!_perfConfirmado){ try{ await _sepCanonLoad(); }catch(_e){} }
+  if(!_perfConfirmado) return false;
+  var modo=_perfFlags&&_perfFlags.login;
+  if(modo!=='all' && !(modo==='admin' && Array.isArray(users) && users.some(function(u){ return u && u.login===login && u.perfil==='admin'; }))) return false;
+  var s=await _sb.auth.getSession();
+  var uid=(s&&s.data&&s.data.session&&s.data.session.user)?s.data.session.user.id:null;
+  if(!uid) return false;
+  var ok=false;
+  if(_loadInFlightP && _loadInFlightSig==='full' && _loadInFlightP._uidP){
+    var p=_loadInFlightP; var uidCarga=await p._uidP;
+    if(!uidCarga || uidCarga!==uid) return false;
+    ok=((await p)===true);
+  } else {
+    ok=(_cargaUid===uid && (Date.now()-_cargaOkEm)<_CARGA_VALE_MS);
+  }
+  if(!ok) return false;
+  if(!(Array.isArray(users) && users.some(function(u){ return u && u.login===login; }))) return false;
+  if(!(_sepCarregadaOk && _sepCarregadaOk.orders && _sepCarregadaOk.clients)) return false;
+  // v271 (revisão) — a sessão ainda é a mesma ao FIM da carga; e TODAS as tabelas — inclusive as da 2ª fase
+  // (notificações, auditoria, agenda, catálogo, insumos) — precisam estar confirmadas. Espera até 25 s pela
+  // 2ª fase; se alguma não confirmar, vale a carga completa de sempre.
+  try{ var s2=await _sb.auth.getSession(); var uid2=(s2&&s2.data&&s2.data.session&&s2.data.session.user)?s2.data.session.user.id:null; if(uid2!==uid) return false; }catch(_e){ return false; }
+  var _todas=function(){ try{ return SEP_ENTITIES.every(function(c){ return _sepCarregadaOk[c.key]===true; }); }catch(_e){ return false; } };
+  var _t0r=Date.now(); while(!_todas() && _sepBootFase1!==false && (Date.now()-_t0r)<25000){ await new Promise(function(res){ setTimeout(res,150); }); }
+  if(!_todas()) return false;
+  var tenta=0; (function reconc(){ tenta++; setTimeout(function(){ try{ if(_resyncFromServer()!==true && tenta<4) reconc(); }catch(_e){} }, tenta===1?4000:15000); })();
+  try{ _perfOp('login_reuso',0); }catch(_e){}
+  return true;
+}
 var _loadInFlightP=null, _loadInFlightSig=null, _loadInFlightT0=0;
 function _loadFromSupabase(skipSep){
   var _sig=skipSep?'skip':'full';
@@ -37958,6 +38704,8 @@ function _loadFromSupabase(skipSep){
     return _pAnt.then(function(){ return _loadFromSupabase(skipSep); }, function(){ return _loadFromSupabase(skipSep); });
   }
   var p=_loadFromSupabaseMiolo(skipSep);
+  // v270 — registra COM QUE SESSÃO esta carga completa rodou e se terminou bem (o login pode reaproveitá-la)
+  if(!skipSep){ try{ var _uidP=_sb.auth.getSession().then(function(s){ return (s&&s.data&&s.data.session&&s.data.session.user)?s.data.session.user.id:null; }).catch(function(){ return null; }); p._uidP=_uidP; p.then(function(ok){ _uidP.then(function(uid){ if(!(ok===true && uid)) return; _sb.auth.getSession().then(function(sf){ var uf=(sf&&sf.data&&sf.data.session&&sf.data.session.user)?sf.data.session.user.id:null; if(uf===uid){ _cargaUid=uid; _cargaOkEm=Date.now(); } }).catch(function(){}); }); }).catch(function(){}); /* v271 — mesma sessão no início E no fim */ }catch(_e){} }
   _loadInFlightP=p; _loadInFlightSig=_sig; _loadInFlightT0=Date.now();
   p.finally(function(){ if(_loadInFlightP===p){ _loadInFlightP=null; _loadInFlightSig=null; } });
   return p;
@@ -38007,7 +38755,7 @@ async function _loadFromSupabaseMiolo(skipSep){
       const _cfgsCarga = _sepBootFase1 ? SEP_ENTITIES.filter(function(c){ return !_SEP_DEFER[c.key]; }) : SEP_ENTITIES;
       if(_usaParalelo){
         var _pDone=0; const _pT0=performance.now();
-        const _falhas=await _sepLoadPool(_cfgsCarga, 5, function(){
+        const _falhas=await _sepLoadPool(_cfgsCarga, 3, function(){ // v270 — 3 simultâneas (era 5): mesma quantidade de requisições, menos pico no servidor
           _pDone++; _setBootProgress(20 + (_pDone/_cfgsCarga.length)*68, 'Carregando dados… ('+_pDone+'/'+_cfgsCarga.length+')');
         });
         for(let _fi=0;_fi<_falhas.length;_fi++){ // rede de segurança: retry sequencial + fallback do blob (igual ao modo antigo)
@@ -38140,6 +38888,19 @@ async function migrarParaSupabase(){
     alert('Erro na migração: ' + e.message);
   }
 }
+
+// v270 — cronômetros (chave 'medir' decide se saem no batimento): tempo de troca de menu, de repintura
+// geral e de abrir conversa. Embrulham a função original sem alterar argumentos nem retorno.
+(function(){
+  function emb(nome, rotulo, porArg){
+    try{
+      var f=window[nome]; if(typeof f!=='function' || f._pfEmb) return;
+      var w=function(){ var t=(typeof performance!=='undefined')?performance.now():0; try{ return f.apply(this, arguments); } finally { try{ var d=performance.now()-t; _perfOp(rotulo, d); if(porArg && d>=150 && typeof arguments[0]==='string') _perfOp(rotulo+':'+arguments[0], d); }catch(_e){} } };
+      w._pfEmb=true; window[nome]=w;
+    }catch(_e){}
+  }
+  emb('showPage','menu',true); emb('refreshAll','repintura',false); emb('abrirConversa','conversa',false);
+})();
 
 // Inicia Supabase quando DOM estiver pronto
 if(document.readyState === 'loading'){
@@ -39289,6 +40050,9 @@ function confirmarInbound(){
   const telClean=tel.replace(/\D/g,'');
   if(!telClean){ alert('Informe o telefone.'); return; }
   if(!nome){ alert('Informe o nome do contato.'); return; }
+  // v269 (revisão 12/11) — números separados (v268): o getOuCriarConversa devolve null para quem não
+  // acessa o número; a recusa vem ANTES de criar cadastro/card (e o fluxo nunca usa conversa nula).
+  if(_waModoDois() && !_waNumsDoUsuario().includes(_waNumOutbound())){ alert('Você não tem acesso a este número de WhatsApp.'); return; }
   // 1) Verifica se já existe cadastro com esse telefone
   const _m8=telClean.length>=8?telClean.slice(-8):'';  // v89 — últimos 8 dígitos p/ não duplicar cliente
   let cli = clients.find(c=>{
@@ -39318,6 +40082,7 @@ function confirmarInbound(){
   // 3) Abre/cria a conversa vinculada ao cliente
   const conv = getOuCriarConversa(cli.id);
   saveData();
+  if(!conv){ alert('Não foi possível abrir a conversa deste contato neste número.'); return; }
   document.getElementById('inbound-overlay')?.remove();
   renderConversas();
   conversaAtivaId = conv.id;
@@ -40484,9 +41249,11 @@ function renderConversas(){
   try{ _waBadgeTravadas(); }catch(_){}
 }
 // v95 — contador admin de mensagens travadas na fila (pipeline durável). Só admin/diretor.
+var _waTravUlt=0; // v270 — chave 'evento': a consulta ao servidor roda no máximo 1 vez por minuto (rodava a cada redesenho)
 async function _waBadgeTravadas(){
   const el=document.getElementById('wa-travadas-badge'); if(!el) return;
   if(!_sb || !currentUser || !['admin','diretor_comercial'].includes(currentUser.perfil)){ el.style.display='none'; return; }
+  try{ if(_perfOn('evento')){ if(Date.now()-_waTravUlt<60000) return; _waTravUlt=Date.now(); } }catch(_e){}
   try{
     const { count, error } = await _sb.from('wa_inbox_pendentes').select('id',{count:'exact',head:true});
     if(!error && count && count>0){ el.textContent='⚠ '+count+' travada'+(count>1?'s':''); el.style.display=''; }
@@ -41049,7 +41816,12 @@ async function _convForwardEnviar(destClienteId){
   const _mg={ id:'m'+Date.now()+Math.floor(Math.random()*1000), de:'atendente', texto:texto, anexo:anexo, em:Date.now(), autorId:(currentUser?currentUser.id:null), status:'fila' };
   conv.mensagens=Array.isArray(conv.mensagens)?conv.mensagens:[]; conv.mensagens.push(_mg);
   conv.ultimaMsg=anexo?('📎 '+_txCut(anexo.nome||'anexo',70)):_txCut(texto,80); conv.ultimaMsgEm=_mg.em;
-  try{ if(_sb) await _sb.rpc('conv_append_msg', { p_conv_id: conv.id, p_msg: _mg }); }catch(_e){}
+  // v271 — mesmo padrão do reenvio (v145): se a gravação atômica da mensagem falhar (conversa NOVA ainda não
+  // existe no banco), grava a conversa inteira ANTES de pedir o envio — o servidor precisa da conversa para
+  // confirmar por qual número ela sai.
+  { let _okRpcF=false;
+    try{ if(_sb){ const { error:_reF } = await _sb.rpc('conv_append_msg', { p_conv_id: conv.id, p_msg: _mg }); _okRpcF=!_reF; } }catch(_e){}
+    if(!_okRpcF){ try{ if(typeof _waUpsertConversa==='function') await _waUpsertConversa(conv); }catch(_e){} } }
   try{
     // v175 — MÍDIA vai pela wa-send-media (mesmo arquivo do Storage; a Z-API baixa pela URL assinada); texto pela wa-send
     const _d2 = anexo

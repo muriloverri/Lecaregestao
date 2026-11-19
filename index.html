@@ -1341,10 +1341,13 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         </div><!-- /cat-sec-produtos -->
         <!-- v130 — INSUMOS (ativos) -->
         <div id="cat-sec-insumos" style="display:none">
+          <!-- v277 — subabas: Geral (todos os ativos) · Essência · Base · Excipiente (atribuem a função a um ativo já cadastrado) -->
+          <div class="des-tabs" id="ins-subabas" style="margin-bottom:12px;gap:4px"></div>
+          <div id="ins-fn-barra" style="display:none"></div>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
             <input type="text" id="ins-busca" placeholder="Buscar insumo (ativo)..." oninput="renderCatSimples('insumo')" style="min-width:220px">
             <button class="btn-primary" id="ins-novo-btn" onclick="openInsumoModal('insumo')">+ Cadastrar insumo</button>
-            <label class="btn-primary" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (ativos/MTP) exportado do Opery: cadastra os que faltam E atualiza o CUSTO BASE dos já cadastrados que divergirem (v258) — sempre com conferência; preço de venda nunca muda. Nada é gravado sem confirmar.">📥 Importar ativos<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarAtivosPDF(this)"></label><!-- v187 -->
+            <label class="btn-primary" id="ins-imp-btn" style="cursor:pointer;display:inline-block" title="Lê o PDF 'Cadastro de Produtos' (ativos/MTP) exportado do Opery: cadastra os que faltam E atualiza o CUSTO BASE dos já cadastrados que divergirem (v258) — sempre com conferência; preço de venda nunca muda. Nada é gravado sem confirmar.">📥 Importar ativos<input type="file" accept=".pdf,application/pdf" style="display:none" onchange="importarAtivosPDF(this)"></label><!-- v187 -->
           </div>
           <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Insumo (ativo)</th><th style="padding:8px 10px;text-align:left">Unidade</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:right" title="Quantidade em estoque (na unidade de compra)">Estoque</th><th style="padding:8px 10px;text-align:right" title="Média ponderada das compras efetivadas">Custo médio</th><th style="padding:8px 10px;text-align:right" title="Preço pago na compra mais recente">Últ. compra</th><th style="padding:8px 10px;text-align:right" title="Menor preço já pago">Menor pago</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
@@ -1354,6 +1357,9 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
         </div>
         <!-- v130 — EMBALAGENS -->
         <div id="cat-sec-embalagens" style="display:none">
+          <!-- v277 — subabas: Geral (todas as embalagens) · Invólucros (cápsulas vazias, por tamanho) -->
+          <div class="des-tabs" id="emb-subabas" style="margin-bottom:12px;gap:4px"></div>
+          <div id="emb-inv-barra" style="display:none"></div>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
             <input type="text" id="emb-busca" placeholder="Buscar embalagem..." oninput="renderCatSimples('embalagem')" style="min-width:220px">
             <button class="btn-primary" id="emb-novo-btn" onclick="openInsumoModal('embalagem')">+ Cadastrar embalagem</button>
@@ -1441,7 +1447,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <div class="form-group"><label>Fator UI→mg <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(só p/ dosagem em UI)</span></label><input type="number" min="0" step="0.000001" id="ins-fatorui" placeholder="mg por 1 UI"></div>
             </div>
             <!-- v259 — BASE (ordem do dono 04/11): base = veículo = excipiente são SINÔNIMOS (excipiente mais usado no oral; base/veículo no tópico). Marcado, o insumo entra na fórmula já como excipiente/QSP. -->
-            <label style="display:flex;align-items:center;gap:7px;font-size:13px;margin-bottom:12px"><input type="checkbox" id="ins-ehbase" style="width:15px;height:15px"> Este insumo é uma <b>BASE</b> <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(veículo/excipiente do produto — sinônimos; entra na fórmula como excipiente/QSP)</span></label>
+            <div id="ins-funcoes-info" style="font-size:12px;color:var(--text-secondary);margin-bottom:12px"></div><!-- v277 — funções do ativo (atribuídas nas subabas da aba Ativos) -->
           </div>
           <!-- v174 — F1: capacidade da EMBALAGEM (filtra compatível com o QSP escolhido na venda) -->
           <div id="ins-f1-emb" style="display:none">
@@ -1540,12 +1546,13 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <thead><tr style="color:var(--text-tertiary);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:4px 6px">Insumo</th><th style="text-align:left;padding:4px 6px">Papel</th><th style="text-align:right;padding:4px 6px">Dose</th><th style="text-align:left;padding:4px 6px">Unid.</th><th style="text-align:center;padding:4px 6px" title="Marcado = o componente NÃO aparece na composição do PDF do orçamento do cliente (o cálculo de custo/preço não muda)">Invisível</th><th></th></tr></thead>
               <tbody id="cn-comp-tbody"></tbody>
             </table>
+            <div id="cn-comp-notas" style="display:none;font-size:11.5px;background:var(--st-mid-bg);color:var(--st-mid-tx);border-radius:8px;padding:7px 11px;margin-top:6px"></div><!-- v277 — veículo sem a função atribuída (fórmula antiga: só aviso) -->
             <div id="cn-comp-vazio" style="font-size:12px;color:var(--text-tertiary);padding:6px 0">Nenhum componente — busque acima. O EXCIPIENTE/QSP não leva dose (completa o total sozinho).</div>
           </div>
           <div id="cn-box-caps" style="display:none">
             <div class="form-row">
-              <div class="form-group"><label>Cápsula de preferência</label><select id="cn-capstam"><option value="">— escolher na venda</option><option value="00">00</option><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
-              <div class="form-group"><label>Invólucro padrão <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(embalagem da cápsula)</span></label><div class="autocomplete-wrap"><input type="text" id="cn-inv-busca" placeholder="Buscar embalagem (ex: CAP 00...)" oninput="_cnInvSearch()" autocomplete="off"><div class="autocomplete-list" id="cn-inv-ac"></div></div></div>
+              <div class="form-group"><label>Cápsula de preferência</label><select id="cn-capstam" onchange="_cnInvPorTam()"><option value="">— escolher na venda</option><option value="00">00</option><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
+              <div class="form-group"><label>Invólucro <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(vazio = invólucro padrão do tamanho da cápsula)</span></label><div class="autocomplete-wrap"><input type="text" id="cn-inv-busca" placeholder="Buscar invólucro (ex: CAP 00...)" oninput="_cnInvSearch()" autocomplete="off"><div class="autocomplete-list" id="cn-inv-ac"></div></div></div>
             </div>
           </div>
           <div id="cn-box-qsp" class="form-row">
@@ -5656,7 +5663,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v276';
+var APP_VERSION = 'v277';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -7810,7 +7817,7 @@ async function doLogin(){
   // (importar/cadastrar); Produtos, Insumos, Grupos e Catálogo Novo ficam ocultos para ele.
   // v258 — mesma régua para quem só tem EXPEDIÇÃO (entra só para as fotos das embalagens).
   const _soEmb=!isAdmin&&!isComercial&&!canAccessCompras()&&(_ehEstoque||_ehExped);
-  ['produtos','insumos','grpemb','catnovo'].forEach(t=>document.getElementById('cat-tab-'+t)?.classList.toggle('hidden',_soEmb));
+  ['produtos','insumos','grpemb','formas','catnovo'].forEach(t=>document.getElementById('cat-tab-'+t)?.classList.toggle('hidden',_soEmb)); // v277 — + formas
   if(_soEmb){ try{ setCatalogoTab('embalagens'); }catch(_e){} }
   document.getElementById('nav-venda-prog').classList.toggle('hidden',!isComercial&&!isAdmin&&!(u.setores?.includes('financeiro')||u.coordSetores?.includes('financeiro'))); // v106 — financeiro (Rhuan) também acessa Venda Programada
 
@@ -13017,16 +13024,319 @@ function _histItemToggle(btn){
   var id=btn.getAttribute('data-hid'); var r=document.getElementById(id);
   if(r) r.style.display=(r.style.display==='none'?'':'none');
 }
+// ═══════════ v277 — FUNÇÕES DO ATIVO (essência · base · excipiente) E INVÓLUCROS (ordem do dono 18/11/2026) ═══════════
+// Nada é cadastrado de novo: a FUNÇÃO é um atributo do ativo que já existe (x.funcoes — pode ter mais de uma),
+// atribuída nas subabas Essência / Base / Excipiente da aba Ativos (só administrador e direção comercial).
+//   · BASE e EXCIPIENTE são a mesma função na fórmula — o VEÍCULO (papel 'excipiente', um por fórmula): base é o
+//     veículo dos líquidos e semissólidos; excipiente, o dos sólidos (cápsulas, scoop, comprimido). Quem define
+//     qual das duas a forma pede é a forma farmacêutica (campo "veiculo").
+//   · ESSÊNCIA entra na fórmula como um ATIVO comum (com dose, custo e markup próprios): a função só serve para
+//     agrupar e destacar a linha na composição. É DERIVADA do cadastro do ativo — a fórmula não guarda nada a mais
+//     e o cálculo não muda.
+//   · INVÓLUCRO é atributo da EMBALAGEM (e.involucro, e.involucroTam, e.involucroPadrao), atribuído na subaba
+//     Invólucros da aba Embalagens. Produto em cápsulas sem invólucro escolhido usa o invólucro padrão do tamanho.
+var INS_FUNCOES=[['essencia','Essência'],['base','Base'],['excipiente','Excipiente']];
+var CN_CAPS_TAMS=['00','0','1','2','3','4'];
+function _insFnLbl(k){ for(var i=0;i<INS_FUNCOES.length;i++){ if(INS_FUNCOES[i][0]===k) return INS_FUNCOES[i][1]; } return ''; }
+// funções do ativo, saneadas (só as conhecidas, sem repetição, na ordem fixa)
+function _insFuncoes(x){ var l=(x&&Array.isArray(x.funcoes))?x.funcoes:[], o=[]; for(var i=0;i<INS_FUNCOES.length;i++){ if(l.indexOf(INS_FUNCOES[i][0])>=0) o.push(INS_FUNCOES[i][0]); } return o; }
+function _insTemFuncao(x, fn){ return !!(x && _insFuncoes(x).indexOf(fn)>=0); }
+function _insPorId(id){ if(!id) return null; var L=insumos||[]; for(var i=0;i<L.length;i++){ if(L[i] && L[i].id===id) return L[i]; } return null; }
+function _insPodeFuncao(){ return !!(currentUser && (currentUser.perfil==='admin' || currentUser.perfil==='diretor_comercial')); }
+// função de veículo que a forma farmacêutica pede: 'excipiente' (sólidos) ou 'base' (líquidos e semissólidos)
+var FF_VEIC_EXCIP=['capsula','scoop','comprimido_sublingual'];
+function _ffVeicPadrao(id, caps){ return (caps || FF_VEIC_EXCIP.indexOf(String(id||''))>=0)?'excipiente':'base'; }
+function _cnVeicFn(fm){ fm=fm||'semisolido'; var f=_ffForma(fm); if(f && (f.veiculo==='excipiente' || f.veiculo==='base')) return f.veiculo; return _ffVeicPadrao(fm, _cnEhCaps(fm)); }
+// componente é ESSÊNCIA? (o ativo tem a função essência e a linha não é o veículo)
+function _cnCompEhEssencia(c){ return !!(c && c.papel!=='excipiente' && _insTemFuncao(_insPorId(c.insumoId), 'essencia')); }
+// em quantas fórmulas o ativo exerce a função (aviso ao remover a atribuição)
+function _insUsoFn(id, fn){
+  var n=0;
+  (catalogoNovo||[]).forEach(function(f){
+    if(!f) return; var cps=f.composicao||[];
+    for(var i=0;i<cps.length;i++){
+      var c=cps[i]; if(!c || c.insumoId!==id) continue;
+      if(fn==='essencia'){ if(c.papel!=='excipiente'){ n++; break; } }
+      else if(c.papel==='excipiente' && _cnVeicFn(f.forma)===fn){ n++; break; }
+    }
+  });
+  return n;
+}
+var _insSub='geral', _insFnMsg='';
+function _insSetSub(s){
+  _insSub=(s==='geral' || _insFnLbl(s))?s:'geral'; _insFnMsg='';
+  var b=document.getElementById('ins-busca'); if(b) b.value='';
+  renderCatSimples('insumo');
+}
+function _insFnTexto(fn){
+  if(fn==='essencia') return 'A essência entra na fórmula como um ativo comum, com dose e custo próprios. A função serve para a linha aparecer separada e em destaque na composição; o produto sem essência mostra "Sem essência".';
+  if(fn==='base') return 'Base é o veículo dos produtos líquidos e semissólidos (completa o QSP). Só entra como veículo de uma fórmula nova o ativo que tem esta função.';
+  return 'Excipiente é o veículo dos produtos sólidos — cápsulas, scoop e comprimido (completa o volume). Só entra como veículo de uma fórmula nova o ativo que tem esta função.';
+}
+// subabas da aba Ativos (com a contagem) + barra de atribuição da subaba de função
+function _insSubPinta(){
+  var box=document.getElementById('ins-subabas'); if(!box) return;
+  var cont={geral:0}; INS_FUNCOES.forEach(function(p){ cont[p[0]]=0; });
+  (insumos||[]).forEach(function(x){ if(!x || x.tipo!=='insumo') return; cont.geral++; _insFuncoes(x).forEach(function(k){ cont[k]++; }); });
+  box.innerHTML=[['geral','Geral']].concat(INS_FUNCOES).map(function(p){
+    return '<div class="des-tab'+(p[0]===_insSub?' active':'')+'" id="ins-sub-'+p[0]+'" onclick="_insSetSub(\''+p[0]+'\')">'+p[1]+' <span style="font-weight:400;font-size:11px;color:var(--text-tertiary)">'+cont[p[0]].toLocaleString('pt-BR')+'</span></div>';
+  }).join('');
+  var barra=document.getElementById('ins-fn-barra'); if(!barra) return;
+  if(_insSub==='geral'){ barra.style.display='none'; barra.innerHTML=''; barra._k=''; return; }
+  var pode=_insPodeFuncao(), k=_insSub+'|'+(pode?1:0)+'|'+_insFnMsg;
+  barra.style.display='';
+  if(barra._k===k) return; // não repinta a cada tecla da busca da lista (o campo de atribuição ficaria sendo zerado)
+  barra._k=k;
+  var lbl=_insFnLbl(_insSub);
+  barra.innerHTML='<div class="panel" style="padding:12px 14px;margin-bottom:12px">'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px"><b>Função '+escapeHtml(lbl)+'.</b> '+escapeHtml(_insFnTexto(_insSub))+' Nada é cadastrado de novo aqui: a função é atribuída a um ativo que já está na subaba Geral.</div>'+
+    (pode
+      ? '<div class="autocomplete-wrap" style="max-width:560px"><input type="text" id="ins-fn-busca" placeholder="Atribuir a função '+escapeHtml(lbl)+' a um ativo já cadastrado (código ou nome)..." oninput="_insFnSearch()" onfocus="_insFnSearch()" onblur="setTimeout(function(){ var a=document.getElementById(\'ins-fn-ac\'); if(a) a.classList.remove(\'open\'); },180)" autocomplete="off"><div class="autocomplete-list" id="ins-fn-ac"></div></div>'
+      : '<div style="font-size:11.5px;color:var(--text-tertiary)">Somente o administrador e a direção comercial atribuem ou removem funções.</div>')+
+    (_insFnMsg?'<div id="ins-fn-msg" style="font-size:12px;font-weight:600;color:var(--st-ok-tx);margin-top:8px">'+escapeHtml(_insFnMsg)+'</div>':'')+
+  '</div>';
+}
+function _insFnSearch(){
+  var inp=document.getElementById('ins-fn-busca'), ac=document.getElementById('ins-fn-ac'); if(!inp || !ac) return;
+  var q=(inp.value||'').toLowerCase().trim(), fn=_insSub;
+  if(q.length<2){ ac.classList.remove('open'); return; }
+  var m=(insumos||[]).filter(function(x){ return x && x.tipo==='insumo' && x.ativo!==false && !_insTemFuncao(x, fn) && ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(q)>=0; });
+  m.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+  var total=m.length; m=m.slice(0,12);
+  if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nenhum ativo sem esta função com esse nome ou código.</div>'; ac.classList.add('open'); return; }
+  ac.innerHTML=m.map(function(x){
+    var outras=_insFuncoes(x).map(_insFnLbl).join(' · ');
+    return '<div class="autocomplete-item" onmousedown="_insFnAtribuir(\''+x.id+'\',\''+fn+'\')"><div class="ac-name">'+escapeHtml(x.nome||'')+'</div><div class="ac-doc">'+escapeHtml(x.codigo||'sem código')+(outras?' · já é '+escapeHtml(outras):'')+'</div></div>';
+  }).join('')+(total>m.length?'<div style="padding:7px 12px;font-size:11px;color:var(--text-tertiary)">Mostrando '+m.length+' de '+total.toLocaleString('pt-BR')+' — refine a busca.</div>':'');
+  ac.classList.add('open');
+}
+function _insFnAtribuir(id, fn){
+  if(!_insPodeFuncao()){ alert('Somente o administrador e a direção comercial atribuem funções aos ativos.'); return false; }
+  if(!_insFnLbl(fn)) return false;
+  var x=_insPorId(id);
+  if(!x || x.tipo!=='insumo'){ alert('Ativo não encontrado no cadastro.'); return false; }
+  var l=_insFuncoes(x);
+  if(l.indexOf(fn)<0){
+    l.push(fn); x.funcoes=_insFuncoes({funcoes:l});
+    x.funcoesEm=Date.now(); x.funcoesPor=(currentUser&&currentUser.name)||'';
+  }
+  _insFnMsg='Função '+_insFnLbl(fn)+' atribuída a '+(x.nome||'?')+'.';
+  renderCatSimples('insumo'); saveData();
+  try{ _cnCompRepintaAberto(); }catch(_e){}
+  return true;
+}
+function _insFnRemover(id, fn){
+  if(!_insPodeFuncao()){ alert('Somente o administrador e a direção comercial removem funções dos ativos.'); return false; }
+  var x=_insPorId(id); if(!x || !_insTemFuncao(x, fn)) { renderCatSimples('insumo'); return false; }
+  var uso=_insUsoFn(id, fn), lbl=_insFnLbl(fn);
+  var aviso=(fn==='essencia')
+    ? (uso?'\n\nEle está em '+uso.toLocaleString('pt-BR')+' fórmula(s) como ativo: continua nelas, com o mesmo custo — só deixa de aparecer destacado como essência.':'')
+    : (uso?'\n\nEle é o veículo de '+uso.toLocaleString('pt-BR')+' fórmula(s): elas continuam como estão (o cálculo não muda) e passam a mostrar o aviso de veículo sem a função. Em fórmula nova ele não poderá mais ser escolhido como veículo.':'');
+  if(!confirm('Remover a função '+lbl+' de "'+(x.nome||'?')+'"?\n\nO ativo continua cadastrado; só a função é retirada.'+aviso)) return false;
+  x.funcoes=_insFuncoes(x).filter(function(k){ return k!==fn; });
+  x.funcoesEm=Date.now(); x.funcoesPor=(currentUser&&currentUser.name)||'';
+  _insFnMsg='Função '+lbl+' removida de '+(x.nome||'?')+'.';
+  renderCatSimples('insumo'); saveData();
+  try{ _cnCompRepintaAberto(); }catch(_e){}
+  return true;
+}
+function _insFnSelos(x){
+  var cor={essencia:'background:var(--bg-success);color:var(--text-success)', base:'background:var(--bg-info);color:var(--text-info)', excipiente:'background:var(--bg-tertiary);color:var(--text-secondary)'};
+  var tit={essencia:'Tem a função ESSÊNCIA: aparece destacado como essência na composição', base:'Tem a função BASE: pode ser o veículo de produto líquido ou semissólido', excipiente:'Tem a função EXCIPIENTE: pode ser o veículo de produto sólido (cápsulas, scoop, comprimido)'};
+  return _insFuncoes(x).map(function(k){ return ' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;font-weight:700;'+cor[k]+'" title="'+tit[k]+'">'+_insFnLbl(k).toUpperCase()+'</span>'; }).join('');
+}
+// ── INVÓLUCROS (subaba da aba Embalagens) ──
+function _embInvMarcado(e){ return !!(e && e.tipo==='embalagem' && e.involucro===true); }
+function _embInvTam(e){ var t=String((e&&e.involucroTam)||''); return CN_CAPS_TAMS.indexOf(t)>=0?t:''; }
+function _embInvLista(tam){ return (insumos||[]).filter(function(e){ return _embInvMarcado(e) && e.ativo!==false && (tam===undefined || _embInvTam(e)===tam); }); }
+// invólucro PADRÃO do tamanho: o marcado como padrão; sem marcação, o único cadastrado para o tamanho. Empate ou nenhum = não há padrão.
+function _embInvPadrao(tam){
+  tam=String(tam||''); if(CN_CAPS_TAMS.indexOf(tam)<0) return null;
+  var l=_embInvLista(tam); if(!l.length) return null;
+  var p=l.filter(function(e){ return e.involucroPadrao===true; });
+  if(p.length===1) return p[0];
+  if(!p.length && l.length===1) return l[0];
+  return null;
+}
+// tamanho da cápsula lido do nome da embalagem ("CAP 00 BRANCA", "CAPS 4", "CÁPSULA Nº 0") — só sugestão na atribuição
+function _embInvTamDoNome(nome){
+  var t=String(nome||'').toUpperCase();
+  try{ t=t.normalize('NFD').replace(/[̀-ͯ]/g,''); }catch(_e){}
+  var m=t.match(/(?:^|[^A-Z0-9])CAPS?(?:ULA)?S?\.?\s*(?:N[O.\u00BA\u00B0]?\s*)?(00|[0-4])(?![0-9])/);
+  return m?m[1]:'';
+}
+// INVÓLUCRO QUE VALE para um tamanho de cápsula (regra única do cálculo, do cadastro e do Adicionar produto):
+//   1) o escolhido no produto, se for DESSE tamanho (ou se ele ou a venda não têm tamanho informado);
+//   2) senão, o invólucro padrão do tamanho;
+//   3) sem padrão cadastrado para o tamanho, fica o escolhido (como era antes) — ou nenhum.
+function _cnInvResolve(idEscolhido, tam){
+  tam=String(tam||'');
+  var esc=idEscolhido?_insPorId(idEscolhido):null, tE=esc?_embInvTam(esc):'';
+  if(esc && (!tE || !tam || tE===tam)) return {inv:esc, auto:false};
+  var p=_embInvPadrao(tam);
+  if(p) return {inv:p, auto:true};
+  return {inv:esc||null, auto:false};
+}
+// invólucro do produto para as contas de referência (análise de lucratividade): pelo tamanho de preferência do cadastro
+function _cnInvIdDe(f, tam){
+  var t=tam || (f&&f.capsTam) || '';
+  if(!t && f){ try{ t=_cnCalcular(f, {nCaps:60, capsTam:'', involucroId:f.involucroId||null}).sugestaoTam || '00'; }catch(_e){ t='00'; } } // o mesmo tamanho que o cálculo usa: preferência, senão o sugerido, senão 00
+  var r=_cnInvResolve(f&&f.involucroId, t); return r.inv?r.inv.id:null;
+}
+function _embInvUso(id){ var n=0; (catalogoNovo||[]).forEach(function(f){ if(f && f.involucroId===id && _cnEhCaps(f.forma)) n++; }); return n; }
+var _embSub='geral', _embInvMsg='';
+function _embSetSub(s){
+  _embSub=(s==='involucros')?'involucros':'geral'; _embInvMsg='';
+  var b=document.getElementById('emb-busca'); if(b) b.value='';
+  renderCatSimples('embalagem');
+}
+function _embSubPinta(){
+  var box=document.getElementById('emb-subabas'); if(!box) return;
+  var nG=0, nI=0; (insumos||[]).forEach(function(x){ if(!x || x.tipo!=='embalagem') return; nG++; if(x.involucro===true) nI++; });
+  box.innerHTML=[['geral','Geral',nG],['involucros','Invólucros',nI]].map(function(p){
+    return '<div class="des-tab'+(p[0]===_embSub?' active':'')+'" id="emb-sub-'+p[0]+'" onclick="_embSetSub(\''+p[0]+'\')">'+p[1]+' <span style="font-weight:400;font-size:11px;color:var(--text-tertiary)">'+p[2].toLocaleString('pt-BR')+'</span></div>';
+  }).join('');
+  var chips=document.getElementById('emb-pend-chips'); if(chips) chips.style.display=(_embSub==='geral')?'flex':'none';
+  var barra=document.getElementById('emb-inv-barra'); if(!barra) return;
+  if(_embSub==='geral'){ barra.style.display='none'; barra.innerHTML=''; barra._k=''; return; }
+  var pode=_insPodeFuncao();
+  var semPad=CN_CAPS_TAMS.filter(function(t){ return !_embInvPadrao(t); });
+  var k=(pode?1:0)+'|'+_embInvMsg+'|'+semPad.join(',');
+  barra.style.display='';
+  if(barra._k===k) return;
+  barra._k=k;
+  barra.innerHTML='<div class="panel" style="padding:12px 14px;margin-bottom:12px">'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px"><b>Invólucros.</b> A cápsula vazia do produto em cápsulas. Nada é cadastrado de novo aqui: marca-se como invólucro uma embalagem que já está na subaba Geral e informa-se o tamanho da cápsula. O produto em cápsulas sem invólucro escolhido usa o <b>invólucro padrão do tamanho</b>. Embalagem marcada como invólucro não é oferecida como embalagem do item no orçamento.</div>'+
+    (pode
+      ? '<div class="autocomplete-wrap" style="max-width:560px"><input type="text" id="emb-inv-busca" placeholder="Marcar como invólucro uma embalagem já cadastrada (código ou nome)..." oninput="_embInvSearch()" onfocus="_embInvSearch()" onblur="setTimeout(function(){ var a=document.getElementById(\'emb-inv-ac\'); if(a) a.classList.remove(\'open\'); },180)" autocomplete="off"><div class="autocomplete-list" id="emb-inv-ac"></div></div>'
+      : '<div style="font-size:11.5px;color:var(--text-tertiary)">Somente o administrador e a direção comercial marcam ou desmarcam invólucros.</div>')+
+    '<div style="font-size:11.5px;margin-top:8px;color:'+(semPad.length?'var(--st-mid-tx)':'var(--st-ok-tx)')+';font-weight:600">'+(semPad.length?('Tamanhos de cápsula sem invólucro padrão: '+semPad.join(', ')+' — o produto nesses tamanhos fica sem o custo do invólucro até ser definido.'):'Todos os tamanhos de cápsula têm invólucro padrão.')+'</div>'+
+    (_embInvMsg?'<div id="emb-inv-msg" style="font-size:12px;font-weight:600;color:var(--st-ok-tx);margin-top:8px">'+escapeHtml(_embInvMsg)+'</div>':'')+
+  '</div>';
+}
+function _embInvSearch(){
+  var inp=document.getElementById('emb-inv-busca'), ac=document.getElementById('emb-inv-ac'); if(!inp || !ac) return;
+  var q=(inp.value||'').toLowerCase().trim();
+  if(q.length<2){ ac.classList.remove('open'); return; }
+  var m=(insumos||[]).filter(function(x){ return x && x.tipo==='embalagem' && x.ativo!==false && x.involucro!==true && ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(q)>=0; });
+  m.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
+  var total=m.length; m=m.slice(0,12);
+  if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nenhuma embalagem (ainda não marcada) com esse nome ou código.</div>'; ac.classList.add('open'); return; }
+  ac.innerHTML=m.map(function(x){ return '<div class="autocomplete-item" onmousedown="_embInvAtribuir(\''+x.id+'\')"><div class="ac-name">'+escapeHtml(x.nome||'')+'</div><div class="ac-doc">'+escapeHtml(x.codigo||'sem código')+' · '+escapeHtml(_embCatNorm(x.categoria)||'sem categoria')+'</div></div>'; }).join('')+
+    (total>m.length?'<div style="padding:7px 12px;font-size:11px;color:var(--text-tertiary)">Mostrando '+m.length+' de '+total.toLocaleString('pt-BR')+' — refine a busca.</div>':'');
+  ac.classList.add('open');
+}
+// O padrão do tamanho é sempre EXPLÍCITO: o primeiro invólucro de um tamanho nasce padrão; quando entra outro, o que
+// era o único (padrão só por ser o único) é promovido antes — marcar um segundo invólucro nunca deixa o tamanho sem padrão.
+function _embInvEntraNoTam(e){
+  var tam=_embInvTam(e); e.involucroPadrao=false; if(!tam) return;
+  var outros=_embInvLista(tam).filter(function(o){ return o!==e; });
+  if(!outros.length){ e.involucroPadrao=true; return; }
+  if(outros.length===1 && outros[0].involucroPadrao!==true){ outros[0].involucroPadrao=true; _embInvCarimbo(outros[0]); }
+}
+// ao sair de um tamanho (desmarcado ou trocado de tamanho): se sobra um só invólucro nele, esse assume o padrão
+function _embInvSaiDoTam(tam, e){
+  if(!tam) return;
+  var l=_embInvLista(tam).filter(function(o){ return o!==e; });
+  if(l.length===1 && l[0].involucroPadrao!==true){ l[0].involucroPadrao=true; _embInvCarimbo(l[0]); }
+}
+function _embInvCarimbo(e){ e.involucroEm=Date.now(); e.involucroPor=(currentUser&&currentUser.name)||''; try{ _embInvIds._m=null; }catch(_e){} }
+function _embInvDepois(msg){
+  _embInvMsg=msg||''; renderCatSimples('embalagem'); try{ _cnVigiaInvalidar(); }catch(_e){} saveData();
+  try{ _cnCompRepintaAberto(); }catch(_e){}
+}
+function _embInvAtribuir(id){
+  if(!_insPodeFuncao()){ alert('Somente o administrador e a direção comercial marcam invólucros.'); return false; }
+  var e=_insPorId(id);
+  if(!e || e.tipo!=='embalagem'){ alert('Embalagem não encontrada no cadastro.'); return false; }
+  if(e.involucro===true) return true;
+  var k=_embCat(e);
+  if(!confirm('Marcar "'+(e.nome||'?')+'" como INVÓLUCRO de cápsula?\n\nEla deixa de ser oferecida como embalagem do item no orçamento e passa a ser usada só como invólucro dos produtos em cápsulas.'+((k==='kit'||k==='corpo'||k==='tampa')?'\n\nATENÇÃO: esta embalagem está classificada como '+_embCatNorm(e.categoria)+' — confira se é mesmo uma cápsula vazia.':''))) return false;
+  e.involucro=true;
+  if(!_embInvTam(e)) e.involucroTam=_embInvTamDoNome(e.nome);
+  _embInvEntraNoTam(e);
+  _embInvCarimbo(e);
+  _embInvDepois('"'+(e.nome||'?')+'" marcada como invólucro'+(_embInvTam(e)?(' (cápsula '+_embInvTam(e)+', lido do nome — confira).'+(e.involucroPadrao===true?' É o padrão desse tamanho.':(_embInvPadrao(_embInvTam(e))?' O padrão desse tamanho continua sendo "'+(_embInvPadrao(_embInvTam(e)).nome||'?')+'".':' Este tamanho está sem padrão definido: use "Tornar padrão" em um deles.'))):'. Informe o tamanho da cápsula na linha dela.'));
+  return true;
+}
+function _embInvRemover(id){
+  if(!_insPodeFuncao()){ alert('Somente o administrador e a direção comercial desmarcam invólucros.'); return false; }
+  var e=_insPorId(id); if(!e || e.involucro!==true){ renderCatSimples('embalagem'); return false; }
+  var uso=_embInvUso(id);
+  if(!confirm('Desmarcar "'+(e.nome||'?')+'" como invólucro?\n\nA embalagem continua cadastrada.'+(uso?'\n\nEla é o invólucro escolhido em '+uso.toLocaleString('pt-BR')+' produto(s) em cápsulas: eles continuam usando-a, e por isso ela segue fora das embalagens do item.':'')+(_embInvPadrao(_embInvTam(e))===e?(function(){ var rest=_embInvLista(_embInvTam(e)).filter(function(o){ return o!==e; });
+      return '\n\nEla é o invólucro PADRÃO da cápsula '+_embInvTam(e)+': '+(rest.length===1?('"'+(rest[0].nome||'?')+'", o único que sobra nesse tamanho, passa a ser o padrão.'):(rest.length?'os produtos desse tamanho sem invólucro escolhido ficam sem o custo do invólucro até outro ser definido como padrão.':'os produtos desse tamanho sem invólucro escolhido ficam sem o custo do invólucro até outro ser cadastrado.')); })():''))) return false;
+  var tamR=_embInvTam(e);
+  e.involucro=false; e.involucroPadrao=false;
+  _embInvSaiDoTam(tamR, e);
+  _embInvCarimbo(e);
+  _embInvDepois('"'+(e.nome||'?')+'" não é mais invólucro.');
+  return true;
+}
+function _embInvSetTam(id, tam){
+  if(!_insPodeFuncao()){ alert('Somente o administrador e a direção comercial alteram invólucros.'); renderCatSimples('embalagem'); return false; }
+  var e=_insPorId(id); if(!e || e.involucro!==true){ renderCatSimples('embalagem'); return false; }
+  tam=String(tam||''); if(tam && CN_CAPS_TAMS.indexOf(tam)<0){ renderCatSimples('embalagem'); return false; }
+  if(_embInvTam(e)===tam) return true;
+  var tamAnt=_embInvTam(e);
+  e.involucroTam=tam; _embInvEntraNoTam(e); // padrão é POR tamanho: a marca não acompanha; no tamanho novo, só é padrão se for o primeiro
+  _embInvSaiDoTam(tamAnt, e);
+  _embInvCarimbo(e);
+  _embInvDepois('"'+(e.nome||'?')+'": '+(tam?'cápsula '+tam:'sem tamanho')+'.');
+  return true;
+}
+function _embInvSetPadrao(id){
+  if(!_insPodeFuncao()){ alert('Somente o administrador e a direção comercial alteram invólucros.'); return false; }
+  var e=_insPorId(id); if(!e || e.involucro!==true) return false;
+  var tam=_embInvTam(e); if(!tam){ alert('Informe primeiro o tamanho da cápsula deste invólucro.'); return false; }
+  (insumos||[]).forEach(function(o){ if(o!==e && _embInvMarcado(o) && _embInvTam(o)===tam && o.involucroPadrao===true){ o.involucroPadrao=false; _embInvCarimbo(o); } });
+  e.involucroPadrao=true; _embInvCarimbo(e);
+  _embInvDepois('"'+(e.nome||'?')+'" é o invólucro padrão da cápsula '+tam+'.');
+  return true;
+}
+function _embInvSelos(x){
+  if(!_embInvMarcado(x)) return '';
+  var tam=_embInvTam(x), pad=tam && _embInvPadrao(tam)===x;
+  return ' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;background:var(--bg-tertiary);color:var(--text-secondary);font-weight:700" title="Invólucro de cápsula — não é oferecida como embalagem do item no orçamento">INVÓLUCRO</span>'+
+    (tam?' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;background:var(--bg-secondary);color:var(--text-secondary);font-weight:600" title="Tamanho da cápsula">cápsula '+tam+'</span>'
+        :' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:700" title="Sem o tamanho da cápsula este invólucro não é usado automaticamente">sem tamanho</span>')+
+    (pad?' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;background:var(--bg-info);color:var(--text-info);font-weight:700" title="Usado automaticamente nos produtos em cápsulas deste tamanho que não têm invólucro escolhido">padrão do tamanho</span>':'');
+}
+// ações da linha na subaba Invólucros: tamanho, tornar padrão, desmarcar (administrador e direção comercial)
+function _embInvAcoes(x, podeEditar){
+  var bt='font-size:11px;padding:3px 9px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit';
+  var h=podeEditar?'<button onclick="openInsumoModal(\'embalagem\',\''+x.id+'\')" style="'+bt+'">Editar</button> ':'';
+  if(_insPodeFuncao()){
+    var tam=_embInvTam(x);
+    h+='<select onchange="_embInvSetTam(\''+x.id+'\',this.value)" title="Tamanho da cápsula deste invólucro" style="font-size:11px;padding:2px 4px"><option value="">tamanho...</option>'+CN_CAPS_TAMS.map(function(t){ return '<option value="'+t+'"'+(t===tam?' selected':'')+'>cápsula '+t+'</option>'; }).join('')+'</select> ';
+    if(tam && _embInvPadrao(tam)!==x) h+='<button onclick="_embInvSetPadrao(\''+x.id+'\')" title="Usar este invólucro nos produtos em cápsulas '+tam+' que não têm invólucro escolhido" style="'+bt+'">Tornar padrão</button> ';
+    h+='<button onclick="_embInvRemover(\''+x.id+'\')" style="font-size:11px;padding:3px 9px;border:.5px solid var(--st-bad-bd);border-radius:var(--r-md);background:var(--st-bad-bg);color:var(--st-bad-tx);cursor:pointer;font-family:inherit">Desmarcar</button>';
+  }
+  return h||'—';
+}
+// função atribuída/removida com o cadastro da fórmula aberto: a composição e o invólucro refletem na hora
+function _cnCompRepintaAberto(){ var m=document.getElementById('cn-modal'); if(m && m.classList && m.classList.contains('open')) _cnRenderComp(); }
 function renderCatSimples(tipo){
   var tb=document.getElementById(tipo==='insumo'?'ins-tbody':'emb-tbody'); if(!tb) return;
   var pode = tipo==='embalagem' ? _canEditEmbalagens() : _canEditInsumos(); // v233 — estoque edita embalagens
-  var nb=document.getElementById(tipo==='insumo'?'ins-novo-btn':'emb-novo-btn'); if(nb) nb.style.display=pode?'':'none';
-  if(tipo==='embalagem'){ var _ib=document.getElementById('emb-imp-btn'); if(_ib) _ib.style.display=pode?'':'none'; } // v258 — expedição (só fotos) não importa
+  var _subG=(tipo==='insumo')?(_insSub==='geral'):(_embSub==='geral'); // v277 — cadastrar e importar só na subaba Geral; as outras atribuem função ao que já existe
+  var nb=document.getElementById(tipo==='insumo'?'ins-novo-btn':'emb-novo-btn'); if(nb) nb.style.display=(pode&&_subG)?'':'none';
+  if(tipo==='embalagem'){ var _ib=document.getElementById('emb-imp-btn'); if(_ib) _ib.style.display=(pode&&_subG)?'':'none'; } // v258 — expedição (só fotos) não importa
+  else { var _ibI=document.getElementById('ins-imp-btn'); if(_ibI) _ibI.style.display=_subG?'inline-block':'none'; }
+  if(tipo==='insumo') _insSubPinta(); else _embSubPinta(); // v277 — subabas e barra de atribuição
   var busca=(document.getElementById(tipo==='insumo'?'ins-busca':'emb-busca')?.value||'').toLowerCase().trim();
   var lista=(insumos||[]).filter(function(x){ return x.tipo===tipo; });
+  if(tipo==='insumo' && !_subG) lista=lista.filter(function(x){ return _insTemFuncao(x, _insSub); }); // v277 — subaba de função: só quem tem a função
+  if(tipo==='embalagem' && !_subG) lista=lista.filter(function(x){ return x.involucro===true; });      // v277 — subaba Invólucros
   if(busca) lista=lista.filter(function(x){ return ((x.nome||'')+' '+(x.codigo||'')+' '+(tipo==='embalagem'?(_embCatNorm(x.categoria)+' '+(_embPrecisaTipo(x)?_ffTipoNome(x.tipoEmb):'')):(x.categoria||''))).toLowerCase().indexOf(busca)>=0; }); // v150 — busca também por categoria · v272 — e pelo tipo de embalagem
   lista.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
-  var vazio=document.getElementById(tipo==='insumo'?'ins-vazio':'emb-vazio'); if(vazio) vazio.style.display=lista.length?'none':'block';
+  var vazio=document.getElementById(tipo==='insumo'?'ins-vazio':'emb-vazio');
+  if(vazio){
+    vazio.style.display=lista.length?'none':'block';
+    if(vazio._t0===undefined) vazio._t0=vazio.textContent||''; // texto original (subaba Geral)
+    vazio.textContent=_subG?vazio._t0:(tipo==='insumo'
+      ? ('Nenhum ativo com a função '+_insFnLbl(_insSub)+(busca?' para esta busca':'')+'. A função é atribuída no campo acima, a um ativo já cadastrado.')
+      : ('Nenhuma embalagem marcada como invólucro'+(busca?' para esta busca':'')+'. Marque no campo acima uma embalagem já cadastrada.'));
+  }
   // v258 — pendências do catálogo de embalagens (o que de fato puxa o mutirão da fase de dados):
   // contadores no topo + selos na linha; embalagem sem classificação OU sem custo aparece no
   // orçamento mas NÃO seleciona.
@@ -13047,6 +13357,14 @@ function renderCatSimples(tipo){
       var _fB='<button onclick="_embFotoModal(\''+x.id+'\')" title="'+(x.fotoUrl?'Foto anexada — ver/trocar':'Anexar foto (catálogo visual do orçamento)')+'" style="font-size:11px;padding:3px 9px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit">'+(x.fotoUrl?'🖼':'📷')+'</button>';
       acoes=(pode?acoes+' ':'')+_fB; if(!pode) acoes=_fB; // expedição sem edição da ficha vê só o botão de foto
     }
+    // v277 — subabas de função/invólucro: a ação é atribuir ou retirar a função (excluir cadastro só na subaba Geral)
+    if(!_subG){
+      if(tipo==='insumo'){
+        acoes=(pode?'<button onclick="openInsumoModal(\'insumo\',\''+x.id+'\')" style="font-size:11px;padding:3px 9px;border:.5px solid var(--border-md);border-radius:var(--r-md);background:var(--bg-secondary);cursor:pointer;font-family:inherit">Editar</button> ':'')+
+          (_insPodeFuncao()?'<button onclick="_insFnRemover(\''+x.id+'\',\''+_insSub+'\')" style="font-size:11px;padding:3px 9px;border:.5px solid var(--st-bad-bd);border-radius:var(--r-md);background:var(--st-bad-bg);color:var(--st-bad-tx);cursor:pointer;font-family:inherit">Remover função</button>':'');
+        if(!acoes) acoes='—';
+      } else acoes=_embInvAcoes(x, pode);
+    }
     // v150 — custos derivados do histórico de compras (médio ponderado, última, menor)
     var cst=_custosItem(x.id, x.codigo);
     var _tit=cst?' title="'+cst.n+' compra(s) no histórico"':'';
@@ -13060,7 +13378,8 @@ function renderCatSimples(tipo){
       }
       if(!(_cnCustoUnit(x).v>0)) _selos+=' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;background:var(--st-bad-bg);color:var(--st-bad-tx);font-weight:700" title="Sem custo (base ou compra) — não pode ser escolhida no orçamento">sem custo</span>';
     }
-    if(tipo==='insumo' && x.ehBase===true) _selos+=' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;background:var(--bg-info);color:var(--text-info);font-weight:700" title="BASE (veículo/excipiente — sinônimos): entra na fórmula como excipiente/QSP">BASE</span>'; // v259
+    if(tipo==='insumo') _selos+=_insFnSelos(x);      // v277 — funções atribuídas (essência, base, excipiente); substitui o selo BASE da v259
+    else _selos+=_embInvSelos(x);                     // v277 — invólucro, tamanho da cápsula e padrão do tamanho
     return '<tr style="border-bottom:.5px solid var(--border);'+(x.ativo===false?'opacity:.5;':'')+'">'+
       '<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(x.codigo||'—')+'</td>'+
       '<td style="padding:7px 10px">'+escapeHtml(x.nome||'—')+_selos+'</td>'+
@@ -13112,7 +13431,8 @@ function openInsumoModal(tipo, id){
   if(_f1e) _f1e.style.display=ehIns?'none':'';
   var _setV=function(id,v){ var e=document.getElementById(id); if(e) e.value=(v!=null&&v!=='')?v:''; };
   _setV('ins-densidade', x&&x.densidade); _setV('ins-conc', x&&x.concentracao); _setV('ins-fatorui', x&&x.fatorUI);
-  var _eb=document.getElementById('ins-ehbase'); if(_eb) _eb.checked=!!(x&&x.ehBase); // v259 — base/veículo/excipiente
+  var _fi=document.getElementById('ins-funcoes-info'); // v277 — funções do ativo: só leitura na ficha (atribuídas nas subabas da aba Ativos)
+  if(_fi){ var _fl=x?_insFuncoes(x).map(_insFnLbl):[]; _fi.innerHTML='<b>Funções na formulação:</b> '+(_fl.length?escapeHtml(_fl.join(' · ')):'nenhuma — entra só como ativo')+' <span style="color:var(--text-tertiary);font-size:11px">(atribuídas nas subabas Essência, Base e Excipiente da aba Ativos)</span>'; }
   var _up=document.getElementById('ins-unidpad'); if(_up) _up.value=(x&&x.unidadePadrao)||'';
   _setV('ins-capacidade', x&&x.capacidade); var _cu=document.getElementById('ins-capun'); if(_cu) _cu.value=(x&&x.capacidadeUn)||'mL';
   _setV('ins-rotulo', x&&x.custoRotulo); // v259 — rótulo da embalagem
@@ -13208,7 +13528,7 @@ function saveInsumo(){
     custoBase:_num('ins-custobase'), markup:_num('ins-markup'),
     // v272 — a marcação de formas por embalagem (formasFarm, v258/v259) foi substituída pelo TIPO DE EMBALAGEM; a ficha não grava formasFarm
     custoRotulo:(_insTipo==='embalagem')?_num('ins-rotulo'):undefined, // v259 — rótulo vive na embalagem
-    ehBase:(_insTipo==='insumo')?!!document.getElementById('ins-ehbase')?.checked:undefined, // v259 — base/veículo/excipiente (sinônimos)
+    // v277 — "ehBase" (caixa BASE da v259) não é mais gravado pela ficha: a função do ativo é atribuída nas subabas da aba Ativos
     estoqueQtd:_num('ins-estoque'), // v187 — quantidade em estoque
     nomeComercial:(document.getElementById('ins-nomecom')?.value||'').trim() }; // v188 — nome p/ o cliente no PDF do orçamento
   if(_tipoEmbNovo!==undefined) extra.tipoEmb=_tipoEmbNovo; // v272 — só o administrador grava o tipo (para os demais a chave nem entra: o valor existente fica intacto)
@@ -13242,7 +13562,7 @@ var _ff=null, _ffCarregado=false, _ffCarregando=null, _ffErro='';
 function _ffAdmin(){ return !!(currentUser && currentUser.perfil==='admin'); }
 function _ffPadrao(){
   return { tipos:FF_TIPOS_PADRAO.map(function(t){ return {id:t[0], nome:t[1]}; }),
-           formas:Object.keys(CN_FORMAS_LBL).map(function(k){ return {id:k, nome:CN_FORMAS_LBL[k], caps:(k==='capsula'), tipos:[], perdas:FF_PERDAS_PADRAO, custoFixo:0, markupFixo:0, anest:(k==='anestesico')}; }),
+           formas:Object.keys(CN_FORMAS_LBL).map(function(k){ return {id:k, nome:CN_FORMAS_LBL[k], caps:(k==='capsula'), tipos:[], perdas:FF_PERDAS_PADRAO, custoFixo:0, markupFixo:0, anest:(k==='anestesico'), veiculo:_ffVeicPadrao(k, k==='capsula')}; }),
            _ts:0 };
 }
 // Saneia o que veio do banco: listas sempre listas, ids/nomes texto, sem duplicata, tipos da forma só os que existem.
@@ -13260,7 +13580,9 @@ function _ffNorm(v){
     var ts=[]; ((f&&Array.isArray(f.tipos))?f.tipos:[]).forEach(function(x){ x=String(x||''); if(vistoT[x] && ts.indexOf(x)<0) ts.push(x); });
     o.formas.push({id:id, nome:nome, caps:(id==='capsula')?true:!!(f&&f.caps), tipos:ts,
       // v276 — custo e linha (vieram da antiga "Categoria do produto"); a forma Anestésico é SEMPRE linha anestésico, como a Cápsulas é sempre por cápsulas
-      perdas:_ffNum(f&&f.perdas, FF_PERDAS_PADRAO), custoFixo:_ffNum(f&&f.custoFixo, 0), markupFixo:_ffNum(f&&f.markupFixo, 0), anest:(id==='anestesico')?true:!!(f&&f.anest)});
+      perdas:_ffNum(f&&f.perdas, FF_PERDAS_PADRAO), custoFixo:_ffNum(f&&f.custoFixo, 0), markupFixo:_ffNum(f&&f.markupFixo, 0), anest:(id==='anestesico')?true:!!(f&&f.anest),
+      // v277 — veículo que a forma pede: 'excipiente' (sólidos) ou 'base' (líquidos e semissólidos); sem gravação vale o padrão (cápsulas, scoop e comprimido = excipiente)
+      veiculo:(f&&(f.veiculo==='excipiente'||f.veiculo==='base'))?f.veiculo:_ffVeicPadrao(id, (id==='capsula')?true:!!(f&&f.caps))});
   });
   return o;
 }
@@ -13330,6 +13652,7 @@ function _ffRepintar(){
 }
 // Leitura confirmada antes de qualquer edição: sem ela, avisa o motivo e não abre nada.
 async function _ffPronto(){
+  if(typeof _sepCarregadaOk!=='undefined' && !_sepCarregadaOk.catalogoNovo){ alert('O catálogo de produtos ainda está sendo carregado — é por ele que o sistema sabe quantos produtos usam cada forma.\n\nAguarde alguns instantes (a carga é refeita sozinha) e tente de novo. Se continuar, recarregue a página (Ctrl+Shift+R). Nada foi alterado.'); return false; } // v277
   await _ffCarregar();
   if(_ffCarregado) return true;
   alert('Não foi possível ler a configuração de formas farmacêuticas'+(_ffErro?':\n'+_ffErro:'.')+'\n\nVerifique a conexão e tente de novo. Nada foi alterado.');
@@ -13360,6 +13683,7 @@ function renderFormasFarm(){
     return '<tr style="border-bottom:.5px solid var(--border)">'+
       '<td style="'+td+';font-weight:600">'+escapeHtml(f.nome)+(f.anest?' <span title="Produtos desta forma são da linha ANESTÉSICO: o orçamento vira pedido da linha anestésico e não se mistura com a linha personalizada" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:12px;background:var(--st-mid-bg);color:var(--st-mid-tx);margin-left:4px">linha anestésico</span>':'')+'</td>'+
       '<td style="'+td+';font-size:12px">'+(f.caps?'Cápsulas':'Peso ou volume')+'</td>'+
+      '<td style="'+td+';font-size:12px">'+(f.veiculo==='excipiente'?'Excipiente':'Base')+'</td>'+ /* v277 */
       // v276 — perdas, custo fixo e markup do custo fixo: vieram da antiga "Categoria do produto" (aba Configuração)
       '<td style="'+td+';text-align:right;white-space:nowrap">'+num(f.perdas,0)+'%</td>'+
       '<td style="'+td+';text-align:right;white-space:nowrap">R$ '+num(f.custoFixo,2)+'</td>'+
@@ -13379,10 +13703,10 @@ function renderFormasFarm(){
   box.innerHTML=
     '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:12px">Cada <b>produto</b> tem uma forma farmacêutica. A <b>forma</b> define: os <b>tipos de embalagem</b> aceitos no orçamento, se o produto é em <b>cápsulas</b>, a <b>% de perdas</b> e o <b>custo fixo</b> que entram no cálculo do custo e do preço, e se o produto é da <b>linha anestésico</b>. O tipo de embalagem fica no <b>Kit Completo</b> e na <b>Tampa</b> (no conjunto corpo + tampa, quem define é a tampa).'+(adm?'':' Somente o administrador altera esta aba.')+'</div>'+
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"><div style="font-size:13px;font-weight:700">Formas farmacêuticas</div>'+(adm?'<button class="btn-primary" onclick="_ffFormaAbrir()">+ Cadastrar forma</button>':'')+'</div>'+
-    '<div class="table-scroll" style="margin-bottom:22px"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--bg-secondary)"><th style="'+th+'">Forma farmacêutica</th><th style="'+th+'" title="Como o orçamento calcula a quantidade do produto">Quantidade no orçamento</th>'+
+    '<div class="table-scroll" style="margin-bottom:22px"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--bg-secondary)"><th style="'+th+'">Forma farmacêutica</th><th style="'+th+'" title="Como o orçamento calcula a quantidade do produto">Quantidade no orçamento</th><th style="'+th+'" title="Função que o ativo precisa ter para ser o veículo de uma fórmula nova desta forma">Veículo</th>'+
       '<th style="'+th+';text-align:right" title="% de perdas aplicada na quantidade de matéria-prima">Perdas</th><th style="'+th+';text-align:right" title="Custo fixo somado ao custo de cada produto desta forma">Custo fixo</th><th style="'+th+';text-align:right" title="Markup aplicado sobre o custo fixo">Markup do custo fixo</th>'+
       '<th style="'+th+'">Tipos de embalagem aceitos</th><th style="'+th+';text-align:right">Produtos</th><th style="'+th+';text-align:center">Ações</th></tr></thead><tbody>'+
-      (linhasF||'<tr><td colspan="8" style="padding:18px;text-align:center;color:var(--text-tertiary);font-size:12px">Nenhuma forma cadastrada.</td></tr>')+'</tbody></table></div>'+
+      (linhasF||'<tr><td colspan="9" style="padding:18px;text-align:center;color:var(--text-tertiary);font-size:12px">Nenhuma forma cadastrada.</td></tr>')+'</tbody></table></div>'+
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"><div style="font-size:13px;font-weight:700">Tipos de embalagem</div>'+(adm?'<button class="btn-primary" onclick="_ffTipoAbrir()">+ Cadastrar tipo</button>':'')+'</div>'+
     '<div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--bg-secondary)"><th style="'+th+'">Tipo de embalagem</th><th style="'+th+';text-align:right">Embalagens com este tipo</th><th style="'+th+';text-align:right">Formas que aceitam</th><th style="'+th+';text-align:center">Ações</th></tr></thead><tbody>'+
       (linhasT||'<tr><td colspan="4" style="padding:18px;text-align:center;color:var(--text-tertiary);font-size:12px">Nenhum tipo cadastrado.</td></tr>')+'</tbody></table></div>';
@@ -13397,16 +13721,19 @@ async function _ffFormaAbrir(id){
   var uso=f?_ffUsoForma(f.id):0;
   var travaCaps=!!(f && (f.id==='capsula' || uso>0));
   var travaAnest=!!(f && f.id==='anestesico');
+  var _veicF=f?_cnVeicFn(f.id):'base'; // v277
   var dica=function(t){ return ' <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">'+t+'</span>'; };
   var ov=_ffOverlay('ff-forma-overlay');
   ov.innerHTML='<div class="modal" style="width:560px;max-width:95vw;max-height:92vh;overflow-y:auto">'+
     '<h2 style="font-size:15px">'+(f?'Editar forma farmacêutica':'Cadastrar forma farmacêutica')+'</h2>'+
     '<div class="form-group" style="margin-bottom:12px"><label>Nome *</label><input type="text" id="ff-f-nome" maxlength="60" value="'+escapeHtml(f?f.nome:'')+'"></div>'+
-    '<label style="display:flex;align-items:flex-start;gap:7px;font-size:13px;margin-bottom:4px'+(travaCaps?';opacity:.7':'')+'"><input type="checkbox" id="ff-f-caps" style="width:15px;height:15px;margin-top:2px"'+((f&&f.caps)?' checked':'')+(travaCaps?' disabled':'')+'> <span>Produto em <b>cápsulas</b> <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(o orçamento pede número e tamanho de cápsula; desmarcado, pede a quantidade em g ou mL)</span></span></label>'+
+    '<label style="display:flex;align-items:flex-start;gap:7px;font-size:13px;margin-bottom:4px'+(travaCaps?';opacity:.7':'')+'"><input type="checkbox" id="ff-f-caps" onchange="var s=document.getElementById(\'ff-f-veic\'); if(s) s.value=this.checked?\'excipiente\':(s.getAttribute(\'data-ini\')||\'base\')" style="width:15px;height:15px;margin-top:2px"'+((f&&f.caps)?' checked':'')+(travaCaps?' disabled':'')+'> <span>Produto em <b>cápsulas</b> <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(o orçamento pede número e tamanho de cápsula; desmarcado, pede a quantidade em g ou mL)</span></span></label>'+
     (travaCaps?'<div style="font-size:11px;color:var(--text-tertiary);margin:0 0 10px 22px">'+(f.id==='capsula'?'A forma Cápsulas é sempre calculada por cápsulas.':'Há '+uso.toLocaleString('pt-BR')+' produto(s) nesta forma — a marcação não pode mudar.')+'</div>':'<div style="margin-bottom:10px"></div>')+
     // v276 — linha anestésico (antes era o NOME da categoria do produto que decidia)
     '<label style="display:flex;align-items:flex-start;gap:7px;font-size:13px;margin-bottom:4px'+(travaAnest?';opacity:.7':'')+'"><input type="checkbox" id="ff-f-anest" style="width:15px;height:15px;margin-top:2px"'+((f&&f.anest)?' checked':'')+(travaAnest?' disabled':'')+'> <span>Produto da <b>linha anestésico</b> <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(o orçamento com produto desta forma vira pedido da linha anestésico e não pode ser misturado com a linha personalizada)</span></span></label>'+
     (travaAnest?'<div style="font-size:11px;color:var(--text-tertiary);margin:0 0 10px 22px">A forma Anestésico é sempre da linha anestésico.</div>':'<div style="margin-bottom:10px"></div>')+
+    // v277 — função de veículo que a forma pede (base × excipiente): só o ativo com essa função pode ser o veículo de uma fórmula nova
+    '<div class="form-group" style="margin-bottom:12px"><label>Veículo dos produtos desta forma'+dica('(o ativo precisa ter esta função para ser o veículo de uma fórmula nova; as fórmulas já cadastradas só recebem aviso)')+'</label><select id="ff-f-veic" data-ini="'+_veicF+'" style="font-size:13px"><option value="base"'+(_veicF==='base'?' selected':'')+'>Base — líquidos e semissólidos</option><option value="excipiente"'+(_veicF==='excipiente'?' selected':'')+'>Excipiente — sólidos (cápsulas, scoop, comprimido)</option></select></div>'+
     // v276 — perdas e custo fixo (antes: "Categorias de produto", na aba Configuração)
     '<div style="font-size:12px;font-weight:600;margin-bottom:6px">Custo do produto'+dica('(entram no cálculo do custo e do preço de todo produto desta forma)')+'</div>'+
     '<div class="form-row" style="margin-bottom:12px">'+
@@ -13436,6 +13763,7 @@ async function _ffFormaSalvar(){
   if(novo.formas.some(function(x){ return x.id!==_ffFormaEditId && _ffNomeIgual(x.nome, nome); })){ alert('Já existe uma forma farmacêutica com este nome.'); return; }
   var tipos=Array.prototype.slice.call(document.querySelectorAll('#ff-forma-overlay .ff-f-tp:checked')).map(function(c){ return c.value; });
   var ck=document.getElementById('ff-f-caps'), ckA=document.getElementById('ff-f-anest');
+  var _veicS=String((document.getElementById('ff-f-veic')||{}).value||''); // v277 — campo fora da tela = mantém o que está gravado
   // v276 — custo: os três números são obrigatórios e não negativos (mexem em preço: nada é presumido)
   var perdas=_ffLerNum('ff-f-perdas'), fixo=_ffLerNum('ff-f-fixo'), mk=_ffLerNum('ff-f-mkfixo');
   if(perdas===null || fixo===null || mk===null){ alert('Informe as perdas (%), o custo fixo (R$) e o markup do custo fixo (%) — números iguais ou maiores que zero.\n\nNada foi gravado.'); return; }
@@ -13448,11 +13776,13 @@ async function _ffFormaSalvar(){
   }
   if(alvo){
     alvo.nome=nome; alvo.tipos=tipos;
+    if(_veicS==='base' || _veicS==='excipiente') alvo.veiculo=_veicS; // v277
     if(ck && !ck.disabled) alvo.caps=!!ck.checked; // travado (em uso ou forma Cápsulas) = mantém o que está gravado
     if(ckA && !ckA.disabled) alvo.anest=!!ckA.checked; // travado (forma Anestésico) = mantém
     if(perdas!==undefined) alvo.perdas=perdas; if(fixo!==undefined) alvo.custoFixo=fixo; if(mk!==undefined) alvo.markupFixo=mk;
   } else {
     novo.formas.push({ id:_ffNovoId('ff', novo.formas), nome:nome, caps:!!(ck&&ck.checked), tipos:tipos, anest:!!(ckA&&ckA.checked),
+      veiculo:(_veicS==='base' || _veicS==='excipiente')?_veicS:_ffVeicPadrao('', !!(ck&&ck.checked)), // v277
       perdas:(perdas===undefined?FF_PERDAS_PADRAO:perdas), custoFixo:(fixo===undefined?0:fixo), markupFixo:(mk===undefined?0:mk) });
   }
   var b=document.getElementById('ff-f-salvar'); if(b) b.disabled=true;
@@ -13753,6 +14083,7 @@ function deleteInsumo(id){
   var _xg=(insumos||[]).find(function(p){ return p.id===id; });
   if(!((_xg&&_xg.tipo==='embalagem')?_canEditEmbalagens():_canEditInsumos())){ alert('Sem permissão.'); return; } // v233 — estoque exclui embalagens (mesma régua de compras na aba)
   var x=_xg; if(!x) return;
+  if(x.tipo==='embalagem' && x.involucro===true){ alert('"'+(x.nome||'')+'" está marcada como invólucro de cápsula.\n\nPara excluir, primeiro desmarque-a na aba Embalagens, subaba Invólucros (administrador ou direção comercial) — assim fica definido qual invólucro os produtos em cápsulas passam a usar.'); return; } // v277
   if(!confirm('Excluir "'+(x.nome||'')+'"?')) return;
   var tipo=x.tipo;
   insumos=insumos.filter(function(p){ return p.id!==id; });
@@ -13796,7 +14127,7 @@ function _embInvIds(){
   _embInvIds._m={ref:L, n:L.length, em:ag, ids:ids};
   return ids;
 }
-function _embEhInvolucro(e){ return !!(e && e.id && _embInvIds()[String(e.id)]); }
+function _embEhInvolucro(e){ return !!(e && e.id && (e.involucro===true || _embInvIds()[String(e.id)])); } // v277 — marcada na subaba Invólucros OU invólucro escolhido de um produto em cápsulas
 function _embCompat(forma, e){
   if(_embEhInvolucro(e)){ var _kI=_embCat(e); return (_kI==='kit'||_kI==='corpo'||_kI==='tampa')?null:false; } // v275 — invólucro de cápsula não é embalagem do item (some); se um kit/corpo/tampa estiver marcado como invólucro por engano, ele APARECE bloqueado com o motivo
   var k=_embCat(e); if(!k) return null;                          // sem categoria — o chamador decide (no orçamento: não seleciona)
@@ -13807,7 +14138,7 @@ function _embCompat(forma, e){
 }
 function _embSelProblema(e, forma){
   if(!e) return 'embalagem não encontrada no catálogo';
-  if(_embEhInvolucro(e)) return 'está cadastrada como invólucro de cápsula ("Invólucro padrão" de um produto em cápsulas) — o invólucro entra no cálculo pelo cadastro do produto e não é embalagem do item'; // v275
+  if(_embEhInvolucro(e)) return 'está cadastrada como invólucro de cápsula (aba Embalagens, subaba Invólucros, ou invólucro de um produto em cápsulas) — o invólucro entra no cálculo pelo cadastro do produto e não é embalagem do item'; // v275
   if(!_ffCarregado) return 'a configuração de formas farmacêuticas ainda não foi lida'+(_ffErro?' (falha de leitura: '+_ffErro+')':'')+' — tente de novo em instantes';
   if(!_embCat(e)) return 'sem categoria (Kit Completo, Corpo, Tampa ou Componente) — o administrador define na ficha da embalagem';
   if(_embPrecisaTipo(e)){ // só Kit Completo e Tampa têm tipo; corpo e componente servem a qualquer produto
@@ -14036,8 +14367,11 @@ function _cnCalcular(f, opts){
     var preco=custo*(1+(parseFloat(markup)||0)/100);
     custoT+=custo; precoT+=preco;
     if(grupo==='emb'){ embC+=custo; embP+=preco; }
-    linhas.push({nome:nome, qtd:qtd, un:un, custo:custo, markup:parseFloat(markup)||0, preco:preco, fonte:fonte||'', aviso:aviso||'', grupo:grupo||'produto'});
+    var _ln={nome:nome, qtd:qtd, un:un, custo:custo, markup:parseFloat(markup)||0, preco:preco, fonte:fonte||'', aviso:aviso||'', grupo:grupo||'produto'};
+    if(_fnL) _ln.fn=_fnL; // v277 — papel da linha (essencia, veiculo, involucro): só exibição; nenhuma conta lê este campo
+    linhas.push(_ln);
   };
+  var _fnL='';
   var sugestaoTam=null;
   if(_cnEhCaps(f.forma)){
     var n=Math.max(1, parseInt(opts.nCaps,10)||1);
@@ -14056,19 +14390,24 @@ function _cnCalcular(f, opts){
     var volCaps=caps[tam]||0;
     if(volAtivos>volCaps+1e-9) avisos.push('os ativos ('+volAtivos.toFixed(3)+' mL) NÃO cabem na cápsula '+tam+' ('+volCaps+' mL) — use maior');
     pes.forEach(function(p){
+      _fnL=_insTemFuncao(p.cp._x, 'essencia')?'essencia':'';
       var g=p.gCaps*n, cpg=_cnCustoPorG(p.cp._x);
       if(!cpg){ avisos.push('"'+p.cp._x.nome+'" é comprado por UN — não dá para custear por grama'); addLinha(p.cp._x.nome, g, 'g', 0, _cnMarkupInsumo(p.cp._x), '?', 'sem custo/g'); }
       else addLinha(p.cp._x.nome, g, 'g', g*cpg.porG, _cnMarkupInsumo(p.cp._x), cpg.fonte);
     });
+    _fnL='veiculo';
     if(excip){
       var dEx=(excip._x.densidade>0)?excip._x.densidade:1;
       var gEx=Math.max(0,(volCaps-volAtivos))*dEx*(1+perdas/100)*n;
       var cpgE=_cnCustoPorG(excip._x);
       addLinha(excip._x.nome+' (excipiente)', gEx, 'g', cpgE?gEx*cpgE.porG:0, _cnMarkupInsumo(excip._x), cpgE?cpgE.fonte:'?', cpgE?'':'sem custo/g');
     } else avisos.push('a fórmula não tem EXCIPIENTE marcado — o volume restante da cápsula ficou sem custeio');
-    var inv=(insumos||[]).find(function(i){ return i.id===(opts.involucroId||f.involucroId); });
-    if(inv){ var cI=_cnCustoUnit(inv); addLinha(inv.nome+' (invólucro ×'+n+')', n, 'UN', n*cI.v, _cnMarkupInsumo(inv), cI.fonte); }
-    else avisos.push('escolha o INVÓLUCRO (embalagem da cápsula) para custear');
+    // v277 — o invólucro acompanha o TAMANHO da cápsula: vale o escolhido se for desse tamanho; sem escolha (ou escolhido
+    // de outro tamanho, ou excluído do cadastro), entra sozinho o invólucro PADRÃO do tamanho
+    var _rInv=_cnInvResolve(opts.involucroId||f.involucroId, tam), inv=_rInv.inv, _invAuto=_rInv.auto;
+    _fnL='involucro';
+    if(inv){ var cI=_cnCustoUnit(inv); addLinha(inv.nome+' (invólucro ×'+n+(_invAuto?' — padrão da cápsula '+tam:'')+')', n, 'UN', n*cI.v, _cnMarkupInsumo(inv), cI.fonte); }
+    else avisos.push('escolha o INVÓLUCRO (embalagem da cápsula) para custear'+(_embInvLista().length?' — não há invólucro padrão cadastrado para a cápsula '+tam:''));
   } else {
     var qspV=parseFloat(opts.qspValor)||0, qspU=opts.qspUn||'g';
     if(qspV<=0) avisos.push('informe o QSP (quantidade total)');
@@ -14076,6 +14415,7 @@ function _cnCalcular(f, opts){
     var qspG=(qspU==='g')?qspV:qspV*dBase; // conversão pela densidade cadastrada; sem densidade = 1:1 (decisão do dono)
     var somaPes=0;
     ativos.forEach(function(cp){
+      _fnL=_insTemFuncao(cp._x, 'essencia')?'essencia':'';
       var teor;
       if(cp.unidade==='%') teor=(parseFloat(cp.dose)||0)/100*qspG;
       else { var d=_cnDoseG(cp.dose, cp.unidade, cp._x); if(d.aviso) avisos.push(d.aviso); teor=d.g; }
@@ -14085,12 +14425,14 @@ function _cnCalcular(f, opts){
       if(!cpg){ var _uCp=String(cp._x.unidade||'UN').toLowerCase(); avisos.push('"'+cp._x.nome+'" '+((['g','kg','mg','ml','l'].indexOf(_uCp)>=0)?'está SEM CUSTO cadastrado — o cálculo ficou incompleto':'é comprado por UN — não dá para custear por grama')); addLinha(cp._x.nome, g, 'g', 0, _cnMarkupInsumo(cp._x), '?', 'sem custo/g'); } // v263 (C12) — mensagem distingue sem-custo de comprado-por-UN
       else addLinha(cp._x.nome, g, 'g', g*cpg.porG, _cnMarkupInsumo(cp._x), cpg.fonte);
     });
+    _fnL='veiculo';
     if(excip){
       var gB=Math.max(0, qspG-somaPes)*(1+perdas/100);
       var cpgB=_cnCustoPorG(excip._x);
       addLinha(excip._x.nome+' (base/QSP)', gB, 'g', cpgB?gB*cpgB.porG:0, _cnMarkupInsumo(excip._x), cpgB?cpgB.fonte:'?', cpgB?'':'sem custo/g');
     } else if(ativos.length) avisos.push('a fórmula não tem BASE/EXCIPIENTE QSP — o restante até '+qspG.toFixed(1)+' g ficou sem custeio');
   }
+  _fnL=''; // v277 — daqui em diante (embalagem, custo fixo) as linhas não têm papel
   // v196 — a embalagem pode vir DESMEMBRADA (frasco + válvula + tampa, pedido do dono 06/08):
   // opts.embalagemIds (array) custeia cada parte; opts.embalagemId (singular) segue valendo — o
   // simulador e os orçamentos antigos não mudam.
@@ -14538,7 +14880,7 @@ function openCnModal(id){
   var unS=document.getElementById('cn-pv-un'); if(unS) unS.textContent=f?_cnPrecoUnLbl(f):'g';
   _cnPvSugRefresh(f); // v260 — linha do preço padrão (também re-pintada quando uma ficha de insumo é salva com este modal aberto)
   _cnComp=f?(f.composicao||[]).map(function(c){ return Object.assign({},c); }):[];
-  _cnInvId=f?(f.involucroId||null):null;
+  _cnInvId=f?(f.involucroId||null):null; _cnInvAuto=false; _cnInvUlt=null; _cnInvLembra(); // v277
   document.getElementById('cn-inv-busca').value=(f&&f.involucroNome)||'';
   document.getElementById('cn-capstam').value=(f&&f.capsTam)||'';
   document.getElementById('cn-qspv').value=(f&&f.qspValor!=null)?f.qspValor:'';
@@ -14594,8 +14936,9 @@ function _cnFormaChange(){
   document.getElementById('cn-box-caps').style.display=_cnEhCaps(fm)?'':'none';
   document.getElementById('cn-box-qsp').style.display=_cnEhCaps(fm)?'none':'';
   var h=document.getElementById('cn-comp-hint');
-  if(h) h.textContent=_cnEhCaps(fm)?'— dose POR CÁPSULA (mg/g/mcg/UI); excipiente completa pelo volume da cápsula':'— ativos em % (ou peso absoluto); a BASE marcada como excipiente completa o QSP';
+  if(h) h.textContent=_cnEhCaps(fm)?'— dose POR CÁPSULA (mg/g/mcg/UI); o veículo ('+_insFnLbl(_cnVeicFn(fm)).toLowerCase()+') completa o volume da cápsula':'— ativos e essências em % (ou peso absoluto); o veículo ('+_insFnLbl(_cnVeicFn(fm)).toLowerCase()+') completa o QSP'; // v277
   var unS=document.getElementById('cn-pv-un'); if(unS) unS.textContent=_cnEhCaps(fm)?'cápsula':((document.getElementById('cn-qspu')?.value==='mL')?'mL':'g'); // v258
+  _cnInvPorTam(true); // v277 — produto em cápsulas: invólucro preenchido pelo tamanho (escolha manual ou gravada não é trocada)
   _cnRenderComp();
 }
 function _cnInsSearch(){
@@ -14611,47 +14954,165 @@ function _cnAddComp(insumoId){
   var x=(insumos||[]).find(function(p){ return p.id===insumoId; }); if(!x) return;
   if(_cnComp.some(function(c){ return c.insumoId===insumoId; })){ document.getElementById('cn-ins-ac').classList.remove('open'); return; }
   var fm=document.getElementById('cn-forma').value;
-  var ehBase=(x.ehBase===true) || /excipiente|base/i.test(x.categoria||''); // v259 — checkbox BASE da ficha decide; categoria segue como fallback
+  // v277 — entra como VEÍCULO só o ativo que tem a função que a forma pede (base ou excipiente), se a fórmula ainda não
+  // tem veículo e o ativo não é também essência; os demais entram como ativo (a essência é um ativo com a função essência)
+  var ehBase=_insTemFuncao(x, _cnVeicFn(fm)) && !_insTemFuncao(x, 'essencia') && !_cnComp.some(function(c){ return c.papel==='excipiente'; });
   var un=x.unidadePadrao||(_cnEhCaps(fm)?'mg':'%');
   _cnComp.push({insumoId:x.id, codigo:x.codigo||'', nome:x.nome||'', papel:ehBase?'excipiente':'ativo', dose:ehBase?'':'', unidade:ehBase?'':un});
   document.getElementById('cn-ins-busca').value=''; document.getElementById('cn-ins-ac').classList.remove('open');
   _cnRenderComp();
 }
-function _cnSetComp(i,campo,val){ if(_cnComp[i]){ _cnComp[i][campo]=val; if(campo==='papel') _cnRenderComp(); } }
+// v277 — veículo que a fórmula JÁ tinha gravado (fórmula antiga): sem a função atribuída só AVISA; veículo novo é barrado
+function _cnCompLegado(c){
+  var f=_cnEditId?(catalogoNovo||[]).find(function(x){ return x.id===_cnEditId; }):null; if(!f || !c) return false;
+  var fm=(document.getElementById('cn-forma')||{}).value;
+  return _cnVeicFn(f.forma)===_cnVeicFn(fm) && (f.composicao||[]).some(function(o){ return o && o.papel==='excipiente' && o.insumoId===c.insumoId; });
+}
+function _cnVeicMsgSemFuncao(x, fn){
+  var lbl=_insFnLbl(fn);
+  return '"'+((x&&x.nome)||'?')+'" não tem a função '+lbl+' atribuída e por isso não pode ser o veículo deste produto.\n\nA função é atribuída na aba Ativos, subaba '+lbl+' (administrador ou direção comercial). Enquanto isso, o componente pode ficar na fórmula como Ativo.';
+}
+function _cnSetComp(i,campo,val){
+  var c=_cnComp[i]; if(!c) return;
+  if(campo==='papel'){
+    var fm=document.getElementById('cn-forma').value, x=_insPorId(c.insumoId);
+    if(val==='excipiente' && c.papel!=='excipiente' && x && !_insTemFuncao(x, _cnVeicFn(fm)) && !_cnCompLegado(c)){ alert(_cnVeicMsgSemFuncao(x, _cnVeicFn(fm))); _cnRenderComp(); return; }
+    c.papel=val;
+    if(val!=='excipiente' && !c.unidade) c.unidade=(x&&x.unidadePadrao)||(_cnEhCaps(fm)?'mg':'%'); // deixou de ser veículo: volta a ter unidade de dose
+    _cnRenderComp(); return;
+  }
+  c[campo]=val;
+}
 function _cnRemComp(i){ _cnComp.splice(i,1); _cnRenderComp(); }
+// v277 — invólucro do produto em cápsulas como está na tela: o escolhido; sem ele, o padrão do tamanho de preferência
+function _cnInvEstado(){
+  var tam=(document.getElementById('cn-capstam')||{}).value||'';
+  var r=_cnInvResolve(_cnInvId, tam);
+  if(r.inv) return {inv:r.inv, tam:tam, auto:(r.auto || !!_cnInvAuto), outro:(!r.auto && !_cnInvAuto && !!tam && !!_embInvTam(r.inv) && _embInvTam(r.inv)!==tam)};
+  return {inv:null, tam:tam, auto:false, falta:!!tam, naVenda:!tam};
+}
+// preenche sozinho o invólucro pelo tamanho da cápsula (escolha manual não é trocada)
+var _cnInvAuto=false;
+// última escolha válida do campo (para o texto digitado e desfeito voltar a valer a mesma escolha)
+var _cnInvUlt=null;
+function _cnInvLembra(){ _cnInvUlt=_cnInvId?{id:_cnInvId, auto:!!_cnInvAuto}:null; }
+function _cnInvPorTam(semPintar){
+  var fm=(document.getElementById('cn-forma')||{}).value;
+  if(_cnEhCaps(fm)){
+    var tam=(document.getElementById('cn-capstam')||{}).value||'';
+    var cur=_cnInvId?_insPorId(_cnInvId):null, tC=cur?_embInvTam(cur):'';
+    // fica o que foi escolhido à mão (ou já estava gravado) se serve para o tamanho; o resto segue o padrão do tamanho
+    var fica=!!(cur && !_cnInvAuto && (!tam || !tC || tC===tam));
+    if(!fica){
+      var p=tam?_embInvPadrao(tam):null;
+      if(p || _cnInvAuto || !cur){ // escolhido à mão de outro tamanho, sem padrão para o novo tamanho: não se apaga a escolha
+        _cnInvId=p?p.id:null; _cnInvAuto=!!p;
+        var inp=document.getElementById('cn-inv-busca'); if(inp) inp.value=p?(p.nome||''):'';
+      }
+    }
+    _cnInvLembra();
+  }
+  if(!semPintar) _cnRenderComp();
+}
 function _cnRenderComp(){
   var tb=document.getElementById('cn-comp-tbody'); if(!tb) return;
   var vazio=document.getElementById('cn-comp-vazio'); if(vazio) vazio.style.display=_cnComp.length?'none':'block';
   var fm=document.getElementById('cn-forma').value;
-  var uns=_cnEhCaps(fm)?['mg','g','mcg','UI']:['%','mg','g','mcg','UI'];
-  tb.innerHTML=_cnComp.map(function(c,i){
-    var ehEx=c.papel==='excipiente';
-    return '<tr style="border-bottom:.5px solid var(--border)">'+
+  var caps=_cnEhCaps(fm), fnV=_cnVeicFn(fm), lblV=_insFnLbl(fnV);
+  var uns=caps?['mg','g','mcg','UI']:['%','mg','g','mcg','UI'];
+  // v277 — a composição é mostrada em grupos (a ordem gravada não muda): ativos · essências · veículo · invólucro
+  var gA=[], gE=[], gV=[];
+  _cnComp.forEach(function(c,i){ (c.papel==='excipiente'?gV:(_cnCompEhEssencia(c)?gE:gA)).push(i); });
+  var selo=function(txt, est, tit){ return ' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;font-weight:700;'+est+'"'+(tit?' title="'+tit+'"':'')+'>'+txt+'</span>'; };
+  var notas=[];
+  var linha=function(i, grupo){
+    var c=_cnComp[i], ehEx=c.papel==='excipiente', x=_insPorId(c.insumoId);
+    var temFn=!!(x && _insTemFuncao(x, fnV));
+    var marca='';
+    if(grupo==='ess') marca=selo('ESSÊNCIA','background:var(--bg-primary);color:var(--text-success)','Este ativo tem a função essência');
+    if(ehEx){
+      marca=selo('VEÍCULO — '+lblV.toUpperCase(),'background:var(--bg-primary);color:var(--text-info)','Completa o '+(caps?'volume da cápsula':'QSP'));
+      if(x && !temFn){
+        marca+=selo('sem a função '+lblV,'background:var(--st-mid-bg);color:var(--st-mid-tx)','Este ativo não tem a função '+lblV+' atribuída (aba Ativos, subaba '+lblV+')');
+        notas.push('O veículo "'+(c.nome||'?')+'" não tem a função '+lblV+' atribuída (aba Ativos, subaba '+lblV+'). '+(_cnCompLegado(c)?'Por ser o veículo que este produto já tinha, o cadastro só avisa — o cálculo não muda.':'Para salvar, atribua a função ao ativo ou deixe-o na fórmula como Ativo.'));
+      }
+    }
+    var fundo=ehEx?'background:var(--bg-info);font-weight:700;':(grupo==='ess'?'background:var(--bg-success);':'');
+    return '<tr style="border-bottom:.5px solid var(--border);'+fundo+'">'+
       // v260 — clicar no insumo abre a FICHA DE CADASTRO (a mesma da aba Insumos) por cima do modal da fórmula
-      '<td style="padding:4px 6px"><span onclick="openInsumoModal(\'insumo\',\''+c.insumoId+'\')" title="Abrir o cadastro deste insumo (custos, markup, densidade...)" style="cursor:pointer" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'"><span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(c.codigo||'')+'</span> '+escapeHtml(c.nome||'')+'</span></td>'+
-      '<td style="padding:4px 6px"><select onchange="_cnSetComp('+i+',\'papel\',this.value)" style="font-size:11px;padding:2px 4px"><option value="ativo"'+(ehEx?'':' selected')+'>Ativo</option><option value="excipiente"'+(ehEx?' selected':'')+'>Excipiente/QSP</option></select></td>'+
-      '<td style="padding:4px 6px;text-align:right">'+(ehEx?'<span style="color:var(--text-tertiary);font-size:11px">completa</span>':'<input type="number" min="0" step="any" value="'+(c.dose!=null?c.dose:'')+'" oninput="_cnSetComp('+i+',\'dose\',this.value)" style="width:80px;text-align:right;font-size:12px">')+'</td>'+
+      '<td style="padding:4px 6px"><span onclick="openInsumoModal(\'insumo\',\''+c.insumoId+'\')" title="Abrir o cadastro deste insumo (custos, markup, densidade...)" style="cursor:pointer" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'"><span style="font-family:monospace;font-size:10px;color:var(--text-tertiary)">'+escapeHtml(c.codigo||'')+'</span> '+escapeHtml(c.nome||'')+'</span>'+marca+'</td>'+
+      '<td style="padding:4px 6px"><select onchange="_cnSetComp('+i+',\'papel\',this.value)" style="font-size:11px;padding:2px 4px"><option value="ativo"'+(ehEx?'':' selected')+'>Ativo</option><option value="excipiente"'+(ehEx?' selected':'')+((!ehEx && x && !temFn && !_cnCompLegado(c))?' disabled title="Este ativo não tem a função '+lblV+' atribuída"':'')+'>Veículo ('+lblV.toLowerCase()+')</option></select></td>'+
+      '<td style="padding:4px 6px;text-align:right">'+(ehEx?'<span style="color:var(--text-tertiary);font-size:11px;font-weight:400">completa</span>':'<input type="number" min="0" step="any" value="'+(c.dose!=null?c.dose:'')+'" oninput="_cnSetComp('+i+',\'dose\',this.value)" style="width:80px;text-align:right;font-size:12px">')+'</td>'+
       '<td style="padding:4px 6px">'+(ehEx?'—':'<select onchange="_cnSetComp('+i+',\'unidade\',this.value)" style="font-size:11px;padding:2px 4px">'+uns.map(function(u){ return '<option value="'+u+'"'+(u===c.unidade?' selected':'')+'>'+u+'</option>'; }).join('')+'</select>')+'</td>'+
       '<td style="padding:4px 6px;text-align:center"><input type="checkbox" '+(c.invisivel?'checked':'')+' onchange="_cnSetComp('+i+',\'invisivel\',this.checked)" title="Marcado = não aparece na composição do PDF do orçamento (custo/preço não mudam)" style="width:14px;height:14px"></td>'+ /* v188 — invisível no PDF (pedido do dono) */
       '<td style="padding:4px 6px;text-align:right"><button onclick="_cnRemComp('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button></td></tr>';
-  }).join('');
+  };
+  var fixa=function(txt, est){ return '<tr class="cn-comp-fixa" style="border-bottom:.5px solid var(--border);'+est+'"><td colspan="6" style="padding:6px 8px;font-size:12px">'+txt+'</td></tr>'; };
+  var h=gA.map(function(i){ return linha(i,'ativo'); }).join('')+gE.map(function(i){ return linha(i,'ess'); }).join('');
+  if(_cnComp.length){
+    // produto de veículo BASE (líquidos e semissólidos): o lugar da essência aparece sempre
+    if(!gE.length && fnV==='base') h+=fixa('<b>Sem essência</b> <span style="color:var(--text-tertiary)">— custo R$ 0,00. Para incluir, adicione um ativo que tenha a função essência.</span>', 'background:var(--bg-secondary);');
+    h+=gV.map(function(i){ return linha(i,'veic'); }).join('');
+    if(!gV.length) h+=fixa('<b>Sem veículo ('+lblV.toLowerCase()+')</b> — '+(caps?'o volume restante da cápsula fica sem custeio.':'o restante até o QSP fica sem custeio.')+' <span style="font-weight:400">O veículo é opcional; para incluir, adicione um ativo com a função '+lblV+' e marque-o como veículo.</span>', 'background:var(--st-mid-bg);color:var(--st-mid-tx);');
+    if(caps){
+      var st=_cnInvEstado();
+      if(st.inv && st.outro) h+=fixa('<b>'+escapeHtml(st.inv.nome||'?')+'</b>'+selo('INVÓLUCRO','background:var(--bg-primary);color:var(--text-secondary)','')+' <span style="font-weight:400">escolhido neste produto, mas é da cápsula '+_embInvTam(st.inv)+': não há invólucro cadastrado para a cápsula '+escapeHtml(st.tam)+' (aba Embalagens, subaba Invólucros)</span>', 'background:var(--st-mid-bg);color:var(--st-mid-tx);font-weight:700;');
+      else if(st.inv) h+=fixa('<b>'+escapeHtml(st.inv.nome||'?')+'</b>'+selo('INVÓLUCRO','background:var(--bg-primary);color:var(--text-secondary)','')+' <span style="font-weight:400;color:var(--text-secondary)">'+(st.auto?('padrão da cápsula'+(st.tam?' '+st.tam:'')+' — o produto acompanha o invólucro padrão do tamanho'):'escolhido neste produto')+'; na venda em outro tamanho de cápsula, entra o invólucro padrão daquele tamanho</span>', 'background:var(--bg-tertiary);font-weight:700;');
+      else if(st.naVenda) h+=fixa('<b>Invólucro</b> <span style="font-weight:400;color:var(--text-secondary)">— definido na venda: o cálculo usa o invólucro padrão do tamanho da cápsula escolhido.</span>', 'background:var(--bg-tertiary);');
+      else h+=fixa('<b>Sem invólucro</b> — não há invólucro cadastrado para a cápsula '+escapeHtml(st.tam)+' (aba Embalagens, subaba Invólucros). O cálculo fica incompleto.', 'background:var(--st-mid-bg);color:var(--st-mid-tx);');
+    }
+  }
+  tb.innerHTML=h;
+  var nt=document.getElementById('cn-comp-notas');
+  if(nt){ nt.style.display=notas.length?'':'none'; nt.innerHTML=notas.map(function(t){ return '<div>'+escapeHtml(t)+'</div>'; }).join(''); }
 }
 function _cnInvSearch(){
   var q=(document.getElementById('cn-inv-busca').value||'').toLowerCase().trim();
-  var ac=document.getElementById('cn-inv-ac'); _cnInvId=null;
+  var ac=document.getElementById('cn-inv-ac');
+  // digitar só desfaz a escolha quando o texto deixa de ser o nome do invólucro escolhido; voltar ao nome exato a restaura
+  var txtI=(document.getElementById('cn-inv-busca').value||'').trim(), ultI=_cnInvUlt?_insPorId(_cnInvUlt.id):null;
+  var tamI=(document.getElementById('cn-capstam')||{}).value||'';
+  // ...desde que ele ainda sirva para a cápsula de preferência (o padrão do tamanho, ou um escolhido à mão desse tamanho)
+  var serveI=!!ultI && (_cnInvUlt.auto ? (!!tamI && _embInvPadrao(tamI)===ultI) : (!tamI || !_embInvTam(ultI) || _embInvTam(ultI)===tamI));
+  if(ultI && serveI && txtI===String(ultI.nome||'').trim()){ _cnInvId=ultI.id; _cnInvAuto=!!_cnInvUlt.auto; }
+  else { _cnInvId=null; _cnInvAuto=false; }
+  _cnRenderComp(); // a linha do invólucro na composição acompanha o campo
   if(q.length<1){ ac.classList.remove('open'); return; }
-  var m=(insumos||[]).filter(function(x){ return x.tipo==='embalagem' && x.ativo!==false && ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(q)>=0; }).slice(0,8);
-  if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nada encontrado em Embalagens.</div>'; ac.classList.add('open'); return; }
-  ac.innerHTML=m.map(function(x){ return '<div class="autocomplete-item" onmousedown="_cnPickInv(\''+x.id+'\')"><div class="ac-name">'+escapeHtml(x.nome)+'</div><div class="ac-doc">'+escapeHtml(x.codigo||'')+'</div></div>'; }).join('');
+  // v277 — só as embalagens marcadas como invólucro (aba Embalagens, subaba Invólucros)
+  var tamQ=(document.getElementById('cn-capstam')||{}).value||''; // com a cápsula de preferência escolhida, só os invólucros desse tamanho
+  var m=(insumos||[]).filter(function(x){ return _embInvMarcado(x) && x.ativo!==false && (!tamQ || !_embInvTam(x) || _embInvTam(x)===tamQ) && ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(q)>=0; }).slice(0,8);
+  if(!m.length){ ac.innerHTML='<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nada encontrado em Embalagens, subaba Invólucros'+(tamQ?' para a cápsula '+escapeHtml(tamQ):'')+'.</div>'; ac.classList.add('open'); return; }
+  ac.innerHTML=m.map(function(x){ return '<div class="autocomplete-item" onmousedown="_cnPickInv(\''+x.id+'\')"><div class="ac-name">'+escapeHtml(x.nome)+'</div><div class="ac-doc">'+escapeHtml(x.codigo||'')+(_embInvTam(x)?' · cápsula '+_embInvTam(x):'')+'</div></div>'; }).join('');
   ac.classList.add('open');
 }
-function _cnPickInv(id){ var x=(insumos||[]).find(function(p){ return p.id===id; }); if(!x) return; _cnInvId=x.id; document.getElementById('cn-inv-busca').value=x.nome||''; document.getElementById('cn-inv-ac').classList.remove('open'); }
+function _cnPickInv(id){ var x=(insumos||[]).find(function(p){ return p.id===id; }); if(!x) return;
+  var tamP=(document.getElementById('cn-capstam')||{}).value||'';
+  if(tamP && _embInvTam(x) && _embInvTam(x)!==tamP){ alert('Este invólucro é da cápsula '+_embInvTam(x)+' e a cápsula de preferência deste produto é a '+tamP+'.\n\nEscolha um invólucro da cápsula '+tamP+' ou troque a cápsula de preferência.'); return; }
+  _cnInvId=x.id; _cnInvAuto=false; _cnInvLembra(); document.getElementById('cn-inv-busca').value=x.nome||''; document.getElementById('cn-inv-ac').classList.remove('open'); _cnRenderComp(); }
 function saveCnFormula(){
   var nome=document.getElementById('cn-nome').value.trim();
   if(!nome){ alert('Informe o nome da fórmula.'); return; }
   var comp=_cnComp.filter(function(c){ return c.insumoId && (c.papel==='excipiente' || (parseFloat(c.dose)||0)>0); });
   if(!comp.length){ alert('Adicione ao menos um componente com dose (ou um excipiente).'); return; }
   if(comp.filter(function(c){ return c.papel==='excipiente'; }).length>1){ alert('A fórmula só pode ter UM excipiente/QSP.'); return; }
+  // v277 — VEÍCULO só com a função atribuída (base nos líquidos e semissólidos; excipiente nos sólidos). O veículo que a
+  // fórmula já tinha gravado (fórmula antiga) só gera o aviso na composição; veículo novo ou trocado é barrado.
+  if(!_ffCarregado){ try{ _ffCarregar(); }catch(_e){} alert('A configuração das formas farmacêuticas ainda está sendo carregada — é ela que diz qual veículo a forma pede.\n\nAguarde um instante e salve de novo. Nada foi gravado.'); return; }
+  var _fmS=document.getElementById('cn-forma').value, _veS=comp.find(function(c){ return c.papel==='excipiente'; });
+  if(_veS){ var _xS=_insPorId(_veS.insumoId); if(_xS && !_insTemFuncao(_xS, _cnVeicFn(_fmS)) && !_cnCompLegado(_veS)){ alert(_cnVeicMsgSemFuncao(_xS, _cnVeicFn(_fmS))+'\n\nNada foi gravado.'); return; } }
+  // v277 — produto em cápsulas: sem invólucro escolhido, entra o padrão do tamanho de preferência; sem padrão cadastrado, avisa
+  // invólucro preenchido pelo tamanho NÃO é gravado: o produto fica "seguindo o padrão do tamanho" (se o padrão mudar,
+  // ele acompanha — e abrir e salvar a fórmula não muda nada no invólucro). Só a escolha feita à mão é gravada.
+  // Vale em qualquer forma (a forma pode ter deixado de ser cápsulas depois de o campo ter sido preenchido).
+  if(_cnInvAuto){ _cnInvId=null; _cnInvAuto=false; }
+  if(_cnEhCaps(_fmS)){
+    var _tamS=document.getElementById('cn-capstam').value||'';
+    if(_tamS){
+      var _rS=_cnInvResolve(_cnInvId, _tamS);
+      if(_rS.auto) _cnInvId=null; // escolhido de outro tamanho, havendo padrão no tamanho de preferência: vale o padrão
+      else if(!_rS.inv && !confirm('Não há invólucro cadastrado para a cápsula '+_tamS+' (aba Embalagens, subaba Invólucros).\n\nO produto fica sem invólucro e o cálculo sai incompleto até o invólucro ser cadastrado.\n\nSalvar assim mesmo?')) return;
+    }
+  }
   var codigo=document.getElementById('cn-codigo').value.trim()||_proximoCodigoCn();
   var invNome=_cnInvId?(((insumos||[]).find(function(p){ return p.id===_cnInvId; })||{}).nome||''):'';
   var _num=function(id){ var v=parseFloat(document.getElementById(id).value); return isNaN(v)?null:v; };
@@ -14733,6 +15194,23 @@ function renderCnConfig(){
 function _cnCfgSetCaps(t,val){ var c=_cnCfgGet(); c.caps=c.caps||Object.assign({},CN_CAPS_PADRAO); c.caps[t]=parseFloat(val)||0; _cnCfg=c; }
 function _cnCfgSetFx(campo,val){ var c=_cnCfgGet(); c.faixasCusto=Object.assign(_cnFaixasCfg(), c.faixasCusto||{}); c.faixasCusto[campo]=parseFloat(val)||0; _cnCfg=c; } // v188 — faixas de custo/markup
 function _cnCfgSalvarClick(){ var c=_cnCfgGet(); _cnCfg=c; _cnCfgSalvar(); renderCnConfig(); alert('✓ Configuração salva.'); } // v276 — a lista antiga de categorias fica guardada como está (sem uso)
+// v277 — linhas do simulador com o lugar fixo da essência: produto de veículo BASE sem essência ganha a linha "Sem essência" (custo zero)
+function _cnSimLinhas(f, r){
+  var L=((r&&r.linhas)||[]).slice();
+  if(f && (f.composicao||[]).length && _cnVeicFn(f.forma)==='base' && !L.some(function(l){ return l.fn==='essencia'; })){
+    var i=-1, k;
+    for(k=0;k<L.length;k++){ if(L[k].fn==='veiculo'){ i=k; break; } }
+    if(i<0){ for(k=0;k<L.length;k++){ if((L[k].grupo||'produto')==='emb' || L[k].fonte==='config'){ i=k; break; } } }
+    if(i<0) i=L.length;
+    L.splice(i, 0, {_semEss:true});
+  }
+  return L;
+}
+function _cnSimFundo(l){ return l.fn==='veiculo'?';background:var(--bg-info)':(l.fn==='essencia'?';background:var(--bg-success)':(l.fn==='involucro'?';background:var(--bg-tertiary)':'')); }
+function _cnSimSelo(l){
+  var t=l.fn==='veiculo'?'VEÍCULO':(l.fn==='essencia'?'ESSÊNCIA':(l.fn==='involucro'?'INVÓLUCRO':'')); if(!t) return '';
+  return ' <span style="font-size:9.5px;padding:1px 7px;border-radius:10px;font-weight:700;background:var(--bg-primary);color:var(--text-secondary)">'+t+'</span>';
+}
 // ── SIMULADOR ──
 var _cnSimSel={fId:'', nCaps:60, capsTam:'', invId:null, qspV:'', qspU:'g', embId:null};
 function _cnSimularDe(fId){ _cnSimSel.fId=fId; var f=(catalogoNovo||[]).find(function(x){ return x.id===fId; }); if(f){ _cnSimSel.capsTam=f.capsTam||''; _cnSimSel.invId=f.involucroId||null; _cnSimSel.qspV=(f.qspValor!=null)?f.qspValor:''; _cnSimSel.qspU=f.qspUn||'g'; } setCatalogoTab('catnovo'); setCatNovoSub('simulador'); }
@@ -14741,7 +15219,7 @@ function _cnSimBuscaEmb(inputId, acId, alvo){
   var q=(document.getElementById(inputId).value||'').toLowerCase().trim();
   var ac=document.getElementById(acId);
   if(q.length<2){ ac.classList.remove('open'); return; }
-  var m=(insumos||[]).filter(function(x){ return x.tipo==='embalagem' && x.ativo!==false && ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(q)>=0; }).slice(0,8);
+  var m=(insumos||[]).filter(function(x){ return x.tipo==='embalagem' && x.ativo!==false && (alvo!=='invId' || x.involucro===true) && ((x.nome||'')+' '+(x.codigo||'')).toLowerCase().indexOf(q)>=0; }).slice(0,8); // v277 — invólucro: só as embalagens da subaba Invólucros
   ac.innerHTML=m.length?m.map(function(x){ return '<div class="autocomplete-item" onmousedown="_cnSimPickEmb(\''+alvo+'\',\''+x.id+'\')"><div class="ac-name">'+escapeHtml(x.nome)+'</div><div class="ac-doc">'+escapeHtml(x.codigo||'')+(x.capacidade?' · '+x.capacidade+' '+(x.capacidadeUn||'mL'):'')+'</div></div>'; }).join(''):'<div style="padding:9px 12px;font-size:12px;color:var(--text-tertiary)">Nada encontrado.</div>';
   ac.classList.add('open');
 }
@@ -14772,7 +15250,7 @@ function renderCnSimulador(){
   if(f&&_cnEhCaps(f.forma)){
     h+='<div class="form-group" style="margin:0"><label>Nº de cápsulas</label><input type="number" min="1" step="1" value="'+(s.nCaps||60)+'" onchange="_cnSimSet(\'nCaps\',this.value)" style="width:90px"></div>'+
        '<div class="form-group" style="margin:0"><label>Tamanho</label><select onchange="_cnSimSet(\'capsTam\',this.value)" style="width:110px"><option value="">sugestão</option>'+['00','0','1','2','3','4'].map(function(t){ return '<option value="'+t+'"'+(t===s.capsTam?' selected':'')+'>'+t+'</option>'; }).join('')+'</select></div>'+
-       '<div class="form-group" style="min-width:220px;margin:0"><label>Invólucro '+(s.invId?'<span style="color:var(--st-ok-tx)">✓ '+escapeHtml(nomeIns(s.invId))+'</span>':'')+'</label><div class="autocomplete-wrap"><input type="text" id="cn-sim-inv" placeholder="Buscar cápsula (embalagem)..." oninput="_cnSimBuscaEmb(\'cn-sim-inv\',\'cn-sim-inv-ac\',\'invId\')" autocomplete="off"><div class="autocomplete-list" id="cn-sim-inv-ac"></div></div></div>';
+       '<div class="form-group" style="min-width:220px;margin:0"><label>Invólucro '+(s.invId==='__padrao__'?'<span style="color:var(--text-secondary);font-weight:400">padrão do tamanho da cápsula</span>':'')+((s.invId && s.invId!=='__padrao__')?'<span style="color:var(--st-ok-tx)">✓ '+escapeHtml(nomeIns(s.invId))+'</span> <a href="#" onclick="_cnSimSet(\'invId\',\'__padrao__\');return false" style="font-size:11px;font-weight:400" title="Deixa de usar o invólucro escolhido: o cálculo passa a usar o invólucro padrão do tamanho da cápsula">usar o padrão</a>':'')+'</label><div class="autocomplete-wrap"><input type="text" id="cn-sim-inv" placeholder="Buscar invólucro (vazio = padrão do tamanho)..." oninput="_cnSimBuscaEmb(\'cn-sim-inv\',\'cn-sim-inv-ac\',\'invId\')" autocomplete="off"><div class="autocomplete-list" id="cn-sim-inv-ac"></div></div></div>';
   } else if(f){
     h+='<div class="form-group" style="margin:0"><label>QSP (quantidade)</label><input type="number" min="0" step="0.01" value="'+(s.qspV!==''?s.qspV:'')+'" onchange="_cnSimSet(\'qspV\',this.value)" style="width:100px"></div>'+
        '<div class="form-group" style="margin:0"><label>Unidade</label><select onchange="_cnSimSet(\'qspU\',this.value)" style="width:90px"><option value="g"'+(s.qspU==='g'?' selected':'')+'>g</option><option value="mL"'+(s.qspU==='mL'?' selected':'')+'>mL</option></select></div>';
@@ -14786,8 +15264,9 @@ function renderCnSimulador(){
     if(r.avisos.length) h+='<div style="font-size:12px;background:var(--st-mid-bg);color:var(--st-mid-tx);border-radius:8px;padding:8px 12px;margin-bottom:8px">⚠ '+r.avisos.map(escapeHtml).join('<br>⚠ ')+'</div>';
     h+='<div class="panel" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'+
       '<thead><tr style="background:var(--bg-secondary);font-size:10px;text-transform:uppercase;color:var(--text-secondary)"><th style="text-align:left;padding:7px 10px">Componente</th><th style="text-align:right;padding:7px 10px">Qtd</th><th style="text-align:right;padding:7px 10px">Custo</th><th style="text-align:right;padding:7px 10px">Markup</th><th style="text-align:right;padding:7px 10px">Preço</th><th style="text-align:left;padding:7px 10px">Custo via</th></tr></thead><tbody>'+
-      r.linhas.map(function(l){
-        return '<tr style="border-bottom:.5px solid var(--border)"><td style="padding:6px 10px">'+escapeHtml(l.nome)+(l.aviso?' <span style="color:var(--st-bad-tx);font-size:10px">'+escapeHtml(l.aviso)+'</span>':'')+'</td>'+
+      _cnSimLinhas(f, r).map(function(l){ // v277 — essência, veículo e invólucro em destaque; sem essência = linha "Sem essência" com custo zero
+        if(l._semEss) return '<tr class="cn-sim-semess" style="border-bottom:.5px solid var(--border);background:var(--bg-secondary)"><td style="padding:6px 10px"><b>Sem essência</b></td><td style="padding:6px 10px;text-align:right">—</td><td style="padding:6px 10px;text-align:right;white-space:nowrap">R$ 0,00</td><td style="padding:6px 10px;text-align:right">—</td><td style="padding:6px 10px;text-align:right;white-space:nowrap;font-weight:600">R$ 0,00</td><td></td></tr>';
+        return '<tr style="border-bottom:.5px solid var(--border)'+_cnSimFundo(l)+'"><td style="padding:6px 10px">'+escapeHtml(l.nome)+_cnSimSelo(l)+(l.aviso?' <span style="color:var(--st-bad-tx);font-size:10px">'+escapeHtml(l.aviso)+'</span>':'')+'</td>'+
           '<td style="padding:6px 10px;text-align:right;white-space:nowrap">'+(l.un?((Math.round(l.qtd*1000)/1000).toLocaleString('pt-BR')+' '+l.un):'—')+'</td>'+
           '<td style="padding:6px 10px;text-align:right;white-space:nowrap">'+fmtMoney(l.custo)+'</td>'+
           '<td style="padding:6px 10px;text-align:right">'+(l.markup?l.markup+'%':'—')+'</td>'+
@@ -22768,7 +23247,7 @@ function _cpDescHint(c){
 function _cpmDescAtivo(){ const r=document.getElementById('cpm-desc-row'); return !!(r && r.style.display!=='none'); }
 function _cpmDescontoVal(){ return _cpmDescAtivo()?(+(parseFloat(document.getElementById('cpm-desconto')?.value)||0).toFixed(2)):0; }
 function _cpmLiquido(){
-  const v=parseFloat(document.getElementById('cpm-valor')?.value)||0;
+  const v=+(parseFloat(document.getElementById('cpm-valor')?.value)||0).toFixed(2); // v277 — em centavos, igual ao salvar
   return +(v-_cpmDescontoVal()).toFixed(2);
 }
 // Mudou o desconto: com UMA forma e UMA parcela (ainda não paga) o valor a pagar é levado direto para ela
@@ -22780,10 +23259,17 @@ function _cpmOnDesconto(){
   }
   _cpmDistrib();
 }
+// v277 — estado da conta no Caixa (status + o que já foi pago ou baixado em cada parcela): fotografado ao abrir o editor e reconferido ao salvar
+function _cpmFoto(c){ return JSON.stringify([String((c&&c.statusCaixa)||''), ((c&&c.parcelas)||[]).map(function(p){ return [(p&&p.pago)?1:0, (p&&p.baixa)?1:0]; })]); }
 function openContaPagarModal(id){
-  document.getElementById('cp-man-overlay').classList.add('open');
   const c = id ? contasPagar.find(x=>x.id===id) : null;
+  // v277 — o editor é da conta PENDENTE no Caixa (é a lista de onde ele abre). Linha da lista defasada (conta já aprovada
+  // ou excluída em outra sessão) não abre o editor: conta que passou pelo Caixa só muda pelo Caixa (estorno).
+  if(id && !c){ alert('Esta conta não existe mais (foi excluída em outra sessão).'); try{ renderCaixa&&renderCaixa(); }catch(_e){} return; }
+  if(c && (c.statusCaixa||'aprovada')!=='pendente'){ alert('🔒 Esta conta já passou pelo Caixa e está travada para edição.\n\nPara editar, estorne em Caixa → Finalizados (ela volta a ficar editável e depois você reaprova).'); try{ renderCaixa&&renderCaixa(); }catch(_e){} return; }
+  document.getElementById('cp-man-overlay').classList.add('open');
   window._editingCpId = id||null;
+  window._cpmAbertura = c ? _cpmFoto(c) : null; // v277
   document.getElementById('cpm-desc').value = c?c.descricao:'';
   const _dscC=(c && c.origem!=='compra')?_cpDesc(c):null; // v273 — desconto gravado no lançamento
   document.getElementById('cpm-valor').value = c?(_dscC?_dscC.bruto:c.valor):'';
@@ -22844,7 +23330,7 @@ function openContaPagarView(id){
 
 function saveContaPagarManual(){
   const desc = document.getElementById('cpm-desc').value.trim();
-  const _valorDoc = parseFloat(document.getElementById('cpm-valor').value)||0; // v273 — valor do documento (antes do desconto)
+  const _valorDoc = +(parseFloat(document.getElementById('cpm-valor').value)||0).toFixed(2); // v273 — valor do documento (antes do desconto) · v277 — em centavos, igual à tela
   if(!desc||!_valorDoc){ alert('Preencha descrição e valor.'); return; }
   const _desconto=_cpmDescontoVal();
   if(_desconto<0){ alert('O desconto não pode ser negativo.'); return; }
@@ -22873,6 +23359,10 @@ function saveContaPagarManual(){
   const dataEmissao=document.getElementById('cpm-dataemissao')?.value||'';
   const notaFiscal=(document.getElementById('cpm-nf')?.value||'').trim();
   const c = window._editingCpId ? contasPagar.find(x=>x.id===window._editingCpId) : null;
+  // v277 — RECONFERE O CAIXA NO SALVAR (como o editor de pagamento do pedido faz desde a v263): o editor abre com a conta
+  // pendente; se ela foi aprovada, paga, baixada ou excluída em outra sessão enquanto o editor estava aberto, nada é gravado.
+  if(window._editingCpId && !c){ alert('Esta conta não existe mais (foi excluída em outra sessão enquanto o editor estava aberto).\n\nNada foi salvo.'); try{ closeContaPagarModal(); renderFinAPagar(); renderCaixa&&renderCaixa(); }catch(_e){} return; }
+  if(c && ((c.statusCaixa||'aprovada')!=='pendente' || (window._cpmAbertura && _cpmFoto(c)!==window._cpmAbertura))){ alert('🔒 Esta conta mudou no Caixa enquanto o editor estava aberto (foi aprovada, paga ou baixada em outra sessão).\n\nNada foi salvo. Conta que passou pelo Caixa só muda por estorno (Caixa → Finalizados).'); return; }
   // v139 — WRITE-BACK: conta de COMPRA é a MESMA COISA que a compra → editar aqui edita a compra
   // (antes, a edição do Caixa era REVERTIDA no próximo re-sync e o plano editado na compra não chegava aqui).
   if(c && c.origem==='compra'){
@@ -22899,7 +23389,11 @@ function saveContaPagarManual(){
       parcelas
     });
     // v273 — registro do desconto (ou limpeza, se o desconto foi retirado)
-    if(_dsc) Object.assign(c, _dsc); else { delete c.valorBruto; delete c.desconto; delete c.descontoPor; delete c.descontoEm; }
+    if(_dsc){
+      // v277 — o carimbo do desconto é PROVA: só muda quando o desconto ou o valor do documento mudam
+      if(c.descontoPor && c.descontoEm && Math.abs((parseFloat(c.desconto)||0)-_dsc.desconto)<0.005 && Math.abs((parseFloat(c.valorBruto)||0)-_dsc.valorBruto)<0.005){ _dsc.descontoPor=c.descontoPor; _dsc.descontoEm=c.descontoEm; }
+      Object.assign(c, _dsc);
+    } else { delete c.valorBruto; delete c.desconto; delete c.descontoPor; delete c.descontoEm; }
     // v139 — fixa: plano ajustado no Caixa volta pro CADASTRO da fixa (senão a edição do cadastro re-clobra os meses seguintes)
     if(c.origem==='fixa'&&c.fixaId){ const fx=contasFixas.find(x=>String(x.id)===String(c.fixaId)); if(fx) fx.planoId=planoId; }
   } else {
@@ -28379,14 +28873,30 @@ function openPagModal(id){
   }
   // Fornecedor autocomplete via renderFornecedorAc
   document.getElementById('pag-overlay').classList.add('open');
-  pagPercMode='perc';
-  setPagRateioMode('perc');
+  // v277 — reabre no MODO em que o rateio foi feito (lançamento antigo, sem o modo gravado, abre em "Por %" como sempre)
+  var _pEd=id?pagamentos.find(x=>x.id===id):null;
+  var _mEd=(_pEd && (_pEd.rateioModo==='valor' || _pEd.rateioModo==='prop'))?_pEd.rateioModo:'perc';
+  pagPercMode=_mEd; // já no modo certo: não passa pela conversão de "saindo do proporcional"
+  _pagAbertura=_pEd?_pagChave():null; // salvar sem mexer no total nem no rateio mantém os valores gravados
+  _pagGravado=_pEd?_pagFoto(_pEd):null;
+  setPagRateioMode(_mEd);
 }
 
+// v277 — fotografia do rateio na abertura do modal (modo, total em centavos e a entrada de cada linha)
+var _pagAbertura=null;
+// ...e do que estava GRAVADO no lançamento (total e valor de cada pedido, em centavos; independe da ordem das chaves):
+// se outra sessão alterou o lançamento com este editor aberto, o salvar recusa
+var _pagGravado=null;
+function _pagFoto(p){ return JSON.stringify([Math.round((parseFloat(p&&p.valor)||0)*100), ((p&&p.rateios)||[]).map(function(r){ return [String(r&&r.pedidoId), Math.round((parseFloat(r&&r.valor)||0)*100), parseFloat(r&&r.perc)||0]; })]); }
+function _pagChave(){
+  var v=Math.round((parseFloat((document.getElementById('pag-valor')||{}).value)||0)*100);
+  return JSON.stringify([pagPercMode, v, (pagPercRows||[]).map(function(r){ return [String(r.pedidoId), pagPercMode==='perc'?(parseFloat(r.perc)||0):(pagPercMode==='valor'?Math.round((parseFloat(r.valor)||0)*100):0)]; })]);
+}
 function closePagModal(){
   document.getElementById('pag-overlay').classList.remove('open');
   editingPagId = null;
   pagPercRows = [];
+  _pagAbertura = null; _pagGravado = null; // v277
 }
 
 // ══ v273 — RATEIO PROPORCIONAL AO VALOR DO PEDIDO (pedido do dono 18/11) ══
@@ -28423,7 +28933,9 @@ function _pagPropPinta(){
   const c=_pagPropCalc(valorTot);
   pagPercRows.forEach((r,i)=>{
     const el=document.getElementById('pag-prop-val-'+i); if(!el) return;
-    el.textContent=c.ok?('R$ '+c.linhas[i].valor.toFixed(2)+' · '+c.linhas[i].perc.toFixed(1)+'%'):'—';
+    const _pG=(editingPagId && _pagAbertura && _pagChave()===_pagAbertura)?pagamentos.find(x=>x.id===editingPagId):null; // v277
+    const _rG=(_pG && Array.isArray(_pG.rateios))?_pG.rateios[i]:null;
+    el.textContent=_rG?('R$ '+(parseFloat(_rG.valor)||0).toFixed(2)+' · '+(parseFloat(_rG.perc)||0).toFixed(1)+'% (gravado)'):(c.ok?('R$ '+c.linhas[i].valor.toFixed(2)+' · '+c.linhas[i].perc.toFixed(1)+'%'):'—');
     const row=document.getElementById('pag-perc-row-'+i); if(row) row.classList.toggle('perc-ok', !!c.ok);
   });
   return c;
@@ -28569,7 +29081,7 @@ function atualizarPagPercRows(){
 }
 
 function savePagamento(){
-  const valor = parseFloat(document.getElementById('pag-valor').value)||0;
+  const valor = +(parseFloat(document.getElementById('pag-valor').value)||0).toFixed(2); // v277 — em centavos (um total com 3 casas fazia a soma do rateio não fechar)
   const data  = document.getElementById('pag-data').value;
   const tipo  = document.getElementById('pag-tipo').value;
   const forn  = (document.getElementById('pag-fornecedor-input')?.value||'').trim();
@@ -28583,7 +29095,17 @@ function savePagamento(){
   const _idsDup = pagPercRows.map(r=>String(r.pedidoId)).filter(id=>id!=='__outros__'); // v95.1 — "Outros" não conta como duplicado
   if(new Set(_idsDup).size !== _idsDup.length){ alert('Não é permitido o mesmo pedido duplicado no lançamento.'); return; }
   let rateios;
-  if(pagPercMode==='valor'){
+  // v277 — EDIÇÃO sem mexer no valor total nem no rateio (ex.: só a observação, a data ou o fornecedor): os valores
+  // gravados de cada pedido ficam EXATAMENTE como estão — nada é recalculado.
+  const _pEdS = editingPagId ? pagamentos.find(x=>x.id===editingPagId) : null;
+  // o lançamento mudou em outra sessão com este editor aberto (alterado, excluído ou incluído numa solicitação de pagamento): nada é gravado
+  if(editingPagId && !_pEdS){ alert('Este lançamento não existe mais (foi excluído em outra sessão enquanto o editor estava aberto).\n\nNada foi salvo.'); return; }
+  if(_pEdS && _pagEmSolicitacao(_pEdS)){ alert('🔒 Este lançamento entrou em uma solicitação de pagamento enquanto o editor estava aberto.\n\nNada foi salvo. Para editá-lo, o Caixa precisa rejeitar a solicitação.'); return; }
+  if(_pEdS && _pagGravado && _pagFoto(_pEdS)!==_pagGravado){ alert('Este lançamento foi alterado em outra sessão enquanto o editor estava aberto.\n\nNada foi salvo. Feche o editor e abra o lançamento de novo.'); return; }
+  const _intacto =!!(_pEdS && _pagAbertura && _pagChave()===_pagAbertura && Array.isArray(_pEdS.rateios) && _pEdS.rateios.length);
+  if(_intacto){
+    rateios = JSON.parse(JSON.stringify(_pEdS.rateios));
+  } else if(pagPercMode==='valor'){
     const totalV = pagPercRows.reduce((s,r)=>s+(parseFloat(r.valor)||0),0);
     if(Math.abs(totalV-valor)>0.01){ alert('A soma dos valores rateados (R$ '+totalV.toFixed(2)+') deve ser igual ao valor total (R$ '+valor.toFixed(2)+').'); return; }
     const invalid = pagPercRows.find(r=>!r.pedidoId||(parseFloat(r.valor)||0)<=0);
@@ -28606,7 +29128,7 @@ function savePagamento(){
     if(p){
       const log = p.historico||[];
       log.push({ts:now,por:currentUser?.name||'—',acao:'Editado'});
-      Object.assign(p,{valor,data,tipo,fornecedor:_fc.nome,fornecedorId:fornId,obs,rateios,rateioModo:pagPercMode,historico:log,atualizadoEm:now}); // v273 — rateioModo: como o rateio foi feito
+      Object.assign(p,{valor,data,tipo,fornecedor:_fc.nome,fornecedorId:fornId,obs,rateios,rateioModo:(_intacto?p.rateioModo:pagPercMode),historico:log,atualizadoEm:now}); // v273 — rateioModo: como o rateio foi feito
     }
   } else {
     pagamentos.push({id:'pag'+now,valor,data,tipo,fornecedor:_fc.nome,fornecedorId:fornId,obs,rateios,rateioModo:pagPercMode,historico:[{ts:now,por:currentUser?.name||'—',acao:'Criado'}],criadoPor:currentUser?.id,criadoEm:now});
@@ -32381,8 +32903,9 @@ function _alCustoPrecoRef(f, embCusto){
     preco+=g*pg.porG*(1+mk/100);
   });
   if(!_cnEhCaps(f.forma) && excip){ var ge=Math.max(tam-gramas,0); custo+=ge*excip.porG; preco+=ge*excip.porG*(1+excip.mk/100); }
-  if(_cnEhCaps(f.forma) && f.involucroId){
-    var inv=(insumos||[]).find(function(i){ return i&&i.id===f.involucroId; });
+  var _ivL=_cnEhCaps(f.forma)?_cnInvIdDe(f):null; // v277 — escolhido no produto ou padrão do tamanho de preferência
+  if(_ivL){
+    var inv=(insumos||[]).find(function(i){ return i&&i.id===_ivL; });
     var cu=inv?_cnCustoUnit(inv):null;
     if(cu&&cu.v>0&&String((inv&&inv.unidade)||'').toLowerCase()==='un'){ custo+=60*cu.v; preco+=60*cu.v*(1+_cnMarkupInsumo(inv)/100); }
   }
@@ -32414,8 +32937,9 @@ function _alDecompFaixas(f){
     c[(fx&&fx.n)||2]+=g*pg.porG;
   });
   if(!_cnEhCaps(f.forma) && excip){ var ge=Math.max(tam-gramas,0); var fe=_cnFaixaDoInsumo(excip.x); c[(fe&&fe.n)||1]+=ge*excip.porG; }
-  if(_cnEhCaps(f.forma) && f.involucroId){
-    var inv=(insumos||[]).find(function(i){ return i&&i.id===f.involucroId; });
+  var _ivL=_cnEhCaps(f.forma)?_cnInvIdDe(f):null; // v277 — escolhido no produto ou padrão do tamanho de preferência
+  if(_ivL){
+    var inv=(insumos||[]).find(function(i){ return i&&i.id===_ivL; });
     var cu=inv?_cnCustoUnit(inv):null;
     if(cu&&cu.v>0&&String((inv&&inv.unidade)||'').toLowerCase()==='un'){ var fi=_cnFaixaDoInsumo(inv); c[(fi&&fi.n)||1]+=60*cu.v; }
   }
@@ -38030,7 +38554,7 @@ function _obPickFormula(txt, fid, pre){
     '</div>'+ /* v259 — o veículo/excipiente agora tem linha própria no editor (invisível/nome comercial por orçamento) */
     '<div class="form-row">'+
     (caps
-      ? '<div class="form-group"><label>Nº de cápsulas *</label><input type="number" min="1" step="1" id="ob-ncaps" value="60"></div><div class="form-group"><label>Tamanho da cápsula</label><select id="ob-capstam" style="font-size:13px">'+['00','0','1','2','3','4'].map(function(t){ return '<option'+(String(f.capsTam||'0')===t?' selected':'')+'>'+t+'</option>'; }).join('')+'</select></div>'
+      ? '<div class="form-group"><label>Nº de cápsulas *</label><input type="number" min="1" step="1" id="ob-ncaps" value="60"></div><div class="form-group"><label>Tamanho da cápsula</label><select id="ob-capstam" style="font-size:13px" onchange="_obCompRender()">'+['00','0','1','2','3','4'].map(function(t){ return '<option'+(String(f.capsTam||'0')===t?' selected':'')+'>'+t+'</option>'; }).join('')+'</select></div>'
       : '<div class="form-group"><label>Quantidade base (QSP) * <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(volumetria)</span></label><input type="number" min="0" step="any" id="ob-qspv" value="'+(f.qspValor!=null&&f.qspValor!==''?f.qspValor:120)+'"></div><div class="form-group"><label>Unidade</label><select id="ob-qspu" style="font-size:13px"><option'+((f.qspUn||'g')==='g'?' selected':'')+'>g</option><option'+((f.qspUn||'g')==='mL'?' selected':'')+'>mL</option></select></div>')+
     '</div>'+
     '<div class="form-row">'+
@@ -38068,26 +38592,31 @@ function _obCompRender(){
   var c=document.getElementById('ob-comp-rows'); if(!c) return;
   var f=_obSelFid?(catalogoNovo||[]).find(function(x){ return x.id===_obSelFid; }):null;
   var caps=!!(f&&_cnEhCaps(f.forma));
-  var rows='';
   // v259 — pedido do dono 04/11: invisível POR ORÇAMENTO (vale só neste item) e NOME COMERCIAL por
   // componente (o que o cliente vê no PDF); internamente o sistema mostra tudo (nome de cadastro +
   // nome do orçamento). São marcações COSMÉTICAS: não mudam preço nem tornam o item personalizado.
   var ncPh=function(cp){ var ins=(insumos||[]).find(function(x){ return x.id===cp.insumoId; }); var pad=(ins&&(ins.nomeComercial||'').trim())||''; return pad?('vazio = "'+pad+'" (padrão do cadastro)'):'nome no PDF deste orçamento (vazio = nome do cadastro)'; };
-  _obComp.forEach(function(cp,i){
-    if(cp.papel==='excipiente'){
-      rows+='<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:var(--bg-info);border:.5px solid var(--border-md)">'+ /* v273 — veículo em destaque (fundo + negrito) */
+  // v277 — a composição aparece em grupos (a ordem gravada no item não muda): ativos · essências · veículo · invólucro.
+  // Destaque só nesta tela interna; o PDF do cliente segue como era.
+  var fnV=_cnVeicFn(f?f.forma:''), lblV=_insFnLbl(fnV).toLowerCase();
+  var gA=[], gE=[], gV=[];
+  _obComp.forEach(function(cp,i){ (cp.papel==='excipiente'?gV:(_cnCompEhEssencia(cp)?gE:gA)).push(i); });
+  var linhaVeic=function(i){
+    var cp=_obComp[i];
+    return '<div class="ob-comp-veic" style="margin-top:8px;padding:9px 11px;border-radius:8px;background:var(--bg-info);border:.5px solid var(--border-md)">'+ /* v273 — veículo em destaque (fundo + negrito) */
         '<div style="display:flex;gap:8px;align-items:center;font-size:12.5px">'+
-          '<span style="flex:1;min-width:0;color:var(--text-primary);font-weight:700">'+escapeHtml(cp.nome||'?')+' <span style="font-size:10.5px;font-weight:600;color:var(--text-info)">(veículo/excipiente — completa o QSP)</span></span>'+
+          '<span style="flex:1;min-width:0;color:var(--text-primary);font-weight:700">'+escapeHtml(cp.nome||'?')+' <span style="font-size:10.5px;font-weight:600;color:var(--text-info)">(veículo — '+lblV+' — completa o '+(caps?'volume da cápsula':'QSP')+')</span></span>'+
           '<label style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text-secondary);cursor:pointer" title="Marcado: o veículo aparece na composição do PDF do cliente (como qsp)"><input type="checkbox" '+(cp.pdfMostrar?'checked':'')+' onchange="_obCompPdfEx('+i+',this.checked)" style="width:13px;height:13px">mostrar no PDF</label>'+
           '<label style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text-secondary);cursor:pointer" title="Nome comercial — marque para digitar o nome que aparece no PDF deste orçamento"><input type="checkbox" '+(_obCompNcOn(cp)?'checked':'')+' onchange="_obCompNcToggle('+i+',this.checked)" style="width:13px;height:13px">nc</label>'+ /* v266 — pedido do dono 10/11 */
         '</div>'+
         (_obCompNcOn(cp)?'<input type="text" value="'+escapeHtml(cp.nomeComercial||'')+'" oninput="_obCompNC('+i+',this.value)" placeholder="'+escapeHtml(ncPh(cp))+'" style="width:100%;font-size:11px;margin-top:3px;color:var(--text-secondary)">':'')+
       '</div>';
-      return;
-    }
-    rows+='<div style="margin-bottom:7px">'+
+  };
+  var linhaAtivo=function(i, ess){
+    var cp=_obComp[i];
+    return '<div'+(ess?' class="ob-comp-ess"':'')+' style="margin-bottom:7px'+(ess?';padding:7px 10px;border-radius:8px;background:var(--bg-success);border:.5px solid var(--border-md)':'')+'">'+
       '<div style="display:flex;gap:8px;align-items:center;font-size:12px">'+
-        '<span style="flex:1;min-width:0">'+escapeHtml(cp.nome||'?')+(cp._novo?' <span style="font-size:9px;padding:1px 6px;border-radius:10px;background:var(--bg-info);color:var(--text-info);font-weight:700" title="Ativo adicionado neste item (personalizado)">novo</span>':'')+'</span>'+
+        '<span style="flex:1;min-width:0'+(ess?';font-weight:700':'')+'">'+escapeHtml(cp.nome||'?')+(ess?' <span style="font-size:10.5px;font-weight:600;color:var(--text-success)">(essência)</span>':'')+(cp._novo?' <span style="font-size:9px;padding:1px 6px;border-radius:10px;background:var(--bg-info);color:var(--text-info);font-weight:700" title="Ativo adicionado neste item (personalizado)">novo</span>':'')+'</span>'+
         '<label style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text-secondary);cursor:pointer" title="Marcado: este ativo NÃO aparece no PDF do cliente — SÓ neste orçamento (custo/preço não mudam; internamente o sistema mostra tudo)"><input type="checkbox" '+(cp.invisivel?'checked':'')+' onchange="_obCompInv('+i+',this.checked)" style="width:13px;height:13px">🚫 invisível</label>'+
         '<label style="display:flex;align-items:center;gap:4px;font-size:10.5px;color:var(--text-secondary);cursor:pointer" title="Nome comercial — marque para digitar o nome que aparece no PDF deste orçamento"><input type="checkbox" '+(_obCompNcOn(cp)?'checked':'')+' onchange="_obCompNcToggle('+i+',this.checked)" style="width:13px;height:13px">nc</label>'+ /* v266 — pedido do dono 10/11: a linha do nome só abre com o nc marcado */
         '<input type="number" min="0" step="any" value="'+(cp.dose!=null?cp.dose:'')+'" oninput="_obCompDose('+i+',this.value)" style="width:80px;text-align:right;font-size:12px">'+
@@ -38096,8 +38625,21 @@ function _obCompRender(){
       '</div>'+
       (_obCompNcOn(cp)?'<input type="text" value="'+escapeHtml(cp.nomeComercial||'')+'" oninput="_obCompNC('+i+',this.value)" placeholder="'+escapeHtml(ncPh(cp))+'" style="width:100%;font-size:11px;margin-top:3px;color:var(--text-secondary)">':'')+
     '</div>';
-  });
-  c.innerHTML=rows||'<div style="font-size:12px;color:var(--text-tertiary)">Sem ativos — adicione abaixo.</div>';
+  };
+  var fixa=function(cls, txt, est){ return '<div class="'+cls+'" style="margin-top:8px;padding:8px 11px;border-radius:8px;font-size:12px;'+est+'">'+txt+'</div>'; };
+  if(!_obComp.length){ c.innerHTML='<div style="font-size:12px;color:var(--text-tertiary)">Sem ativos — adicione abaixo.</div>'; return; }
+  var rows=gA.map(function(i){ return linhaAtivo(i,false); }).join('')+gE.map(function(i){ return linhaAtivo(i,true); }).join('');
+  if(!gE.length && fnV==='base') rows+=fixa('ob-comp-semess','<b>Sem essência</b> <span style="color:var(--text-tertiary)">— custo R$ 0,00. Para incluir, adicione abaixo um ativo que tenha a função essência.</span>','border:.5px dashed var(--border-md);color:var(--text-secondary);');
+  rows+=gV.map(linhaVeic).join('');
+  if(!gV.length) rows+=fixa('ob-comp-semveic','<b>Sem veículo ('+lblV+')</b> — '+(caps?'o volume restante da cápsula fica sem custeio.':'o restante até o QSP fica sem custeio.'),'background:var(--st-mid-bg);color:var(--st-mid-tx);');
+  if(caps && f){
+    var tam=(document.getElementById('ob-capstam')||{}).value||f.capsTam||'0';
+    var rI=_cnInvResolve(f.involucroId, tam), inv=rI.inv, auto=rI.auto; // o mesmo invólucro que o cálculo usa para este tamanho
+    rows+=inv
+      ? fixa('ob-comp-inv','<b>'+escapeHtml(inv.nome||'?')+'</b> <span style="font-size:10.5px;font-weight:600;color:var(--text-secondary)">(invólucro'+(auto?' — padrão da cápsula '+escapeHtml(tam):' — do cadastro do produto')+')</span>'+((!auto && _embInvTam(inv) && _embInvTam(inv)!==tam)?' <span style="font-size:10.5px;color:var(--st-mid-tx);font-weight:600">é da cápsula '+_embInvTam(inv)+': não há invólucro cadastrado para a cápsula '+escapeHtml(tam)+'</span>':''),'background:var(--bg-tertiary);border:.5px solid var(--border-md);')
+      : fixa('ob-comp-inv','<b>Sem invólucro</b> — não há invólucro cadastrado para a cápsula '+escapeHtml(tam)+' (aba Embalagens, subaba Invólucros): o item sai sem o custo do invólucro.','background:var(--st-mid-bg);color:var(--st-mid-tx);');
+  }
+  c.innerHTML=rows;
 }
 function _obCompDose(i,val){ if(_obComp[i]) _obComp[i].dose=val; }
 function _obCompRem(i){ if(!_obComp[i]||_obComp[i].papel==='excipiente') return; _obComp.splice(i,1); _obCompRender(); }
@@ -38566,7 +39108,7 @@ function _ccCamposPedido(it, f){
   var comp=(it.composicao&&it.composicao.length)?it.composicao:((f&&f.composicao)||[]);
   return { nomeCom:it.nomeCom||'', volumetria:_ccVolumetria(it.forma||(f&&f.forma), it.opts), composicao:_ccCompReal(comp), composicaoPdf:_ccCompPdf(comp),
     modoUso:String(it.modoUso||(f&&f.modoUso)||''), obs:String(it.obsItem||''),
-    orc:{ fid:it.fid, forma:it.forma||(f&&f.forma)||'', opts:JSON.parse(JSON.stringify(it.opts||{})), embalagemIds:(it.embalagemIds||[]).slice(),
+    orc:{ fid:it.fid, forma:(f&&f.forma)||it.forma||'', opts:JSON.parse(JSON.stringify(it.opts||{})), embalagemIds:(it.embalagemIds||[]).slice(),
           composicao:JSON.parse(JSON.stringify(comp)), nomeCom:it.nomeCom||'', ccId:it.ccId||null,
           vol:_ccVolumetria(it.forma||(f&&f.forma), it.opts), emb:String(it.embalagemNome||'') } }; // vol/emb = o texto gravado no item na venda (confere depois se o item foi alterado)
 }
@@ -38610,6 +39152,7 @@ function _ccHistorico(clienteId){
 }
 // ── CATÁLOGO: leitura e gravação (tabela cliente_catalogo; sem leitura confirmada não grava nem insere)
 async function _ccCarregar(clienteId){
+  if(_ccCliId!==clienteId) return false; // v277 — a tela já é de outro cliente (trocado durante uma gravação): não mexe no que está nela
   _ccLido=false; _ccErro=''; _ccItens=[];
   if(!_sb || !clienteId){ _ccErro=_sb?'':'sem conexão com o banco'; return false; }
   try{
@@ -38622,6 +39165,7 @@ async function _ccCarregar(clienteId){
 }
 async function _ccGravar(ci, mutar){
   if(!_ccPodeEditar()){ alert('Só o administrador e o(a) diretor(a) comercial alteram o catálogo do cliente.'); return false; }
+  if(typeof _versionBlocked!=='undefined' && _versionBlocked){ alert('Esta aba está em uma versão desatualizada do sistema.\n\nNada foi gravado. Recarregue a página (Ctrl+Shift+R) e refaça a alteração.'); return false; } // v277
   if(!_sb){ alert('Sem conexão com o banco — nada foi gravado.'); return false; }
   try{
     var d=ci;
@@ -38656,6 +39200,8 @@ function _ccMargem(ci){
   return out;
 }
 // Problemas de embalagem de um conjunto de ids para uma forma (não bloqueia o catálogo — só avisa e notifica)
+// v277 — forma farmacêutica do produto do catálogo do cliente: a ATUAL do cadastro; a gravada no item só vale se o produto saiu do catálogo
+function _ccFormaDe(it){ var f=(it&&it.fid)?(catalogoNovo||[]).find(function(x){ return x && x.id===it.fid; }):null; return (f&&f.forma)||(it&&it.forma)||''; }
 function _ccProblemasEmb(forma, ids){
   var probs=[];
   if(!_ffCarregado) return ['a configuração de formas farmacêuticas não foi lida nesta sessão — embalagem não conferida'];
@@ -38782,7 +39328,7 @@ function _ccChips(txt){
 function _ccCatNome(ci){ return String((ci&&ci.nomeCom)||(ci&&ci.item&&ci.item.nome)||''); }
 function _ccCatBuscaTxt(ci){
   var it=(ci&&ci.item)||{};
-  return _obNorm([ci.nomeCom||'', it.nome||'', it.codigo||'', _cnFormaLbl(it.forma), _ccEmbNomes(it.embalagemIds).join(' ')].join(' '));
+  return _obNorm([ci.nomeCom||'', it.nome||'', it.codigo||'', _cnFormaLbl(_ccFormaDe(it)), _ccEmbNomes(it.embalagemIds).join(' ')].join(' '));
 }
 function _ccHtmlCatalogo(){
   if(_ccErro) return '<div style="padding:18px;text-align:center;font-size:12.5px;color:var(--st-bad-tx)">Não foi possível ler o catálogo deste cliente: '+escapeHtml(_ccErro)+'<div style="margin-top:8px">'+_ccBtn('Tentar de novo','_ccEscolherCli(\''+_ccCliId+'\')')+'</div></div>';
@@ -38819,7 +39365,7 @@ function _ccHtmlCatalogo(){
     '</div>';
     var corpo='<div id="cc-cb-'+ci.id+'" style="display:'+(fechado?'none':'grid')+';grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:12px 14px">'+
       _ccCampo('Código', escapeHtml(it.codigo||'—'))+
-      _ccCampo('Forma farmacêutica', escapeHtml(_cnFormaLbl(it.forma)||'—'))+
+      _ccCampo('Forma farmacêutica', escapeHtml(_cnFormaLbl(_ccFormaDe(it))||'—'))+
       _ccCampo('Volumetria', escapeHtml(_ccVolumetria(it.forma, it.opts)))+
       _ccCampo('Embalagem', embs.length?embs.map(function(n){ return escapeHtml(n); }).join('<br>'):_ccVazioTxt('sem embalagem'))+
       _ccCampo('Composição real', _ccChips(_ccCompReal(it.composicao)), true)+
@@ -38876,7 +39422,7 @@ function _ccPuxar(oid, ix){
   var comp=(st.composicao&&st.composicao.length)?st.composicao:((f&&f.composicao)||[]);
   if(!comp.length){ alert('A fórmula deste produto não está mais no catálogo e o pedido não guardou a composição — use "Inserir novo".'); return; }
   var nomes=_ccEmbNomes(st.embalagemIds);
-  var item={ fid:st.fid, codigo:(f&&f.codigo)||it.codigo||'', nome:(f&&f.nome)||it.nome||'', forma:st.forma||(f&&f.forma)||'', opts:JSON.parse(JSON.stringify(st.opts||{})),
+  var item={ fid:st.fid, codigo:(f&&f.codigo)||it.codigo||'', nome:(f&&f.nome)||it.nome||'', forma:(f&&f.forma)||st.forma||'', opts:JSON.parse(JSON.stringify(st.opts||{})),
     embalagemId:(st.embalagemIds||[])[0]||null, embalagemIds:(st.embalagemIds||[]).slice(), embalagemNome:nomes.join(' + '), embalagemNomes:nomes,
     detalhe:_ccVolumetria(st.forma||(f&&f.forma), st.opts)+(nomes.length?' · '+nomes.join(' + '):''), composicao:JSON.parse(JSON.stringify(comp)),
     precoUnit:parseFloat(it.precoUnit)||parseFloat(it.precoTabela)||0, custoUnit:parseFloat(it.custo)||0 };
@@ -38978,7 +39524,7 @@ function _ccAddDoCatalogo(id){
   // entra EXATAMENTE como está no catálogo: composição, volumetria, embalagem, nome comercial e preço combinado
   var item=Object.assign(it, { qtd:q, descPct:0, precoUnit:+(mg.preco||0).toFixed(2), custoUnit:+((mg.custo!=null?mg.custo:(parseFloat(it.custoUnit)||0))).toFixed(2),
     precoFonte:'catalogo_cliente', ccId:ci.id, nomeCom:ci.nomeCom||'', modoUso:ci.modoUso||'', obsItem:ci.obs||'', avisos:0, avisosTxt:[] });
-  var probs=_ccProblemasEmb(it.forma, it.embalagemIds);
+  var probs=_ccProblemasEmb(_ccFormaDe(it), it.embalagemIds); // v277 — forma atual do produto
   if(!(catalogoNovo||[]).some(function(x){ return x && x.id===it.fid; })) probs.push('a fórmula de origem não está mais no catálogo');
   if(probs.length){ item.avisos=probs.length; item.avisosTxt=probs.slice(); }
   _ob.itens.push(item);
@@ -39001,6 +39547,8 @@ function _obPncHtml(pre){
 }
 function _obFechar(){
   if(!_ob) return;
+  // v277 — sem o catálogo de produtos não há como saber a linha do item; catálogo vazio com item de fórmula no orçamento também conta como "não carregado"
+  if((typeof _sepCarregadaOk!=='undefined' && !_sepCarregadaOk.catalogoNovo) || (!(catalogoNovo||[]).length && (_ob.itens||[]).some(function(it){ return it && it.fid; }))){ alert('O catálogo de produtos ainda não foi carregado nesta sessão — é por ele que o sistema sabe se o orçamento é da linha anestésico.\n\nAguarde alguns instantes (a carga é refeita sozinha) e clique de novo. Se continuar, recarregue a página (Ctrl+Shift+R).'); return; }
   if(!_ffCarregado){ try{ _ffCarregar(); }catch(_e){} alert('A configuração de formas farmacêuticas ainda está sendo carregada — é ela que diz se o orçamento é da linha anestésico.\n\nAguarde um instante e clique de novo.'); return; } // v276
   var cats=(_ob.itens||[]).map(function(it){ var f=(catalogoNovo||[]).find(function(x){ return x.id===it.fid; }); return (f&&_cnEhAnest(f))?'a':'l'; }); // v276 — pela forma farmacêutica
   var temA=cats.indexOf('a')>=0, temL=cats.indexOf('l')>=0;

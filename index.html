@@ -1404,7 +1404,7 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
               <button class="btn-primary" id="cn-novo-btn" onclick="openCnModal()">+ Nova fórmula</button>
             </div>
             <div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px">
-              <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Fórmula</th><th style="padding:8px 10px;text-align:left">Categoria</th><th style="padding:8px 10px;text-align:left">Forma</th><th style="padding:8px 10px;text-align:left">Padrão</th><th style="padding:8px 10px;text-align:right" title="Venda definida por unidade (fixa) + farol de margem; 'padrão' = vende pela venda calculada">Venda</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
+              <thead><tr style="background:var(--bg-secondary)"><th style="padding:8px 10px;text-align:left">Código</th><th style="padding:8px 10px;text-align:left">Fórmula</th><th style="padding:8px 10px;text-align:left">Forma farmacêutica</th><th style="padding:8px 10px;text-align:left">Padrão</th><th style="padding:8px 10px;text-align:right" title="Venda definida por unidade (fixa) + farol de margem; 'padrão' = vende pela venda calculada">Venda</th><th style="padding:8px 10px;text-align:center">Ações</th></tr></thead>
               <tbody id="cn-tbody"></tbody>
             </table></div>
             <div id="cn-vazio" style="display:none;color:var(--text-secondary);font-size:13px;padding:24px;text-align:center">Nenhuma fórmula cadastrada. Clique em "+ Nova fórmula".</div>
@@ -1520,14 +1520,18 @@ setTimeout(function(){ var el=document.getElementById('boot-loader'); if(el && !
             <div class="form-group"><label>Nome da fórmula *</label><input type="text" id="cn-nome" placeholder="ex: Sérum GHK-Cu"></div>
           </div>
           <div class="form-row">
-            <div class="form-group"><label>Categoria do produto <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(perdas e custo fixo vêm da Configuração)</span></label><select id="cn-cat"></select></div>
+            <!-- v276 — "Categoria do produto" foi fundida na forma farmacêutica; aqui fica o resumo do que a forma escolhida traz -->
+            <div class="form-group" style="order:2"><label>O que a forma define <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(configurado na aba Formas Farmacêuticas)</span></label><div id="cn-forma-info" style="font-size:12px;line-height:1.5;color:var(--text-secondary);padding:6px 0;min-height:36px"></div></div>
             <!-- v258 — formas farmacêuticas: união da lista do dono (04/11) com as existentes; o filtro de embalagens do orçamento usa este campo -->
             <div class="form-group"><label>Forma farmacêutica * <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(cadastro na aba Formas Farmacêuticas; define as embalagens aceitas no orçamento)</span></label><select id="cn-forma" onchange="_cnFormaChange()"><option value="semisolido">Semisólido (legado — reclassificar)</option><option value="gel">Gel</option><option value="gel_creme">Gel creme</option><option value="creme">Creme</option><option value="anestesico">Anestésico</option><option value="serum">Sérum</option><option value="liquido">Líquido</option><option value="oleo">Óleo</option><option value="espuma">Espuma</option><option value="spray">Spray/Bruma</option><option value="sabonete">Sabonete</option><option value="shampoo">Shampoo</option><option value="solido">Sólido</option><option value="capsula">Cápsulas</option><option value="goma">Goma</option><option value="scoop">Scoop (pó)</option></select></div>
           </div>
           <!-- v274 — categorias de USO: as 17 do Catálogo Lecare, seleção MÚLTIPLA (substitui o campo único da v258) -->
           <div class="modal-section">
-            <div class="modal-section-title">Categorias de uso <span style="font-weight:400;text-transform:none;color:var(--text-tertiary);font-size:11px">(as 17 do Catálogo Lecare — o produto pode estar em mais de uma; agrupam o catálogo do orçamento)</span> <span id="cn-catuso-n" style="font-weight:600;text-transform:none;color:var(--text-info);font-size:11px;margin-left:6px"></span></div>
-            <div id="cn-catuso-box" style="display:grid;grid-template-columns:1fr 1fr;gap:2px 16px"></div>
+            <div class="modal-section-title">Categorias de uso <span style="font-weight:400;text-transform:none;color:var(--text-tertiary);font-size:11px">(o produto pode estar em mais de uma; agrupam o catálogo do orçamento)</span> <span id="cn-catuso-n" style="font-weight:600;text-transform:none;color:var(--text-info);font-size:11px;margin-left:6px"></span></div>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><!-- v275 — a lista das 17 abre em modal próprio; aqui ficam só as selecionadas -->
+              <button type="button" id="cn-catuso-btn" onclick="_cnCatUsoAbrir()" style="font-size:12px;padding:5px 14px;white-space:nowrap;width:auto" title="Abre a lista das 17 categorias de uso para marcar as deste produto">Categorias de uso</button>
+              <div id="cn-catuso-box" style="flex:1;min-width:240px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-height:30px"></div>
+            </div>
           </div>
           <div class="modal-section">
             <div class="modal-section-title">Composição — vinculada aos insumos <span id="cn-comp-hint" style="font-weight:400;color:var(--text-tertiary);font-size:11px"></span></div>
@@ -5652,7 +5656,7 @@ function _saveAndConfirm(timeoutMs){
 }
 
 // ════════════════ v77 — PORTÃO DE VERSÃO (impede aba/versão antiga de salvar) ════════════════
-var APP_VERSION = 'v274';
+var APP_VERSION = 'v276';
 var _versionBlocked = false;
 function _verNum(v){ var m=/(\d+)/.exec(String(v||'')); return m?parseInt(m[1]):0; }
 async function _checkVersionGate(){
@@ -5882,6 +5886,7 @@ function _startSession(){
   // aqui já existe). Re-lê e re-atribui ao completar — sem janela de modo nulo.
   try{ _sepCanonLoad(); }catch(_e){}
   try{ _ffCarregar(); }catch(_e){} // v272 — formas farmacêuticas × tipos de embalagem (cápsulas e filtro de embalagens)
+  try{ _cnCfgCarregar(); }catch(_e){} // v276 — configuração do catálogo lida no início da sessão (antes: só ao abrir a aba Catálogo Novo)
   _authUidLogin = null; window._authExpirada = false; // v151 : login novo zera o vigia (a 1ª batida recaptura o dono)
   try{ var _ab=document.getElementById('_auth-banner'); if(_ab&&_ab.parentNode) _ab.parentNode.removeChild(_ab); }catch(_e){}
   _sessionHeartbeat();
@@ -13230,11 +13235,14 @@ function saveInsumo(){
 // administrador; grava-se a cópia inteira e só depois de confirmado pelo servidor ela passa a valer.
 var FF_KEY='lecare_formas_farm';
 var FF_TIPOS_PADRAO=[['spray','Spray'],['pump','Pump'],['espumador','Espumador'],['rollon','Roll-on'],['pote','Pote'],['gotejador','Gotejador'],['batoque','Batoque'],['fliptop','Flip-top'],['capsulas','Cápsulas'],['scoop','Scoop'],['sache','Sachê'],['airless','Airless'],['stick','Stick'],['seringa','Seringa']];
+var FF_PERDAS_PADRAO=5; // v276 — % de perdas de fábrica (o valor que TODAS as categorias de produto tinham na fusão de 18/11)
+// número de custo da forma: ausente, vazio, negativo ou ilegível = o padrão (um zero gravado de propósito é respeitado)
+function _ffNum(v, pad){ if(v===null || v===undefined || v==='') return pad; var n=Number(v); return (isFinite(n) && n>=0)?n:pad; }
 var _ff=null, _ffCarregado=false, _ffCarregando=null, _ffErro='';
 function _ffAdmin(){ return !!(currentUser && currentUser.perfil==='admin'); }
 function _ffPadrao(){
   return { tipos:FF_TIPOS_PADRAO.map(function(t){ return {id:t[0], nome:t[1]}; }),
-           formas:Object.keys(CN_FORMAS_LBL).map(function(k){ return {id:k, nome:CN_FORMAS_LBL[k], caps:(k==='capsula'), tipos:[]}; }),
+           formas:Object.keys(CN_FORMAS_LBL).map(function(k){ return {id:k, nome:CN_FORMAS_LBL[k], caps:(k==='capsula'), tipos:[], perdas:FF_PERDAS_PADRAO, custoFixo:0, markupFixo:0, anest:(k==='anestesico')}; }),
            _ts:0 };
 }
 // Saneia o que veio do banco: listas sempre listas, ids/nomes texto, sem duplicata, tipos da forma só os que existem.
@@ -13250,7 +13258,9 @@ function _ffNorm(v){
     var id=String((f&&f.id)||'').trim(), nome=String((f&&f.nome)||'').trim();
     if(!id || !nome || vistoF[id] || !_FF_ID_OK.test(id)) return; vistoF[id]=1;
     var ts=[]; ((f&&Array.isArray(f.tipos))?f.tipos:[]).forEach(function(x){ x=String(x||''); if(vistoT[x] && ts.indexOf(x)<0) ts.push(x); });
-    o.formas.push({id:id, nome:nome, caps:(id==='capsula')?true:!!(f&&f.caps), tipos:ts});
+    o.formas.push({id:id, nome:nome, caps:(id==='capsula')?true:!!(f&&f.caps), tipos:ts,
+      // v276 — custo e linha (vieram da antiga "Categoria do produto"); a forma Anestésico é SEMPRE linha anestésico, como a Cápsulas é sempre por cápsulas
+      perdas:_ffNum(f&&f.perdas, FF_PERDAS_PADRAO), custoFixo:_ffNum(f&&f.custoFixo, 0), markupFixo:_ffNum(f&&f.markupFixo, 0), anest:(id==='anestesico')?true:!!(f&&f.anest)});
   });
   return o;
 }
@@ -13289,6 +13299,7 @@ function _ffCarregar(){
 // Grava a cópia alterada; a memória só troca DEPOIS do servidor confirmar (falha = nada muda na tela).
 async function _ffGravar(novo){
   if(!_ffAdmin()){ alert('Só o administrador altera formas farmacêuticas e tipos de embalagem.'); return false; }
+  if(typeof _versionBlocked!=='undefined' && _versionBlocked){ alert('Esta aba está em uma versão desatualizada do sistema.\n\nNada foi gravado. Recarregue a página (Ctrl+Shift+R) e refaça a alteração.'); return false; } // v276
   if(!_sb){ alert('Sem conexão com o banco — nada foi gravado.'); return false; }
   // sem leitura confirmada a memória pode ser só o padrão de fábrica: gravar apagaria o que já está cadastrado
   if(!_ffCarregado){ alert('A configuração gravada no servidor ainda não foi lida nesta sessão'+(_ffErro?' ('+_ffErro+')':'')+'.\n\nNada foi gravado — gravar agora poderia apagar o que já está cadastrado. Verifique a conexão e tente de novo.'); return false; }
@@ -13343,11 +13354,16 @@ function renderFormasFarm(){
   var btn=function(txt, on, perigo){ return '<button onclick="'+on+'" style="font-size:11px;padding:3px 9px;border:.5px solid '+(perigo?'var(--st-bad-bd)':'var(--border-md)')+';border-radius:var(--r-md);background:'+(perigo?'var(--st-bad-bg)':'var(--bg-secondary)')+';'+(perigo?'color:var(--st-bad-tx);':'')+'cursor:pointer;font-family:inherit">'+txt+'</button>'; };
   var chip=function(t){ return '<span style="display:inline-block;font-size:11px;padding:2px 8px;border-radius:12px;background:var(--bg-info);color:var(--text-info);margin:1px 3px 1px 0">'+escapeHtml(t)+'</span>'; };
   var th='padding:8px 10px;text-align:left', td='padding:7px 10px';
+  var num=function(v, casas){ return (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:casas, maximumFractionDigits:2}); };
   var linhasF=_ffFormas().map(function(f){
     var ts=_ffTiposDaForma(f.id), uso=_ffUsoForma(f.id);
     return '<tr style="border-bottom:.5px solid var(--border)">'+
-      '<td style="'+td+';font-weight:600">'+escapeHtml(f.nome)+'</td>'+
+      '<td style="'+td+';font-weight:600">'+escapeHtml(f.nome)+(f.anest?' <span title="Produtos desta forma são da linha ANESTÉSICO: o orçamento vira pedido da linha anestésico e não se mistura com a linha personalizada" style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:12px;background:var(--st-mid-bg);color:var(--st-mid-tx);margin-left:4px">linha anestésico</span>':'')+'</td>'+
       '<td style="'+td+';font-size:12px">'+(f.caps?'Cápsulas':'Peso ou volume')+'</td>'+
+      // v276 — perdas, custo fixo e markup do custo fixo: vieram da antiga "Categoria do produto" (aba Configuração)
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+num(f.perdas,0)+'%</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap">R$ '+num(f.custoFixo,2)+'</td>'+
+      '<td style="'+td+';text-align:right;white-space:nowrap">'+num(f.markupFixo,0)+'%</td>'+
       '<td style="'+td+'">'+(ts.length?ts.map(function(id){ return chip(_ffTipoNome(id)); }).join(''):'<span style="font-size:11.5px;color:var(--st-mid-tx);font-weight:600" title="Sem tipo marcado, nenhuma embalagem pode ser escolhida no orçamento para os produtos desta forma">nenhum tipo marcado</span>')+'</td>'+
       '<td style="'+td+';text-align:right">'+uso.toLocaleString('pt-BR')+'</td>'+
       '<td style="'+td+';text-align:center;white-space:nowrap">'+(adm?(btn('Editar','_ffFormaAbrir(\''+f.id+'\')')+' '+btn('Excluir','_ffFormaExcluir(\''+f.id+'\')',true)):'—')+'</td></tr>';
@@ -13361,10 +13377,12 @@ function renderFormasFarm(){
       '<td style="'+td+';text-align:center;white-space:nowrap">'+(adm?(btn('Renomear','_ffTipoAbrir(\''+t.id+'\')')+' '+btn('Excluir','_ffTipoExcluir(\''+t.id+'\')',true)):'—')+'</td></tr>';
   }).join('');
   box.innerHTML=
-    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:12px">Cada <b>produto</b> tem uma forma farmacêutica; cada <b>forma</b> aceita um ou mais <b>tipos de embalagem</b>. O tipo fica no <b>Kit Completo</b> e na <b>Tampa</b> (no conjunto corpo + tampa, quem define é a tampa). No orçamento, o produto só aceita kit ou tampa de um tipo marcado na forma dele.'+(adm?'':' Somente o administrador altera esta aba.')+'</div>'+
+    '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:12px">Cada <b>produto</b> tem uma forma farmacêutica. A <b>forma</b> define: os <b>tipos de embalagem</b> aceitos no orçamento, se o produto é em <b>cápsulas</b>, a <b>% de perdas</b> e o <b>custo fixo</b> que entram no cálculo do custo e do preço, e se o produto é da <b>linha anestésico</b>. O tipo de embalagem fica no <b>Kit Completo</b> e na <b>Tampa</b> (no conjunto corpo + tampa, quem define é a tampa).'+(adm?'':' Somente o administrador altera esta aba.')+'</div>'+
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"><div style="font-size:13px;font-weight:700">Formas farmacêuticas</div>'+(adm?'<button class="btn-primary" onclick="_ffFormaAbrir()">+ Cadastrar forma</button>':'')+'</div>'+
-    '<div class="table-scroll" style="margin-bottom:22px"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--bg-secondary)"><th style="'+th+'">Forma farmacêutica</th><th style="'+th+'" title="Como o orçamento calcula a quantidade do produto">Quantidade no orçamento</th><th style="'+th+'">Tipos de embalagem aceitos</th><th style="'+th+';text-align:right">Produtos</th><th style="'+th+';text-align:center">Ações</th></tr></thead><tbody>'+
-      (linhasF||'<tr><td colspan="5" style="padding:18px;text-align:center;color:var(--text-tertiary);font-size:12px">Nenhuma forma cadastrada.</td></tr>')+'</tbody></table></div>'+
+    '<div class="table-scroll" style="margin-bottom:22px"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--bg-secondary)"><th style="'+th+'">Forma farmacêutica</th><th style="'+th+'" title="Como o orçamento calcula a quantidade do produto">Quantidade no orçamento</th>'+
+      '<th style="'+th+';text-align:right" title="% de perdas aplicada na quantidade de matéria-prima">Perdas</th><th style="'+th+';text-align:right" title="Custo fixo somado ao custo de cada produto desta forma">Custo fixo</th><th style="'+th+';text-align:right" title="Markup aplicado sobre o custo fixo">Markup do custo fixo</th>'+
+      '<th style="'+th+'">Tipos de embalagem aceitos</th><th style="'+th+';text-align:right">Produtos</th><th style="'+th+';text-align:center">Ações</th></tr></thead><tbody>'+
+      (linhasF||'<tr><td colspan="8" style="padding:18px;text-align:center;color:var(--text-tertiary);font-size:12px">Nenhuma forma cadastrada.</td></tr>')+'</tbody></table></div>'+
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"><div style="font-size:13px;font-weight:700">Tipos de embalagem</div>'+(adm?'<button class="btn-primary" onclick="_ffTipoAbrir()">+ Cadastrar tipo</button>':'')+'</div>'+
     '<div class="table-scroll"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--bg-secondary)"><th style="'+th+'">Tipo de embalagem</th><th style="'+th+';text-align:right">Embalagens com este tipo</th><th style="'+th+';text-align:right">Formas que aceitam</th><th style="'+th+';text-align:center">Ações</th></tr></thead><tbody>'+
       (linhasT||'<tr><td colspan="4" style="padding:18px;text-align:center;color:var(--text-tertiary);font-size:12px">Nenhum tipo cadastrado.</td></tr>')+'</tbody></table></div>';
@@ -13378,19 +13396,37 @@ async function _ffFormaAbrir(id){
   _ffFormaEditId=f?f.id:null; _ffEditTs=(_ff&&_ff._ts)||0;
   var uso=f?_ffUsoForma(f.id):0;
   var travaCaps=!!(f && (f.id==='capsula' || uso>0));
+  var travaAnest=!!(f && f.id==='anestesico');
+  var dica=function(t){ return ' <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">'+t+'</span>'; };
   var ov=_ffOverlay('ff-forma-overlay');
-  ov.innerHTML='<div class="modal" style="width:480px;max-width:95vw">'+
+  ov.innerHTML='<div class="modal" style="width:560px;max-width:95vw;max-height:92vh;overflow-y:auto">'+
     '<h2 style="font-size:15px">'+(f?'Editar forma farmacêutica':'Cadastrar forma farmacêutica')+'</h2>'+
     '<div class="form-group" style="margin-bottom:12px"><label>Nome *</label><input type="text" id="ff-f-nome" maxlength="60" value="'+escapeHtml(f?f.nome:'')+'"></div>'+
     '<label style="display:flex;align-items:flex-start;gap:7px;font-size:13px;margin-bottom:4px'+(travaCaps?';opacity:.7':'')+'"><input type="checkbox" id="ff-f-caps" style="width:15px;height:15px;margin-top:2px"'+((f&&f.caps)?' checked':'')+(travaCaps?' disabled':'')+'> <span>Produto em <b>cápsulas</b> <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(o orçamento pede número e tamanho de cápsula; desmarcado, pede a quantidade em g ou mL)</span></span></label>'+
     (travaCaps?'<div style="font-size:11px;color:var(--text-tertiary);margin:0 0 10px 22px">'+(f.id==='capsula'?'A forma Cápsulas é sempre calculada por cápsulas.':'Há '+uso.toLocaleString('pt-BR')+' produto(s) nesta forma — a marcação não pode mudar.')+'</div>':'<div style="margin-bottom:10px"></div>')+
+    // v276 — linha anestésico (antes era o NOME da categoria do produto que decidia)
+    '<label style="display:flex;align-items:flex-start;gap:7px;font-size:13px;margin-bottom:4px'+(travaAnest?';opacity:.7':'')+'"><input type="checkbox" id="ff-f-anest" style="width:15px;height:15px;margin-top:2px"'+((f&&f.anest)?' checked':'')+(travaAnest?' disabled':'')+'> <span>Produto da <b>linha anestésico</b> <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(o orçamento com produto desta forma vira pedido da linha anestésico e não pode ser misturado com a linha personalizada)</span></span></label>'+
+    (travaAnest?'<div style="font-size:11px;color:var(--text-tertiary);margin:0 0 10px 22px">A forma Anestésico é sempre da linha anestésico.</div>':'<div style="margin-bottom:10px"></div>')+
+    // v276 — perdas e custo fixo (antes: "Categorias de produto", na aba Configuração)
+    '<div style="font-size:12px;font-weight:600;margin-bottom:6px">Custo do produto'+dica('(entram no cálculo do custo e do preço de todo produto desta forma)')+'</div>'+
+    '<div class="form-row" style="margin-bottom:12px">'+
+      '<div class="form-group"><label>Perdas (%)'+dica('na quantidade de matéria-prima')+'</label><input type="number" min="0" step="0.01" id="ff-f-perdas" value="'+(f?f.perdas:FF_PERDAS_PADRAO)+'" style="text-align:right"></div>'+
+      '<div class="form-group"><label>Custo fixo (R$)</label><input type="number" min="0" step="0.01" id="ff-f-fixo" value="'+(f?f.custoFixo:0)+'" style="text-align:right"></div>'+
+      '<div class="form-group"><label>Markup do custo fixo (%)</label><input type="number" min="0" step="0.01" id="ff-f-mkfixo" value="'+(f?f.markupFixo:0)+'" style="text-align:right"></div>'+
+    '</div>'+
     '<div style="font-size:12px;font-weight:600;margin-bottom:6px">Tipos de embalagem aceitos</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;max-height:42vh;overflow-y:auto;padding:2px 0 8px">'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;max-height:34vh;overflow-y:auto;padding:2px 0 8px">'+
       (_ffTipos().map(function(t){ return '<label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" class="ff-f-tp" value="'+escapeHtml(t.id)+'"'+((f&&(f.tipos||[]).indexOf(t.id)>=0)?' checked':'')+' style="width:15px;height:15px"> '+escapeHtml(t.nome)+'</label>'; }).join('')||'<span style="font-size:12px;color:var(--text-tertiary)">Cadastre os tipos de embalagem primeiro.</span>')+
     '</div>'+
     '<div class="modal-footer"><button onclick="_ffFechar(\'ff-forma-overlay\')">Cancelar</button><button class="btn-primary" id="ff-f-salvar" onclick="_ffFormaSalvar()">Salvar</button></div></div>';
   ov.classList.add('open');
   var n=document.getElementById('ff-f-nome'); if(n) n.focus();
+}
+// número do formulário de custo: vazio, negativo ou texto não passa (devolve null → quem chama avisa e não grava)
+function _ffLerNum(id){
+  var e=document.getElementById(id); if(!e) return undefined; // campo fora da tela: quem chama mantém o que está gravado
+  var t=String(e.value==null?'':e.value).trim().replace(',', '.'); if(t==='') return null;
+  var n=Number(t); return (isFinite(n) && n>=0)?n:null;
 }
 async function _ffFormaSalvar(){
   if(!_ffAdmin()){ alert('Só o administrador altera formas farmacêuticas.'); return; }
@@ -13399,14 +13435,25 @@ async function _ffFormaSalvar(){
   var novo=_ffClone(); novo._ts=_ffEditTs; // a alteração se baseia no que estava na tela quando o modal abriu: se mudou depois, _ffGravar recusa
   if(novo.formas.some(function(x){ return x.id!==_ffFormaEditId && _ffNomeIgual(x.nome, nome); })){ alert('Já existe uma forma farmacêutica com este nome.'); return; }
   var tipos=Array.prototype.slice.call(document.querySelectorAll('#ff-forma-overlay .ff-f-tp:checked')).map(function(c){ return c.value; });
-  var ck=document.getElementById('ff-f-caps');
+  var ck=document.getElementById('ff-f-caps'), ckA=document.getElementById('ff-f-anest');
+  // v276 — custo: os três números são obrigatórios e não negativos (mexem em preço: nada é presumido)
+  var perdas=_ffLerNum('ff-f-perdas'), fixo=_ffLerNum('ff-f-fixo'), mk=_ffLerNum('ff-f-mkfixo');
+  if(perdas===null || fixo===null || mk===null){ alert('Informe as perdas (%), o custo fixo (R$) e o markup do custo fixo (%) — números iguais ou maiores que zero.\n\nNada foi gravado.'); return; }
+  if(perdas!==undefined && perdas>=100){ alert('A % de perdas tem de ser menor que 100.\n\nNada foi gravado.'); return; }
   var alvo=_ffFormaEditId?novo.formas.find(function(x){ return x.id===_ffFormaEditId; }):null;
   if(_ffFormaEditId && !alvo){ alert('Esta forma não existe mais.'); return; }
+  if(alvo && ckA && !ckA.disabled && (!!ckA.checked)!==(!!alvo.anest)){
+    var _usoA=_ffUsoForma(alvo.id);
+    if(_usoA>0 && !confirm('Há '+_usoA.toLocaleString('pt-BR')+' produto(s) na forma "'+alvo.nome+'".\n\nAo salvar, TODOS passam a ser tratados como '+(ckA.checked?'linha ANESTÉSICO':'linha PERSONALIZADA (deixam de ser anestésico)')+' nos orçamentos e pedidos novos.\n\nConfirmar?')) return;
+  }
   if(alvo){
     alvo.nome=nome; alvo.tipos=tipos;
     if(ck && !ck.disabled) alvo.caps=!!ck.checked; // travado (em uso ou forma Cápsulas) = mantém o que está gravado
+    if(ckA && !ckA.disabled) alvo.anest=!!ckA.checked; // travado (forma Anestésico) = mantém
+    if(perdas!==undefined) alvo.perdas=perdas; if(fixo!==undefined) alvo.custoFixo=fixo; if(mk!==undefined) alvo.markupFixo=mk;
   } else {
-    novo.formas.push({ id:_ffNovoId('ff', novo.formas), nome:nome, caps:!!(ck&&ck.checked), tipos:tipos });
+    novo.formas.push({ id:_ffNovoId('ff', novo.formas), nome:nome, caps:!!(ck&&ck.checked), tipos:tipos, anest:!!(ckA&&ckA.checked),
+      perdas:(perdas===undefined?FF_PERDAS_PADRAO:perdas), custoFixo:(fixo===undefined?0:fixo), markupFixo:(mk===undefined?0:mk) });
   }
   var b=document.getElementById('ff-f-salvar'); if(b) b.disabled=true;
   var ok=await _ffGravar(novo);
@@ -13733,7 +13780,25 @@ function _geResolve(txt){
 // sem tipo, forma sem nenhum tipo marcado ou embalagem sem custo = APARECE mas NÃO SELECIONA
 // (regra mantida da v258: obriga a completar o cadastro). A CATEGORIA manda: Kit Completo e Tampa têm tipo e são
 // conferidos contra a forma; Corpo e Componente não têm tipo e servem a qualquer produto; sem categoria não seleciona.
+// ═══ v275 — INVÓLUCRO DE CÁPSULA NÃO É EMBALAGEM DO ITEM (correção pedida pelo dono em 18/11) ═══
+// O invólucro (cápsula vazia: CAP 00, CAP 0...) fica no cadastro de Embalagens para compra e custo, e é ligado
+// ao produto em cápsulas pelo campo "Invólucro padrão" da fórmula — o cálculo já o soma sozinho (nº de cápsulas
+// × custo). Como estava classificado como "Componente de embalagem", e componente serve a qualquer produto, o
+// orçamento oferecia cápsula como embalagem de um SÉRUM (caso do dono: CN-989). Regra: a embalagem que é
+// invólucro de algum produto NÃO é oferecida nem aceita como embalagem do item, em nenhuma forma farmacêutica
+// (num produto em cápsulas ela entraria em dobro). Quem é invólucro sai do próprio cadastro dos produtos —
+// não depende de nome nem de categoria.
+function _embInvIds(){
+  var L=(typeof catalogoNovo!=='undefined' && catalogoNovo)||[], m=_embInvIds._m, ag=Date.now();
+  if(m && m.ref===L && m.n===L.length && (ag-m.em)<3000) return m.ids; // memória curta: uma varredura por tela, não uma por embalagem
+  var ids={};
+  for(var i=0;i<L.length;i++){ var f=L[i]; if(f && f.involucroId && _cnEhCaps(f.forma)) ids[String(f.involucroId)]=1; } // só produto EM CÁPSULAS (o campo pode ter sobrado numa fórmula que mudou de forma)
+  _embInvIds._m={ref:L, n:L.length, em:ag, ids:ids};
+  return ids;
+}
+function _embEhInvolucro(e){ return !!(e && e.id && _embInvIds()[String(e.id)]); }
 function _embCompat(forma, e){
+  if(_embEhInvolucro(e)){ var _kI=_embCat(e); return (_kI==='kit'||_kI==='corpo'||_kI==='tampa')?null:false; } // v275 — invólucro de cápsula não é embalagem do item (some); se um kit/corpo/tampa estiver marcado como invólucro por engano, ele APARECE bloqueado com o motivo
   var k=_embCat(e); if(!k) return null;                          // sem categoria — o chamador decide (no orçamento: não seleciona)
   if(k==='corpo' || k==='componente') return true;               // corpo e componente servem a qualquer produto (o tipo é da tampa)
   var t=_embTipoDe(e); if(!t) return null;                       // kit ou tampa sem tipo — idem
@@ -13742,6 +13807,7 @@ function _embCompat(forma, e){
 }
 function _embSelProblema(e, forma){
   if(!e) return 'embalagem não encontrada no catálogo';
+  if(_embEhInvolucro(e)) return 'está cadastrada como invólucro de cápsula ("Invólucro padrão" de um produto em cápsulas) — o invólucro entra no cálculo pelo cadastro do produto e não é embalagem do item'; // v275
   if(!_ffCarregado) return 'a configuração de formas farmacêuticas ainda não foi lida'+(_ffErro?' (falha de leitura: '+_ffErro+')':'')+' — tente de novo em instantes';
   if(!_embCat(e)) return 'sem categoria (Kit Completo, Corpo, Tampa ou Componente) — o administrador define na ficha da embalagem';
   if(_embPrecisaTipo(e)){ // só Kit Completo e Tampa têm tipo; corpo e componente servem a qualquer produto
@@ -13945,12 +14011,23 @@ function _cnDoseG(dose, un, x){
   if(un==='UI'){ var f=(x&&x.fatorUI>0)?x.fatorUI:null; return f?{g:v*f/1000}:{g:0, aviso:'cadastre o Fator UI→mg de "'+((x&&x.nome)||'?')+'"'}; }
   return {g:v};
 }
-function _cnCatCfg(nomeCat){ return (_cnCfgGet().categorias||[]).find(function(c){ return c.nome===nomeCat; })||null; }
+// v276 — perdas, custo fixo e markup do custo fixo do produto vêm da FORMA FARMACÊUTICA (fusão com a antiga "Categoria
+// do produto"). Forma que não está no cadastro: enquanto a configuração do servidor ainda não foi lida vale o padrão
+// de fábrica (o mesmo valor de todas as formas na fusão) — nunca zero por engano; depois de lida, devolve null e o cálculo avisa.
+function _cnFormaCfg(fm){
+  fm=fm||'semisolido';
+  var x=_ffForma(fm);
+  if(x) return {nome:x.nome, perdas:x.perdas, custoFixo:x.custoFixo, markupFixo:x.markupFixo};
+  if(!_ffCarregado) return {nome:_cnFormaLbl(fm), perdas:FF_PERDAS_PADRAO, custoFixo:0, markupFixo:0, provisorio:true};
+  return null;
+}
+// produto da LINHA ANESTÉSICO? (antes: o nome da categoria contendo "ANEST")
+function _cnEhAnest(f){ var fm=(f&&f.forma)||''; if(fm==='anestesico') return true; var x=_ffForma(fm); return !!(x&&x.anest); }
 // ── MOTOR DE CÁLCULO ── opts: {qspValor,qspUn} (semisólido/líquido) ou {nCaps,capsTam,involucroId} (cápsula); {embalagemId}
 function _cnCalcular(f, opts){
   var linhas=[], avisos=[], custoT=0, precoT=0;
   var embC=0, embP=0; // v258 — parcelas da EMBALAGEM separadas (o preço fixo do produto cobre tudo MENOS a embalagem)
-  var cat=_cnCatCfg(f.categoria), perdas=(cat&&parseFloat(cat.perdas))||0;
+  var cat=_cnFormaCfg(f.forma), perdas=(cat&&parseFloat(cat.perdas))||0; // v276 — pela forma farmacêutica
   var comp=(f.composicao||[]).map(function(cp){ return Object.assign({}, cp, {_x:(insumos||[]).find(function(i){ return i.id===cp.insumoId; })}); });
   comp.forEach(function(cp){ if(!cp._x) avisos.push('insumo da fórmula não encontrado no catálogo: '+(cp.nome||cp.insumoId)); });
   var ativos=comp.filter(function(c){ return c.papel!=='excipiente' && c._x; });
@@ -14030,8 +14107,8 @@ function _cnCalcular(f, opts){
       else avisos.push('embalagem do item não encontrada no catálogo (foi excluída?)');
     });
   } else avisos.push('escolha a EMBALAGEM para custear');
-  if(cat && (parseFloat(cat.custoFixo)||0)>0) addLinha('Custo fixo — categoria '+cat.nome, 1, '', parseFloat(cat.custoFixo)||0, cat.markupFixo, 'config');
-  else if(!cat && f.categoria) avisos.push('categoria "'+f.categoria+'" sem configuração (perdas/custo fixo) — cadastre em ⚙ Configuração');
+  if(cat && (parseFloat(cat.custoFixo)||0)>0) addLinha('Custo fixo — forma '+cat.nome, 1, '', parseFloat(cat.custoFixo)||0, cat.markupFixo, 'config');
+  else if(!cat) avisos.push('forma farmacêutica "'+(f.forma||'')+'" não está no cadastro (perdas e custo fixo não aplicados) — cadastre na aba Formas Farmacêuticas ou troque a forma do produto');
   // v259 — a linha "Rótulo" do PRODUTO foi aposentada (f.custoRotulo não custeia mais; o rótulo está na embalagem)
   // v258 — decomposição produto × embalagem: o preço de venda FIXO cobre a parte do PRODUTO
   // (ativos + base + perdas + custo fixo + invólucro); a embalagem (com o rótulo dela) soma por cima.
@@ -14095,14 +14172,63 @@ function _cnCatFalta(f){
 function _cnCatUsoChks(sel){
   sel=sel||[];
   return CN_CATS_USO.map(function(c){
-    return '<label style="display:flex;align-items:flex-start;gap:6px;font-size:12px;line-height:1.3;cursor:pointer;padding:2px 0"><input type="checkbox" class="cn-catuso-chk" value="'+c[0]+'"'+(sel.indexOf(c[0])>=0?' checked':'')+' onchange="_cnCatUsoConta()" style="width:auto;margin-top:1px;flex-shrink:0"><span><span style="color:var(--text-tertiary);font-family:monospace;font-size:11px">'+c[0]+'</span> '+escapeHtml(c[1])+'</span></label>';
+    return '<label style="display:flex;align-items:flex-start;gap:6px;font-size:12px;line-height:1.3;cursor:pointer;padding:2px 0"><input type="checkbox" class="cn-catuso-chk" value="'+c[0]+'"'+(sel.indexOf(c[0])>=0?' checked':'')+' onchange="_cnCatUsoPickConta()" style="width:auto;margin-top:1px;flex-shrink:0"><span><span style="color:var(--text-tertiary);font-family:monospace;font-size:11px">'+c[0]+'</span> '+escapeHtml(c[1])+'</span></label>';
   }).join('');
 }
-// categorias marcadas no modal (null = a caixa não está na tela → quem chama não mexe no que está gravado)
+// v275 — CATEGORIAS DE USO EM MODAL PRÓPRIO (pedido do dono 18/11): no cadastro do produto ficam visíveis só as
+// categorias SELECIONADAS; a lista das 17 abre pelo botão "Categorias de uso". A seleção do produto aberto vive
+// em _cnCatSel (códigos na ordem oficial) até o Salvar da fórmula — o modal de escolha trabalha numa cópia e só
+// altera a seleção no Confirmar (Cancelar e o ✕ descartam).
+var _cnCatSel=[];
+function _cnCatSelSet(ids){
+  ids=ids||[];
+  _cnCatSel=CN_CATS_USO.map(function(c){ return c[0]; }).filter(function(id){ return ids.indexOf(id)>=0; });
+  _cnCatUsoPinta();
+}
+// pinta no cadastro só as selecionadas (ou o aviso de que não há nenhuma) e atualiza contador e aviso do catálogo
+function _cnCatUsoPinta(){
+  var box=document.getElementById('cn-catuso-box');
+  if(box) box.innerHTML=_cnCatSel.length
+    ? _cnCatSel.map(function(id){ return '<span class="cn-catuso-sel" data-id="'+id+'" style="display:inline-block;padding:4px 10px;border-radius:14px;background:var(--bg-info);color:var(--text-info);border:.5px solid var(--border-md);font-size:12px;line-height:1.3"><span style="font-family:monospace;font-size:11px">'+id+'</span> '+escapeHtml(_cnCatUsoLbl(id))+'</span>'; }).join('')
+    : '<span style="font-size:12px;color:var(--text-tertiary)">Nenhuma categoria de uso selecionada.</span>';
+  _cnCatUsoConta();
+}
+// categorias selecionadas do produto aberto (null = o campo não está na tela → quem chama não mexe no que está gravado)
 function _cnCatUsoLidas(){
   var box=document.getElementById('cn-catuso-box'); if(!box) return null;
-  var m=[]; box.querySelectorAll('.cn-catuso-chk').forEach(function(i){ if(i.checked) m.push(i.value); });
-  return CN_CATS_USO.map(function(c){ return c[0]; }).filter(function(id){ return m.indexOf(id)>=0; });
+  return _cnCatSel.slice();
+}
+// ── modal de escolha ──
+function _cnCatUsoAbrir(){
+  if(!document.getElementById('cn-catuso-box')) return;
+  var ov=document.getElementById('cn-catuso-overlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='cn-catuso-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4500'; document.body.appendChild(ov); }
+  ov.innerHTML='<div class="modal" style="width:720px;max-width:95vw;max-height:90vh;overflow-y:auto">'+
+    '<h2 style="font-size:16px">Categorias de uso do produto</h2>'+
+    '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Marque as categorias em que este produto se encaixa — pode ser mais de uma. São as 17 categorias do Catálogo Lecare. <span id="cn-catuso-pick-n" style="font-weight:600;color:var(--text-info);margin-left:4px"></span></div>'+
+    '<div id="cn-catuso-pick" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 18px">'+_cnCatUsoChks(_cnCatSel)+'</div>'+
+    '<div class="modal-footer"><button onclick="_cnCatUsoMarcar(false)" style="margin-right:auto" title="Desmarca as 17">Desmarcar todas</button><button onclick="_cnCatUsoFechar()">Cancelar</button><button class="btn-primary" onclick="_cnCatUsoConfirmar()">Confirmar</button></div></div>';
+  ov.classList.add('open');
+  _cnCatUsoPickConta();
+}
+function _cnCatUsoPickLidas(){
+  var m=[]; Array.prototype.forEach.call(document.querySelectorAll('#cn-catuso-pick .cn-catuso-chk'), function(i){ if(i.checked) m.push(i.value); });
+  return m;
+}
+function _cnCatUsoPickConta(){
+  var n=document.getElementById('cn-catuso-pick-n'), q=_cnCatUsoPickLidas().length;
+  if(n) n.textContent=q?(q+' marcada'+(q>1?'s':'')):'nenhuma marcada';
+}
+function _cnCatUsoMarcar(v){
+  Array.prototype.forEach.call(document.querySelectorAll('#cn-catuso-pick .cn-catuso-chk'), function(i){ i.checked=!!v; });
+  _cnCatUsoPickConta();
+}
+function _cnCatUsoFechar(){ var ov=document.getElementById('cn-catuso-overlay'); if(ov) ov.classList.remove('open'); }
+function _cnCatUsoConfirmar(){
+  if(!document.getElementById('cn-catuso-pick')){ _cnCatUsoFechar(); return; }
+  var m=_cnCatUsoPickLidas();
+  _cnCatUsoFechar(); // fecha primeiro; só então pinta o cadastro (nunca dois modais mexidos ao mesmo tempo)
+  _cnCatSelSet(m);
 }
 function _cnCatUsoConta(){
   var n=document.getElementById('cn-catuso-n'), l=_cnCatUsoLidas()||[];
@@ -14358,7 +14484,7 @@ function renderCatNovo(){
   var nb=document.getElementById('cn-novo-btn'); if(nb) nb.style.display=pode?'':'none';
   var q=(document.getElementById('cn-busca')?.value||'').toLowerCase().trim();
   var lista=(catalogoNovo||[]).slice();
-  if(q) lista=lista.filter(function(f){ return ((f.nome||'')+' '+(f.codigo||'')+' '+(f.categoria||'')+' '+_cnCatsUso(f).map(_cnCatUsoLbl).join(' ')).toLowerCase().indexOf(q)>=0; }); // v274 — a busca também acha pelo NOME da categoria de uso (o código da categoria fica fora: "12" continua achando só o código do produto)
+  if(q) lista=lista.filter(function(f){ return ((f.nome||'')+' '+(f.codigo||'')+' '+[_cnFormaLbl(f.forma), _cnCatsUso(f).map(_cnCatUsoLbl).join(' ')].join(' ')).toLowerCase().indexOf(q)>=0; }); /* v276 — a busca acha pelo nome da forma (texto de busca, não vai para a tela) */ // v274 — a busca também acha pelo NOME da categoria de uso (o código da categoria fica fora: "12" continua achando só o código do produto)
   lista=_cnCatFiltros(lista); // v274 — filtros por categoria de uso e marcação do catálogo
   var _cnFiltrado=!!(q||_cnCatFiltroAtivo());
   { var _cnCt=document.getElementById('cn-conta'); if(_cnCt) _cnCt.textContent=_cnFiltrado?(lista.length+' de '+(catalogoNovo||[]).length+' fórmulas'):((catalogoNovo||[]).length+' fórmulas'); }
@@ -14378,8 +14504,7 @@ function renderCatNovo(){
     return '<tr style="border-bottom:.5px solid var(--border);'+(f.ativo===false?'opacity:.5;':'')+'">'+
       '<td style="padding:7px 10px;font-family:monospace;font-size:11px;color:var(--text-secondary)">'+escapeHtml(f.codigo||'—')+'</td>'+
       '<td style="padding:7px 10px">'+escapeHtml(f.nome||'—')+_cnCatLinhaHtml(f)+'</td>'+ /* v274 — categorias de uso e marcação do catálogo sob o nome */
-      '<td style="padding:7px 10px;font-size:12px">'+(f.categoria?'<span style="padding:2px 8px;border-radius:12px;background:var(--bg-info);color:var(--text-info);font-size:11px">'+escapeHtml(f.categoria)+'</span>':'<span style="color:var(--text-tertiary)">—</span>')+'</td>'+
-      '<td style="padding:7px 10px;font-size:12px">'+escapeHtml(_cnFormaLbl(f.forma))+'</td>'+
+      '<td style="padding:7px 10px;font-size:12px"><span style="padding:2px 8px;border-radius:12px;background:var(--bg-info);color:var(--text-info);font-size:11px">'+escapeHtml(_cnFormaLbl(f.forma))+'</span></td>'+ /* v276 — a coluna Categoria saiu (fundida na forma) */
       '<td style="padding:7px 10px;font-size:11px;color:var(--text-secondary)">'+escapeHtml(padrao)+'</td>'+ /* v260 — coluna Composição removida (pedido do dono 04/11) */
       '<td style="padding:7px 10px;font-size:12px;text-align:right;white-space:nowrap">'+_cnPvCellHtml(f, _vMapa?_vMapa[f.id]:null)+'</td>'+ /* v258 — preço fixo + farol */
       '<td style="padding:7px 10px;text-align:center;white-space:nowrap">'+acoes+'</td></tr>';
@@ -14395,15 +14520,12 @@ function openCnModal(id){
   document.getElementById('cn-modal-title').textContent=f?'Editar fórmula':'Nova fórmula';
   document.getElementById('cn-codigo').value=f?(f.codigo||''):'';
   document.getElementById('cn-nome').value=f?(f.nome||''):'';
-  var catSel=document.getElementById('cn-cat');
-  var cats=(_cnCfgGet().categorias||[]).map(function(c){ return c.nome; });
-  catSel.innerHTML='<option value="">— sem categoria —</option>'+cats.map(function(c){ return '<option value="'+escapeHtml(c)+'">'+escapeHtml(c)+'</option>'; }).join('');
-  catSel.value=(f&&f.categoria&&cats.indexOf(f.categoria)>=0)?f.categoria:'';
+  // v276 — "Categoria do produto" saiu do cadastro (fundida na forma farmacêutica)
   _cnFormaFill(f?(f.forma||'semisolido'):'semisolido'); // v272 — opções vêm da aba Formas Farmacêuticas
   if(!_ffCarregado){ _ffCarregar().then(function(){ var _sF=document.getElementById('cn-forma'), _mF=document.getElementById('cn-modal'); if(_sF && _mF && _mF.classList.contains('open')){ _cnFormaFill(_sF.value); _cnFormaChange(); } }); }
   // v258 — categoria de uso + preço de venda fixo (só admin) + margem extra
   // v274 — categorias de uso (seleção múltipla) + conteúdo do Catálogo Lecare
-  var cuBox=document.getElementById('cn-catuso-box'); if(cuBox) cuBox.innerHTML=_cnCatUsoChks(_cnCatsUso(f));
+  _cnCatSelSet(_cnCatsUso(f)); // v275 — no cadastro ficam só as selecionadas; a lista das 17 abre pelo botão "Categorias de uso"
   var _apI=document.getElementById('cn-apresentacao'); if(_apI) _apI.value=f?(f.apresentacao||''):'';
   var _inI=document.getElementById('cn-indicacoes'); if(_inI) _inI.value=_cnLista(f&&f.indicacoes).join('\n');
   var _beI=document.getElementById('cn-beneficios'); if(_beI) _beI.value=_cnLista(f&&f.beneficios).join('\n');
@@ -14430,7 +14552,7 @@ function openCnModal(id){
   _cnFormaChange(); _cnRenderComp();
   document.getElementById('cn-modal').classList.add('open');
 }
-function closeCnModal(){ document.getElementById('cn-modal').classList.remove('open'); _cnEditId=null; _cnComp=[]; _cnInvId=null; }
+function closeCnModal(){ document.getElementById('cn-modal').classList.remove('open'); _cnEditId=null; _cnComp=[]; _cnInvId=null; try{ _cnCatUsoFechar(); }catch(_e){} } // v275 — leva junto o modal de escolha das categorias
 // v258 — rastreio do "Aderir" (fonte do preço: 'sugerido' quando veio do botão, 'manual' quando digitado)
 var _cnPvAderiu=false, _cnPvSugVal=null;
 function _cnPvDigitou(){ _cnPvAderiu=false; }
@@ -14441,7 +14563,8 @@ function _cnPvSugRefresh(f){
   var sugD=document.getElementById('cn-pv-sug'), adB=document.getElementById('cn-pv-aderir');
   _cnPvSugVal=null;
   if(sugD){
-    if(f){ var _s=_cnSugerido(f);
+    if(f && !_ffCarregado){ sugD.textContent='— aguardando a configuração das formas farmacêuticas'; sugD.title='A venda padrão depende das perdas e do custo fixo da forma: só é mostrada depois de lida a configuração do servidor.'; try{ _ffCarregar().then(function(){ var _mP=document.getElementById('cn-modal'); if(_ffCarregado && _mP && _mP.classList.contains('open')) _cnPvSugRefresh(f); }); }catch(_e){} } // v276
+    else if(f){ var _s=_cnSugerido(f);
       if(_s.ok&&_s.precoUn>0){
         _cnPvSugVal=Math.round(_s.precoUn*10000)/10000; // valor-base (sem extra) — é o que o Aderir grava
         var _exP=(parseFloat(f.margemExtra)||0);
@@ -14453,8 +14576,21 @@ function _cnPvSugRefresh(f){
   }
   if(adB) adB.style.display=((currentUser&&currentUser.perfil==='admin')&&_cnPvSugVal!=null)?'':'none';
 }
+// v276 — resumo do que a forma escolhida traz para o produto (perdas, custo fixo, linha, embalagens)
+function _cnFormaInfo(fm){
+  var el=document.getElementById('cn-forma-info'); if(!el) return;
+  var x=_ffForma(fm), c=_cnFormaCfg(fm);
+  if(!c){ el.textContent='Forma não cadastrada — perdas e custo fixo não são aplicados.'; el.style.color='var(--st-bad-tx)'; return; }
+  var nT=x?_ffTiposDaForma(fm).length:0, cf=parseFloat(c.custoFixo)||0;
+  el.style.color='var(--text-secondary)';
+  el.textContent='Perdas '+(parseFloat(c.perdas)||0).toLocaleString('pt-BR')+'%'+
+    ' · custo fixo '+(cf>0?('R$ '+cf.toLocaleString('pt-BR',{minimumFractionDigits:2})+((parseFloat(c.markupFixo)||0)>0?(' (markup '+(parseFloat(c.markupFixo)||0).toLocaleString('pt-BR')+'%)'):'')):'não há')+
+    ((x&&x.anest)?' · linha anestésico':'')+
+    ' · '+(nT?(nT+' tipo'+(nT>1?'s':'')+' de embalagem'):'nenhum tipo de embalagem marcado')+(c.provisorio?' (configuração ainda carregando)':'');
+}
 function _cnFormaChange(){
   var fm=document.getElementById('cn-forma').value;
+  _cnFormaInfo(fm);
   document.getElementById('cn-box-caps').style.display=_cnEhCaps(fm)?'':'none';
   document.getElementById('cn-box-qsp').style.display=_cnEhCaps(fm)?'none':'';
   var h=document.getElementById('cn-comp-hint');
@@ -14519,7 +14655,7 @@ function saveCnFormula(){
   var codigo=document.getElementById('cn-codigo').value.trim()||_proximoCodigoCn();
   var invNome=_cnInvId?(((insumos||[]).find(function(p){ return p.id===_cnInvId; })||{}).nome||''):'';
   var _num=function(id){ var v=parseFloat(document.getElementById(id).value); return isNaN(v)?null:v; };
-  var dados={ codigo:codigo, nome:nome, categoria:document.getElementById('cn-cat').value||'',
+  var dados={ codigo:codigo, nome:nome, // v276 — "categoria" não é mais gravada (fundida na forma); o valor antigo fica guardado no produto, sem uso
     forma:document.getElementById('cn-forma').value, composicao:comp,
     // v274 — categorias de uso e conteúdo do Catálogo Lecare entram por _cnCatDoModal (logo abaixo)
     capsTam:document.getElementById('cn-capstam').value||'', involucroId:_cnInvId||null, involucroNome:invNome,
@@ -14564,19 +14700,8 @@ function deleteCnFormula(id){
 function renderCnConfig(){
   var box=document.getElementById('cn-cfg-box'); if(!box) return;
   var cfg=_cnCfgGet(), pode=_canEditInsumos();
-  var h='<div class="panel" style="padding:14px;margin-bottom:12px">'+
-    '<div style="font-weight:600;margin-bottom:4px">Categorias de produto</div>'+
-    '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">% de perdas (aplicada na quantidade de MP) e custo fixo (com markup próprio) POR CATEGORIA — regra do dono 24/07.</div>'+
-    '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--text-tertiary);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:4px 6px">Categoria</th><th style="text-align:right;padding:4px 6px">Perdas %</th><th style="text-align:right;padding:4px 6px">Custo fixo R$</th><th style="text-align:right;padding:4px 6px">Markup fixo %</th><th></th></tr></thead><tbody>'+
-    (cfg.categorias||[]).map(function(c,i){
-      return '<tr><td style="padding:3px 6px"><input type="text" value="'+escapeHtml(c.nome||'')+'" onchange="_cnCfgSetCat('+i+',\'nome\',this.value)" style="width:100%;font-size:12px"'+(pode?'':' disabled')+'></td>'+
-        '<td style="padding:3px 6px;text-align:right"><input type="number" min="0" step="0.01" value="'+(c.perdas!=null?c.perdas:'')+'" onchange="_cnCfgSetCat('+i+',\'perdas\',this.value)" style="width:80px;text-align:right;font-size:12px"'+(pode?'':' disabled')+'></td>'+
-        '<td style="padding:3px 6px;text-align:right"><input type="number" min="0" step="0.01" value="'+(c.custoFixo!=null?c.custoFixo:'')+'" onchange="_cnCfgSetCat('+i+',\'custoFixo\',this.value)" style="width:90px;text-align:right;font-size:12px"'+(pode?'':' disabled')+'></td>'+
-        '<td style="padding:3px 6px;text-align:right"><input type="number" min="0" step="0.01" value="'+(c.markupFixo!=null?c.markupFixo:'')+'" onchange="_cnCfgSetCat('+i+',\'markupFixo\',this.value)" style="width:80px;text-align:right;font-size:12px"'+(pode?'':' disabled')+'></td>'+
-        '<td style="padding:3px 6px;text-align:right">'+(pode?'<button onclick="_cnCfgRemCat('+i+')" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer">✕</button>':'')+'</td></tr>';
-    }).join('')+'</tbody></table>'+
-    (pode?'<button onclick="_cnCfgAddCat()" style="font-size:12px;padding:5px 12px;margin-top:8px">+ Adicionar categoria</button>':'')+
-  '</div>'+
+  // v276 — o quadro "Categorias de produto" saiu daqui: perdas, custo fixo e markup do custo fixo são da FORMA FARMACÊUTICA
+  var h='<div class="panel" style="padding:12px 14px;margin-bottom:12px;font-size:12px;color:var(--text-secondary)">As <b>perdas</b> e o <b>custo fixo</b> dos produtos agora são definidos por <b>forma farmacêutica</b>, na aba <b>Formas Farmacêuticas</b> do Catálogo (somente o administrador altera).</div>'+
   '<div class="panel" style="padding:14px;margin-bottom:12px">'+
     '<div style="font-weight:600;margin-bottom:4px">Precificação por categoria de custo (ativos)</div>'+
     '<div style="font-size:11px;color:var(--text-secondary);margin-bottom:10px">Regra do dono 04/08: cada ativo é classificado AUTOMATICAMENTE pelo custo por grama vigente (v258: última compra > custo base). Markup digitado na ficha do ativo prevalece sobre a faixa. As premissas alimentam a recalibração anual da aba Análise de Lucratividade.</div>'+
@@ -14604,36 +14729,10 @@ function renderCnConfig(){
 // v260 — INVARIANTE (ordem do dono 04/11): as categorias dos PRODUTOS têm que BATER com as da
 // Configuração. Renomear aqui PROPAGA o nome novo para todas as fórmulas da categoria (senão 492
 // fórmulas ficariam órfãs apontando o nome antigo); excluir categoria EM USO é bloqueado.
-function _cnCfgSetCat(i,campo,val){
-  var c=_cnCfgGet(); if(!c.categorias[i]) return;
-  if(campo==='nome'){
-    var antigo=String(c.categorias[i].nome||'').trim(), novo=String(val).trim();
-    c.categorias[i].nome=novo;
-    if(antigo && novo && antigo!==novo){
-      var n=0; (catalogoNovo||[]).forEach(function(f){ if(f && String(f.categoria||'').trim()===antigo){ f.categoria=novo; n++; } });
-      if(n){ _cnVigiaInvalidar(); saveData(); alert('Categoria renomeada: '+n+' fórmula(s) acompanharam de "'+antigo+'" para "'+novo+'".'); }
-    }
-  } else { c.categorias[i][campo]=parseFloat(val)||0; }
-  _cnCfg=c;
-  // v263 (C13, revisão 09/11): o rename propagava nas FÓRMULAS e salvava o blob NA HORA, mas a config
-  // renomeada só persistia no botão "Salvar configuração" — fechar sem clicar deixava TODAS as fórmulas
-  // apontando um nome que a Configuração não tem (perdas/custo fixo sumiam do cálculo em silêncio).
-  // A config agora persiste junto da propagação (invariante v260: categorias produto × Configuração).
-  if(campo==='nome'){ try{ _cnCfgSalvar(); }catch(_e){} }
-}
-function _cnCfgAddCat(){ var c=_cnCfgGet(); c.categorias.push({nome:'',perdas:0,custoFixo:0,markupFixo:0}); _cnCfg=c; renderCnConfig(); }
-function _cnCfgRemCat(i){
-  var c=_cnCfgGet(); var cat=c.categorias[i];
-  var nome=cat?String(cat.nome||'').trim():'';
-  if(nome){
-    var n=(catalogoNovo||[]).filter(function(f){ return f && String(f.categoria||'').trim()===nome; }).length;
-    if(n){ alert('A categoria "'+nome+'" está em uso por '+n+' fórmula(s) — não pode ser excluída.\n\nRenomeie (as fórmulas acompanham) ou mova as fórmulas para outra categoria antes.'); return; }
-  }
-  c.categorias.splice(i,1); _cnCfg=c; renderCnConfig();
-}
+// v276 — _cnCfgSetCat/_cnCfgAddCat/_cnCfgRemCat saíram: as "Categorias de produto" foram fundidas na forma farmacêutica
 function _cnCfgSetCaps(t,val){ var c=_cnCfgGet(); c.caps=c.caps||Object.assign({},CN_CAPS_PADRAO); c.caps[t]=parseFloat(val)||0; _cnCfg=c; }
 function _cnCfgSetFx(campo,val){ var c=_cnCfgGet(); c.faixasCusto=Object.assign(_cnFaixasCfg(), c.faixasCusto||{}); c.faixasCusto[campo]=parseFloat(val)||0; _cnCfg=c; } // v188 — faixas de custo/markup
-function _cnCfgSalvarClick(){ var c=_cnCfgGet(); c.categorias=(c.categorias||[]).filter(function(x){ return (x.nome||'').trim(); }); _cnCfg=c; _cnCfgSalvar(); renderCnConfig(); alert('✓ Configuração salva.'); }
+function _cnCfgSalvarClick(){ var c=_cnCfgGet(); _cnCfg=c; _cnCfgSalvar(); renderCnConfig(); alert('✓ Configuração salva.'); } // v276 — a lista antiga de categorias fica guardada como está (sem uso)
 // ── SIMULADOR ──
 var _cnSimSel={fId:'', nCaps:60, capsTam:'', invId:null, qspV:'', qspU:'g', embId:null};
 function _cnSimularDe(fId){ _cnSimSel.fId=fId; var f=(catalogoNovo||[]).find(function(x){ return x.id===fId; }); if(f){ _cnSimSel.capsTam=f.capsTam||''; _cnSimSel.invId=f.involucroId||null; _cnSimSel.qspV=(f.qspValor!=null)?f.qspValor:''; _cnSimSel.qspU=f.qspUn||'g'; } setCatalogoTab('catnovo'); setCatNovoSub('simulador'); }
@@ -32253,7 +32352,7 @@ function _alInitMeses(){
 function _alTamRef(f){
   if(_cnEhCaps(f.forma)) return 60;
   var q=parseFloat(f.qspValor); if(q>0) return q;
-  if(String(f.categoria||'').toUpperCase()==='SERUM') return 30;
+  if(f.forma==='serum') return 30; // v276 — pela forma farmacêutica (antes: categoria "SERUM")
   return 120;
 }
 // custo E preço de referência da fórmula (referência de tamanho; cascata de custos; markup por insumo,
@@ -37580,6 +37679,7 @@ function openOrcBuilder(id, viewOnly){
   _obCliBuscando=false; // v273 — a busca de cliente sempre começa fechada
   if(_ob && _ob._ccCaptura) _ob=null; // v273 — rascunho de "Inserir novo" do catálogo do cliente que ficou aberto
   try{ _ffCarregar(); }catch(_e){} // v272 — formas farmacêuticas × tipos de embalagem (filtro de embalagens)
+  try{ _cnCfgCarregar(); }catch(_e){} // v276 — e também ao abrir o orçamento
   var ex=id?(orcamentosCrm||[]).find(function(o){ return o.id===id; }):null;
   if(id && (!ex || !ex.detalhado)){ alert('Este orçamento é do registro antigo — use o Editar padrão.'); return; }
   _ob=ex?JSON.parse(JSON.stringify(ex)):{ id:null, num:null, clienteId:null, clienteNome:'', tipo:'venda', itens:[], frete:0, descGeral:0, formaPag:'PIX', obs:'', status:'aberto',
@@ -37935,12 +38035,13 @@ function _obPickFormula(txt, fid, pre){
     '</div>'+
     '<div class="form-row">'+
       // v196 — embalagem DESMEMBRADA (pedido do dono 06/08): frasco + válvula + tampa etc., uma linha por parte
-      '<div class="form-group"><label>Embalagem <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(uma linha por parte: frasco, válvula, tampa...)</span></label>'+
+      '<div class="form-group"><label>Embalagem <span style="font-weight:400;color:var(--text-tertiary);font-size:11px">(escolha pelo Catálogo de embalagens — uma linha por parte)</span></label>'+
         '<div id="ob-embs"></div>'+
-        '<button type="button" onclick="_obEmbAdd()" style="font-size:11px;padding:3px 10px;margin-top:2px">+ adicionar embalagem</button> '+
-        '<button type="button" onclick="_obEmbCatModal()" style="font-size:11px;padding:3px 10px;margin-top:2px" title="Catálogo visual de embalagens com foto, filtrado pela forma farmacêutica do produto (v258)">📦 Catálogo de embalagens</button>'+
-        '<datalist id="ob-emb-dl">'+_geEmbs().slice(0,900).map(function(x){ return '<option value="'+escapeHtml(_geLabel(x))+'">'; }).join('')+'</datalist></div>'+
-      '<div class="form-group"><label>Qtd de unidades</label><input type="number" min="1" step="1" id="ob-qtd" value="1" style="text-align:right"></div>'+
+        '<div id="ob-embs-vazio" style="font-size:12px;color:var(--text-tertiary);padding:2px 0 6px">Nenhuma embalagem escolhida.</div>'+
+        '<button type="button" onclick="_obEmbCatModal()" style="font-size:12px;padding:5px 14px;margin-top:2px" title="Catálogo visual de embalagens com foto, filtrado pela forma farmacêutica do produto. A embalagem do item só é escolhida por aqui.">📦 Catálogo de embalagens</button></div>'+ /* v275 — sem digitação: a embalagem só entra pelo catálogo */
+      ((_ob && _ob._ccCaptura)
+        ? '<div class="form-group"><label>Qtd de unidades</label><div id="ob-qtd-nota" style="font-size:12px;color:var(--text-tertiary);padding:8px 0">Definida depois, ao inserir este produto no orçamento.</div></div>' /* v275 — catálogo do cliente: sem campo de quantidade */
+        : '<div class="form-group"><label>Qtd de unidades</label><input type="number" min="1" step="1" id="ob-qtd" value="1" style="text-align:right"></div>')+
     '</div>';
   // v196 — edição: pré-carrega campos e embalagens do item; inserção nova: uma linha vazia
   if(pre){
@@ -37952,11 +38053,12 @@ function _obPickFormula(txt, fid, pre){
       var eU=document.getElementById('ob-qspu'); if(eU && pre.opts && pre.opts.qspUn) eU.value=pre.opts.qspUn;
     }
     var _ids=(pre.embalagemIds&&pre.embalagemIds.length)?pre.embalagemIds:(pre.embalagemId?[pre.embalagemId]:[]);
-    if(_ids.length) _ids.forEach(function(eid){ var e=(insumos||[]).find(function(x){ return x.id===eid; }); _obEmbAdd(e?_geLabel(e):''); });
-    else _obEmbAdd();
+    var _embFaltou=0; // v275 — embalagem do item que não existe mais no cadastro: avisa (antes virava uma linha em branco)
+    _ids.forEach(function(eid){ var e=(insumos||[]).find(function(x){ return x.id===eid; }); if(e) _obEmbAdd(_geLabel(e), e.id); else _embFaltou++; });
+    _obEmbFalta(_embFaltou); _obEmbVazio();
     var eQ=document.getElementById('ob-qtd'); if(eQ && pre.qtd) eQ.value=pre.qtd;
   } else {
-    _obEmbAdd(); // primeira linha já aberta
+    _obEmbVazio(); // v275 — sem linha em branco: a embalagem entra pelo Catálogo de embalagens
   }
   _obCompRender(); // v259 — pinta as linhas editáveis da composição
 }
@@ -38033,50 +38135,105 @@ function _obAtivoAdd(id){
   _obCompRender();
 }
 // v196 — linhas dinâmicas de embalagem do modal de inserção
-function _obEmbAdd(val){
+// v275 — a linha é SOMENTE LEITURA (pedido do dono 18/11): a embalagem só entra pelo Catálogo de embalagens;
+// para trocar, remove-se a linha (✕) e escolhe-se outra no catálogo. Sem valor não cria linha (não existe mais linha em branco).
+function _obEmbAdd(val, id){
   var c=document.getElementById('ob-embs'); if(!c) return;
-  var d=document.createElement('div');
-  d.style.cssText='display:flex;gap:6px;align-items:center;margin-bottom:4px';
-  d.innerHTML='<input type="text" class="ob-emb-inp" list="ob-emb-dl" placeholder="Código ou nome da embalagem..." style="flex:1;font-size:13px">'+
-    '<button type="button" onclick="this.parentNode.remove()" title="Remover esta parte" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button>';
+  val=String(val==null?'':val).trim();
+  if(val){
+    Array.prototype.forEach.call(c.querySelectorAll?c.querySelectorAll('.ob-emb-falta'):[], function(a){ if(a.parentNode) a.parentNode.removeChild(a); }); // o aviso de embalagem ausente sai quando outra é escolhida
+    var d=document.createElement('div');
+    d.style.cssText='display:flex;gap:6px;align-items:center;margin-bottom:4px';
+    d.innerHTML='<input type="text" class="ob-emb-inp" readonly tabindex="-1" title="Escolhida pelo Catálogo de embalagens — para trocar, remova (✕) e escolha outra no catálogo" style="flex:1;font-size:13px;background:var(--bg-secondary);cursor:default">'+
+      '<button type="button" onclick="this.parentNode.remove();_obEmbVazio()" title="Remover esta parte" style="background:none;border:none;color:var(--st-bad-tx);cursor:pointer;font-size:14px">✕</button>';
+    c.appendChild(d);
+    var _inp=d.querySelector('.ob-emb-inp'); _inp.value=val;
+    if(id && _inp.setAttribute) _inp.setAttribute('data-id', String(id)); // a linha guarda o ID da embalagem escolhida
+  }
+  _obEmbVazio();
+}
+// embalagem de uma linha: pelo ID guardado na escolha (nome repetido ou com espaço não confunde); sem ID, pelo texto (como antes)
+function _obEmbDaLinha(inp){
+  var id=(inp && inp.getAttribute)?String(inp.getAttribute('data-id')||''):'';
+  if(id){ var e=_geEmbs().find(function(x){ return x.id===id; }); if(e) return e; }
+  var v=String((inp&&inp.value)||'').trim();
+  return v?_geResolve(v):null;
+}
+// mostra "Nenhuma embalagem escolhida." enquanto o item não tem linha de embalagem
+function _obEmbVazio(){
+  var v=document.getElementById('ob-embs-vazio'); if(!v) return;
+  v.style.display=document.querySelectorAll('#ob-embs .ob-emb-inp').length?'none':'';
+}
+// edição de item cuja embalagem saiu do cadastro: avisa em vez de sumir calada
+function _obEmbFalta(n){
+  var c=document.getElementById('ob-embs'); if(!c || !(n>0)) return;
+  var d=document.createElement('div'); d.className='ob-emb-falta';
+  d.style.cssText='font-size:11.5px;color:var(--st-mid-tx);font-weight:600;margin-bottom:4px';
+  d.textContent=(n>1?(n+' embalagens deste item não estão'):'Uma embalagem deste item não está')+' mais no cadastro — escolha outra pelo Catálogo de embalagens.';
   c.appendChild(d);
-  if(val!=null) d.querySelector('.ob-emb-inp').value=val;
 }
 // ═══ v258 — CATÁLOGO VISUAL no orçamento (regras do dono 04/11) ═══
 // Dois caminhos para inserir: digitar nome/código (como sempre) OU abrir o catálogo visual —
 // produtos agrupados por CATEGORIA DE USO; embalagens com FOTO, filtradas pela forma farmacêutica.
+// v275 — subaba do Catálogo de produtos: '' = Todas · '01'..'17' = categoria de uso · '__sem__' = sem categoria de uso
+var _obCatAba='';
+function _obCatSetAba(k){ _obCatAba=String(k||''); _obCatModal(); }
 function _obCatModal(){
   var ov=document.getElementById('ob-cat-overlay');
   if(!ov){ ov=document.createElement('div'); ov.id='ob-cat-overlay'; ov.className='overlay'; ov.setAttribute('data-dyn','1'); ov.style.zIndex='4400'; document.body.appendChild(ov); }
-  var q=(document.getElementById('ob-cat-busca')?.value||'').toLowerCase().trim();
+  // v275 — ABERTURA NOVA COMEÇA LIMPA (pedido do dono 18/11). O modal de produto é o MESMO no orçamento e no
+  // "Inserir novo" do catálogo do cliente; este catálogo guardava a busca no campo da tela fechada e a relia ao
+  // reabrir — a busca feita num lugar reaparecia no outro. Agora a busca (e a subaba) só valem enquanto ele está aberto.
+  var _jaAberto=ov.classList.contains('open');
+  if(!_jaAberto) _obCatAba='';
+  var qTxt=_jaAberto?String(document.getElementById('ob-cat-busca')?.value||''):''; // texto como foi digitado (o espaço do fim não pode ser apagado, senão não se digita a segunda palavra)
+  var q=qTxt.toLowerCase().trim();
+  var qn=_obNorm(q); // busca sem diferença de acento
   var _obCatVigia=_cnVigiaMapa(); // cache 60s — preço praticado/sugerido de cada card sem recálculo
-  var lista=_obFormulas().filter(function(f){ return !q || ((f.nome||'')+' '+(f.codigo||'')).toLowerCase().indexOf(q)>=0; });
+  var lista=_obFormulas().filter(function(f){ return !qn || _obNorm((f.nome||'')+' '+(f.codigo||'')).indexOf(qn)>=0; });
   var grupos=CN_CATS_USO.map(function(c){ return {key:c[0], lbl:c[1], itens:[]}; });
-  var semCat={key:'', lbl:'Sem categoria de uso', itens:[]};
+  var semCat={key:'__sem__', lbl:'Sem categoria de uso', itens:[]};
   lista.forEach(function(f){ var _cs=_cnCatsUso(f); if(!_cs.length){ semCat.itens.push(f); return; } _cs.forEach(function(id){ var g=grupos.find(function(x){ return x.key===id; }); if(g) g.itens.push(f); }); }); // v274 — o produto aparece em CADA categoria de uso a que pertence
-  grupos.push(semCat);
-  var html=grupos.filter(function(g){ return g.itens.length; }).map(function(g){
-    g.itens.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); });
-    var cards=g.itens.map(function(f){
-      var un=_cnPrecoUnLbl(f), pv=parseFloat(f.precoVenda);
-      var _v=_obCatVigia[f.id]; // v258 — cache do vigia (uma varredura, não um cálculo por card)
-      var prat=(_v&&_v.prat!=null)?_v.prat:((pv>0)?_cnPrecoPraticadoUn(f,null):0);
-      var precoTxt=(prat>0)?('R$ '+(Math.round(prat*10000)/10000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})+'/'+un+((pv>0)?'':' <span style="color:var(--text-tertiary)">(padrão)</span>')):'<span style="color:var(--text-tertiary)">sem preço</span>';
-      return '<div onclick="_obCatPick(\''+f.id+'\')" style="border:.5px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--bg-primary)" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'+
-        '<div style="font-size:12.5px;font-weight:600;line-height:1.3">'+escapeHtml(f.nome||'—')+'</div>'+
-        '<div style="font-size:10.5px;color:var(--text-tertiary);margin-top:2px">'+escapeHtml(f.codigo||'')+' · '+escapeHtml(_cnFormaLbl(f.forma))+'</div>'+
-        '<div style="font-size:11.5px;margin-top:4px">'+precoTxt+'</div>'+
-      '</div>';
-    }).join('');
-    return '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-secondary);margin-bottom:6px">'+(g.key?(g.key+' · '):'')+escapeHtml(g.lbl)+' ('+g.itens.length+')</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">'+cards+'</div></div>';
-  }).join('')||'<div style="padding:20px;text-align:center;color:var(--text-tertiary);font-size:12px">Nada encontrado.</div>';
+  var todos=grupos.concat([semCat]);
+  if(_obCatAba && !todos.some(function(g){ return g.key===_obCatAba; })) _obCatAba='';
+  var rot=function(g){ return (g.key==='__sem__'?'':(g.key+' · '))+escapeHtml(g.lbl); };
+  var card=function(f){
+    var un=_cnPrecoUnLbl(f), pv=parseFloat(f.precoVenda);
+    var _v=_obCatVigia[f.id]; // v258 — cache do vigia (uma varredura, não um cálculo por card)
+    var prat=(_v&&_v.prat!=null)?_v.prat:((pv>0)?_cnPrecoPraticadoUn(f,null):0);
+    var precoTxt=(prat>0)?('R$ '+(Math.round(prat*10000)/10000).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:4})+'/'+un+((pv>0)?'':' <span style="color:var(--text-tertiary)">(padrão)</span>')):'<span style="color:var(--text-tertiary)">sem preço</span>';
+    return '<div onclick="_obCatPick(\''+f.id+'\')" style="border:.5px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--bg-primary)" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--border)\'">'+
+      '<div style="font-size:12.5px;font-weight:600;line-height:1.3">'+escapeHtml(f.nome||'—')+'</div>'+
+      '<div style="font-size:10.5px;color:var(--text-tertiary);margin-top:2px">'+escapeHtml(f.codigo||'')+' · '+escapeHtml(_cnFormaLbl(f.forma))+'</div>'+
+      '<div style="font-size:11.5px;margin-top:4px">'+precoTxt+'</div>'+
+    '</div>';
+  };
+  var grade=function(itens){ itens.sort(function(a,b){ return (a.nome||'').localeCompare(b.nome||''); }); return '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">'+itens.map(card).join('')+'</div>'; };
+  var vazio=function(t){ return '<div style="padding:20px;text-align:center;color:var(--text-tertiary);font-size:12px">'+t+'</div>'; };
+  var html;
+  if(!_obCatAba){ // Todas: uma seção por categoria de uso que tem produto
+    html=todos.filter(function(g){ return g.itens.length; }).map(function(g){
+      return '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-secondary);margin-bottom:6px">'+rot(g)+' ('+g.itens.length+')</div>'+grade(g.itens)+'</div>';
+    }).join('')||vazio('Nada encontrado.');
+  } else { // só a categoria da subaba
+    var gA=todos.filter(function(g){ return g.key===_obCatAba; })[0];
+    html=gA.itens.length?grade(gA.itens):vazio(q?'Nenhum produto desta categoria corresponde à busca.':'Nenhum produto nesta categoria de uso.');
+  }
+  // subabas: Todas · as 17 categorias de uso (sempre as 17, mesmo vazias) · Sem categoria de uso (enquanto houver)
+  var chip=function(k, txt, n){ var on=(k===_obCatAba); return '<span onclick="_obCatSetAba(\''+k+'\')" style="display:inline-block;font-size:11px;padding:3px 9px;border-radius:14px;cursor:pointer;margin:0 5px 5px 0;border:.5px solid '+(on?'var(--text-info)':'var(--border-md)')+';background:'+(on?'var(--bg-info)':'var(--bg-secondary)')+';color:'+(on?'var(--text-info)':(n?'var(--text-primary)':'var(--text-tertiary)'))+';font-weight:'+(on?'700':'400')+'">'+escapeHtml(txt)+' ('+n+')</span>'; };
+  var abasHtml='<div id="ob-cat-abas" style="flex-shrink:0;margin-bottom:6px;padding-bottom:4px;border-bottom:.5px solid var(--border);max-height:26vh;overflow-y:auto">'+ /* em tela baixa as subabas rolam e a lista de produtos mantém o espaço */
+    chip('', 'Todas', lista.length)+
+    grupos.map(function(g){ return chip(g.key, g.key+' '+g.lbl, g.itens.length); }).join('')+
+    ((semCat.itens.length || _obCatAba==='__sem__')?chip('__sem__', 'Sem categoria de uso', semCat.itens.length):'')+
+  '</div>';
   ov.innerHTML='<div class="modal" style="width:1180px;max-width:96vw;height:90vh;max-height:90vh;display:flex;flex-direction:column">'+ /* v273 — maior e de tamanho fixo */
     '<h2 style="font-size:16px;flex-shrink:0">📚 Catálogo de produtos</h2>'+
-    '<input type="text" id="ob-cat-busca" placeholder="Buscar produto..." oninput="_obCatModal()" value="'+escapeHtml(q)+'" style="font-size:13px;margin-bottom:10px;flex-shrink:0">'+
+    '<input type="text" id="ob-cat-busca" placeholder="Buscar produto..." oninput="_obCatModal()" value="'+escapeHtml(qTxt)+'" style="font-size:13px;margin-bottom:10px;flex-shrink:0">'+
+    abasHtml+
     '<div style="flex:1;overflow-y:auto;padding-right:4px">'+html+'</div>'+
     '<div class="modal-footer" style="flex-shrink:0;margin-top:10px"><button onclick="document.getElementById(\'ob-cat-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
   ov.classList.add('open');
-  var bi=document.getElementById('ob-cat-busca'); if(bi && q){ bi.focus(); bi.setSelectionRange(q.length,q.length); }
+  var bi=document.getElementById('ob-cat-busca'); if(bi && qTxt){ bi.focus(); bi.setSelectionRange(qTxt.length,qTxt.length); }
 }
 function _obCatPick(fid){
   var f=(catalogoNovo||[]).find(function(x){ return x.id===fid; }); if(!f) return;
@@ -38099,7 +38256,7 @@ function _obEmbCatSetAba(k){ _obEmbCatAba=k; _obEmbCatTipo=''; _obEmbCatModal();
 function _obEmbCatSetTipo(t){ _obEmbCatTipo=t; _obEmbCatModal(); }
 // linhas de embalagem já postas no item (campo + embalagem resolvida, quando o texto casa com o catálogo)
 function _obEmbLinhas(){
-  return Array.prototype.map.call(document.querySelectorAll('#ob-embs .ob-emb-inp'), function(inp){ var v=String(inp.value||'').trim(); return {inp:inp, e:v?_geResolve(v):null}; });
+  return Array.prototype.map.call(document.querySelectorAll('#ob-embs .ob-emb-inp'), function(inp){ return {inp:inp, e:_obEmbDaLinha(inp)}; }); // v275 — pelo ID da linha
 }
 function _obEmbCatModal(){
   var f=_obSelFid?(catalogoNovo||[]).find(function(x){ return x.id===_obSelFid; }):null;
@@ -38115,7 +38272,8 @@ function _obEmbCatModal(){
     var _temCorpo=noItem.some(function(e){ return _embCat(e)==='corpo'; }), _temTampa=noItem.some(function(e){ return _embCat(e)==='tampa'; });
     if(_temCorpo && !_temTampa) _obEmbCatAba='tampa';
   }
-  var q=_jaAberto?(document.getElementById('ob-embcat-busca')?.value||'').toLowerCase().trim():'';
+  var qTxt=_jaAberto?String(document.getElementById('ob-embcat-busca')?.value||''):''; // v275 — texto como foi digitado
+  var q=qTxt.toLowerCase().trim();
   var vis=[];
   _geEmbs().forEach(function(e){
     if(q && ((e.nome||'')+' '+(e.codigo||'')).toLowerCase().indexOf(q)<0) return;
@@ -38161,7 +38319,7 @@ function _obEmbCatModal(){
   var noItemHtml=noItem.length?('<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px;flex-shrink:0">Já no item: <b>'+noItem.map(function(e){ return escapeHtml(e.nome||''); }).join(' + ')+'</b></div>'):'';
   ov.innerHTML='<div class="modal" style="width:1180px;max-width:96vw;height:90vh;max-height:90vh;display:flex;flex-direction:column">'+ /* v273 — maior e de tamanho fixo */
     '<h2 style="font-size:16px;flex-shrink:0">📦 Catálogo de embalagens <span style="font-size:11px;font-weight:400;color:var(--text-secondary)">— '+escapeHtml(_cnFormaLbl(f.forma))+(tiposForma.length?(' · aceita: '+escapeHtml(tiposForma.map(_ffTipoNome).join(', '))):'')+'</span></h2>'+
-    '<input type="text" id="ob-embcat-busca" placeholder="Buscar embalagem..." oninput="_obEmbCatModal()" value="'+escapeHtml(q)+'" style="font-size:13px;margin-bottom:10px;flex-shrink:0">'+
+    '<input type="text" id="ob-embcat-busca" placeholder="Buscar embalagem..." oninput="_obEmbCatModal()" value="'+escapeHtml(qTxt)+'" style="font-size:13px;margin-bottom:10px;flex-shrink:0">'+
     semTiposHtml+abasHtml+
     '<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px;flex-shrink:0">'+(defAba?defAba[2]:'')+'</div>'+
     noItemHtml+filtroHtml+
@@ -38171,7 +38329,7 @@ function _obEmbCatModal(){
     '</div>'+
     '<div class="modal-footer" style="flex-shrink:0;margin-top:10px"><button onclick="document.getElementById(\'ob-embcat-overlay\').classList.remove(\'open\')">Fechar</button></div></div>';
   ov.classList.add('open');
-  var bi=document.getElementById('ob-embcat-busca'); if(bi && q){ bi.focus(); bi.setSelectionRange(q.length,q.length); }
+  var bi=document.getElementById('ob-embcat-busca'); if(bi && qTxt){ bi.focus(); bi.setSelectionRange(qTxt.length,qTxt.length); }
 }
 function _obEmbCatPick(eid){
   var e=(insumos||[]).find(function(x){ return x.id===eid; }); if(!e) return;
@@ -38187,7 +38345,7 @@ function _obEmbCatPick(eid){
   var vazia=null;
   Array.prototype.forEach.call(document.querySelectorAll('#ob-embs .ob-emb-inp'), function(inp){ if(!vazia && !String(inp.value||'').trim()) vazia=inp; });
   if(vazia) vazia.value=_geLabel(e);
-  else _obEmbAdd(_geLabel(e));
+  else _obEmbAdd(_geLabel(e), e.id);
   // corpo exige tampa: o catálogo segue aberto, já na aba Tampa (se o item ainda não tem tampa)
   if(k==='corpo' && !_obEmbLinhas().some(function(l){ return l.e && _embCat(l.e)==='tampa'; })){
     _obEmbCatAba='tampa'; _obEmbCatTipo='';
@@ -38240,11 +38398,11 @@ function _obAddItem(outro){
   var embIds=[], embNomes=[], embErro=null;
   Array.prototype.forEach.call(document.querySelectorAll('#ob-embs .ob-emb-inp'), function(inp){
     var v=String(inp.value||'').trim(); if(!v) return;
-    var e=_geResolve(v);
+    var e=_obEmbDaLinha(inp); // v275 — pelo ID guardado na escolha; sem ID, pelo texto
     if(e){ embIds.push(e.id); embNomes.push(e.nome||''); }
     else if(!embErro) embErro=v;
   });
-  if(embErro){ alert('Embalagem não encontrada no catálogo: "'+embErro+'".\nEscolha uma opção da lista (ou apague a linha).'); return; }
+  if(embErro){ alert('Embalagem não encontrada no catálogo: "'+embErro+'".\nRemova a linha (✕) e escolha outra pelo Catálogo de embalagens.'); return; }
   // v272 — regra vigente (dono 18/11): embalagem SEM TIPO, SEM custo ou de tipo que a forma do produto não aceita (antes, v258: classificação de forma por embalagem)
   // a forma do produto aparece no catálogo mas NÃO pode ser usada no orçamento (obriga o cadastro).
   for(var ei=0; ei<embIds.length; ei++){
@@ -38325,7 +38483,7 @@ function _obSalvar(gerarPdf, silencioso){
   var t=_obTotais();
   var formaSel=(_ob.pgtosBlocos&&_ob.pgtosBlocos[0]&&_ob.pgtosBlocos[0].forma)||_ob.formaPag||'';
   var _fmMap={'PIX':'pix','Boleto':'boleto','Cartão de Crédito':'cartao','Cartão de Débito':'cartao','Transferência':'transferencia','Cheque':'outro','Convênio':'outro'};
-  var ehAnest=(_ob.itens||[]).some(function(it){ var f=(catalogoNovo||[]).find(function(x){ return x.id===it.fid; }); return f && String(f.categoria||'').toUpperCase().indexOf('ANEST')>=0; });
+  var ehAnest=(_ob.itens||[]).some(function(it){ var f=(catalogoNovo||[]).find(function(x){ return x.id===it.fid; }); return f && _cnEhAnest(f); }); // v276 — pela forma farmacêutica
   var novo=!_ob.id;
   var orc={
     id:_ob.id||('orc'+Date.now()), num:_ob.num||_obNextNum(), detalhado:true,
@@ -38517,7 +38675,7 @@ function _ccNotificarDirecao(titulo, sub){
 
 // ── TELA ──
 function _ccAbrir(modo, aba){
-  _ccModo=(modo==='orc')?'orc':'ver'; _ccAba=(aba==='catalogo')?'catalogo':'historico'; _ccAbertos={};
+  _ccModo=(modo==='orc')?'orc':'ver'; _ccAba=(aba==='catalogo')?'catalogo':'historico'; _ccAbertos={}; _ccCatEstado={cli:null, q:'', fechados:{}}; // v275 — abertura nova: busca e recolhidos recomeçam
   try{ _ffCarregar(); }catch(_e){}
   if(_ccModo==='orc'){
     if(!_ob || !_ob.clienteId){ alert('Selecione primeiro o cliente do orçamento (cliente do cadastro).'); return; }
@@ -38558,13 +38716,14 @@ function _ccRender(){
     var nCat=_ccItens.length;
     corpo='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><div style="font-size:14px;font-weight:700">'+escapeHtml(cli.nome||'')+'</div><div style="font-size:11.5px;color:var(--text-tertiary)">'+escapeHtml(cli.doc||'')+'</div>'+((_ccModo==='ver')?_ccBtn('Trocar cliente','_ccTrocarCli()'):'')+'</div>'+
       '<div class="crm-tabs" style="border-bottom:.5px solid var(--border);margin-bottom:10px"><div class="crm-tab'+(_ccAba==='historico'?' active':'')+'" onclick="_ccSetAba(\'historico\')">Histórico ('+hist.length+')</div><div class="crm-tab'+(_ccAba==='catalogo'?' active':'')+'" onclick="_ccSetAba(\'catalogo\')">Catálogo ('+(_ccLido?nCat:'…')+')</div></div>'+
-      '<div style="max-height:60vh;overflow-y:auto;padding-right:4px">'+((_ccAba==='historico')?_ccHtmlHistorico(hist):_ccHtmlCatalogo())+'</div>';
+      '<div style="flex:1;min-height:0;overflow-y:auto;padding-right:6px">'+((_ccAba==='historico')?_ccHtmlHistorico(hist):_ccHtmlCatalogo())+'</div>'; // v275 — a lista ocupa toda a altura do modal
   }
-  ov.innerHTML='<div class="modal" style="width:980px;max-width:97vw;max-height:92vh;display:flex;flex-direction:column">'+
+  ov.innerHTML='<div class="modal" style="width:1480px;max-width:97vw;height:94vh;max-height:94vh;display:flex;flex-direction:column">'+ /* v275 — bem maior e de altura fixa */
     '<h2 style="font-size:16px;flex-shrink:0">Catálogo do cliente'+((_ccModo==='orc')?' <span style="font-size:11px;font-weight:400;color:var(--text-secondary)">— inserir no orçamento</span>':'')+'</h2>'+
-    '<div style="flex:1;min-height:0">'+corpo+'</div>'+
+    '<div style="flex:1;min-height:0;display:flex;flex-direction:column">'+corpo+'</div>'+
     '<div class="modal-footer" style="flex-shrink:0;margin-top:10px"><button onclick="_ccFecha(\'cc-overlay\')">Fechar</button></div></div>';
   if(!cli){ var i=document.getElementById('cc-cli-busca'); if(i) i.focus(); }
+  if(document.getElementById('cc-cat-lista')) _ccCatFiltrar(); // v275 — contador e busca do catálogo (a busca digitada sobrevive ao redesenho)
 }
 function _ccHtmlHistorico(hist){
   if(!hist.length) return '<div style="padding:26px;text-align:center"><div style="font-size:15px;font-weight:700;margin-bottom:6px">Sem histórico</div><div style="font-size:12px;color:var(--text-secondary)">Este cliente ainda não tem pedido com produto no sistema.</div></div>';
@@ -38598,28 +38757,98 @@ function _ccHtmlHistorico(hist){
     return '<div style="margin-bottom:8px">'+cab+'<div class="table-scroll" style="border:.5px solid var(--border);border-radius:8px;margin-top:4px"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+th+'">Produto</th><th style="'+th+';text-align:right">Qtd</th><th style="'+th+';text-align:right">Valor unit.</th><th style="'+th+';text-align:right">Desconto</th><th style="'+th+';text-align:right">Total</th><th style="'+th+'"></th></tr></thead><tbody>'+linhas+'</tbody></table></div></div>';
   }).join('');
 }
+// ═══ v275 — CATÁLOGO DO CLIENTE MAIS APRESENTÁVEL (pedido do dono 18/11: "tem cliente com cerca de 40 produtos") ═══
+// Cada produto é um CARTÃO separado (faixa de título + corpo) e cada informação fica na sua CAIXA com rótulo.
+// Para listas longas: busca (sem acento), contador e recolher/expandir — tudo pelo DOM, sem redesenhar a tela
+// (a quantidade digitada nos outros cartões e o foco da busca não se perdem). Só apresentação: nenhuma regra,
+// preço ou gravação muda; os identificadores usados pelas ações (cc-q-<id>, _ccEditar, _ccRemover, _ccAddDoCatalogo,
+// pranchas) são os mesmos.
+var _ccCatEstado={cli:null, q:'', fechados:{}};
+function _ccCampo(rot, html, inteiro){ // caixa de um campo: rótulo em cima, conteúdo embaixo
+  return '<div class="cc-campo" style="border:.5px solid var(--border-md);border-radius:8px;padding:8px 11px;background:var(--bg-primary);min-width:0'+(inteiro?';grid-column:1 / -1':'')+'">'+
+    '<div style="font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:4px">'+rot+'</div>'+
+    '<div style="font-size:12.5px;line-height:1.5;word-break:break-word">'+html+'</div></div>';
+}
+function _ccVazioTxt(t){ return '<span style="color:var(--text-tertiary)">'+t+'</span>'; }
+// composição em etiquetas: um componente por etiqueta, com a dose em destaque
+function _ccChips(txt){
+  var partes=String(txt||'').split(' · ').map(function(p){ return p.trim(); }).filter(function(p){ return !!p; });
+  if(!partes.length) return _ccVazioTxt('não informada');
+  return partes.map(function(p){
+    var i=p.lastIndexOf(' '), nome=(i>0)?p.slice(0,i):p, dose=(i>0)?p.slice(i+1):'';
+    return '<span style="display:inline-block;margin:2px 6px 2px 0;padding:3px 9px;border-radius:6px;background:var(--bg-secondary);border:.5px solid var(--border);font-size:12px;line-height:1.35">'+escapeHtml(nome)+(dose?(' <b>'+escapeHtml(dose)+'</b>'):'')+'</span>';
+  }).join('');
+}
+function _ccCatNome(ci){ return String((ci&&ci.nomeCom)||(ci&&ci.item&&ci.item.nome)||''); }
+function _ccCatBuscaTxt(ci){
+  var it=(ci&&ci.item)||{};
+  return _obNorm([ci.nomeCom||'', it.nome||'', it.codigo||'', _cnFormaLbl(it.forma), _ccEmbNomes(it.embalagemIds).join(' ')].join(' '));
+}
 function _ccHtmlCatalogo(){
   if(_ccErro) return '<div style="padding:18px;text-align:center;font-size:12.5px;color:var(--st-bad-tx)">Não foi possível ler o catálogo deste cliente: '+escapeHtml(_ccErro)+'<div style="margin-top:8px">'+_ccBtn('Tentar de novo','_ccEscolherCli(\''+_ccCliId+'\')')+'</div></div>';
   if(!_ccLido) return '<div style="padding:18px;text-align:center;font-size:12px;color:var(--text-tertiary)">Carregando o catálogo do cliente...</div>';
-  var topo=(_ccModo==='ver' && _ccPodeEditar())?('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+_ccBtn('+ Inserir novo','_ccNovo()','Monta o produto nos mesmos moldes do orçamento (fórmula, composição, volumetria, embalagem)',true)+'<span style="font-size:11.5px;color:var(--text-secondary)">ou use "Puxar para o catálogo" em um produto da aba Histórico.</span></div>'):'';
-  if(!_ccItens.length) return topo+'<div style="padding:22px;text-align:center;font-size:12.5px;color:var(--text-secondary)">Nenhum produto no catálogo deste cliente.'+(_ccPodeEditar()?'':' Só o administrador e o(a) diretor(a) comercial cadastram.')+'</div>';
-  return topo+_ccItens.map(function(ci){
-    var it=ci.item, mg=_ccMargem(ci);
+  if(_ccCatEstado.cli!==_ccCliId) _ccCatEstado={cli:_ccCliId, q:'', fechados:{}}; // outro cliente: busca e cartões recolhidos recomeçam
+  var podeNovo=(_ccModo==='ver' && _ccPodeEditar());
+  var novoHtml=podeNovo?(_ccBtn('+ Inserir novo','_ccNovo()','Monta o produto nos mesmos moldes do orçamento (fórmula, composição, volumetria, embalagem)',true)+'<span style="font-size:11.5px;color:var(--text-secondary)">ou use "Puxar para o catálogo" em um produto da aba Histórico.</span>'):'';
+  if(!_ccItens.length) return (novoHtml?('<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+novoHtml+'</div>'):'')+'<div style="padding:22px;text-align:center;font-size:12.5px;color:var(--text-secondary)">Nenhum produto no catálogo deste cliente.'+(_ccPodeEditar()?'':' Só o administrador e o(a) diretor(a) comercial cadastram.')+'</div>';
+  var lista=_ccItens.slice().sort(function(a,b){ return _ccCatNome(a).localeCompare(_ccCatNome(b), 'pt-BR', {sensitivity:'base'}); }); // ordem alfabética só na tela
+  var barra='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;position:sticky;top:0;z-index:2;background:var(--bg-primary);padding:2px 0 10px;border-bottom:.5px solid var(--border)">'+
+    novoHtml+
+    '<input type="text" id="cc-cat-busca" placeholder="Buscar produto do catálogo (nome, código, embalagem)..." oninput="_ccCatFiltrar()" autocomplete="off" value="'+escapeHtml(_ccCatEstado.q||'')+'" style="font-size:13px;width:340px;max-width:100%;margin-left:'+(novoHtml?'auto':'0')+'">'+
+    '<span id="cc-cat-conta" style="font-size:12px;color:var(--text-secondary);white-space:nowrap"></span>'+
+    _ccBtn('Recolher todos','_ccCatTodos(false)','Mostra só o título de cada produto')+_ccBtn('Expandir todos','_ccCatTodos(true)','Mostra todas as informações de cada produto')+
+  '</div>';
+  var cards=lista.map(function(ci, ix){
+    var it=ci.item||{}, mg=_ccMargem(ci), fechado=!!_ccCatEstado.fechados[ci.id];
     var cor={ok:'var(--st-ok-tx)', amarelo:'var(--st-mid-tx)', vermelho:'var(--st-bad-tx)', cinza:'var(--text-tertiary)'}[mg.nivel];
     var acoes='';
-    if(_ccModo==='orc') acoes='<input type="number" min="1" step="1" value="1" id="cc-q-'+ci.id+'" style="width:64px;font-size:12.5px;text-align:right" title="Quantidade"> '+_ccBtn('Adicionar','_ccAddDoCatalogo(\''+ci.id+'\')','Insere no orçamento exatamente como está no catálogo; só a quantidade muda',true);
+    if(_ccModo==='orc') acoes='<span style="font-size:11px;color:var(--text-secondary);margin-right:4px">Qtd</span><input type="number" min="1" step="1" value="1" id="cc-q-'+ci.id+'" style="width:70px;font-size:12.5px;text-align:right" title="Quantidade"> '+_ccBtn('Adicionar','_ccAddDoCatalogo(\''+ci.id+'\')','Insere no orçamento exatamente como está no catálogo; só a quantidade muda',true);
     else if(_ccPodeEditar()) acoes=_ccBtn('Editar','_ccEditar(\''+ci.id+'\')')+' '+_ccBtn('Remover','_ccRemover(\''+ci.id+'\')');
     var pr=(ci.pranchas||[]).map(function(p, i){ return '<span style="display:inline-block;margin:2px 6px 2px 0">'+_ccBtn(escapeHtml(p.nome||('prancha '+(i+1))),'_ccPranchaAbrir(\''+ci.id+'\','+i+')','Abrir a prancha')+((_ccModo==='ver'&&_ccAdmin())?' <span onclick="_ccPranchaRemover(\''+ci.id+'\','+i+')" title="Remover esta prancha" style="cursor:pointer;color:var(--st-bad-tx);font-size:12px">✕</span>':'')+'</span>'; }).join('');
-    return '<div style="border:.5px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px">'+
-      '<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:260px"><b style="font-size:13px">'+escapeHtml(ci.nomeCom||it.nome||'—')+'</b>'+(ci.nomeCom?' <span style="font-size:11px;color:var(--text-secondary)">· no nosso catálogo: '+escapeHtml(it.nome||'')+'</span>':'')+
-        '<div style="font-size:11px;color:var(--text-tertiary)">'+escapeHtml(it.codigo||'')+' · '+escapeHtml(_cnFormaLbl(it.forma))+' · '+escapeHtml(_ccVolumetria(it.forma, it.opts))+((it.embalagemIds||[]).length?' · '+escapeHtml(_ccEmbNomes(it.embalagemIds).join(' + ')):'')+'</div></div>'+
-        '<div style="text-align:right"><div style="font-size:14px;font-weight:700">'+_ccMoeda(mg.preco)+' <span style="font-size:10.5px;font-weight:400;color:var(--text-tertiary)">por unidade · preço combinado</span></div><div style="font-size:11px;color:'+cor+';font-weight:600">'+escapeHtml(mg.txt)+'</div></div>'+
-        '<div style="white-space:nowrap">'+acoes+'</div></div>'+
-      _ccLinhaInfo('Composição real', _ccCompReal(it.composicao))+_ccLinhaInfo('Composição no PDF (rótulo)', _ccCompPdf(it.composicao))+_ccLinhaInfo('Modo de uso', ci.modoUso||'')+_ccLinhaInfo('Observação', ci.obs||'')+
-      '<div style="font-size:11.5px;margin-top:6px"><span style="color:var(--text-tertiary)">Pranchas de aprovação:</span> '+(pr||'<span style="color:var(--text-tertiary)">nenhuma</span>')+((_ccModo==='ver'&&_ccAdmin())?(' <label style="cursor:pointer;font-size:11.5px;color:var(--text-info);margin-left:6px">+ anexar<input type="file" accept="image/*,application/pdf" style="display:none" onchange="_ccPranchaUpload(\''+ci.id+'\', this)"></label>'):'')+'</div>'+
+    var prHtml=(pr||_ccVazioTxt('nenhuma'))+((_ccModo==='ver'&&_ccAdmin())?(' <label style="cursor:pointer;font-size:11.5px;color:var(--text-info);margin-left:6px">+ anexar<input type="file" accept="image/*,application/pdf" style="display:none" onchange="_ccPranchaUpload(\''+ci.id+'\', this)"></label>'):'');
+    var embs=_ccEmbNomes(it.embalagemIds);
+    var cab='<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:11px 14px;background:var(--bg-secondary);border-bottom:.5px solid var(--border-md)">'+
+      '<div onclick="_ccCatToggle(\''+ci.id+'\')" title="Recolher ou expandir este produto" style="display:flex;gap:10px;align-items:center;flex:1;min-width:260px;cursor:pointer">'+
+        '<span id="cc-cs-'+ci.id+'" style="font-size:13px;width:14px;color:var(--text-secondary)">'+(fechado?'▸':'▾')+'</span>'+
+        '<span style="font-size:11px;font-weight:700;font-family:monospace;padding:3px 8px;border-radius:6px;background:var(--bg-primary);border:.5px solid var(--border-md);color:var(--text-secondary)">'+String(ix+1).padStart(2,'0')+'</span>'+
+        '<div style="min-width:0"><div style="font-size:15px;font-weight:700;line-height:1.3">'+escapeHtml(_ccCatNome(ci)||'—')+'</div>'+
+          (ci.nomeCom?('<div style="font-size:11.5px;color:var(--text-secondary);margin-top:1px">no nosso catálogo: '+escapeHtml(it.nome||'')+'</div>'):'')+'</div>'+
+      '</div>'+
+      '<div style="text-align:right"><div style="font-size:16px;font-weight:700;line-height:1.2">'+_ccMoeda(mg.preco)+'</div><div style="font-size:10.5px;color:var(--text-tertiary)">por unidade · preço combinado</div><div style="font-size:11px;color:'+cor+';font-weight:600;margin-top:2px;max-width:420px">'+escapeHtml(mg.txt)+'</div></div>'+
+      (acoes?('<div style="white-space:nowrap">'+acoes+'</div>'):'')+
     '</div>';
+    var corpo='<div id="cc-cb-'+ci.id+'" style="display:'+(fechado?'none':'grid')+';grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:12px 14px">'+
+      _ccCampo('Código', escapeHtml(it.codigo||'—'))+
+      _ccCampo('Forma farmacêutica', escapeHtml(_cnFormaLbl(it.forma)||'—'))+
+      _ccCampo('Volumetria', escapeHtml(_ccVolumetria(it.forma, it.opts)))+
+      _ccCampo('Embalagem', embs.length?embs.map(function(n){ return escapeHtml(n); }).join('<br>'):_ccVazioTxt('sem embalagem'))+
+      _ccCampo('Composição real', _ccChips(_ccCompReal(it.composicao)), true)+
+      _ccCampo('Composição no PDF (rótulo)', _ccChips(_ccCompPdf(it.composicao)), true)+
+      _ccCampo('Modo de uso', ci.modoUso?escapeHtml(ci.modoUso):_ccVazioTxt('não informado'), true)+
+      (ci.obs?_ccCampo('Observação', escapeHtml(ci.obs), true):'')+
+      _ccCampo('Pranchas de aprovação', prHtml, true)+
+    '</div>';
+    return '<div class="cc-card" data-id="'+ci.id+'" data-busca="'+escapeHtml(_ccCatBuscaTxt(ci))+'" style="border:1px solid var(--border-md);border-radius:12px;margin-bottom:16px;overflow:hidden;background:var(--bg-primary);box-shadow:0 1px 3px rgba(0,0,0,.07)">'+cab+corpo+'</div>';
   }).join('');
+  return barra+'<div id="cc-cat-lista">'+cards+'</div><div id="cc-cat-vazio" style="display:none;padding:22px;text-align:center;font-size:12.5px;color:var(--text-secondary)">Nenhum produto do catálogo corresponde à busca.</div>';
 }
+// busca pelo DOM: esconde os cartões que não batem, sem redesenhar nada
+function _ccCatFiltrar(){
+  var inp=document.getElementById('cc-cat-busca'), cards=document.querySelectorAll('#cc-cat-lista .cc-card');
+  _ccCatEstado.q=inp?String(inp.value||''):'';
+  var q=_obNorm(_ccCatEstado.q), n=0;
+  Array.prototype.forEach.call(cards, function(c){ var ok=!q || String(c.getAttribute('data-busca')||'').indexOf(q)>=0; c.style.display=ok?'':'none'; if(ok) n++; });
+  var ct=document.getElementById('cc-cat-conta'); if(ct) ct.textContent=q?(n+' de '+cards.length+(cards.length===1?' produto':' produtos')):(cards.length+(cards.length===1?' produto':' produtos'));
+  var vz=document.getElementById('cc-cat-vazio'); if(vz) vz.style.display=(q && !n)?'':'none';
+}
+function _ccCatPinta(id, aberto){
+  var b=document.getElementById('cc-cb-'+id), s=document.getElementById('cc-cs-'+id);
+  if(b) b.style.display=aberto?'grid':'none';
+  if(s) s.textContent=aberto?'▾':'▸';
+  if(aberto) delete _ccCatEstado.fechados[id]; else _ccCatEstado.fechados[id]=1;
+}
+function _ccCatToggle(id){ var b=document.getElementById('cc-cb-'+id); if(!b) return; _ccCatPinta(id, b.style.display==='none'); }
+function _ccCatTodos(abrir){ (_ccItens||[]).forEach(function(ci){ if(ci && ci.id) _ccCatPinta(ci.id, !!abrir); }); }
 // ── criar / editar ──
 function _ccNovo(){
   if(!_ccPodeEditar()){ alert('Só o administrador e o(a) diretor(a) comercial cadastram produtos no catálogo do cliente.'); return; }
@@ -38772,7 +39001,8 @@ function _obPncHtml(pre){
 }
 function _obFechar(){
   if(!_ob) return;
-  var cats=(_ob.itens||[]).map(function(it){ var f=(catalogoNovo||[]).find(function(x){ return x.id===it.fid; }); return (f&&String(f.categoria||'').toUpperCase().indexOf('ANEST')>=0)?'a':'l'; });
+  if(!_ffCarregado){ try{ _ffCarregar(); }catch(_e){} alert('A configuração de formas farmacêuticas ainda está sendo carregada — é ela que diz se o orçamento é da linha anestésico.\n\nAguarde um instante e clique de novo.'); return; } // v276
+  var cats=(_ob.itens||[]).map(function(it){ var f=(catalogoNovo||[]).find(function(x){ return x.id===it.fid; }); return (f&&_cnEhAnest(f))?'a':'l'; }); // v276 — pela forma farmacêutica
   var temA=cats.indexOf('a')>=0, temL=cats.indexOf('l')>=0;
   if(temA&&temL){ alert('Este orçamento mistura ANESTÉSICO e LINHA.\n\nO pedido no sistema é por linha — separe em dois orçamentos (um para o anestésico, outro para a linha).'); return; }
   var orc=_obSalvar(false, true); if(!orc) return;
